@@ -1,0 +1,3 @@
+input.lp:3:3: error[LP2002]: process 'Empty' has no source stage
+input.lp:3:3: error[LP2002]: process 'Empty' has no service stage
+input.lp:5:3: error[LP2003]: process 'TwoSources' declares more than one source (v0 supports one)

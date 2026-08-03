@@ -1,0 +1,16 @@
+ModelFile schema_version=1
+metadata name='C'
+root CoupledModel name='C'
+root   AtomicModel name='R'
+root     ta kind=Infinite
+root     param capacity = int(1)
+root     param failure_rate = float(0)
+root   ProcessModel name='P'
+root     node 'A' kind=SourceNode
+root       arrival Poisson params=[2]
+root       max_arrivals -1
+root     node 'R' kind=ServiceNode
+root       service_time Constant params=[1.25]
+root       resource 'R'
+root       servers 1
+root     coupling 'A'.out -> 'R'.in

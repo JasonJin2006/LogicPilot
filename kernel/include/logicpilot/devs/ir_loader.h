@@ -5,7 +5,9 @@
 // build_replication_model() lowers an executable model for the kinds the
 // Phase 1b kernel can run today:
 //   * ProcessModel (source -> queue -> service -> sink) -> QueueingFlowSim
-// AtomicModel / CoupledModel IR is readable/inspectable but not executable
+//   * CoupledModel with exactly one ProcessModel child (Phase 2b DSL
+//     lowering: model -> CoupledModel root) -> the child's QueueingFlowSim
+// AtomicModel / other IR is readable/inspectable but not executable
 // yet: their TransitionSpec handlers are lowered by later compiler phases.
 #pragma once
 

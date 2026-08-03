@@ -241,6 +241,35 @@ std::unique_ptr<ReplicationModel> build_process_model(
   return std::make_unique<QueueingFlowSim>(std::move(spec));
 }
 
+// CoupledModel lowering (Phase 2b, task #6): the DSL compiler lowers a
+// `model` to a CoupledModel root whose executable payload is a single
+// ProcessModel child (resources ride along as passive AtomicModel children).
+// Descend into that child; deeper nesting / multiple processes have no
+// executable lowering yet.
+std::unique_ptr<ReplicationModel> build_coupled_model(
+    const ir::CoupledModel& coupled, std::string* error) {
+  const ir::ProcessModel* process = nullptr;
+  int process_count = 0;
+  if (coupled.children() != nullptr) {
+    for (const ir::Model* child : *coupled.children()) {
+      if (child->kind_type() == ir::ModelKind_ProcessModel) {
+        process = child->kind_as_ProcessModel();
+        ++process_count;
+      }
+    }
+  }
+  if (process_count == 1) {
+    return build_process_model(*process, error);
+  }
+  if (error != nullptr) {
+    *error = process_count == 0
+                 ? "CoupledModel contains no ProcessModel child to execute"
+                 : "CoupledModel contains multiple ProcessModel children; "
+                   "single-process lowering only in v1";
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 std::string inspect_model(const IrModelFile& file) {
@@ -289,6 +318,9 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   const ir::Model* root = file.root->root();
   if (root->kind_type() == ir::ModelKind_ProcessModel) {
     return build_process_model(*root->kind_as_ProcessModel(), error);
+  }
+  if (root->kind_type() == ir::ModelKind_CoupledModel) {
+    return build_coupled_model(*root->kind_as_CoupledModel(), error);
   }
   if (error != nullptr) {
     *error = std::string("no executable lowering for ") +

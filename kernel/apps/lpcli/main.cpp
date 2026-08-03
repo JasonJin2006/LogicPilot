@@ -1,7 +1,7 @@
 // lpcli - LogicPilot command line entry point.
 //
-// Subcommands (Phase 1b): run. The compile subcommand lands with the DSL
-// compiler (Phase 2) and plugs into the same dispatch table.
+// Subcommands: run (Phase 1b), compile (Phase 2b, DSL -> IR; wired in when
+// LOGICPILOT_BUILD_DSL is ON). Both plug into the same dispatch table.
 #include <span>
 #include <string>
 #include <vector>
@@ -11,6 +11,10 @@
 #include "builtin_registry.h"
 #include "run_command.h"
 
+#ifdef LOGICPILOT_HAS_DSL
+#include "compile_command.h"
+#endif
+
 namespace {
 
 void print_root_usage() {
@@ -18,8 +22,9 @@ void print_root_usage() {
       "LogicPilot CLI\n"
       "usage: lpcli <command> [options]\n"
       "commands:\n"
-      "  run     run replications of a model (lpcli run --help)\n"
-      "  help    show this message\n");
+      "  compile  compile a .lp DSL source to FlatBuffers IR\n"
+      "  run      run replications of a model (lpcli run --help)\n"
+      "  help     show this message\n");
 }
 
 }  // namespace
@@ -38,6 +43,11 @@ int main(int argc, char** argv) {
   if (command == "run") {
     return logicpilot::cli::run_command(rest);
   }
+#ifdef LOGICPILOT_HAS_DSL
+  if (command == "compile") {
+    return logicpilot::cli::compile_command(rest);
+  }
+#endif
   if (command == "help" || command == "--help" || command == "-h") {
     print_root_usage();
     return 0;

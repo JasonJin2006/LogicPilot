@@ -1,0 +1,14 @@
+Vendored third-party code - provenance marker (see docs/adr/0008).
+
+Project:    tree-sitter (C runtime library)
+Version:    0.26.11
+Source tag: https://github.com/tree-sitter/tree-sitter/tree/v0.26.11
+Tarball:    https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.26.11.tar.gz
+SHA512:     2175f7d1f913fffaba7395baa7b0a3228172bdc25169d22cf3e39fa3841df1a9902031e248e417328f8ea3e48e7042d34bf85a36c8545a79ca5f7321c6b9d848
+            (same pin as the vcpkg tree-sitter port at builtin-baseline)
+License:    MIT (see LICENSE)
+
+Contents: lib/include/tree_sitter/api.h -> include/tree_sitter/api.h
+          lib/src                       -> src/
+Built via the upstream amalgamation unit src/lib.c (no local patches;
+TS_FEATURE_WASM is NOT defined, wasm_store.c compiles to its stub path).

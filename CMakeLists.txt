@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 project(LogicPilot
   VERSION 0.0.1
   DESCRIPTION "LogicPilot - discrete-event simulation kernel & toolchain"
-  LANGUAGES CXX
+  LANGUAGES C CXX
 )
 
 # ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ endif()
 
 option(LOGICPILOT_BUILD_TESTS "Build kernel unit tests" ON)
 option(LOGICPILOT_BUILD_BENCH "Build benchmarks" OFF)
-option(LOGICPILOT_BUILD_DSL "Build DSL components (reserved for Phase 2)" OFF)
+option(LOGICPILOT_BUILD_DSL "Build DSL components (compiler, Phase 2)" ON)
 option(LOGICPILOT_BUILD_WEB_NATIVE "Build web-facing native artifacts (reserved)" OFF)
 
 # ---------------------------------------------------------------------------
@@ -35,6 +35,12 @@ endif()
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
+# CTest lives at the top level so kernel/ and dsl/ tests both register into
+# the same test suite (ctest at the build root sees everything).
+if(LOGICPILOT_BUILD_TESTS)
+  enable_testing()
+endif()
+
 # FlatBuffers codegen pipeline (contract freeze points F1/F2, ADR-0004):
 # defines `logicpilot_schemas` (generated C++ headers), `logicpilot_codegen`
 # and `logicpilot_codegen_ts` targets. See cmake/codegen.cmake.
@@ -42,7 +48,7 @@ include(cmake/codegen.cmake)
 
 add_subdirectory(kernel)
 
-# DSL components are intentionally NOT added yet (Phase 2, ADR-0005).
+# DSL compiler + vendored tree-sitter runtime (Phase 2, ADR-0005/0008).
 if(LOGICPILOT_BUILD_DSL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dsl/CMakeLists.txt")
   add_subdirectory(dsl)
 endif()

@@ -1,0 +1,20 @@
+ModelFile schema_version=1
+metadata name='MM1'
+root CoupledModel name='MM1'
+root   AtomicModel name='Server'
+root     ta kind=Infinite
+root     param capacity = int(1)
+root     param failure_rate = float(0)
+root   ProcessModel name='Flow'
+root     node 'Arrivals' kind=SourceNode
+root       arrival Poisson params=[0.8]
+root       max_arrivals -1
+root     node 'WaitLine' kind=QueueNode
+root       capacity 1000000
+root       discipline Fifo
+root     node 'Server' kind=ServiceNode
+root       service_time Exponential params=[1]
+root       resource 'Server'
+root       servers 1
+root     coupling 'Arrivals'.out -> 'WaitLine'.in
+root     coupling 'WaitLine'.out -> 'Server'.in

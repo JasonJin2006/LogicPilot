@@ -1,0 +1,1 @@
+input.lp:5:13: error[LP4001]: service 'Worker' references undeclared resource 'Worker'
