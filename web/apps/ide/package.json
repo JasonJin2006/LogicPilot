@@ -1,0 +1,31 @@
+{
+  "name": "@logicpilot/ide",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "LogicPilot browser IDE: minimal 2D visualization slice (MM1 queue animation + live counters)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "verify:headless": "node scripts/headless-verify.mjs",
+    "verify:browser": "node scripts/browser-verify.mjs"
+  },
+  "dependencies": {
+    "@logicpilot/protocol": "workspace:*",
+    "@logicpilot/renderer2d": "workspace:*",
+    "pixi.js": "^8.6.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "uplot": "^1.6.32"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "playwright-core": "^1.62.1",
+    "typescript": "^5.6.3",
+    "vite": "^6.3.5"
+  }
+}

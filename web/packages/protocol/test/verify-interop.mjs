@@ -44,7 +44,8 @@ import {
 } from '../dist/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, '..', '..', '..');
+// test/ -> protocol -> packages -> web -> repo root.
+const root = join(here, '..', '..', '..', '..');
 const binDir = process.argv[2] ?? join(root, 'build', 'interop', 'interop-out');
 
 let failures = 0;
