@@ -35,6 +35,11 @@ endif()
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
+# FlatBuffers codegen pipeline (contract freeze points F1/F2, ADR-0004):
+# defines `logicpilot_schemas` (generated C++ headers), `logicpilot_codegen`
+# and `logicpilot_codegen_ts` targets. See cmake/codegen.cmake.
+include(cmake/codegen.cmake)
+
 add_subdirectory(kernel)
 
 # DSL components are intentionally NOT added yet (Phase 2, ADR-0005).

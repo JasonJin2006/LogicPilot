@@ -1,4 +1,4 @@
-// LogicPilot IR schema â€?Extended DEVS IR v1.
+// LogicPilot IR schema â€” Extended DEVS IR v1.
 //
 // Contract freeze point F1 (ADR-0004). This is the lowered form of the DSL
 // model consumed by the kernel, the DSL compiler output, and persisted model
@@ -247,7 +247,7 @@ table ProcessNode {
 }
 
 // A process flow: ordered/tagged nodes wired by couplings (dsl-spec.md Â§2:
-// source â†?queue(s) â†?service(s); sink terminates the flow).
+// source â†’ queue(s) â†’ service(s); sink terminates the flow).
 table ProcessModel {
   metadata: Metadata (id: 0);
   nodes: [ProcessNode] (id: 1);
@@ -255,7 +255,7 @@ table ProcessModel {
   params: [Param] (id: 3);
 }
 
-// Equation-based (system dynamics) model â€?SEMANTIC PLACEHOLDER until
+// Equation-based (system dynamics) model â€” SEMANTIC PLACEHOLDER until
 // Phase 5. Variables/equations are stored verbatim; nothing interprets them
 // yet. Equations are opaque strings in v1 by design.
 table EquationVariable {

@@ -5,7 +5,7 @@
   "description": "LogicPilot simulation OS monorepo root",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "codegen": "echo codegen placeholder: flatc codegen lands in Phase 1",
+    "codegen": "node scripts/codegen-ts.mjs",
     "format": "prettier --write \"web/**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"web/**/*.{ts,tsx,json,md}\"",
     "lint": "eslint \"web/**/*.{ts,tsx}\"",

@@ -25,6 +25,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Schema conform gate (F1 ir.fbs / F2 wire.fbs)
+        # Validates schemas/{ir,wire}.fbs against schemas/baseline/ via
+        # flatc --conform + binary-schema diff (scripts/check-schema-conform.ps1).
+        # Must run before any build step; contract drift fails fast.
+        shell: pwsh
+        run: scripts/check-schema-conform.ps1
+
       - name: Setup vcpkg
         uses: lukka/run-vcpkg@v11
         with:
