@@ -15,7 +15,7 @@ target_link_libraries(lpcli PRIVATE
 )
 
 if(LOGICPILOT_BUILD_DSL)
-  target_sources(lpcli PRIVATE compile_command.cpp)
-  target_link_libraries(lpcli PRIVATE logicpilot_dsl)
+  target_sources(lpcli PRIVATE compile_command.cpp serve_command.cpp)
+  target_link_libraries(lpcli PRIVATE logicpilot_dsl lp_server_core)
   target_compile_definitions(lpcli PRIVATE LOGICPILOT_HAS_DSL=1)
 endif()

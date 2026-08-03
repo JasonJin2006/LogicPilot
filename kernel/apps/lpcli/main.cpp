@@ -13,6 +13,7 @@
 
 #ifdef LOGICPILOT_HAS_DSL
 #include "compile_command.h"
+#include "serve_command.h"
 #endif
 
 namespace {
@@ -24,6 +25,7 @@ void print_root_usage() {
       "commands:\n"
       "  compile  compile a .lp DSL source to FlatBuffers IR\n"
       "  run      run replications of a model (lpcli run --help)\n"
+      "  serve    compile a model and serve it over WebSocket\n"
       "  help     show this message\n");
 }
 
@@ -46,6 +48,9 @@ int main(int argc, char** argv) {
 #ifdef LOGICPILOT_HAS_DSL
   if (command == "compile") {
     return logicpilot::cli::compile_command(rest);
+  }
+  if (command == "serve") {
+    return logicpilot::cli::serve_command(rest);
   }
 #endif
   if (command == "help" || command == "--help" || command == "-h") {

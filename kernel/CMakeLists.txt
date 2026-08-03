@@ -9,7 +9,7 @@
 #
 # Reserved apps (implemented in later phases):
 #   add_subdirectory(apps/lpcli)
-#   add_subdirectory(apps/lp-server)
+#   add_subdirectory(apps/lp-server)  (Phase 2c, task #7)
 
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
@@ -83,6 +83,53 @@ if(LOGICPILOT_BUILD_TESTS)
     LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
   )
   catch_discover_tests(logicpilot_phase1b_tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Phase 2c (task #7): lp-server WebSocket gateway (Boost.Beast).
+# lp_server_core is a static library so both the lp-server executable and the
+# lpcli `serve` subcommand can embed the gateway in-process.
+# ---------------------------------------------------------------------------
+# vcpkg's boost umbrella ships BoostConfig.cmake; CONFIG mode avoids the
+# removed FindBoost module (CMP0167).
+find_package(Boost CONFIG REQUIRED)
+
+add_library(lp_server_core STATIC
+  apps/lp-server/wire_frames.cpp
+  apps/lp-server/sim_runner.cpp
+  apps/lp-server/server.cpp
+)
+target_include_directories(lp_server_core PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/apps/lp-server
+)
+target_link_libraries(lp_server_core PUBLIC
+  logicpilot_phase1b
+  Boost::headers
+  fmt::fmt
+)
+# Boost.Asio needs the Winsock libraries on Windows/MinGW.
+if(WIN32)
+  target_link_libraries(lp_server_core PUBLIC ws2_32 mswsock)
+endif()
+
+add_executable(lp-server apps/lp-server/main.cpp)
+target_link_libraries(lp-server PRIVATE lp_server_core)
+
+if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
+  # Integration tests drive the full DSL -> IR -> lp-server pipeline, so the
+  # DSL compiler is linked in to compile examples/mm1.lp in-process.
+  add_executable(logicpilot_server_tests
+    tests/test_lp_server_integration.cpp
+  )
+  target_link_libraries(logicpilot_server_tests PRIVATE
+    lp_server_core
+    logicpilot_dsl
+    Catch2::Catch2WithMain
+  )
+  target_compile_definitions(logicpilot_server_tests PRIVATE
+    LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
+  )
+  catch_discover_tests(logicpilot_server_tests)
 endif()
 
 if(LOGICPILOT_BUILD_BENCH)
