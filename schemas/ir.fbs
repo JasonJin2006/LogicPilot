@@ -1,0 +1,12 @@
+// LogicPilot IR schema (FlatBuffers) — PLACEHOLDER.
+//
+// This file defines the simulation intermediate representation (IR) shared by
+// the DSL compiler, kernel and web tooling. Full content is delivered in a
+// later task (see docs/adr/0004, docs/specs/dsl-spec.md for the v0 DSL that
+// lowers into this IR).
+//
+// Expected top-level tables (preview, non-binding):
+//   - Model: name, resources, processes
+//   - Resource: id, capacity, failure_rate
+//   - Process: source, queues, services
+//   - Schedule / Event envelopes for wire transport (see wire.fbs)

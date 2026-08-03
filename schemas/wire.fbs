@@ -1,0 +1,9 @@
+// LogicPilot wire protocol schema (FlatBuffers) — PLACEHOLDER.
+//
+// Defines the kernel<->frontend streaming wire format (frame pushes, event
+// envelopes, control messages). Full content is delivered in a later task.
+//
+// Design constraints driving this schema (see docs/performance-budget.md):
+//   - Pushed frame payloads must stay <= 1 MB at 1M agents @ 10 Hz
+//   - End-to-end latency budget <= 300 ms
+//   - Zero-copy deserialization on both C++ and TypeScript sides

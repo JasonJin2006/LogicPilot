@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "logicpilot",
+  "version": "0.0.1",
+  "description": "LogicPilot C++ dependency manifest. Baseline pinning is documented in docs/adr/0002-cmake-vcpkg-package-management.md",
+  "dependencies": [
+    "entt",
+    "flatbuffers",
+    "boost-beast",
+    "fmt",
+    "spdlog",
+    {
+      "name": "catch2",
+      "version>=": "3.5.0"
+    },
+    "benchmark"
+  ],
+  "builtin-baseline": "39344dff01c5a5a0134caf2624cdd492f05d30ea"
+}

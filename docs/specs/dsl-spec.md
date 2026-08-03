@@ -1,0 +1,89 @@
+# LogicPilot DSL Specification — v0 Draft
+
+Status: **Draft v0** · Phase 0 · Supersedes: —
+
+This is the minimal DSL subset targeted by Phase 1–2 (tree-sitter grammar +
+compiler lowering to `schemas/ir.fbs`, ADR-0004/0005). Anything not listed
+here is out of scope for v0.
+
+## 1. Grammar Rules (v0 subset, 15 rules)
+
+| # | Rule | Description |
+|---|------|-------------|
+| R1 | `model_declaration` | `model <Identifier> { block }` — exactly one model per file; top-level container. |
+| R2 | `resource_declaration` | `resource <Identifier> { resource_body }` — declares a reusable resource type. |
+| R3 | `resource_field_capacity` | `capacity = <Integer>` — max concurrent usage, required, ≥ 1. |
+| R4 | `resource_field_failure_rate` | `failure_rate = <Float>` — failure probability per time unit, optional, [0.0, 1.0], default 0.0. |
+| R5 | `process_declaration` | `process <Identifier> { block }` — declares an entity flow; contains source/queue/service stages. |
+| R6 | `source_declaration` | `source <Identifier> { source_body }` — entity arrival generator inside a process. |
+| R7 | `source_field_arrival` | `arrival = <arrival_expr>` — arrival distribution expression, required. |
+| R8 | `arrival_expr_poisson` | `poisson(<Numeric>)` — Poisson arrival with given rate parameter. |
+| R9 | `queue_declaration` | `queue <Identifier> { queue_body }` — buffering stage inside a process. |
+| R10 | `queue_field_capacity` | `capacity = <Integer>` — buffer size, required, ≥ 0 (0 = no buffering). |
+| R11 | `service_declaration` | `service <Identifier> { service_body }` — processing stage bound to a resource. |
+| R12 | `service_field_time` | `time = <service_time_expr>` — service time distribution, required. |
+| R13 | `service_time_expr_normal` | `normal(<Numeric>, <Numeric>)` — normal distribution (mean, std-dev). |
+| R14 | `service_time_expr_exponential` | `exponential(<Numeric>)` — exponential distribution with given rate/mean parameter. |
+| R15 | `literal_and_identifier` | Numeric literals (integer / float), identifiers `[A-Za-z_][A-Za-z0-9_]*`; `//` line comments. |
+
+## 2. Semantics (v0)
+
+- A `model` consists of zero or more `resource` declarations followed by zero
+  or more `process` declarations.
+- A `process` executes its stages in declaration order: entities arrive at the
+  `source`, pass through `queue`(s), and are served by `service`(s).
+- A `service` whose identifier matches a declared `resource` consumes one unit
+  of that resource's capacity; if unavailable, the entity waits in the
+  preceding queue.
+- Distribution parameters are deterministic literals in v0 (no expressions,
+  no variables, no function calls beyond the built-in distributions listed).
+- Errors (compile-time): unknown resource reference, negative capacities,
+  out-of-range `failure_rate`, duplicate declarations.
+
+## 3. Example
+
+```logicpilot
+// Factory example — v0 DSL
+model Factory {
+  resource Machine {
+    capacity = 3
+    failure_rate = 0.01
+  }
+
+  process Production {
+    source Order {
+      arrival = poisson(5)
+    }
+    queue Buffer {
+      capacity = 50
+    }
+    service Machine {
+      time = normal(10, 2)
+    }
+  }
+}
+```
+
+Equivalent minimal variant using exponential service time:
+
+```logicpilot
+model QueueDemo {
+  resource Server { capacity = 1 }
+  process Arrivals {
+    source Clients { arrival = poisson(2) }
+    queue WaitLine { capacity = 0 }
+    service Server { time = exponential(3) }
+  }
+}
+```
+
+## 4. Lowering (non-normative preview)
+
+`model → ir.fbs::Model`; `resource → ir.fbs::Resource`;
+`process/source/queue/service → ir.fbs::Process` stage tables.
+Exact field mapping is defined when `schemas/ir.fbs` lands.
+
+## 5. Explicitly Out of Scope for v0
+
+Variables/expressions, branching (`route`), priorities, batches, replication,
+warmup/run-length settings, multi-file imports, statistics blocks.
