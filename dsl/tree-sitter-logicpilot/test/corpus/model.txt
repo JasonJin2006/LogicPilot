@@ -1,0 +1,36 @@
+==================
+Empty model declaration
+==================
+
+model Empty {}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body)))
+
+==================
+Model with resource and process members
+==================
+
+model Tiny {
+  resource R1 { capacity = 1 }
+  process P1 {}
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body)))))

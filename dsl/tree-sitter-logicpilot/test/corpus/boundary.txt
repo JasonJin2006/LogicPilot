@@ -1,0 +1,185 @@
+==================
+Empty blocks at every nesting level
+==================
+
+model Empty {
+  resource R {}
+  process P {
+    source S {}
+    queue Q {}
+    service V {}
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body))
+          (service_declaration
+            name: (identifier)
+            body: (service_body)))))))
+
+==================
+Multiple resources then multiple processes
+==================
+
+model Shop {
+  resource Drill { capacity = 2 }
+  resource Lathe { capacity = 4 failure_rate = 0.05 }
+  resource Crane { capacity = 1 }
+  process A {
+    source In { arrival = poisson(3) }
+    service Drill { time = normal(8, 1) }
+  }
+  process B {
+    source In { arrival = poisson(1) }
+    queue Hold { capacity = 5 }
+    service Crane { time = constant(10) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))))
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float))))
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (normal_call
+                    mean: (integer)
+                    stddev: (integer))))))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (constant_call
+                    value: (integer)))))))))))
+
+==================
+Comments interleaved everywhere
+==================
+
+/* header block comment */
+model Commented { // model line comment
+  /* before resource */
+  resource R {
+    capacity = 2 // inline
+    /* between fields */
+    failure_rate = 0.5
+  }
+  // before process
+  process P {
+    source S { arrival = poisson(1) /* arrivals */ }
+    /* before queue */
+    queue Q { capacity = 3 }
+    service R { time = exponential(2) } // tail
+  }
+}
+/* footer block comment */
+
+---
+
+(source_file
+  (comment)
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (comment)
+      (comment)
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (comment)
+          (comment)
+          (failure_rate_field
+            value: (float))))
+      (comment)
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))
+              (comment)))
+          (comment)
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (exponential_call
+                    rate: (integer))))))
+          (comment)))))
+  (comment))

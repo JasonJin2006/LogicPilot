@@ -1,0 +1,168 @@
+==================
+End-to-end Factory model from dsl-spec
+==================
+
+// Factory example — v0 DSL
+model Factory {
+  resource Machine {
+    capacity = 3
+    failure_rate = 0.01
+  }
+
+  process Production {
+    source Order {
+      arrival = poisson(5)
+    }
+    queue Buffer {
+      capacity = 50
+    }
+    service Machine {
+      time = normal(10, 2)
+    }
+  }
+}
+
+---
+
+(source_file
+  (comment)
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (normal_call
+                    mean: (integer)
+                    stddev: (integer)))))))))))
+
+==================
+End-to-end M/M/1 queue model
+==================
+
+// M/M/1: single server, Poisson arrivals, exponential service
+model MM1 {
+  resource Server {
+    capacity = 1
+    failure_rate = 0.0
+  }
+  process Flow {
+    source Jobs {
+      arrival = poisson(1)
+    }
+    queue WaitingLine {
+      capacity = 100
+    }
+    service Server {
+      time = exponential(2)
+    }
+  }
+}
+
+---
+
+(source_file
+  (comment)
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (exponential_call
+                    rate: (integer)))))))))))
+
+==================
+End-to-end QueueDemo with exponential service
+==================
+
+model QueueDemo {
+  resource Server { capacity = 1 }
+  process Arrivals {
+    source Clients { arrival = poisson(2) }
+    queue WaitLine { capacity = 0 }
+    service Server { time = exponential(3) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))))
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (exponential_call
+                    rate: (integer)))))))))))

@@ -1,0 +1,318 @@
+==================
+Source with poisson integer arrival
+==================
+
+model M {
+  process P {
+    source Order {
+      arrival = poisson(5)
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer)))))))))))
+
+==================
+Source with poisson float arrival
+==================
+
+model M {
+  process P {
+    source Clients { arrival = poisson(2.5) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (float)))))))))))
+
+==================
+Queue with zero capacity
+==================
+
+model M {
+  process P {
+    queue WaitLine {
+      capacity = 0
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer)))))))))
+
+==================
+Queue with large capacity
+==================
+
+model M {
+  process P {
+    queue Buffer { capacity = 50 }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer)))))))))
+
+==================
+Service with normal distribution
+==================
+
+model M {
+  process P {
+    service Machine {
+      time = normal(10, 2)
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (normal_call
+                    mean: (integer)
+                    stddev: (integer)))))))))))
+
+==================
+Service with normal float parameters
+==================
+
+model M {
+  process P {
+    service S { time = normal(10.5, 2.25) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (normal_call
+                    mean: (float)
+                    stddev: (float)))))))))))
+
+==================
+Service with exponential distribution
+==================
+
+model M {
+  process P {
+    service Server {
+      time = exponential(3)
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (exponential_call
+                    rate: (integer)))))))))))
+
+==================
+Service with exponential float rate
+==================
+
+model M {
+  process P {
+    service S { time = exponential(0.75) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (exponential_call
+                    rate: (float)))))))))))
+
+==================
+Service with constant distribution
+==================
+
+model M {
+  process P {
+    service Belt {
+      time = constant(4)
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (constant_call
+                    value: (integer)))))))))))
+
+==================
+Service with constant float value
+==================
+
+model M {
+  process P {
+    service Belt { time = constant(4.5) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (constant_call
+                    value: (float)))))))))))
+
+==================
+Process stages in declaration order
+==================
+
+model M {
+  process P {
+    source S { arrival = poisson(1) }
+    queue Q { capacity = 2 }
+    service V { time = constant(3) }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (source_declaration
+            name: (identifier)
+            body: (source_body
+              (arrival_field
+                value: (arrival_expr
+                  (poisson_call
+                    rate: (integer))))))
+          (queue_declaration
+            name: (identifier)
+            body: (queue_body
+              (capacity_field
+                value: (integer))))
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (constant_call
+                    value: (integer)))))))))))

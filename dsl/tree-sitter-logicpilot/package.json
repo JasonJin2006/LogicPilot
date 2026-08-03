@@ -1,0 +1,43 @@
+{
+  "name": "tree-sitter-logicpilot",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for the LogicPilot discrete-event simulation DSL (v0 subset)",
+  "repository": "https://github.com/logicpilot/logicpilot",
+  "license": "MIT",
+  "main": "bindings/node",
+  "types": "bindings/node",
+  "keywords": [
+    "parser",
+    "lexer",
+    "tree-sitter",
+    "dsl",
+    "logicpilot",
+    "discrete-event-simulation"
+  ],
+  "files": [
+    "grammar.js",
+    "binding.gyp",
+    "prebuilds/**",
+    "bindings/node/*",
+    "queries/*",
+    "src/**",
+    "*.wasm"
+  ],
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.logicpilot",
+      "file-types": [
+        "logicpilot"
+      ],
+      "injection-regex": "^logicpilot$"
+    }
+  ],
+  "devDependencies": {
+    "tree-sitter-cli": "0.26.11"
+  }
+}

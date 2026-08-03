@@ -1,0 +1,97 @@
+==================
+Line comment before and after declarations
+==================
+
+// a leading line comment
+model M {
+  // resource comment
+  resource R { capacity = 1 }
+} // trailing comment
+
+---
+
+(source_file
+  (comment)
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (comment)
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))))))
+  (comment))
+
+==================
+Block comment around a field
+==================
+
+model M {
+  resource R {
+    /* machine pool */
+    capacity = 4
+    /* per-unit failure probability */
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (comment)
+          (capacity_field
+            value: (integer))
+          (comment))))))
+
+==================
+Block comment containing stars and slashes
+==================
+
+/* ** stars ** and / slashes / inside */
+model M {}
+
+---
+
+(source_file
+  (comment)
+  (model_declaration
+    name: (identifier)
+    body: (model_body)))
+
+==================
+Comments inside distribution argument lists
+==================
+
+model M {
+  process P {
+    service S {
+      time = normal(10 /* mean */, 2 /* stddev */)
+    }
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (process_declaration
+        name: (identifier)
+        body: (process_body
+          (service_declaration
+            name: (identifier)
+            body: (service_body
+              (time_field
+                value: (service_time_expr
+                  (normal_call
+                    mean: (integer)
+                    (comment)
+                    stddev: (integer)
+                    (comment)))))))))))

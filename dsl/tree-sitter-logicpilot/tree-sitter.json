@@ -1,0 +1,26 @@
+{
+  "grammars": [
+    {
+      "name": "logicpilot",
+      "camelcase": "LogicPilot",
+      "scope": "source.logicpilot",
+      "file-types": [
+        "logicpilot"
+      ],
+      "injection-regex": "^logicpilot$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the LogicPilot discrete-event simulation DSL (v0 subset)",
+    "links": {
+      "repository": "https://github.com/logicpilot/logicpilot"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "node": true,
+    "rust": true
+  }
+}

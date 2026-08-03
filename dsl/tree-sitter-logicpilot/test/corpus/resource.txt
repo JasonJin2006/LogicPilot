@@ -1,0 +1,98 @@
+==================
+Resource with capacity only
+==================
+
+model M {
+  resource Machine {
+    capacity = 3
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer)))))))
+
+==================
+Resource with capacity and failure_rate
+==================
+
+model M {
+  resource Server {
+    capacity = 1
+    failure_rate = 0.01
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float)))))))
+
+==================
+Resource failure_rate float boundary values
+==================
+
+model M {
+  resource A { capacity = 2 failure_rate = 0.0 }
+  resource B { capacity = 9 failure_rate = 1.0 }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float))))
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer))
+          (failure_rate_field
+            value: (float)))))))
+
+==================
+Resource identifier with underscores and digits
+==================
+
+model M {
+  resource _machine_2 {
+    capacity = 12
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (resource_declaration
+        name: (identifier)
+        body: (resource_body
+          (capacity_field
+            value: (integer)))))))
