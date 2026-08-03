@@ -41,3 +41,57 @@ if(LOGICPILOT_BUILD_BENCH)
     benchmark::benchmark_main
   )
 endif()
+
+# ---------------------------------------------------------------------------
+# Phase 1b: agent runtime / statemachine / DEVS-lite / M/M/1 (task #4).
+# Appended below; the core section above is owned by Phase 1a.
+# ---------------------------------------------------------------------------
+find_package(EnTT CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
+
+add_library(logicpilot_phase1b STATIC
+  src/agent/soa_agent_store.cpp
+  src/devs/executor.cpp
+  src/devs/replication.cpp
+  src/devs/mm1.cpp
+  src/devs/ir_loader.cpp
+)
+target_link_libraries(logicpilot_phase1b PUBLIC
+  logicpilot_kernel
+  logicpilot_schemas   # ir_generated.h + flatbuffers runtime
+  EnTT::EnTT
+)
+
+# lpcli (Phase 1b ships the `run` subcommand; compile lands in Phase 2).
+add_subdirectory(apps/lpcli)
+
+if(LOGICPILOT_BUILD_TESTS)
+  add_executable(logicpilot_phase1b_tests
+    tests/test_agent_runtime.cpp
+    tests/test_state_machine.cpp
+    tests/test_devs.cpp
+    tests/test_ir_loader.cpp
+    tests/test_mm1_acceptance.cpp
+    tests/test_determinism.cpp
+    tests/test_perf_baseline.cpp
+  )
+  target_link_libraries(logicpilot_phase1b_tests PRIVATE
+    logicpilot_phase1b
+    Catch2::Catch2WithMain
+  )
+  target_compile_definitions(logicpilot_phase1b_tests PRIVATE
+    LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
+  )
+  catch_discover_tests(logicpilot_phase1b_tests)
+endif()
+
+if(LOGICPILOT_BUILD_BENCH)
+  # MM1-style event-loop baseline (budget #2 MVP gate, bench/mm1_event_bench).
+  add_executable(mm1_event_bench
+    ${CMAKE_SOURCE_DIR}/bench/mm1_event_bench.cpp
+  )
+  target_link_libraries(mm1_event_bench PRIVATE
+    logicpilot_phase1b
+    benchmark::benchmark_main
+  )
+endif()

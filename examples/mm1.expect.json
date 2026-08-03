@@ -1,0 +1,28 @@
+{
+  "model": "mm1",
+  "description": "M/M/1 acceptance contract: single canonical tolerance source for the statistical acceptance test (kernel/tests/test_mm1_acceptance.cpp) and the lpcli run report.",
+  "params": {
+    "lambda": 0.8,
+    "mu": 1.0,
+    "seed": 42,
+    "replications": 30,
+    "arrivals_per_replication": 20000,
+    "warmup_arrivals": 2000
+  },
+  "theory": {
+    "rho": 0.8,
+    "wq": 4.0,
+    "w": 5.0,
+    "l": 4.0,
+    "lq": 3.2,
+    "throughput": 0.8
+  },
+  "acceptance": {
+    "confidence_level": 0.95,
+    "metric": "wq",
+    "rule": "pass if the cross-replication CI covers theory.wq, or if the point estimate lies within point_estimate_abs_tol of theory.wq",
+    "point_estimate_abs_tol": 0.25,
+    "throughput_rel_tol": 0.05,
+    "flaky_policy": "fixed seed; any failure is a defect, retries are forbidden"
+  }
+}
