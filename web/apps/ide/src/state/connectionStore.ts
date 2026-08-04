@@ -47,11 +47,31 @@ interface ConnectionStore {
 
 let client: SimClient | null = null;
 let nextEventId = 1;
+let configResolved = false;
 // Continuation invoked when the next compile reply arrives (Run = compile,
 // then start when the model compiles).
 let pendingRunContinuation: ((ok: boolean) => void) | null = null;
 
 const MAX_EVENTS = 200;
+
+// Resolve the gateway URL from the app server (/api/config); the desktop
+// client injects the lp-server port there, the vite dev server reports the
+// default. Falls back to DEFAULT_URL when the endpoint is unavailable.
+async function resolveGatewayConfig(): Promise<void> {
+  if (configResolved) return;
+  configResolved = true;
+  try {
+    const response = await fetch('/api/config', { cache: 'no-store' });
+    if (response.ok) {
+      const config = (await response.json()) as { wsUrl?: string };
+      if (config.wsUrl) {
+        useConnectionStore.setState({ url: config.wsUrl });
+      }
+    }
+  } catch {
+    // keep the default
+  }
+}
 
 function makeEvent(kind: LogEvent['kind'], text: string): LogEvent {
   return {
@@ -195,7 +215,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
           events: appendEvent(state, 'error', message),
         })),
     });
-    client.connect(get().url);
+    void resolveGatewayConfig().then(() => client?.connect(get().url));
   },
   disconnect: () => {
     client?.disconnect();

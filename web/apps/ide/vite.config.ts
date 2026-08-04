@@ -11,6 +11,7 @@ import {
   handleAiBuild,
   handleAiExplain,
   handleAiOptimize,
+  handleConfig,
 } from './scripts/ai-endpoint.mjs';
 
 // Exposes the AI model build loop (scripts/ai-build.mjs) to the IDE at
@@ -26,6 +27,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/ai-explain', (req, res) => {
       void handleAiExplain(req, res);
+    });
+    server.middlewares.use('/api/config', (req, res) => {
+      handleConfig(req, res);
     });
   },
 });

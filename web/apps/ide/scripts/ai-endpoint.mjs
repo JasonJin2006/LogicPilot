@@ -43,6 +43,14 @@ function send(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// Gateway discovery: the desktop app server injects the lp-server port via
+// LOGICPILOT_WS_URL; the vite dev server falls back to the default.
+export function handleConfig(req, res) {
+  send(res, 200, {
+    wsUrl: process.env.LOGICPILOT_WS_URL ?? 'ws://127.0.0.1:8089/sim',
+  });
+}
+
 export async function handleAiBuild(req, res) {
   if (req.method !== 'POST') {
     send(res, 405, { ok: false, error: 'method not allowed' });

@@ -178,6 +178,13 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    moveTo(node)、timeMeasureStart/End(measurement)、assembler(parts)；
    新增 `bool` 字段类型（Properties 复选框，DSL 输出 true/false）。内核
    五块保持 process.lplib 绑定以继续编译。
+   **桌面客户端（Tauri）✅ 已完成**（2026-08-05）：新增 `app/server.mjs`
+   生产后端（托管前端构建产物 + AI 端点 + 按需拉起 lp-server 空闲端口，
+   与 vite dev 共用 ai-endpoint 处理器）；前端启动经 `/api/config` 解析
+   网关地址（dev 回落 8089）；`desktop/src-tauri` Tauri 壳（Rust main 拉
+   起 app server 并打开 WebView2 窗口，含 Windows 图标）；`desktop/README.md`
+   含构建/运行说明。打包分发（`tauri build` 产物 + 捆绑 Node/lp-server
+   二进制）为后续项。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LogicPilot",
+  "version": "0.1.0",
+  "identifier": "com.logicpilot.desktop",
+  "build": {
+    "frontendDist": "../../web/apps/ide/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/icon.ico", "icons/icon.png"]
+  }
+}
