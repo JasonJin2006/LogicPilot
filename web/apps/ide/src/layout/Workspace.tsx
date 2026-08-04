@@ -4,7 +4,7 @@
 // writing size values into the store. See docs/specs/ide-layout.md.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { useLayoutStore } from '../state/layoutStore';
+import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
@@ -22,13 +22,21 @@ function Splitter({
     event.preventDefault();
     const start = vertical ? event.clientX : event.clientY;
     const startSize = useLayoutStore.getState().areas[area].size;
+    let closed = false;
     const move = (moveEvent: PointerEvent) => {
       const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
       // Splitters must follow the cursor. For a fixed-size area whose
       // boundary sits between it and a flex area (right, bottom), moving
       // the boundary toward the flex area shrinks the fixed area, so the
       // delta is inverted.
-      useLayoutStore.getState().setSize(area, startSize + (invert ? -delta : delta));
+      if (closed) {
+        return;
+      }
+      const target = startSize + (invert ? -delta : delta);
+      useLayoutStore.getState().setSizeOrClose(area, target);
+      if (target < SIZE_RANGE[area].min) {
+        closed = true; // panel closed; ignore the rest of this drag
+      }
     };
     const up = () => {
       window.removeEventListener('pointermove', move);

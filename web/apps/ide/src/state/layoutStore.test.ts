@@ -24,6 +24,15 @@ describe('layoutStore', () => {
     expect(useLayoutStore.getState().areas.right.activePanel).toBe('ai');
   });
 
+  it('setSizeOrClose collapses when dragged below the minimum', () => {
+    const store = useLayoutStore.getState();
+    store.setSizeOrClose('right', 300);
+    expect(useLayoutStore.getState().areas.right.size).toBe(300);
+    expect(useLayoutStore.getState().areas.right.collapsed).toBe(false);
+    store.setSizeOrClose('right', 10);
+    expect(useLayoutStore.getState().areas.right.collapsed).toBe(true);
+  });
+
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['queue']);

@@ -19,12 +19,13 @@ export type Areas = Record<AreaId, AreaState>;
 export interface LayoutState {
   areas: Areas;
   setSize: (area: AreaId, size: number) => void;
+  setSizeOrClose: (area: AreaId, size: number) => void;
   toggleCollapse: (area: AreaId) => void;
   setActive: (area: AreaId, panel: PanelId) => void;
   resetLayout: () => void;
 }
 
-const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
+export const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
   left: { min: 220, max: 560 },
   center: { min: 0, max: 0 },
   right: { min: 240, max: 560 },
@@ -81,6 +82,17 @@ export const useLayoutStore = create<LayoutState>()(
           const range = SIZE_RANGE[area];
           const clamped = Math.min(range.max, Math.max(range.min, size));
           return { areas: { ...state.areas, [area]: { ...state.areas[area], size: clamped } } };
+        }),
+      // Dragging past the minimum closes the panel instead of stalling.
+      setSizeOrClose: (area, size) =>
+        set((state) => {
+          const range = SIZE_RANGE[area];
+          const current = state.areas[area];
+          if (size < range.min) {
+            return { areas: { ...state.areas, [area]: { ...current, collapsed: true } } };
+          }
+          const clamped = Math.min(range.max, Math.max(range.min, size));
+          return { areas: { ...state.areas, [area]: { ...current, size: clamped } } };
         }),
       toggleCollapse: (area) =>
         set((state) => ({
