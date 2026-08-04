@@ -24,7 +24,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | DSL（Phase 2） | ✅ | DSL v2 全量完成：薄核心文法 + process 库注册表（`.lplib`）、显式资源引用、表达式/参数引用、行为统一、实验限定路径；结构化诊断 JSON |
 | IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役** |
 | AI Copilot（Phase 6 第一刀） | 🔶 | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始** |
-| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**拖拽建模未开始** |
+| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 + 拖拽建模未开始** |
 | 工程与文档 | ✅ | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册 |
 | 测试基线 | ✅ | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E |
 
@@ -98,36 +98,55 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
 
-6. **Web IDE 拖拽建模**
+6. **IDE 自研面板系统（P1-6 前置）**
+   现状：IDE 是单页固定布局（header + 画布 + 右侧堆叠面板）；拖拽建模、多视图与
+   属性/诊断面板需要一个多面板工作区。
+   决策：**自研**（不引 FlexLayout / rc-dock 等 docking 库），零新依赖，复用 zustand
+   域 store 模式。
+   范围（渐进式，每阶段可交付）：
+   - 阶段 1：CSS Grid 骨架（左/中/右 + 底栏 + 状态栏，`grid-template-areas`）、
+     `layoutStore`（面板显隐/尺寸/活动标签，persist 到 localStorage）、
+     `Panel`/`Splitter` 组件、面板注册表（布局与内容解耦）。
+   - 阶段 2：递归分割树布局模型（`tabs`/`split` 节点）+ 标签页拖拽合并 +
+     区域级停靠（拖面板到另一区域停靠为其标签页）。
+   - 阶段 3（按需）：像素级分裂 + 浮动窗口；届时再评估自研 vs docking 库。
+   验收：面板可折叠/调宽/标签切换，布局刷新后保持；浏览器 E2E 覆盖；
+   typecheck/build/test 不回归。
+   入口：`web/apps/ide/src/layout/`、`web/apps/ide/src/state/layoutStore.ts`、
+   `web/apps/ide/src/styles/layout.css`。
+
+7. **Web IDE 拖拽建模**
    现状：IDE 只有运行可视化切片；建模靠手写 DSL / AI 生成。
    **前端重构 ✅ 已完成**（`f7fe9a8`）：zustand 域 store（connection/run）、
    `src/run` `src/ai` `src/state` `src/styles` 目录、`@logicpilot/editor` 包
    （图文档模型 + DSL v2 生成器，8 vitest）。
+   前置：**自研面板系统**（见上，阶段 1/2）提供左栏块库、中央建模画布、
+   右栏属性编辑、底栏编译诊断的布局骨架。
    范围：块面板（source/queue/service/atomic/agent/continuous）→ 画布拖拽 →
    属性编辑 → DSL 生成 → 编译诊断回显。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 
-7. **逐环节瓶颈归因**
+8. **逐环节瓶颈归因**
    现状：`ai-explain` 只给池级指标（利用率/可用性/等待占比）。
    范围：内核按 stage 输出指标（服务台利用率、队列占用）→ 扩展 F2 或摘要 →
    `ai-explain` 升级为"Machine 3 利用率 98%、等待 40 分钟"级归因。
    注意：F2 为冻结契约，指标扩展需走冻结流程。
    入口：`kernel/src/devs/`、`kernel/apps/lp-server/wire_frames.cpp`、`scripts/ai-explain.mjs`。
 
-8. ~~**v1 读取器/发射退役**~~ ✅ 已完成
+9. ~~**v1 读取器/发射退役**~~ ✅ 已完成
    v1（`LPIR`）已全量移除：`schemas/ir.fbs`、v1↔v2 转换器、`--ir-version 1`、
    interop/TS 的 v1 绑定全部删除；loader/process 路径原生吃 v2。
 
 ### P2 — 扩展（远期）
 
-9. **行业模型库**：制造（Machine/Robot/AGV/Warehouse）、物流（Truck/Route/Demand）、
+10. **行业模型库**：制造（Machine/Robot/AGV/Warehouse）、物流（Truck/Route/Demand）、
    交通模板；以 `SemanticsRef` 库注册表形式交付（引擎注册表已就绪）。
-10. **2D/3D 场景与可视化增强**：更多 2D 视图（人群/交通）、3D 数字孪生（Three.js/GLTF）。
-11. **跨工具链确定性黄金值**：libm 超越函数跨 MSVC/clang 不保证逐位一致（评审 m4）；
+11. **2D/3D 场景与可视化增强**：更多 2D 视图（人群/交通）、3D 数字孪生（Three.js/GLTF）。
+12. **跨工具链确定性黄金值**：libm 超越函数跨 MSVC/clang 不保证逐位一致（评审 m4）；
     需自研位精确 log/sqrt 或把 bit-exact 限定为"同构建内"（文档已限定）。
-12. **AI 自动优化增强**：多变量/GA 参数化、约束、目标组合；瓶颈归因深化。
-13. **分布式/GPU/时间弯曲**：ADR-0006/0007 已明确推迟，接口预留（引擎注册表），不排期。
+13. **AI 自动优化增强**：多变量/GA 参数化、约束、目标组合；瓶颈归因深化。
+14. **分布式/GPU/时间弯曲**：ADR-0006/0007 已明确推迟，接口预留（引擎注册表），不排期。
 
 ## 5. 推进方式
 
