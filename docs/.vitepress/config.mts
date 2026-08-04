@@ -72,7 +72,6 @@ export default defineConfig({
           { text: 'AI 建模闭环', link: '/specs/ai-loop' },
           { text: '里程碑 1 故障模型', link: '/specs/milestone1-failure-model' },
           { text: '性能预算', link: '/performance-budget' },
-          { text: '组织与路线图', link: '/org' },
         ],
       },
     ],
