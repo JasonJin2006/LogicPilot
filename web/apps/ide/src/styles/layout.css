@@ -126,6 +126,16 @@
   border-top: 1px solid var(--border);
 }
 
+.area-bottom .tab-bar {
+  min-height: 26px;
+  padding: 2px 8px 0;
+}
+
+.area-bottom .tab {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
 .panel-area.collapsed {
   /* collapsed areas keep only the tab bar */
 }
@@ -305,7 +315,7 @@
 .console-empty {
   color: var(--text-muted);
   font-size: 12px;
-  margin: 10px 12px;
+  margin: 8px;
 }
 
 .console-log {
@@ -313,7 +323,7 @@
   flex-direction: column;
   font-family: var(--font-mono);
   font-size: 12px;
-  padding: 8px 12px;
+  padding: 6px 8px 4px;
   gap: 2px;
 }
 
