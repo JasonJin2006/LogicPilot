@@ -146,3 +146,31 @@ Semantics:
 - The kernel executes these via the IR atomic interpreter on the DEVS-lite
   executor; `lpcli run --arrivals N` is the internal-transition budget, so
   perpetual emitters terminate deterministically.
+
+## 8. Agent models (ABM, v0.1)
+
+`agent` blocks declare an agent population with literal state variables and
+`on_tick` behaviors backed by a kernel-built-in handler registry:
+
+```logicpilot
+model Swarm {
+  agent Drone {
+    count = 3
+    state active = true
+    on_tick flip active
+    on_tick bounce
+  }
+}
+```
+
+- `count` is the population size (>= 1). State variables are bool/int/float
+  literals (same syntax as atomic `state`).
+- Handlers (v0.1 registry, `LP6001`/`LP6002` validate):
+  - `noop` — no-op;
+  - `flip <state>` — toggle a declared bool state on every agent;
+  - `bounce` — reflect agent positions into [0,1]^2 after the kinematics
+    step.
+- The kernel runs a fixed-dt (1.0 s) tick loop; `lpcli run --arrivals N` is
+  the tick budget. Deterministic (no RNG): identical seed/budget => identical
+  trajectories. Hot components (Position/Velocity/AgentState) live in the
+  SoA store; model state rides as a cold EnTT component.

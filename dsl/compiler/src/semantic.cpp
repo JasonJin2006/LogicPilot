@@ -26,6 +26,9 @@ class Analyzer {
     for (const AtomicDecl& atomic : model.atomics) {
       check_atomic(atomic);
     }
+    for (const AgentDecl& agent : model.agents) {
+      check_agent(agent);
+    }
     check_couplings(model);
     // Deterministic ordering for golden output: source order, then code.
     std::stable_sort(diagnostics_.begin(), diagnostics_.end(),
@@ -74,6 +77,84 @@ class Analyzer {
     }
     for (const AtomicDecl& atomic : model.atomics) {
       declare(atomic.name, atomic.name_span, "atomic");
+    }
+    for (const AgentDecl& agent : model.agents) {
+      declare(agent.name, agent.name_span, "agent");
+    }
+  }
+
+  // Kernel-built-in agent behavior handlers (v0.1 registry; the runtime
+  // implements exactly these, see kernel/src/devs/ir_agent.cpp).
+  bool known_handler(const std::string& handler) const {
+    return handler == "noop" || handler == "flip" || handler == "bounce";
+  }
+
+  void check_agent(const AgentDecl& agent) {
+    if (agent.count_count == 0) {
+      push(Severity::kError, "LP2001",
+           "missing required field 'count' in agent '" + agent.name + "'",
+           agent.span);
+    } else {
+      if (agent.count_count > 1) {
+        push(Severity::kError, "LP1002",
+             "duplicate field 'count' in agent '" + agent.name + "'",
+             agent.count_field_span);
+      }
+      if (agent.has_count && agent.count < 1) {
+        push(Severity::kError, "LP3001",
+             "agent '" + agent.name + "' count must be >= 1 (got " +
+                 std::to_string(agent.count) + ")",
+             agent.count_field_span);
+      }
+    }
+    std::unordered_map<std::string, Span> state_names;
+    for (const StateVarDecl& var : agent.state) {
+      const auto [it, inserted] = state_names.emplace(var.name,
+                                                      var.name_span);
+      if (!inserted) {
+        push(Severity::kError, "LP1002",
+             "duplicate state variable '" + var.name + "' in agent '" +
+                 agent.name + "'",
+             var.name_span);
+      }
+    }
+    for (const TickBehavior& behavior : agent.behaviors) {
+      if (!known_handler(behavior.handler)) {
+        push(Severity::kError, "LP6001",
+             "unknown agent behavior handler '" + behavior.handler +
+                 "' in agent '" + agent.name +
+                 "' (v0.1 registry: noop, flip <state>, bounce)",
+             behavior.handler_span);
+        continue;
+      }
+      if (behavior.handler == "flip") {
+        if (!behavior.has_arg) {
+          push(Severity::kError, "LP6002",
+               "'flip' in agent '" + agent.name +
+                   "' requires a state-variable argument",
+               behavior.span);
+        } else {
+          bool declared_bool = false;
+          for (const StateVarDecl& var : agent.state) {
+            if (var.name == behavior.arg &&
+                var.value.kind == AtomicValueKind::kBool) {
+              declared_bool = true;
+              break;
+            }
+          }
+          if (!declared_bool) {
+            push(Severity::kError, "LP6002",
+                 "'flip' argument '" + behavior.arg + "' in agent '" +
+                     agent.name + "' is not a declared bool state variable",
+                 behavior.arg_span);
+          }
+        }
+      } else if (behavior.has_arg) {
+        push(Severity::kError, "LP6002",
+             "behavior '" + behavior.handler + "' in agent '" + agent.name +
+                 "' takes no argument",
+             behavior.arg_span);
+      }
     }
   }
 

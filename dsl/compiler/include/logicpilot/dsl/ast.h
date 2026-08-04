@@ -131,6 +131,31 @@ struct AtomicDecl {
   TransitionDecl on_timeout;
 };
 
+// One `on_tick <handler> [arg]` agent behavior.
+struct TickBehavior {
+  bool has{false};
+  int count{0};
+  Span span;
+  std::string handler;
+  Span handler_span;
+  bool has_arg{false};
+  std::string arg;
+  Span arg_span;
+};
+
+struct AgentDecl {
+  std::string name;
+  Span name_span;
+  Span span;
+  // `count = <n>` population size.
+  bool has_count{false};
+  int count_count{0};
+  std::int64_t count{1};
+  Span count_field_span;
+  std::vector<StateVarDecl> state;
+  std::vector<TickBehavior> behaviors;
+};
+
 // `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
 struct CoupleDecl {
   std::string from_model;
@@ -154,6 +179,7 @@ struct ModelAst {
   std::vector<ResourceDecl> resources;
   std::vector<ProcessDecl> processes;
   std::vector<AtomicDecl> atomics;
+  std::vector<AgentDecl> agents;
   std::vector<CoupleDecl> couplings;
 };
 

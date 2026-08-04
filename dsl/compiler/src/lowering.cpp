@@ -270,6 +270,81 @@ flatbuffers::Offset<logicpilot::ir::Model> lower_atomic(
       builder, logicpilot::ir::ModelKind_AtomicModel, model.Union());
 }
 
+// agent -> ir::AgentModel (state params, on_tick behaviors with a built-in
+// handler_ref + optional argument param, population count as a param).
+flatbuffers::Offset<logicpilot::ir::Model> lower_agent(
+    flatbuffers::FlatBufferBuilder& builder, const AgentDecl& agent,
+    const std::string& source_file) {
+  const auto metadata = lower_metadata(builder, agent.name, source_file,
+                                       agent.span);
+
+  std::vector<flatbuffers::Offset<logicpilot::ir::Param>> state;
+  for (const StateVarDecl& var : agent.state) {
+    const auto name = builder.CreateString(var.name);
+    switch (var.value.kind) {
+      case AtomicValueKind::kBool: {
+        const auto value = logicpilot::ir::CreateBoolValue(
+                               builder, var.value.bool_value)
+                               .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_BoolValue, value));
+        break;
+      }
+      case AtomicValueKind::kInt: {
+        const auto value =
+            logicpilot::ir::CreateIntValue(builder, var.value.int_value)
+                .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_IntValue, value));
+        break;
+      }
+      case AtomicValueKind::kFloat: {
+        const auto value =
+            logicpilot::ir::CreateFloatValue(builder, var.value.float_value)
+                .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_FloatValue, value));
+        break;
+      }
+    }
+  }
+
+  std::vector<flatbuffers::Offset<logicpilot::ir::Behavior>> behaviors;
+  for (const TickBehavior& behavior : agent.behaviors) {
+    const auto behavior_name =
+        builder.CreateString("on_tick " + behavior.handler);
+    const auto trigger = builder.CreateString("on_tick");
+    const auto handler_ref = builder.CreateString(behavior.handler);
+    std::vector<flatbuffers::Offset<logicpilot::ir::Param>> params;
+    if (behavior.has_arg) {
+      // The flip argument travels as a param whose *name* is the target
+      // state variable (value is unused by the kernel handler).
+      const auto arg = builder.CreateString(behavior.arg);
+      const auto value =
+          logicpilot::ir::CreateBoolValue(builder, true).Union();
+      params.push_back(logicpilot::ir::CreateParam(
+          builder, arg, logicpilot::ir::ParamValue_BoolValue, value));
+    }
+    behaviors.push_back(logicpilot::ir::CreateBehavior(
+        builder, behavior_name, trigger, handler_ref,
+        builder.CreateVector(params)));
+  }
+
+  // Population size rides as a model param (AgentModel.params, F1).
+  const auto count_name = builder.CreateString("count");
+  const auto count_value =
+      logicpilot::ir::CreateIntValue(builder, agent.count).Union();
+  std::vector<flatbuffers::Offset<logicpilot::ir::Param>> params;
+  params.push_back(logicpilot::ir::CreateParam(
+      builder, count_name, logicpilot::ir::ParamValue_IntValue, count_value));
+
+  const auto model = logicpilot::ir::CreateAgentModel(
+      builder, metadata, 0, builder.CreateVector(behaviors), 0,
+      builder.CreateVector(state), builder.CreateVector(params));
+  return logicpilot::ir::CreateModel(
+      builder, logicpilot::ir::ModelKind_AgentModel, model.Union());
+}
+
 // process -> ProcessModel with declaration-order nodes + chain couplings.
 flatbuffers::Offset<logicpilot::ir::Model> lower_process(
     flatbuffers::FlatBufferBuilder& builder, const ProcessDecl& process,
@@ -322,6 +397,9 @@ LoweredIr lower_to_ir(const ModelAst& model, const std::string& source_file) {
   }
   for (const AtomicDecl& atomic : model.atomics) {
     children.push_back(lower_atomic(builder, atomic, source_file));
+  }
+  for (const AgentDecl& agent : model.agents) {
+    children.push_back(lower_agent(builder, agent, source_file));
   }
 
   // Root-level couplings from `couple` declarations (atomic wiring).

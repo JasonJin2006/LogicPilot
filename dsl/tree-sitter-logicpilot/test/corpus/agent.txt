@@ -1,0 +1,33 @@
+==================
+Agent blocks: count, state, on_tick behaviors
+==================
+
+model Swarm {
+  agent Drone {
+    count = 3
+    state active = true
+    on_tick flip active
+    on_tick bounce
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (agent_declaration
+        name: (identifier)
+        body: (agent_body
+          (count_field
+            value: (integer))
+          (state_field
+            name: (identifier)
+            value: (value_literal
+              (boolean_literal)))
+          (on_tick_field
+            handler: (identifier)
+            arg: (identifier))
+          (on_tick_field
+            handler: (identifier)))))))

@@ -134,6 +134,8 @@ class Extractor {
         out.processes.push_back(extract_process(member));
       } else if (node_is(member, "atomic_declaration")) {
         out.atomics.push_back(extract_atomic(member));
+      } else if (node_is(member, "agent_declaration")) {
+        out.agents.push_back(extract_agent(member));
       } else if (node_is(member, "couple_declaration")) {
         out.couplings.push_back(extract_couple(member));
       }
@@ -293,6 +295,49 @@ class Extractor {
     couple.to_model = text_of(field(decl, "to_model"));
     couple.to_port = text_of(field(decl, "to_port"));
     return couple;
+  }
+
+  AgentDecl extract_agent(const TSNode& decl) {
+    AgentDecl agent;
+    agent.span = span_of(decl);
+    const TSNode name = field(decl, "name");
+    agent.name = text_of(name);
+    agent.name_span = span_of(name);
+    const TSNode body = field(decl, "body");
+    each_named_child(body, [&](const TSNode& field_node) {
+      if (node_is(field_node, "count_field")) {
+        agent.has_count = true;
+        agent.count_count += 1;
+        agent.count_field_span = span_of(field_node);
+        std::int64_t value = 0;
+        if (integer_of(field(field_node, "value"), value)) {
+          agent.count = value;
+        }
+      } else if (node_is(field_node, "state_field")) {
+        StateVarDecl var;
+        const TSNode var_name = field(field_node, "name");
+        var.name = text_of(var_name);
+        var.name_span = span_of(var_name);
+        var.value = extract_value(field(field_node, "value"));
+        agent.state.push_back(std::move(var));
+      } else if (node_is(field_node, "on_tick_field")) {
+        TickBehavior behavior;
+        behavior.has = true;
+        behavior.count += 1;
+        behavior.span = span_of(field_node);
+        const TSNode handler = field(field_node, "handler");
+        behavior.handler = text_of(handler);
+        behavior.handler_span = span_of(handler);
+        const TSNode arg = field(field_node, "arg");
+        if (!ts_node_is_null(arg)) {
+          behavior.has_arg = true;
+          behavior.arg = text_of(arg);
+          behavior.arg_span = span_of(arg);
+        }
+        agent.behaviors.push_back(std::move(behavior));
+      }
+    });
+    return agent;
   }
 
   // arrival_expr / service_time_expr -> Distribution.

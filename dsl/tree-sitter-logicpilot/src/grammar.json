@@ -69,6 +69,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "agent_declaration"
+        },
+        {
+          "type": "SYMBOL",
           "name": "couple_declaration"
         }
       ]
@@ -658,6 +662,38 @@
         { "type": "STRING", "value": "false" }
       ]
     },
+    "_agent_member": {
+      "type": "CHOICE",
+      "members": [
+        { "type": "SYMBOL", "name": "count_field" },
+        { "type": "SYMBOL", "name": "state_field" },
+        { "type": "SYMBOL", "name": "on_tick_field" }
+      ]
+    },
+    "agent_body": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "{" },
+        { "type": "REPEAT", "content": { "type": "SYMBOL", "name": "_agent_member" } },
+        { "type": "STRING", "value": "}" }
+      ]
+    },
+    "agent_declaration": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "agent" },
+        { "type": "FIELD", "name": "name", "content": { "type": "SYMBOL", "name": "identifier" } },
+        { "type": "FIELD", "name": "body", "content": { "type": "SYMBOL", "name": "agent_body" } }
+      ]
+    },
+    "count_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "count" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "integer" } }
+      ]
+    },
     "couple_declaration": {
       "type": "SEQ",
       "members": [
@@ -706,6 +742,20 @@
         { "type": "FIELD", "name": "port", "content": { "type": "SYMBOL", "name": "identifier" } },
         { "type": "STRING", "value": ":" },
         { "type": "FIELD", "name": "effects", "content": { "type": "SYMBOL", "name": "effect_list" } }
+      ]
+    },
+    "on_tick_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "on_tick" },
+        { "type": "FIELD", "name": "handler", "content": { "type": "SYMBOL", "name": "identifier" } },
+        {
+          "type": "CHOICE",
+          "members": [
+            { "type": "BLANK" },
+            { "type": "FIELD", "name": "arg", "content": { "type": "SYMBOL", "name": "identifier" } }
+          ]
+        }
       ]
     },
     "on_timeout_field": {

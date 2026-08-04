@@ -12,6 +12,7 @@
 
 #include "ir_generated.h"
 #include "logicpilot/core/random/distributions.h"
+#include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/ir_atomic.h"
 
@@ -392,9 +393,16 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     if (coupled->children() != nullptr) {
       bool has_process = false;
       bool has_atomic = false;
+      bool has_agent = false;
       for (const ir::Model* child : *coupled->children()) {
         has_process |= child->kind_type() == ir::ModelKind_ProcessModel;
         has_atomic |= child->kind_type() == ir::ModelKind_AtomicModel;
+        has_agent |= child->kind_type() == ir::ModelKind_AgentModel;
+      }
+      // Milestone 1c: an agent-only coupled model runs the tick-loop agent
+      // runtime (ABM, v0.1 built-in behaviors).
+      if (has_agent && !has_process && !has_atomic) {
+        return std::make_unique<AgentReplicationModel>(file.bytes, root);
       }
       if (has_atomic && !has_process) {
         return std::make_unique<DevsReplicationModel>(file.bytes, root);
@@ -404,6 +412,9 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   }
   if (root->kind_type() == ir::ModelKind_AtomicModel) {
     return std::make_unique<DevsReplicationModel>(file.bytes, root);
+  }
+  if (root->kind_type() == ir::ModelKind_AgentModel) {
+    return std::make_unique<AgentReplicationModel>(file.bytes, root);
   }
   if (error != nullptr) {
     *error = std::string("no executable lowering for ") +

@@ -70,6 +70,21 @@ set_tests_properties(lpcli_run_atomic PROPERTIES
   DEPENDS lpcli_compile_atomic
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# Milestone 1c: ABM agent blocks survive the DSL -> IR -> runtime chain.
+add_test(NAME lpcli_compile_agents
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/agents.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/agents.ir.bin")
+set_tests_properties(lpcli_compile_agents PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_agents
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.ir.bin"
+          --seed=42 --reps=1 --arrivals=5 --warmup=0)
+set_tests_properties(lpcli_run_agents PROPERTIES
+  DEPENDS lpcli_compile_agents
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
 # AI model build loop (rule-based provider, offline): NL -> DSL -> compile ->
 # diagnostics repair -> run. Requires node (available in the kernel CI job).
 add_test(NAME ai_build_smoke

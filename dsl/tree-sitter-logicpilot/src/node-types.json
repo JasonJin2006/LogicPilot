@@ -1,5 +1,54 @@
 [
   {
+    "type": "agent_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "count_field",
+          "named": true
+        },
+        {
+          "type": "on_tick_field",
+          "named": true
+        },
+        {
+          "type": "state_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "agent_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "agent_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "arrival_expr",
     "named": true,
     "fields": {},
@@ -116,6 +165,22 @@
             "type": "float",
             "named": true
           },
+          {
+            "type": "integer",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "count_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
           {
             "type": "integer",
             "named": true
@@ -266,6 +331,10 @@
       "required": false,
       "types": [
         {
+          "type": "agent_declaration",
+          "named": true
+        },
+        {
           "type": "atomic_declaration",
           "named": true
         },
@@ -359,6 +428,32 @@
         ]
       },
       "port": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "on_tick_field",
+    "named": true,
+    "fields": {
+      "arg": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "handler": {
         "multiple": false,
         "required": true,
         "types": [
@@ -813,6 +908,10 @@
     "named": false
   },
   {
+    "type": "agent",
+    "named": false
+  },
+  {
     "type": "arrival",
     "named": false
   },
@@ -831,6 +930,10 @@
   },
   {
     "type": "constant",
+    "named": false
+  },
+  {
+    "type": "count",
     "named": false
   },
   {
@@ -871,6 +974,10 @@
   },
   {
     "type": "on_input",
+    "named": false
+  },
+  {
+    "type": "on_tick",
     "named": false
   },
   {

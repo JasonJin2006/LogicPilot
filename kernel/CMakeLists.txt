@@ -53,6 +53,7 @@ add_library(logicpilot_phase1b STATIC
   src/agent/soa_agent_store.cpp
   src/devs/executor.cpp
   src/devs/ir_atomic.cpp
+  src/devs/ir_agent.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp
@@ -90,7 +91,10 @@ endif()
 if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   # IR atomic execution tests compile examples/pulse_chain.lp in-process, so
   # they need the DSL compiler (mirrors logicpilot_server_tests).
-  target_sources(logicpilot_phase1b_tests PRIVATE tests/test_ir_atomic.cpp)
+  target_sources(logicpilot_phase1b_tests PRIVATE
+    tests/test_ir_atomic.cpp
+    tests/test_ir_agent.cpp
+  )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)
 endif()
 
