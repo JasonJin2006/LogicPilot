@@ -1,8 +1,8 @@
-// Browser end-to-end verification for the LogicPilot IDE visualization
-// slice: loads the Vite dev page, connects to lp-server, starts a small
-// M/M/1 run and asserts the queue animation, charts, status bar and the
-// RunFinished statistics panel all update. Screenshots land in .verify/out
-// (repo root, untracked scratch dir).
+// Browser end-to-end verification for the LogicPilot IDE: loads the Vite
+// dev page, connects through the settings dialog, starts a small M/M/1 run
+// and asserts the queue animation, live telemetry (Run side panel), status
+// bar and the AI panel all update. Screenshots land in .verify/out (repo
+// root, untracked scratch dir).
 //
 // Prereqs: lpcli serve running on ws://127.0.0.1:8089/sim, `pnpm dev` up,
 // system Edge installed (no Playwright browser download required).
@@ -51,7 +51,7 @@ try {
   log('page loaded: queue canvas present');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
-  // Connection setup lives in the settings dialog (activity bar gear).
+  // Connection + run setup live in the settings dialog (activity bar gear).
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await page.getByRole('button', { name: 'Connect' }).click();
@@ -67,66 +67,54 @@ try {
   if (darkTheme !== 'dark') throw new Error(`expected dark theme, got ${darkTheme}`);
   log('theme switching: light <-> dark');
 
-  await page.getByRole('button', { name: '✕' }).click();
-
-  // Small run so the browser session finishes quickly.
+  // Run parameters + Start from the settings dialog.
   for (const [label, value] of [
     ['arrivals', '200'],
     ['warmup', '30'],
     ['speed', '50'],
-    ['reps', '3'],
+    ['reps', '1'],
   ]) {
     await page.locator('label.field', { hasText: label }).locator('input').fill(value);
   }
-
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(
     () => document.querySelector('.status-bar')?.textContent?.includes('ack: {"ok":true'),
-    { timeout: 10_000 },
+    undefined,
+    { timeout: 30_000 },
   );
   log('start acked by gateway');
+  await page.getByRole('button', { name: '✕' }).click();
 
-  // Let telemetry stream for a while; the status bar seq/sim_time must move.
-  const seqText = () =>
+  // Live telemetry: switch to the Run side panel and read seq progression.
+  await page.locator('.activity-bar').getByRole('button', { name: 'Run' }).click();
+  const seqFromPanel = () =>
     page.evaluate(() => {
-      const text = document.querySelector('.status-bar')?.textContent ?? '';
-      const m = text.match(/seq: (\d+)/);
-      return m ? Number(m[1]) : -1;
+      const kv = [...document.querySelectorAll('.side-kv')].find((row) =>
+        row.querySelector('.k')?.textContent?.includes('seq'),
+      );
+      const text = kv?.querySelector('.v')?.textContent ?? '-1';
+      return Number(text);
     });
   await page.waitForTimeout(5000);
-  const seqAt5 = await seqText();
+  const seqAt5 = await seqFromPanel();
   await page.waitForTimeout(4000);
-  const seqLater = await seqText();
+  const seqLater = await seqFromPanel();
   if (!(seqAt5 > 0) || !(seqLater > seqAt5)) {
-    throw new Error(`status bar seq not advancing (t1=${seqAt5}, t2=${seqLater})`);
+    throw new Error(`run telemetry not advancing (t1=${seqAt5}, t2=${seqLater})`);
   }
   log(`telemetry streaming: seq ${seqAt5} -> ${seqLater}`);
 
-  // Stats charts are a center-workspace tab (opt-in telemetry views).
-  await page.getByRole('button', { name: 'Counters' }).click();
-  await page.waitForSelector('.charts canvas', { timeout: 20_000 });
-  const chartState = await page.evaluate(() => {
-    const canvases = document.querySelectorAll('.charts canvas');
-    return {
-      count: canvases.length,
-      fpsText: document.querySelector('.status-bar')?.textContent ?? '',
-    };
-  });
-  if (chartState.count !== 3) throw new Error(`expected 3 chart canvases, got ${chartState.count}`);
-  log(`charts drawn (3 uPlot canvases); status bar: ${chartState.fpsText.trim()}`);
+  // Wait for the run to actually finish on the gateway (its worker is
+  // single-threaded; the AI steps below must not race a leftover run).
+  await page.waitForFunction(
+    () => document.querySelector('.console-log')?.textContent?.includes('finished'),
+    undefined,
+    { timeout: 120_000 },
+  );
+  log('run finished on gateway');
   await page.screenshot({ path: join(OUT, '2-running.png') });
 
-  // Wait for RunFinished -> stats panel (Results tab of the side panel).
-  await page.getByRole('button', { name: 'Results' }).click();
-  await page.waitForSelector('.run-status.status-completed', { timeout: 180_000 });
-  const statsText = await page.locator('.results').textContent();
-  for (const key of ['Wq.mean', 'throughput.mean', 'L.mean', 'confidence']) {
-    if (!statsText?.includes(key)) throw new Error(`stats panel missing ${key}`);
-  }
-  log('RunFinished panel shows Completed + full stats table');
-  await page.screenshot({ path: join(OUT, '3-finished.png') });
-
-  // AI model panel (AI tab): generate a model from a natural-language prompt.
+  // AI panel (right): generate / optimize / explain / trajectory.
   await page.getByRole('button', { name: 'AI', exact: true }).click();
   await page
     .locator('.ai-input')
@@ -138,9 +126,8 @@ try {
     throw new Error('AI panel did not show a compiled model');
   }
   log('AI panel generated and ran a model from the prompt');
-  await page.screenshot({ path: join(OUT, '4-ai-model.png') });
+  await page.screenshot({ path: join(OUT, '3-ai-model.png') });
 
-  // AI panel: parameter optimization from a natural-language prompt.
   await page
     .locator('.ai-input')
     .fill('minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 ' + 'and service 1.0');
@@ -154,11 +141,9 @@ try {
   if (!curve) {
     throw new Error('AI panel did not render the optimization curve');
   }
-  log('AI panel charted the optimization curve over the search space');
   log('AI panel optimized a model parameter from the prompt');
-  await page.screenshot({ path: join(OUT, '5-ai-optimize.png') });
+  await page.screenshot({ path: join(OUT, '4-ai-optimize.png') });
 
-  // AI panel: bottleneck attribution from a prompt.
   await page
     .locator('.ai-input')
     .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
@@ -169,14 +154,12 @@ try {
     throw new Error('AI panel did not show an explanation');
   }
   log('AI panel explained the model bottleneck from the prompt');
-  await page.screenshot({ path: join(OUT, '6-ai-explain.png') });
 
-  // AI panel: continuous-model trajectory chart.
   await page.locator('.ai-input').fill('build an exponential decay model with rate 0.5');
   await page.getByRole('button', { name: 'generate + run' }).click();
   await page.waitForSelector('.ai-trajectory', { timeout: 90_000 });
   log('AI panel charted a continuous-model trajectory');
-  await page.screenshot({ path: join(OUT, '7-ai-trajectory.png') });
+  await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);

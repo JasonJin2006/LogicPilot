@@ -11,10 +11,12 @@ function Splitter({
   area,
   vertical,
   gridArea,
+  invert = false,
 }: {
   area: AreaId;
   vertical: boolean;
   gridArea: string;
+  invert?: boolean;
 }) {
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -22,7 +24,9 @@ function Splitter({
     const startSize = useLayoutStore.getState().areas[area].size;
     const move = (moveEvent: PointerEvent) => {
       const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
-      useLayoutStore.getState().setSize(area, startSize + delta);
+      // Dragging the center/right boundary left shrinks the center and
+      // grows the right panel, so the right splitter's delta is inverted.
+      useLayoutStore.getState().setSize(area, startSize + (invert ? -delta : delta));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -106,7 +110,7 @@ export function Workspace() {
       <PanelArea area="left" />
       <Splitter area="left" vertical gridArea="sl" />
       <PanelArea area="center" />
-      <Splitter area="right" vertical gridArea="sr" />
+      <Splitter area="right" vertical gridArea="sr" invert />
       <PanelArea area="right" />
       <Splitter area="bottom" vertical={false} gridArea="sb" />
       <PanelArea area="bottom" />

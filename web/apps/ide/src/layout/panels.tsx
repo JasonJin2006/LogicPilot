@@ -5,9 +5,7 @@
 
 import type { ComponentType } from 'react';
 import { AIPanel } from '../ai/AIPanel';
-import { ChartPanel } from '../run/ChartPanel';
 import { QueueView } from '../run/QueueView';
-import { ResultsPanel } from '../run/ResultsPanel';
 import { ConsolePanel } from './ConsolePanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
@@ -15,8 +13,7 @@ import { RunInfoPanel } from './RunInfoPanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
-export type PanelId =
-  'queue' | 'counters' | 'results' | 'ai' | 'console' | 'modelInfo' | 'palette' | 'runInfo';
+export type PanelId = 'queue' | 'ai' | 'console' | 'modelInfo' | 'palette' | 'runInfo';
 
 export interface PanelDef {
   title: string;
@@ -25,11 +22,8 @@ export interface PanelDef {
 }
 
 export const PANELS: Record<PanelId, PanelDef> = {
-  // center: the visualization/model workspace. Stats charts and results are
-  // view tabs here (AnyLogic-style: telemetry views are opt-in, not pinned).
+  // center: the visualization/model workspace.
   queue: { title: 'Queue', area: 'center', component: QueueView },
-  counters: { title: 'Counters', area: 'center', component: ChartPanel },
-  results: { title: 'Results', area: 'center', component: ResultsPanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // bottom: diagnostics / event stream.
@@ -55,7 +49,7 @@ export const ACTIVITY_VIEWS: Array<{
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
   left: { panels: ['modelInfo', 'palette', 'runInfo'], active: 'modelInfo' },
-  center: { panels: ['queue', 'counters', 'results'], active: 'queue' },
+  center: { panels: ['queue'], active: 'queue' },
   right: { panels: ['ai'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },
 };

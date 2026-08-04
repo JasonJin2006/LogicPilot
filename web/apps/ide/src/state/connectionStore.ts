@@ -92,6 +92,9 @@ function applyFrame(frame: WireFrame): void {
     }
     case 'run-finished': {
       useRunStore.getState().finished(frame.payload);
+      useConnectionStore.setState((state) => ({
+        events: appendEvent(state, 'info', `run ${frame.payload.runId} finished`),
+      }));
       break;
     }
   }

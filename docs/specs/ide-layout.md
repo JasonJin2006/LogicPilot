@@ -10,17 +10,14 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ run-toolbar  运行参数 + Start/Pause/Step/Stop（常驻）          │
-├──┬───────────┬──────────────────────────┬────────────────────┤
-│活│ 侧边栏     │ 中央工作区（tabs）        │ 右侧面板            │
-│动│ Run 视图   │ ▸ Queue（队列可视化）     │ ▸ AI               │
-│栏│ Model 视图 │ ▸ Counters（统计图表）    │   Properties（未来）│
-│  │ Palette   │ ▸ Results（运行统计）     │                    │
-│  │ ⚙ 设置     │   Model（建模画布·未来）  │                    │
-├──┴───────────┴──────────────────────────┴────────────────────┤
-│ bottom  控制台 / 输出 / 编译诊断（可折叠）                     │
+│ ┌─ 左侧 ────────┐ ┌─ 中央工作区 ──────┐ ┌─ 右侧 ────────────┐ │
+│ │ 侧边栏         │ │ Queue（可视化）    │ │ AI                │ │
+│ │ Run/Model/     │ │ Model（画布·未来） │ │ Properties（未来） │ │
+│ │ Palette 视图   │ ├─ Console ────────┤ │                   │ │
+│ │               │ │ 事件/诊断（可折叠） │ │                   │ │
+│ └───────────────┘ └───────────────────┘ └───────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
-│ status  连接 · seq · sim_time · FPS · 模型                   │
+│ status  连接 · FPS · 错误 · ack                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -30,19 +27,18 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 
 ## 1. 布局区域
 
-| 区域          | 内容                                                      | 可调 | 可折叠 |
-| ------------- | --------------------------------------------------------- | ---- | ------ |
-| `run-toolbar` | 运行参数 + 播放控制（常驻）                               | —    | —      |
-| `activity`    | 活动栏（竖排图标，切换侧边栏视图）                        | —    | —      |
-| `left`        | 侧边栏（跟随活动栏：Run / Model / Palette / AI 视图）     | 宽   | ✅     |
-| `center`      | 工作区标签页（Queue / Counters / Results / 未来建模画布） | —    | —      |
-| `right`       | 上下文面板（AI / 未来 Properties）                        | 宽   | ✅     |
-| `bottom`      | 控制台 / 输出 / 编译诊断                                  | 高   | ✅     |
-| `status`      | 全局状态条（连接、seq、sim_time、FPS、模型）              | —    | —      |
+| 区域       | 内容                                                  | 可调 | 可折叠 |
+| ---------- | ----------------------------------------------------- | ---- | ------ |
+| `activity` | 活动栏（竖排图标，切换侧边栏视图）                    | —    | —      |
+| `left`     | 侧边栏（跟随活动栏：Run / Model / Palette / AI 视图） | 宽   | ✅     |
+| `center`   | 工作区（Queue 可视化 / 未来建模画布）                 | —    | —      |
+| `right`    | 上下文面板（AI / 未来 Properties）                    | 宽   | ✅     |
+| `bottom`   | 控制台（仅在中央工作区下方，不贯穿左右）              | 高   | ✅     |
+| `status`   | 全局状态条（连接、FPS、错误、ack）                    | —    | —      |
 
-连接配置（网关 URL / Connect）在**设置弹层**（活动栏 ⚙ 打开），是一次性
-设置而非常驻控件；统计图表与运行结果是中央工作区的可选视图标签
-（AnyLogic 风格：按需切换，不固定占用面板）。
+连接配置（网关 URL / Connect）、运行参数与播放控制、外观主题都在**设置弹层**
+（活动栏 ⚙ 打开）——一次性配置面，不占用常驻空间；统计图表/结果面板不常驻
+（AnyLogic 风格：未来在建模画布上以可拖拽组件形式按需添加）。
 
 ## 2. 面板注册表（内容与布局解耦）
 
@@ -57,12 +53,10 @@ interface PanelDef {
 
 当前注册表（`src/layout/panels.tsx`）：
 
-| PanelId    | title    | area   | 说明                         |
-| ---------- | -------- | ------ | ---------------------------- |
-| `queue`    | Queue    | center | PixiJS 队列可视化            |
-| `counters` | Counters | center | uPlot 实时图表（可选视图）   |
-| `results`  | Results  | center | RunFinished 统计（可选视图） |
-| `ai`       | AI       | right  | AI 模型面板                  |
+| PanelId | title | area   | 说明              |
+| ------- | ----- | ------ | ----------------- |
+| `queue` | Queue | center | PixiJS 队列可视化 |
+| `ai`    | AI    | right  | AI 模型面板       |
 
 未来：`modelTree`(left/Model)、`palette`(left/Palette)、`properties`(right)、
 `console`/`diagnostics`(bottom)。加新面板 = 注册一项，布局与路由不动。
@@ -108,17 +102,19 @@ interface LayoutState {
 ## 5. CSS Grid 骨架（styles/layout.css）
 
 ```css
-.app-body {
+.workspace {
   display: grid;
-  grid-template-columns: 48px var(--left-w) minmax(0, 1fr) var(--right-w);
-  grid-template-rows: minmax(0, 1fr) var(--bottom-h);
+  grid-template-columns: var(--left-w) 6px minmax(0, 1fr) 6px var(--right-w);
+  grid-template-rows: minmax(0, 1fr) 6px var(--bottom-h);
   grid-template-areas:
-    'activity left center right'
-    'activity bottom bottom bottom';
+    'left sl center sr right'
+    'left sl sb    sr right'
+    'left sl bottom sr right';
 }
 ```
 
-尺寸作为 CSS 变量由 store 注入；Splitter 只改数值，不触发整树重排。
+`activity` 在 `app-body` 中独立于 `workspace`（flex）；底栏只位于中央工作区
+下方，左右栏贯穿到底。尺寸作为 CSS 变量由 store 注入；Splitter 只改数值。
 
 ## 6. 迁移与回归
 

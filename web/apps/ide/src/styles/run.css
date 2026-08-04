@@ -98,43 +98,12 @@
   color: var(--accent-text);
 }
 
-/* --- run toolbar -------------------------------------------------------- */
+/* --- settings run fields ------------------------------------------------ */
 
-.run-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  min-height: 48px;
-  padding: 8px 18px;
-  background: var(--surface-1);
-  border-bottom: 1px solid var(--border);
-}
-
-.run-toolbar .toolbar-label {
-  color: var(--text-muted);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.run-toolbar .params {
+.run-fields {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
-}
-
-.run-toolbar .divider {
-  width: 1px;
-  height: 22px;
-  background: var(--border);
-}
-
-.run-toolbar .controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
 }
 

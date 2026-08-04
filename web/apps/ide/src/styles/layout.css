@@ -52,8 +52,8 @@
   grid-template-rows: minmax(0, 1fr) 6px var(--bottom-h);
   grid-template-areas:
     'left sl center sr right'
-    'sb   sb sb    sb  sb'
-    'bottom bottom bottom bottom bottom';
+    'left sl sb    sr right'
+    'left sl bottom sr right';
 }
 
 .panel-area {

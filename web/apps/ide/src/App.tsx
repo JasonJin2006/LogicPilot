@@ -5,7 +5,6 @@
 
 import { ActivityBar } from './layout/ActivityBar';
 import { Workspace } from './layout/Workspace';
-import { RunToolbar } from './run/RunToolbar';
 import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
 import { useUiStore } from './state/uiStore';
@@ -17,7 +16,6 @@ export default function App() {
     <>
       <ThemeManager />
       <div className="app">
-        <RunToolbar />
         <div className="app-body">
           <ActivityBar />
           <Workspace />

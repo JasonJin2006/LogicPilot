@@ -19,13 +19,13 @@ describe('layoutStore', () => {
     expect(store.areas.left.collapsed).toBe(false);
     store.toggleCollapse('left');
     expect(useLayoutStore.getState().areas.left.collapsed).toBe(true);
-    store.setActive('right', 'results');
-    expect(useLayoutStore.getState().areas.right.activePanel).toBe('results');
+    store.setActive('right', 'ai');
+    expect(useLayoutStore.getState().areas.right.activePanel).toBe('ai');
   });
 
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
-    expect(areas.center.panels).toEqual(['queue', 'counters', 'results']);
+    expect(areas.center.panels).toEqual(['queue']);
     expect(areas.right.panels).toEqual(['ai']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette', 'runInfo']);
     expect(areas.bottom.panels).toEqual(['console']);

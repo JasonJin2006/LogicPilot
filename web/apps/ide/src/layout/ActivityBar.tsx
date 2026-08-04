@@ -18,6 +18,7 @@ export function ActivityBar() {
           <button
             key={view.id}
             className={`activity-item${active ? ' active' : ''}`}
+            aria-label={view.label}
             title={view.label}
             onClick={() => {
               if (active) {
