@@ -25,9 +25,9 @@ export function PalettePanel() {
             <span className="palette-chip">
               <span className="palette-chip-icon">
                 <BlockIcon kind={block.kind} />
+                {block.in && <span className="palette-port port-in" aria-hidden />}
+                {block.out && <span className="palette-port port-out" aria-hidden />}
               </span>
-              {block.in && <span className="palette-port port-in" aria-hidden />}
-              {block.out && <span className="palette-port port-out" aria-hidden />}
             </span>
             <span className="palette-name">{block.kind}</span>
           </li>

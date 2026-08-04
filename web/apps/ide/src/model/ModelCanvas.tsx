@@ -281,10 +281,10 @@ export function ModelCanvas() {
             >
               <span className="model-block-icon">
                 <BlockIcon kind={node.kind} />
+                {ports.in && <span className="model-port port-in" data-port="in" title="in" />}
+                {ports.out && <span className="model-port port-out" data-port="out" title="out" />}
               </span>
               <span className="model-block-name">{node.name}</span>
-              {ports.in && <span className="model-port port-in" data-port="in" title="in" />}
-              {ports.out && <span className="model-port port-out" data-port="out" title="out" />}
             </div>
           );
         })}
