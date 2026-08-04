@@ -227,7 +227,8 @@ part of the model and travel inside the v2 IR (`ModelFile.experiments`):
 experiment Optimization {
   objective = minimize   // maximize | minimize
   metric = Wq            // throughput | W | Wq | Lq | ...
-  variable = servers     // block parameter to search over
+  variable = arrival_rate // declared model param to search over
+                         // ('servers' keeps the v0.1 resource-capacity slot)
   range = 1..8           // inclusive integer range
   budget = 20            // search budget (optional, default 20)
 }

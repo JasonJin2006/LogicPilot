@@ -57,8 +57,14 @@ class Analyzer {
     for (const Node& member : model.members) {
       check_decl(member, true, model_scope_);
     }
+    std::unordered_set<std::string> model_param_names;
+    for (const VarDecl& param : model.params) {
+      if (param.keyword == "param") {
+        model_param_names.insert(param.name);
+      }
+    }
     for (const ExperimentDecl& experiment : model.experiments) {
-      check_experiment(experiment);
+      check_experiment(experiment, model_param_names);
     }
     check_couplings(model);
     // Deterministic ordering for golden output: source order, then code.
@@ -844,7 +850,9 @@ class Analyzer {
            metric == "Lq";
   }
 
-  void check_experiment(const ExperimentDecl& experiment) {
+  void check_experiment(
+      const ExperimentDecl& experiment,
+      const std::unordered_set<std::string>& model_param_names) {
     const auto duplicate = [&](int count, const char* field_name,
                                const Span& span) {
       if (count > 1) {
@@ -898,11 +906,15 @@ class Analyzer {
                 experiment.metric + "')",
             experiment.metric_span);
     }
-    if (experiment.has_variable && experiment.variable != "servers") {
+    // Phase E: the optimizable variable must be a declared model param or
+    // the v0.1 `servers` slot (resource capacity), which the optimization
+    // tooling substitutes by text.
+    if (experiment.has_variable && experiment.variable != "servers" &&
+        !model_param_names.count(experiment.variable)) {
       error("LP7001",
             "experiment '" + experiment.name +
-                "' v0.1 optimizable variable is 'servers' (got '" +
-                experiment.variable + "')",
+                "' variable '" + experiment.variable +
+                "' must reference a declared model param or 'servers'",
             experiment.variable_span);
     }
     if (experiment.has_range &&

@@ -186,6 +186,47 @@ TEST_CASE("semantic snapshot: undeclared identifier in an expression",
       "diag_undeclared_identifier.txt");
 }
 
+TEST_CASE("semantic: experiment variable references a declared model param",
+          "[dsl][semantic]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  param arrival_rate = 0.8\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = poisson(1) }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "  }\n"
+      "  experiment Tune {\n"
+      "    objective = minimize\n"
+      "    metric = Wq\n"
+      "    variable = arrival_rate\n"
+      "    range = 1..4\n"
+      "  }\n"
+      "}\n",
+      "ok.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
+}
+
+TEST_CASE("semantic snapshot: experiment variable must be a declared param",
+          "[dsl][semantic]") {
+  expect_diagnostic_snapshot(
+      "model M {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = poisson(1) }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "  }\n"
+      "  experiment Tune {\n"
+      "    objective = minimize\n"
+      "    metric = Wq\n"
+      "    variable = missing_param\n"
+      "    range = 1..4\n"
+      "  }\n"
+      "}\n",
+      "diag_experiment_variable_undeclared.txt");
+}
+
 TEST_CASE("semantic snapshot: numeric ranges", "[dsl][semantic]") {
   expect_diagnostic_snapshot(
       "model M {\n"

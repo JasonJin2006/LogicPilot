@@ -84,7 +84,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase D（表达式）✅ 已完成**（2026-08-04）：`value` 文法扩展为表达式
    （`+ - * /`、一元负、括号），常量折叠 + 参数引用（`arrival = rate(arrival_rate)`
    可编译），模型级 `param` 进 IR 根节点；新 `LP2006`（未声明标识符/非常量）。
-   剩余：Phase E 行为统一+实验限定路径+`library`/`block` 库元层文件。
+   **Phase E（部分）✅**：行为统一已在 Phase B 落地；experiment `variable`
+   限定路径（引用已声明模型参数，`LP7001` 校验）已完成。
+   剩余：`library`/`block` 库元层文件（块形状落为 `libraries/process.lplib` +
+   注册表加载 + 类型化字段文法）。
    验收：全部示例/测试/AI provider 同步，147 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
