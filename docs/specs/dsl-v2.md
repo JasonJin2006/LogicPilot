@@ -49,7 +49,7 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 | `use` 库声明 | **可选语法，Phase B 标准库隐式可用** | 目前只有 process 一个库，`use process` 可写可不写；Phase E 多库落地后 `use` 成为必填校验 |
 | `resource` 块名 | **保留友好名**（`ResourcePool` 的别名） | 与 v0 示例/测试一致；库注册表记录 `resource → ResourcePool` 别名 |
 | `poisson(λ)` | **Phase B 保留，与 `rate(λ)` 等价** | 两者都映射"到达率 λ 的泊松过程"（IR Distribution kind=Poisson）；Phase D 表达式落地时正式弃用 `poisson` |
-| `interarrival(dist)` | **Phase D 引入** | 与 AnyLogic 的 Interarrival time 对应，需要表达式支持后落地 |
+| `interarrival(dist)` | **推迟（已记录）** | 与 AnyLogic 的 Interarrival time 对应；内核到达驱动（ir_loader streaming）暂只支持 poisson/rate/exponential，任意到达间隔分布待内核扩展后落地 |
 
 ## 3. AnyLogic 官方分层对照
 
@@ -60,7 +60,7 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 | Source/Queue/Service 是 **PML 库块**（预建 Java 类），**不是语言关键字** | `process-modeling-library.html` | `source/queue/service/...` 是 process 库注册表条目，非语法关键字 |
 | ResourcePool 块 + Service 引用资源（seize-delay-release） | `service.html` | `resource`（ResourcePool 友好名）+ `service { resource = R }` 显式引用 |
 | Queue 有 discipline：FIFO / LIFO / priority / comparison，容量可无限 | `queue.html` | 块形状字段 `ordering: string = "fifo"`、`capacity: int = -1` |
-| Source 到达 = Rate（指数到达，1/rate）或 Interarrival time | `source.html` | `arrival = rate(λ)` / `interarrival(exp(μ))` 显式区分（v0 的 `poisson` 隐含指数到达，不透明，弃用） |
+| Source 到达 = Rate（指数到达，1/rate）或 Interarrival time | `source.html` | `arrival = rate(λ)` 显式区分（v0 的 `poisson` 隐含指数到达，不透明，弃用）；`interarrival(dist)` 待内核扩展后落地 |
 | 模型文件 = 元素树（ALP 单文件 / ALPX 分目录） | `model-formats.html` | DSL 文件 → IR v2 `core/model` Node 树；DSL 只是薄语法层 |
 | 实验 = Simulation / Monte Carlo / Parameter Variation / Optimization（参数 + objective + constraints，OptQuest） | `about-experiments.html`、`optimization.html` | `experiment` 核心块（variable/range/objective/metric/budget）；后续可加 constraints |
 | 引擎只维护事件队列 + 默认 RNG | `engine.html` | 与内核一致（二叉堆 + xoshiro256++） |
@@ -158,7 +158,7 @@ library process {
 
   block Source {
     out: Job                        // 方向 + 类型；端口名默认 entity
-    arrival: distribution = rate(1.0)   // rate(λ) | interarrival(dist)
+    arrival: distribution = rate(1.0)   // rate(λ)（interarrival 待内核扩展）
   }
 
   block Queue {
@@ -265,12 +265,13 @@ model Decay {
 | 类型 | 说明 | IR VarType |
 |---|---|---|
 | `int` / `float` / `bool` / `string` | 标量 | Int / Float / Bool / String |
-| `distribution` | `rate(λ)` / `interarrival(dist)` / `exponential(μ)` / `normal(m,s)` / `constant(c)` | Distribution |
+| `distribution` | `rate(λ)` / `exponential(μ)` / `normal(m,s)` / `constant(c)`（`interarrival` 待内核扩展） | Distribution |
 | `ref` | 编译期校验的块引用，lowering 为名字字符串（span 记录进 metadata） | String |
 
 表达式分阶段（Phase D）：先常量折叠（`rate(0.8)`），后参数引用
 （`rate(arrival_rate)`）。v0 的 `poisson(λ)` 到达构造器弃用，改为语义明确的
-`rate(λ)`（指数到达，泊松过程的正确对应）或 `interarrival(dist)`。
+`rate(λ)`（指数到达，泊松过程的正确对应）；`interarrival(dist)` 与 AnyLogic
+的 Interarrival time 对应，待内核到达驱动支持任意到达间隔分布后落地。
 
 ## 6. DSL v2 → IR v2 映射
 
