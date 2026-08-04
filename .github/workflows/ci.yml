@@ -108,3 +108,46 @@ jobs:
         # The user manual lives in docs/ and is built with VitePress; a broken
         # page or markdown error must fail CI instead of shipping.
         run: pnpm docs:build
+
+  bench:
+    name: bench (perf gates)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Schema conform gate (F1 ir.fbs / F2 wire.fbs)
+        shell: pwsh
+        run: scripts/check-schema-conform.ps1
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: '39344dff01c5a5a0134caf2624cdd492f05d30ea'
+
+      - name: Setup Ninja
+        uses: ashutoshvarma/setup-ninja@master
+        with:
+          ninja-version: latest
+
+      - name: Install clang (Linux)
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: CMake configure (release + benchmarks)
+        # Release build: the perf baseline asserts >= 1M events/s and only
+        # holds with optimizations on (docs/performance-budget.md #1/#2).
+        run: cmake --preset linux-clang-release -DLOGICPILOT_BUILD_BENCH=ON
+
+      - name: CMake build
+        run: cmake --build --preset linux-clang-release
+
+      - name: Perf baseline (>= 1M events/s)
+        run: ctest --test-dir build/linux-clang-release -R "1M events" --output-on-failure
+
+      - name: Benchmark smoke (scheduler / RNG / MM1 event loop)
+        # Builds and runs the google/benchmark gates briefly; the hard
+        # thresholds live in test_perf_baseline above, this step only proves
+        # the bench targets stay buildable and runnable in CI.
+        run: |
+          ./build/linux-clang-release/kernel/logicpilot_bench --benchmark_min_time=0.2s
+          ./build/linux-clang-release/kernel/mm1_event_bench --benchmark_min_time=0.2s

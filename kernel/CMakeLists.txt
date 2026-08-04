@@ -98,6 +98,7 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
     tests/test_ir_atomic.cpp
     tests/test_ir_agent.cpp
     tests/test_ir_v2_migration.cpp
+    tests/test_scale_smoke.cpp
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)
 endif()

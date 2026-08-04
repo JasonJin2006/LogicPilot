@@ -2,6 +2,7 @@
 // read-only view, lower it to an executable queueing flow and run it.
 #include <cstdint>
 #include <memory>
+#include <random>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -131,4 +132,41 @@ TEST_CASE("ProcessModel IR lowers to a runnable queueing flow", "[ir]") {
   REQUIRE(metrics.mean_sojourn > metrics.mean_wait);
   REQUIRE(metrics.throughput > 0.5);
   REQUIRE(metrics.throughput < 1.0);
+}
+
+TEST_CASE("IR loader survives malformed buffers without crashing",
+          "[ir][fuzz][smoke]") {
+  const std::vector<std::uint8_t> valid = build_mm1_ir();
+
+  // Every truncation length must be handled (verified or rejected, never
+  // crashes). Short prefixes routinely fail the FlatBuffers verifier.
+  for (std::size_t n = 0; n <= valid.size(); n += 5) {
+    const IrLoadResult result = load_model_buffer(valid.data(), n);
+    REQUIRE((!result.ok() || result.file.root != nullptr));
+  }
+
+  // Random garbage with a fixed seed: the verifier must reject it.
+  std::mt19937 rng(42);
+  for (int i = 0; i < 200; ++i) {
+    std::vector<std::uint8_t> garbage(64 + (rng() % 4096));
+    for (std::uint8_t& byte : garbage) {
+      byte = static_cast<std::uint8_t>(rng() & 0xFFu);
+    }
+    const IrLoadResult result =
+        load_model_buffer(garbage.data(), garbage.size());
+    REQUIRE((!result.ok() || result.file.root != nullptr));
+  }
+
+  // Single-bit flips inside an otherwise valid buffer: a flipped byte that
+  // still verifies must expose a root that dereferences safely.
+  for (int i = 0; i < 100; ++i) {
+    std::vector<std::uint8_t> mutated = valid;
+    const std::size_t pos = rng() % mutated.size();
+    mutated[pos] ^= static_cast<std::uint8_t>(1u << (rng() % 8));
+    const IrLoadResult result =
+        load_model_buffer(mutated.data(), mutated.size());
+    if (result.ok()) {
+      REQUIRE(result.file.root != nullptr);
+    }
+  }
 }

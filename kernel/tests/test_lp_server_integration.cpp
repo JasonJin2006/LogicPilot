@@ -419,6 +419,88 @@ TEST_CASE("lp-server streams a full mm1 run over WebSocket",
   server.stop();
 }
 
+namespace {
+
+// Read every binary frame on `client` until RunFinished (or the socket
+// closes). Runs on its own thread per client so a fan-out run can be drained
+// by several clients concurrently.
+struct BroadcastCapture {
+  bool completed{false};
+  std::vector<std::uint64_t> seqs;
+  std::size_t counters{0};
+};
+
+BroadcastCapture drain_broadcast(WsClient& client) {
+  BroadcastCapture capture;
+  while (client.read_one()) {
+    const ParsedFrame frame = parse_frame(client.payload());
+    if (!frame.valid) {
+      continue;  // text control acks are not part of the binary stream
+    }
+    capture.seqs.push_back(frame.seq);
+    if (frame.kind == wire::FrameKind_Counters) {
+      ++capture.counters;
+    }
+    if (frame.kind == wire::FrameKind_RunFinished) {
+      capture.completed = true;
+      break;
+    }
+  }
+  return capture;
+}
+
+}  // namespace
+
+TEST_CASE("lp-server broadcasts identical frames to every connected client",
+          "[server][integration]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  // Three clients join before the run starts; each drains the broadcast on
+  // its own background reader so all three consume frames concurrently.
+  WsClient a, b, c;
+  REQUIRE(a.connect(server.port()));
+  REQUIRE(b.connect(server.port()));
+  REQUIRE(c.connect(server.port()));
+  Watchdog watchdog_a{a, std::chrono::seconds{90}};
+  Watchdog watchdog_b{b, std::chrono::seconds{90}};
+  Watchdog watchdog_c{c, std::chrono::seconds{90}};
+
+  BroadcastCapture ca, cb, cc;
+  std::thread ta([&] { ca = drain_broadcast(a); });
+  std::thread tb([&] { cb = drain_broadcast(b); });
+  std::thread tc([&] { cc = drain_broadcast(c); });
+
+  // Give every handshake a moment to register its session before the run
+  // starts, so no client misses the RunStarted frame.
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  a.send_text(R"({"cmd":"start","seed":42,"reps":1,"arrivals":1500,)"
+              R"("warmup":150,"speed":100000})");
+
+  ta.join();
+  tb.join();
+  tc.join();
+
+  REQUIRE(ca.completed);
+  REQUIRE(cb.completed);
+  REQUIRE(cc.completed);
+  // Fan-out is one byte stream per session: same frame count and identical
+  // seq sequences, plus the same number of Counters frames.
+  REQUIRE(ca.seqs.size() == cb.seqs.size());
+  REQUIRE(ca.seqs.size() == cc.seqs.size());
+  REQUIRE(ca.seqs == cb.seqs);
+  REQUIRE(ca.seqs == cc.seqs);
+  REQUIRE(ca.counters > 0);
+  REQUIRE(ca.counters == cb.counters);
+  REQUIRE(ca.counters == cc.counters);
+
+  a.abort_from_other_thread();
+  b.abort_from_other_thread();
+  c.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server is deterministic: same seed => identical counters",
           "[server][integration]") {
   logicpilot::server::SimServer server{make_test_config()};
