@@ -185,6 +185,15 @@ TEST_CASE("DSL continuous block runs end-to-end (decay example)",
   config.arrivals = 1000;
   const ReplicationMetrics metrics = model->run(config, nullptr);
   REQUIRE(metrics.final_value == Approx(std::exp(-5.0)).margin(1e-6));
+  const auto* continuous =
+      dynamic_cast<const ContinuousReplicationModel*>(model.get());
+  REQUIRE(continuous != nullptr);
+  REQUIRE(continuous->variables().size() == 1);
+  const auto& trajectory = continuous->trajectory();
+  REQUIRE(trajectory.size() == 1000);
+  REQUIRE(trajectory.front().values[0] < 1.0);  // decayed after step 1
+  REQUIRE(trajectory.back().values[0] ==
+          Approx(std::exp(-5.0)).margin(1e-6));
 
   // v1 compatibility path runs identically.
   const IrLoadResult v1_loaded = load_model_buffer(
