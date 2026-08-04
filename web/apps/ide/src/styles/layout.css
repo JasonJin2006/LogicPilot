@@ -132,7 +132,7 @@
 
 .area-center .tab-bar {
   min-height: 26px;
-  padding: 2px 8px 0;
+  padding: 2px 0 0;
 }
 
 .area-right .tab-bar,
@@ -246,18 +246,6 @@
 .tab-label {
   font-weight: 600;
   letter-spacing: 0.03em;
-}
-
-/* Active tab blends into the pane below: its own background (plus this
-   cover line) hides the tab bar's bottom border under the tab. */
-.tab.active::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: var(--body-bg);
 }
 
 .tab-x {
