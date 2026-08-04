@@ -16,7 +16,6 @@ function useTauri(): boolean {
 
 export function TopBar() {
   const isTauri = useTauri();
-  const [windowDebug, setWindowDebug] = useState('');
 
   const startDrag = async (event: MouseEvent) => {
     if (!isTauri) return;
@@ -26,15 +25,12 @@ export function TopBar() {
       await getCurrentWindow().startDragging();
     } catch (error) {
       console.error('start dragging failed', error);
-      setWindowDebug(`drag error: ${String(error)}`);
     }
   };
 
   const windowAction = async (action: 'minimize' | 'toggleMaximize' | 'close') => {
-    setWindowDebug(`clicked ${action}...`);
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
-      setWindowDebug(`imported; calling ${action}...`);
       const window = getCurrentWindow();
       if (action === 'minimize') {
         await window.minimize();
@@ -43,10 +39,8 @@ export function TopBar() {
       } else {
         await window.close();
       }
-      setWindowDebug(`${action} ok`);
     } catch (error) {
       console.error('window action failed', error);
-      setWindowDebug(`error: ${String(error)}`);
     }
   };
 
@@ -90,7 +84,6 @@ export function TopBar() {
           </button>
         </div>
       )}
-      {windowDebug !== '' && <span className="window-error">{windowDebug}</span>}
     </div>
   );
 }

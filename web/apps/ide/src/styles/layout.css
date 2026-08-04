@@ -42,22 +42,6 @@
   color: var(--on-accent);
 }
 
-.window-error {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 10px;
-  z-index: 50;
-  max-width: 420px;
-  padding: 4px 8px;
-  background: var(--surface-3);
-  border: 1px solid var(--error);
-  border-radius: var(--r-sm);
-  color: var(--error);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  box-shadow: var(--shadow);
-}
-
 .top-logo {
   width: 20px;
   height: 20px;
