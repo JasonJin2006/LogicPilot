@@ -368,19 +368,6 @@ export function ModelCanvas() {
           height: edgeBounds.maxY - oy,
         }}
       >
-        <defs>
-          <marker
-            id="edge-arrow"
-            markerWidth="9"
-            markerHeight="9"
-            refX="7"
-            refY="4.5"
-            orient="auto"
-            markerUnits="userSpaceOnUse"
-          >
-            <path d="M0,0 L9,4.5 L0,9 Z" style={{ fill: 'var(--border-strong)' }} />
-          </marker>
-        </defs>
         {edgeSegments.map((segment) => {
           const d = `M ${segment.a.x - ox} ${segment.a.y - oy} L ${segment.b.x - ox} ${segment.b.y - oy}`;
           return (
@@ -395,7 +382,6 @@ export function ModelCanvas() {
                 className="edge-line"
                 d={d}
                 strokeWidth={1.5 / view.scale}
-                markerEnd="url(#edge-arrow)"
               />
             </g>
           );
