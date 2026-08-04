@@ -146,8 +146,26 @@ TimeSampler make_sampler(const ir::Distribution* dist, std::string* error) {
   }
 }
 
+// Reads a FloatValue param by name from an AtomicModel (resource) node,
+// returning `fallback` when absent or of a different type.
+double resource_param(const ir::AtomicModel* resource, const char* name,
+                      double fallback) {
+  if (resource == nullptr || resource->params() == nullptr) {
+    return fallback;
+  }
+  for (const ir::Param* param : *resource->params()) {
+    if (param->name() != nullptr && param->name()->str() == name &&
+        param->value_type() == ir::ParamValue_FloatValue) {
+      return param->value_as_FloatValue()->value();
+    }
+  }
+  return fallback;
+}
+
 std::unique_ptr<ReplicationModel> build_process_model(
-    const ir::ProcessModel& process, std::string* error) {
+    const ir::ProcessModel& process,
+    const std::unordered_map<std::string, const ir::AtomicModel*>& resources,
+    std::string* error) {
   const auto fail = [&](const std::string& msg) {
     if (error != nullptr) {
       *error = msg;
@@ -228,8 +246,14 @@ std::unique_ptr<ReplicationModel> build_process_model(
                     ? *error
                     : "service has no service-time distribution");
   }
+  const std::int64_t servers =
+      service_spec != nullptr ? service_spec->servers() : 1;
+  if (servers < 1) {
+    return fail("service servers must be >= 1");
+  }
   spec.interarrival = std::move(arrival);
   spec.service = std::move(service_time);
+  spec.servers = servers;
   if (queue != nullptr) {
     const ir::QueueNode* queue_spec = queue->kind_as_QueueNode();
     if (queue_spec != nullptr) {
@@ -237,6 +261,36 @@ std::unique_ptr<ReplicationModel> build_process_model(
       spec.queue_capacity = queue_spec->capacity() > 0 ? queue_spec->capacity()
                                                        : -1;
     }
+  }
+
+  // Resource failure semantics (milestone 1): the service references a
+  // resource by name; that resource's AtomicModel carries failure_rate /
+  // repair_rate params. failure_rate == 0 (absent) disables failures and
+  // keeps the RNG draw order identical to the failure-free path.
+  const ir::AtomicModel* resource = nullptr;
+  if (service_spec != nullptr && service_spec->resource() != nullptr) {
+    const auto it = resources.find(service_spec->resource()->str());
+    if (it != resources.end()) {
+      resource = it->second;
+    }
+  }
+  const double failure_rate = resource_param(resource, "failure_rate", 0.0);
+  if (failure_rate < 0.0 || failure_rate > 1.0) {
+    return fail("failure_rate must be in [0, 1]");
+  }
+  if (failure_rate > 0.0) {
+    const double repair_rate = resource_param(resource, "repair_rate", 1.0);
+    if (repair_rate <= 0.0) {
+      return fail("repair_rate must be > 0 when failure_rate > 0");
+    }
+    spec.failure = [failure_rate](Xoshiro256PlusPlus& engine) {
+      Exponential<Xoshiro256PlusPlus> dist{failure_rate};
+      return dist(engine);
+    };
+    spec.repair = [repair_rate](Xoshiro256PlusPlus& engine) {
+      Exponential<Xoshiro256PlusPlus> dist{repair_rate};
+      return dist(engine);
+    };
   }
   return std::make_unique<QueueingFlowSim>(std::move(spec));
 }
@@ -250,16 +304,23 @@ std::unique_ptr<ReplicationModel> build_coupled_model(
     const ir::CoupledModel& coupled, std::string* error) {
   const ir::ProcessModel* process = nullptr;
   int process_count = 0;
+  std::unordered_map<std::string, const ir::AtomicModel*> resources;
   if (coupled.children() != nullptr) {
     for (const ir::Model* child : *coupled.children()) {
       if (child->kind_type() == ir::ModelKind_ProcessModel) {
         process = child->kind_as_ProcessModel();
         ++process_count;
+      } else if (child->kind_type() == ir::ModelKind_AtomicModel) {
+        const ir::AtomicModel* atomic = child->kind_as_AtomicModel();
+        if (atomic->metadata() != nullptr &&
+            atomic->metadata()->name() != nullptr) {
+          resources.emplace(atomic->metadata()->name()->str(), atomic);
+        }
       }
     }
   }
   if (process_count == 1) {
-    return build_process_model(*process, error);
+    return build_process_model(*process, resources, error);
   }
   if (error != nullptr) {
     *error = process_count == 0
@@ -317,7 +378,9 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   }
   const ir::Model* root = file.root->root();
   if (root->kind_type() == ir::ModelKind_ProcessModel) {
-    return build_process_model(*root->kind_as_ProcessModel(), error);
+    const std::unordered_map<std::string, const ir::AtomicModel*> no_resources;
+    return build_process_model(*root->kind_as_ProcessModel(), no_resources,
+                               error);
   }
   if (root->kind_type() == ir::ModelKind_CoupledModel) {
     return build_coupled_model(*root->kind_as_CoupledModel(), error);

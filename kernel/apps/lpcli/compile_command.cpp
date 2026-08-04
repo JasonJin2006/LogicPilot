@@ -1,9 +1,10 @@
 // lpcli `compile` subcommand implementation (Phase 2b, task #6).
 //
-// usage: lpcli compile <input.lp> [-o <output>]
+// usage: lpcli compile <input.lp> [-o <output>] [--diagnostics-json <path>]
 // Default output: the input path with `.lp` replaced by `.ir.bin`
 // (or `.ir.bin` appended). Diagnostics go to stderr; a failing compile
-// exits non-zero without writing anything.
+// exits non-zero without writing the IR. --diagnostics-json additionally
+// writes the machine-readable diagnostics document (AI copilot loop).
 #include "compile_command.h"
 
 #include <filesystem>
@@ -13,6 +14,7 @@
 
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/diagnostics.h"
+#include "logicpilot/dsl/json_diagnostics.h"
 
 namespace logicpilot::cli {
 namespace {
@@ -20,8 +22,10 @@ namespace {
 void print_usage() {
   fmt::print(
       "usage: lpcli compile <input.lp> [-o <output>]\n"
+      "                        [--diagnostics-json <path>]\n"
       "  compiles a LogicPilot DSL source to FlatBuffers IR (LPIR)\n"
-      "  -o, --output <path>  output file (default <input>.ir.bin)\n");
+      "  -o, --output <path>  output file (default <input>.ir.bin)\n"
+      "  --diagnostics-json <path>  write machine-readable diagnostics JSON\n");
 }
 
 std::string default_output_path(const std::string& input) {
@@ -39,6 +43,7 @@ std::string default_output_path(const std::string& input) {
 int compile_command(std::span<const std::string> args) {
   std::string input;
   std::string output;
+  std::string diagnostics_json;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];
@@ -51,6 +56,12 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       output = args[++i];
+    } else if (arg == "--diagnostics-json") {
+      if (i + 1 >= args.size()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      diagnostics_json = args[++i];
     } else if (arg.starts_with("-")) {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -74,13 +85,31 @@ int compile_command(std::span<const std::string> args) {
   }
 
   const dsl::CompileResult compiled = dsl::compile_file(input);
+  const auto write_diagnostics_json = [&](bool ok) -> int {
+    if (diagnostics_json.empty()) {
+      return ok ? 0 : 1;
+    }
+    std::ofstream out(diagnostics_json, std::ios::trunc);
+    if (!out) {
+      fmt::print(stderr, "error: cannot write '{}'\n", diagnostics_json);
+      return 1;
+    }
+    out << dsl::diagnostics_to_json(input, ok, compiled.diagnostics);
+    out.close();
+    if (!out) {
+      fmt::print(stderr, "error: failed writing '{}'\n", diagnostics_json);
+      return 1;
+    }
+    return ok ? 0 : 1;
+  };
+
   if (!compiled.ok) {
     for (const dsl::Diagnostic& diagnostic : compiled.diagnostics) {
       fmt::print(stderr, "{}\n", dsl::format_diagnostic(input, diagnostic));
     }
     fmt::print(stderr, "compile failed: {} error(s)\n",
                compiled.diagnostics.size());
-    return 1;
+    return write_diagnostics_json(false);
   }
 
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
@@ -98,7 +127,7 @@ int compile_command(std::span<const std::string> args) {
 
   fmt::print("compiled '{}' -> '{}' (model '{}', {} bytes)\n", input, output,
              compiled.model_name, compiled.ir_bytes.size());
-  return 0;
+  return write_diagnostics_json(true);
 }
 
 }  // namespace logicpilot::cli

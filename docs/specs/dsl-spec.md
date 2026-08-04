@@ -87,3 +87,29 @@ Exact field mapping is defined when `schemas/ir.fbs` lands.
 
 Variables/expressions, branching (`route`), priorities, batches, replication,
 warmup/run-length settings, multi-file imports, statistics blocks.
+
+## 6. Diagnostics JSON Protocol (AI Copilot loop)
+
+`lpcli compile <input.lp> --diagnostics-json <path>` writes a stable,
+machine-readable diagnostics document (valid JSON, always produced on both
+success and failure):
+
+```json
+{
+  "ok": false,
+  "source_file": "examples/bad.lp",
+  "diagnostics": [
+    {
+      "code": "LP2001",
+      "severity": "error",
+      "message": "missing required field 'capacity'",
+      "span": { "line": 3, "column": 4, "byte_offset": 40, "byte_length": 10 }
+    }
+  ]
+}
+```
+
+`ok` mirrors the compile result; `diagnostics` is empty on success. Fields
+map 1:1 to `logicpilot::dsl::Diagnostic` (§2); severity uses the registry
+names (`error`/`warning`/`note`). This is the contract consumed by the AI
+model generator: the LLM receives the JSON, repairs the DSL, and recompiles.

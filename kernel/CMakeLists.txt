@@ -72,6 +72,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_devs.cpp
     tests/test_ir_loader.cpp
     tests/test_mm1_acceptance.cpp
+    tests/test_mm1_failure.cpp
     tests/test_determinism.cpp
     tests/test_perf_baseline.cpp
   )

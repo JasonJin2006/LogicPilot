@@ -1,10 +1,12 @@
 // QueueingFlowSim / Mm1Simulator implementation.
 //
-// Hot loop: one BinaryHeapScheduler + two registered handlers (arrive,
-// depart). The run drains completely (all arrivals served), so every
-// replication yields steady-state statistics without horizon truncation.
+// Hot loop: one BinaryHeapScheduler + arrive/depart handlers (plus
+// fail/repair when the spec carries a failure law). The run drains
+// completely (all arrivals served), so every replication yields
+// steady-state statistics without horizon truncation.
 #include "logicpilot/devs/mm1.h"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -22,6 +24,15 @@ namespace {
 
 constexpr EventType kArriveEvent = 10;
 constexpr EventType kDepartEvent = 11;
+constexpr EventType kFailEvent = 12;
+constexpr EventType kRepairEvent = 13;
+
+enum class ServerState { kIdle, kBusy, kDown };
+
+struct Server {
+  ServerState state{ServerState::kIdle};
+  std::uint64_t customer{0};  // customer in service while busy
+};
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
@@ -47,13 +58,17 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
 
   // Flow state.
   std::deque<std::uint64_t> queue;              // waiting customer ids (FIFO)
+  std::vector<Server> servers(spec_.servers < 1 ? 1 : spec_.servers);
   std::vector<std::int64_t> arrival_ns;         // per-customer arrival stamp
+  std::vector<std::int64_t> service_start_ns;   // per-customer last service
+                                                // start (final wait baseline)
   arrival_ns.resize(config.arrivals);
+  service_start_ns.resize(config.arrivals);
   std::uint64_t emitted = 0;
-  bool busy = false;
   std::uint64_t in_system = 0;
   std::uint64_t in_queue = 0;
   std::uint64_t departures = 0;
+  const bool has_failure = static_cast<bool>(spec_.failure);
 
   // Statistics accumulators.
   std::int64_t last_ns = 0;
@@ -71,38 +86,57 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
 
   HandlerId arrive_id = 0;
   HandlerId depart_id = 0;
+  HandlerId fail_id = 0;
+  HandlerId repair_id = 0;
 
-  // Registered first so arrive/depart lambdas can call it by reference.
-  const auto schedule_depart = [&](std::uint64_t customer) {
-    const double s = spec_.service(engine);
-    scheduler.schedule(clock.now() + SimTime::from_ns(to_ns(s)), kDepartEvent,
-                       depart_id, customer);
+  // Begins service on `server` for `customer`: samples service time, and
+  // (when failures are enabled) a failure time. A failure that would land
+  // before the service completes preempts the customer back to the queue
+  // head and sends the server down (preemptive-repeat, milestone 1).
+  const auto start_service = [&](std::uint64_t server, std::uint64_t customer) {
+    Server& s = servers[server];
+    s.state = ServerState::kBusy;
+    s.customer = customer;
+    service_start_ns[customer] = clock.now().as_ns();
+    const std::int64_t service_ns = to_ns(spec_.service(engine));
+    if (!has_failure) {
+      scheduler.schedule(clock.now() + SimTime::from_ns(service_ns),
+                         kDepartEvent, depart_id, server);
+      return;
+    }
+    const std::int64_t failure_ns = to_ns(spec_.failure(engine));
+    if (failure_ns < service_ns) {
+      scheduler.schedule(clock.now() + SimTime::from_ns(failure_ns),
+                         kFailEvent, fail_id, server);
+    } else {
+      scheduler.schedule(clock.now() + SimTime::from_ns(service_ns),
+                         kDepartEvent, depart_id, server);
+    }
   };
 
   // Real handlers (registry ids are stable after this block).
   depart_id = handlers.add([&](const Event& event) {
-    const std::uint64_t id = event.payload;
+    const std::uint64_t server = event.payload;
     const std::int64_t now_ns = clock.now().as_ns();
     accumulate_area(now_ns);
+    Server& s = servers[server];
+    const std::uint64_t id = s.customer;
     --in_system;
     ++departures;
     if (id >= config.warmup_arrivals) {
+      // Final wait = arrival -> last service start (preemption-aware).
+      wait_times_.push_back(
+          static_cast<double>(service_start_ns[id] - arrival_ns[id]) * 1e-9);
       sojourn_sum += static_cast<double>(now_ns - arrival_ns[id]) * 1e-9;
       ++sojourn_count;
     }
 
+    s.state = ServerState::kIdle;
     if (!queue.empty()) {
       const std::uint64_t next = queue.front();
       queue.pop_front();
       --in_queue;
-      const double wait =
-          static_cast<double>(now_ns - arrival_ns[next]) * 1e-9;
-      if (next >= config.warmup_arrivals) {
-        wait_times_.push_back(wait);
-      }
-      schedule_depart(next);
-    } else {
-      busy = false;
+      start_service(server, next);
     }
   });
   arrive_id = handlers.add([&](const Event& event) {
@@ -119,13 +153,14 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
       ++emitted;
     }
 
-    if (!busy) {
-      busy = true;
+    const auto idle_server =
+        std::find_if(servers.begin(), servers.end(), [](const Server& s) {
+          return s.state == ServerState::kIdle;
+        });
+    if (idle_server != servers.end()) {
       ++in_system;
-      if (id >= config.warmup_arrivals) {
-        wait_times_.push_back(0.0);  // straight into service, zero wait
-      }
-      schedule_depart(id);
+      start_service(
+          static_cast<std::uint64_t>(idle_server - servers.begin()), id);
     } else if (spec_.queue_capacity < 0 ||
                static_cast<std::int64_t>(queue.size()) <
                    spec_.queue_capacity) {
@@ -134,6 +169,34 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
       queue.push_back(id);
     } else {
       ++dropped_;  // finite buffer full: customer lost, never enters system
+    }
+  });
+  fail_id = handlers.add([&](const Event& event) {
+    const std::uint64_t server = event.payload;
+    const std::int64_t now_ns = clock.now().as_ns();
+    accumulate_area(now_ns);
+    Server& s = servers[server];
+    const std::uint64_t id = s.customer;
+    s.state = ServerState::kDown;
+    // Preemptive-repeat: the customer in service returns to the queue head
+    // (preempted customers bypass the finite-buffer capacity check).
+    queue.push_front(id);
+    ++in_queue;
+    const std::int64_t repair_ns = to_ns(spec_.repair(engine));
+    scheduler.schedule(clock.now() + SimTime::from_ns(repair_ns),
+                       kRepairEvent, repair_id, server);
+  });
+  repair_id = handlers.add([&](const Event& event) {
+    const std::uint64_t server = event.payload;
+    const std::int64_t now_ns = clock.now().as_ns();
+    accumulate_area(now_ns);
+    Server& s = servers[server];
+    s.state = ServerState::kIdle;
+    if (!queue.empty()) {
+      const std::uint64_t next = queue.front();
+      queue.pop_front();
+      --in_queue;
+      start_service(server, next);
     }
   });
 
@@ -193,6 +256,34 @@ Mm1Theory mm1_theory(double lambda, double mu) {
   t.w = 1.0 / slack;
   t.lq = t.rho * t.rho / (1.0 - t.rho);
   t.l = lambda / slack;
+  t.throughput = lambda;
+  return t;
+}
+
+Mm1Theory mmc_theory(double lambda, double mu, std::int64_t servers) {
+  const double c = static_cast<double>(servers);
+  const double a = lambda / mu;  // offered load (Erlang units)
+  Mm1Theory t;
+  t.rho = a / c;  // system utilization (per-server, rho < 1 required)
+  const double slack = c * mu - lambda;
+
+  // Erlang-C: probability that all c servers are busy.
+  //   C = (a^c / c!) * c/(c-a) /
+  //       ( sum_{k=0}^{c-1} a^k/k! + (a^c / c!) * c/(c-a) )
+  double sum = 1.0;   // k = 0 term
+  double term = 1.0;  // a^k / k!
+  for (std::int64_t k = 1; k < servers; ++k) {
+    term *= a / static_cast<double>(k);
+    sum += term;
+  }
+  const double last = term * a / c;  // a^c / c!
+  const double busy_ratio = last * c / (c - a);
+  const double erlang_c = busy_ratio / (sum + busy_ratio);
+
+  t.wq = erlang_c / slack;
+  t.w = t.wq + 1.0 / mu;
+  t.lq = lambda * t.wq;
+  t.l = lambda * t.w;
   t.throughput = lambda;
   return t;
 }

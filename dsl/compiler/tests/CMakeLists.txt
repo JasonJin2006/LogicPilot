@@ -8,6 +8,7 @@ add_executable(logicpilot_dsl_tests
   test_dsl_semantic.cpp
   test_dsl_lowering.cpp
   test_dsl_e2e.cpp
+  test_diagnostics_json.cpp
 )
 target_link_libraries(logicpilot_dsl_tests PRIVATE
   logicpilot_dsl
@@ -37,6 +38,22 @@ add_test(NAME lpcli_run_compiled_mm1
 set_tests_properties(lpcli_run_compiled_mm1 PROPERTIES
   DEPENDS lpcli_compile_mm1
   PASS_REGULAR_EXPRESSION "summary: 2 replications")
+
+# Milestone 1: the failure model must survive the full DSL -> IR -> runtime
+# chain (multi-server + breakdown wiring in build_replication_model).
+add_test(NAME lpcli_compile_mm1_failure
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/mm1_failure.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/mm1_failure.ir.bin")
+set_tests_properties(lpcli_compile_mm1_failure PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_mm1_failure
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/mm1_failure.ir.bin"
+          --seed=42 --reps=3 --arrivals=4000 --warmup=400)
+set_tests_properties(lpcli_run_mm1_failure PROPERTIES
+  DEPENDS lpcli_compile_mm1_failure
+  PASS_REGULAR_EXPRESSION "summary: 3 replications")
 
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
