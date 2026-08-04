@@ -1,5 +1,20 @@
 /* Modeling domain (P1-6): palette + canvas + block cards. */
 
+.model-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.model-canvas-host {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 .model-canvas {
   position: relative;
   flex: 1;
@@ -9,6 +24,100 @@
   cursor: grab;
   user-select: none;
   touch-action: none;
+}
+
+/* Collapsible DSL code pane beside the canvas. */
+.dsl-splitter {
+  position: relative;
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.dsl-splitter:hover,
+.dsl-splitter:active {
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.dsl-editor {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-strong);
+  border-left: 1px solid var(--border);
+}
+
+.dsl-editor-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dsl-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.dsl-compile {
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.dsl-collapse {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.dsl-collapse:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.dsl-source {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.dsl-open {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 7px;
+  font-size: 11px;
+  border-radius: var(--r-sm);
+  opacity: 0.75;
+}
+
+.dsl-open:hover {
+  opacity: 1;
 }
 
 .model-canvas.panning {

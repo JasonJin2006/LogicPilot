@@ -126,6 +126,12 @@ try {
     );
   });
   await page.waitForSelector('.model-block', { timeout: 5_000 });
+  await page.locator('.dsl-open').click();
+  await page.waitForSelector('.dsl-source', { timeout: 5_000 });
+  const dslText = await page.locator('.dsl-source').textContent();
+  if (!dslText?.includes('process Flow')) {
+    throw new Error('DSL editor did not mirror the canvas document');
+  }
   await page.getByRole('button', { name: 'Compile' }).click();
   await page.waitForFunction(
     () => document.querySelector('.console-log')?.textContent?.includes('compile failed'),

@@ -6,7 +6,7 @@
 import type { ComponentType } from 'react';
 import { Boxes, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
-import { ModelCanvas } from '../model/ModelCanvas';
+import { ModelWorkspace } from '../model/ModelWorkspace';
 import { ConsolePanel } from './ConsolePanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
@@ -24,7 +24,7 @@ export interface PanelDef {
 
 export const PANELS: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
-  model: { title: 'Model', area: 'center', component: ModelCanvas },
+  model: { title: 'Model', area: 'center', component: ModelWorkspace },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // right: selected block properties.
