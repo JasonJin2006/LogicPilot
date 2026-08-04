@@ -108,11 +108,50 @@
 .model-block-name {
   max-width: 72px;
   font-size: 11px;
+  /* Fixed line height keeps the card height deterministic so the port
+     anchors in blockDefs.ts match the rendered dots. */
+  line-height: 15px;
+  height: 15px;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: color 0.1s;
+}
+
+/* Coupling edges: drawn in world coordinates inside the transformed layer. */
+.model-edges {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge {
+  cursor: pointer;
+}
+
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  pointer-events: stroke;
+}
+
+.edge-line {
+  fill: none;
+  stroke: var(--border-strong);
+  pointer-events: none;
+  transition: stroke 0.1s;
+}
+
+.edge:hover .edge-line {
+  stroke: var(--accent);
+}
+
+.wire-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-dasharray: 6 4;
+  pointer-events: none;
 }
 
 /* Connection ports sit directly on the icon's left/right edges. */
@@ -152,6 +191,13 @@
   background: var(--accent);
   border-color: var(--accent);
   transform: translate(50%, -50%) scale(1.3);
+}
+
+/* The in-port under an in-flight wire: valid drop target. */
+.model-port.wire-target.port-in {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: translate(-50%, -50%) scale(1.3);
 }
 
 .palette-list {

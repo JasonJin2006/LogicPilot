@@ -5,11 +5,11 @@
 // arrowheads and numeric ticks. Blocks from the palette drop in world coords.
 
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { useModelStore } from '../state/modelStore';
 import type { BlockKind, ModelNode } from '@logicpilot/editor';
 import { getDraggedKind } from './paletteDnd';
-import { blockPorts } from './blockDefs';
+import { blockPorts, portAnchor } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 
 const MIN_SCALE = 0.1;
@@ -51,6 +51,8 @@ export function ModelCanvas() {
   const selectedId = useModelStore((state) => state.selectedId);
   const addBlock = useModelStore((state) => state.addBlock);
   const moveBlock = useModelStore((state) => state.moveBlock);
+  const connectBlocks = useModelStore((state) => state.connectBlocks);
+  const disconnectEdge = useModelStore((state) => state.disconnectEdge);
   const select = useModelStore((state) => state.select);
 
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -58,6 +60,11 @@ export function ModelCanvas() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  // Port-to-port wiring: a live wire from an out port to the cursor, plus
+  // the in-port currently under it (highlighted as the drop target).
+  const [draftWire, setDraftWire] = useState<{ fromId: string; x: number; y: number } | null>(null);
+  const [wireTarget, setWireTarget] = useState<string | null>(null);
+  const wireStart = useRef<{ x: number; y: number } | null>(null);
   const drag = useRef<{
     startX: number;
     startY: number;
@@ -152,6 +159,79 @@ export function ModelCanvas() {
     addBlock({ kind, name: kind, x, y });
     select(null);
   };
+
+  const clientToWorld = (clientX: number, clientY: number) => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: (clientX - rect.left - view.panX) / view.scale,
+      y: (clientY - rect.top - view.panY) / view.scale,
+    };
+  };
+
+  // Nearest valid in-port (a different block) within a screen-space
+  // tolerance, used as the wire's drop target.
+  const findWireTarget = (world: { x: number; y: number }, fromId: string): string | null => {
+    const tolerance = 12 / view.scale;
+    let best: string | null = null;
+    let bestDistance = tolerance;
+    for (const node of document.nodes) {
+      if (node.id === fromId || !blockPorts(node.kind).in) continue;
+      const anchor = portAnchor(node, 'in');
+      const distance = Math.hypot(anchor.x - world.x, anchor.y - world.y);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = node.id;
+      }
+    }
+    return best;
+  };
+
+  const startWire = (event: ReactPointerEvent<HTMLSpanElement>, node: ModelNode) => {
+    event.stopPropagation();
+    const anchor = portAnchor(node, 'out');
+    wireStart.current = { x: event.clientX, y: event.clientY };
+    setDraftWire({ fromId: node.id, x: anchor.x, y: anchor.y });
+    setWireTarget(null);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveWire = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (!draftWire) return;
+    const world = clientToWorld(event.clientX, event.clientY);
+    setDraftWire((wire) => (wire ? { ...wire, x: world.x, y: world.y } : wire));
+    setWireTarget(findWireTarget(world, draftWire.fromId));
+  };
+
+  const endWire = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (!draftWire) return;
+    const start = wireStart.current;
+    const moved = start !== null && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 4;
+    if (moved) {
+      const world = clientToWorld(event.clientX, event.clientY);
+      const target = findWireTarget(world, draftWire.fromId);
+      if (target) connectBlocks(draftWire.fromId, target);
+    }
+    wireStart.current = null;
+    setDraftWire(null);
+    setWireTarget(null);
+  };
+
+  const cancelWire = () => {
+    wireStart.current = null;
+    setDraftWire(null);
+    setWireTarget(null);
+  };
+
+  // Escape cancels an in-flight wire.
+  useEffect(() => {
+    if (!draftWire) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancelWire();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [draftWire]);
 
   // Drag a block card to move it in world coordinates; a plain click
   // (no movement) selects it instead.
@@ -249,6 +329,88 @@ export function ModelCanvas() {
   const xAxisVisible = panY >= 0 && panY <= size.height;
   const yAxisVisible = panX >= 0 && panX <= size.width;
 
+  // Edges (out -> in) rendered in world coordinates, plus the live wire.
+  const edgeSegments = document.edges.flatMap((edge) => {
+    const from = document.nodes.find((node) => node.id === edge.from);
+    const to = document.nodes.find((node) => node.id === edge.to);
+    if (!from || !to) return [];
+    return [{ id: edge.id, a: portAnchor(from, 'out'), b: portAnchor(to, 'in') }];
+  });
+  const wirePoints: Array<{ x: number; y: number }> = [];
+  if (draftWire) {
+    const fromNode = document.nodes.find((node) => node.id === draftWire.fromId);
+    if (fromNode) {
+      wirePoints.push(portAnchor(fromNode, 'out'), { x: draftWire.x, y: draftWire.y });
+    }
+  }
+  const allPoints = [...edgeSegments.flatMap((segment) => [segment.a, segment.b]), ...wirePoints];
+  const edgeBounds =
+    allPoints.length > 0
+      ? {
+          minX: Math.min(...allPoints.map((point) => point.x)) - 16,
+          minY: Math.min(...allPoints.map((point) => point.y)) - 16,
+          maxX: Math.max(...allPoints.map((point) => point.x)) + 16,
+          maxY: Math.max(...allPoints.map((point) => point.y)) + 16,
+        }
+      : null;
+  const [wireFrom, wireTo] = wirePoints;
+  let edgesView: ReactElement | null = null;
+  if (edgeBounds) {
+    const ox = edgeBounds.minX;
+    const oy = edgeBounds.minY;
+    edgesView = (
+      <svg
+        className="model-edges"
+        style={{
+          left: ox,
+          top: oy,
+          width: edgeBounds.maxX - ox,
+          height: edgeBounds.maxY - oy,
+        }}
+      >
+        <defs>
+          <marker
+            id="edge-arrow"
+            markerWidth="9"
+            markerHeight="9"
+            refX="7"
+            refY="4.5"
+            orient="auto"
+            markerUnits="userSpaceOnUse"
+          >
+            <path d="M0,0 L9,4.5 L0,9 Z" style={{ fill: 'var(--border-strong)' }} />
+          </marker>
+        </defs>
+        {edgeSegments.map((segment) => {
+          const d = `M ${segment.a.x - ox} ${segment.a.y - oy} L ${segment.b.x - ox} ${segment.b.y - oy}`;
+          return (
+            <g
+              key={segment.id}
+              className="edge"
+              onClick={() => disconnectEdge(segment.id)}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <path className="edge-hit" d={d} strokeWidth={10 / view.scale} />
+              <path
+                className="edge-line"
+                d={d}
+                strokeWidth={1.5 / view.scale}
+                markerEnd="url(#edge-arrow)"
+              />
+            </g>
+          );
+        })}
+        {draftWire && wireFrom && wireTo && (
+          <path
+            className="wire-line"
+            d={`M ${wireFrom.x - ox} ${wireFrom.y - oy} L ${wireTo.x - ox} ${wireTo.y - oy}`}
+            strokeWidth={1.5 / view.scale}
+          />
+        )}
+      </svg>
+    );
+  }
+
   return (
     <div
       ref={viewportRef}
@@ -294,6 +456,7 @@ export function ModelCanvas() {
         className="model-world"
         style={{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }}
       >
+        {edgesView}
         {document.nodes.map((node) => {
           const ports = blockPorts(node.kind);
           return (
@@ -313,7 +476,7 @@ export function ModelCanvas() {
                 <BlockIcon kind={node.kind} />
                 {ports.in && (
                   <span
-                    className="model-port port-in"
+                    className={`model-port port-in${wireTarget === node.id ? ' wire-target' : ''}`}
                     data-port="in"
                     title="in"
                     onPointerDown={(event) => event.stopPropagation()}
@@ -324,7 +487,10 @@ export function ModelCanvas() {
                     className="model-port port-out"
                     data-port="out"
                     title="out"
-                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerDown={(event) => startWire(event, node)}
+                    onPointerMove={moveWire}
+                    onPointerUp={endWire}
+                    onPointerCancel={cancelWire}
                   />
                 )}
               </span>

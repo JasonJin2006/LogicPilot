@@ -24,3 +24,18 @@ export function blockPorts(kind: BlockKind): { in?: boolean; out?: boolean } {
   const def = BLOCK_DEFS.find((entry) => entry.kind === kind);
   return { in: def?.in, out: def?.out };
 }
+
+// Canvas card geometry (must match styles/model.css): the block card is a
+// centered flex column (34px icon + 4px gap + 15px name line). Port dots are
+// drawn on the icon's left/right midpoints, so their anchors are fixed world
+// offsets from the block center. The x offset is width-independent (the icon
+// is centered in the card); the y offset only depends on the fixed heights.
+export const PORT_X = 17;
+export const PORT_Y = -9.5;
+
+export function portAnchor(
+  node: { x: number; y: number },
+  port: 'in' | 'out',
+): { x: number; y: number } {
+  return { x: node.x + (port === 'in' ? -PORT_X : PORT_X), y: node.y + PORT_Y };
+}
