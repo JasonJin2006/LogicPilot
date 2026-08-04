@@ -20,14 +20,20 @@ function Splitter({
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const start = vertical ? event.clientX : event.clientY;
-    const initial = useLayoutStore.getState().areas[area];
-    // The panel's fixed outer edge (where it sits when fully collapsed).
-    // left: edge is to the left of the splitter; right/bottom: to the right.
-    const edge = initial.collapsed
-      ? start
-      : area === 'left'
-        ? start - initial.size
-        : start + initial.size;
+    // The panel's fixed outer edge: the workspace container's own borders
+    // (the splitter sits between the panel and the flex area, so deriving
+    // the edge from the splitter position would include its half-width).
+    const workspace = (event.currentTarget as HTMLElement).closest<HTMLElement>('.workspace');
+    const bounds = workspace?.getBoundingClientRect();
+    const edge =
+      area === 'left'
+        ? (bounds?.left ?? start)
+        : area === 'right'
+          ? (bounds?.right ?? start)
+          : (bounds?.bottom ?? start);
+    const sizeVar = (
+      area === 'left' ? '--left-w' : area === 'right' ? '--right-w' : '--bottom-h'
+    ) as '--left-w' | '--right-w' | '--bottom-h';
     const move = (moveEvent: PointerEvent) => {
       // Width = pointer distance from the fixed outer edge. This follows the
       // cursor exactly in every state, so re-opening lands the panel edge on
@@ -43,6 +49,12 @@ function Splitter({
       } else if (!layout.areas[area].collapsed) {
         layout.setSizeOrClose(area, width);
       }
+      // Write the divider straight to the CSS variable so the boundary
+      // tracks the pointer even before React re-renders.
+      const visible = layout.areas[area].collapsed
+        ? 0
+        : Math.min(range.max, Math.max(range.min, width));
+      workspace?.style.setProperty(sizeVar, `${visible}px`);
       // While collapsed and width < min the panel stays closed; the pointer
       // distance is preserved so pulling back out re-opens it seamlessly.
     };
