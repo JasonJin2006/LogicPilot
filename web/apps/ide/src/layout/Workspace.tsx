@@ -85,7 +85,11 @@ function PanelArea({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
-      {area !== 'left' && <TabBar area={area} />}
+      {area === 'left' ? (
+        <div className="panel-title">{PANELS[state.activePanel].title}</div>
+      ) : (
+        <TabBar area={area} />
+      )}
       {!state.collapsed && (
         <div className="panel-area-body">
           {state.panels.map((panel) => {

@@ -102,6 +102,15 @@
   border-right: 1px solid var(--border);
 }
 
+.panel-title {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
 .panel-area.area-center {
   grid-area: center;
   background: var(--bg);
