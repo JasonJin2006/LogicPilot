@@ -3,6 +3,7 @@
 // a drag region for the frameless window.
 
 import { useEffect, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { Minus, Square, X } from 'lucide-react';
 
 function useTauri(): boolean {
@@ -13,27 +14,45 @@ function useTauri(): boolean {
   return isTauri;
 }
 
-async function windowAction(action: 'minimize' | 'toggleMaximize' | 'close'): Promise<void> {
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    const window = getCurrentWindow();
-    if (action === 'minimize') {
-      await window.minimize();
-    } else if (action === 'toggleMaximize') {
-      await window.toggleMaximize();
-    } else {
-      await window.close();
-    }
-  } catch (error) {
-    console.error('window action failed', error);
-  }
-}
-
 export function TopBar() {
   const isTauri = useTauri();
+  const [windowDebug, setWindowDebug] = useState('');
+
+  const startDrag = async (event: MouseEvent) => {
+    if (!isTauri) return;
+    event.preventDefault();
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      await getCurrentWindow().startDragging();
+    } catch (error) {
+      console.error('start dragging failed', error);
+      setWindowDebug(`drag error: ${String(error)}`);
+    }
+  };
+
+  const windowAction = async (action: 'minimize' | 'toggleMaximize' | 'close') => {
+    setWindowDebug(`clicked ${action}...`);
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      setWindowDebug(`imported; calling ${action}...`);
+      const window = getCurrentWindow();
+      if (action === 'minimize') {
+        await window.minimize();
+      } else if (action === 'toggleMaximize') {
+        await window.toggleMaximize();
+      } else {
+        await window.close();
+      }
+      setWindowDebug(`${action} ok`);
+    } catch (error) {
+      console.error('window action failed', error);
+      setWindowDebug(`error: ${String(error)}`);
+    }
+  };
+
   return (
     <div className="top-bar">
-      <div className="top-bar-drag" data-tauri-drag-region={isTauri ? '' : undefined}>
+      <div className="top-bar-drag" onMouseDown={(event) => void startDrag(event)}>
         <img className="top-logo" src="/logo.svg" alt="LogicPilot" />
       </div>
       <input
@@ -71,6 +90,7 @@ export function TopBar() {
           </button>
         </div>
       )}
+      {windowDebug !== '' && <span className="window-error">{windowDebug}</span>}
     </div>
   );
 }
