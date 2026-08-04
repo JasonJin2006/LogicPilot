@@ -1,0 +1,31 @@
+==================
+Continuous blocks: state, param, equation
+==================
+
+model Decay {
+  continuous Dynamics {
+    state y = 1.0
+    param k = 0.5
+    d y/dt = -k*y
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (continuous_declaration
+        name: (identifier)
+        body: (continuous_body
+          (state_field
+            name: (identifier)
+            value: (value_literal
+              (float)))
+          (param_field
+            name: (identifier)
+            value: (float))
+          (equation_field
+            name: (identifier)
+            rhs: (rhs_text)))))))

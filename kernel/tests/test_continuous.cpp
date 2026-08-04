@@ -16,6 +16,7 @@
 
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/dsl/compile.h"
 
 using namespace logicpilot;
 using Catch::Approx;
@@ -162,4 +163,36 @@ TEST_CASE("continuous engine is deterministic", "[continuous][determinism]") {
   const ReplicationMetrics second = model->run(config, nullptr);
   REQUIRE(first.horizon_seconds == second.horizon_seconds);
   REQUIRE(first.final_value == second.final_value);
+}
+
+TEST_CASE("DSL continuous block runs end-to-end (decay example)",
+          "[continuous][dsl]") {
+  const dsl::CompileResult compiled =
+      dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/decay.lp");
+  REQUIRE(compiled.ok);
+  REQUIRE_FALSE(compiled.v2_bytes.empty());
+
+  // v2-native path (default contract).
+  IrLoadResult v2_loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(v2_loaded.ok());
+  std::string error;
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(v2_loaded.file, &error);
+  REQUIRE(model != nullptr);
+  ReplicationConfig config;
+  config.seed = 1;
+  config.arrivals = 1000;
+  const ReplicationMetrics metrics = model->run(config, nullptr);
+  REQUIRE(metrics.final_value == Approx(std::exp(-5.0)).margin(1e-6));
+
+  // v1 compatibility path runs identically.
+  const IrLoadResult v1_loaded = load_model_buffer(
+      compiled.ir_bytes.data(), compiled.ir_bytes.size());
+  REQUIRE(v1_loaded.ok());
+  std::unique_ptr<ReplicationModel> v1_model =
+      build_replication_model(v1_loaded.file, &error);
+  REQUIRE(v1_model != nullptr);
+  const ReplicationMetrics v1_metrics = v1_model->run(config, nullptr);
+  REQUIRE(v1_metrics.final_value == metrics.final_value);
 }

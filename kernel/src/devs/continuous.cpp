@@ -238,6 +238,15 @@ ContinuousReplicationModel::ContinuousReplicationModel(
     std::vector<std::uint8_t> bytes, const ir::EquationModel* root)
     : bytes_{std::move(bytes)}, v1_root_{root} {
   if (v1_root_ != nullptr) {
+    if (v1_root_->params() != nullptr) {
+      for (const ir::Param* param : *v1_root_->params()) {
+        if (param->name() != nullptr &&
+            param->value_type() == ir::ParamValue_FloatValue) {
+          params_[param->name()->str()] =
+              param->value_as_FloatValue()->value();
+        }
+      }
+    }
     if (v1_root_->variables() != nullptr) {
       for (const ir::EquationVariable* variable : *v1_root_->variables()) {
         if (variable->name() == nullptr) {

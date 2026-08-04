@@ -121,6 +121,20 @@ set_tests_properties(lpcli_run_ir_v2_atomic PROPERTIES
   DEPENDS lpcli_compile_ir_v2_atomic
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# Continuous DSL: decay example compiles (v2 default) and runs the ODE engine.
+add_test(NAME lpcli_compile_continuous
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/decay.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/decay.ir.bin")
+set_tests_properties(lpcli_compile_continuous PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_continuous
+  COMMAND lpcli run --model-file "${CMAKE_CURRENT_BINARY_DIR}/decay.ir.bin"
+          --seed=42 --reps=2 --arrivals=1000 --warmup=0)
+set_tests_properties(lpcli_run_continuous PROPERTIES
+  DEPENDS lpcli_compile_continuous
+  PASS_REGULAR_EXPRESSION "summary: 2 replications")
+
 # AI model build loop (rule-based provider, offline): NL -> DSL -> compile ->
 # diagnostics repair -> run. Requires node (available in the kernel CI job).
 add_test(NAME ai_build_smoke

@@ -32,6 +32,9 @@ class Analyzer {
     for (const ExperimentDecl& experiment : model.experiments) {
       check_experiment(experiment);
     }
+    for (const EquationDecl& continuous : model.continuous) {
+      check_continuous(continuous);
+    }
     check_couplings(model);
     // Deterministic ordering for golden output: source order, then code.
     std::stable_sort(diagnostics_.begin(), diagnostics_.end(),
@@ -83,6 +86,53 @@ class Analyzer {
     }
     for (const AgentDecl& agent : model.agents) {
       declare(agent.name, agent.name_span, "agent");
+    }
+    for (const EquationDecl& continuous : model.continuous) {
+      declare(continuous.name, continuous.name_span, "continuous");
+    }
+  }
+
+  void check_continuous(const EquationDecl& continuous) {
+    std::unordered_map<std::string, Span> names;
+    for (const StateVarDecl& var : continuous.state) {
+      const auto [it, inserted] = names.emplace(var.name, var.name_span);
+      if (!inserted) {
+        push(Severity::kError, "LP1002",
+             "duplicate state variable '" + var.name + "' in continuous '" +
+                 continuous.name + "'",
+             var.name_span);
+      }
+    }
+    for (const EquationDecl::ParamDecl& param : continuous.params) {
+      const auto [it, inserted] = names.emplace(param.name, param.name_span);
+      if (!inserted) {
+        push(Severity::kError, "LP1002",
+             "duplicate variable '" + param.name + "' in continuous '" +
+                 continuous.name + "'",
+             param.name_span);
+      }
+    }
+    if (continuous.equations.empty()) {
+      push(Severity::kError, "LP2001",
+           "continuous '" + continuous.name + "' requires at least one " +
+               "equation (d <var>/dt = ...)",
+           continuous.span);
+      return;
+    }
+    for (const EquationDecl::Equation& equation : continuous.equations) {
+      bool declared = false;
+      for (const StateVarDecl& var : continuous.state) {
+        if (var.name == equation.var) {
+          declared = true;
+          break;
+        }
+      }
+      if (!declared) {
+        push(Severity::kError, "LP8001",
+             "equation lhs '" + equation.var + "' in continuous '" +
+                 continuous.name + "' must reference a declared state variable",
+             equation.span);
+      }
     }
   }
 

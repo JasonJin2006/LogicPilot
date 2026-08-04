@@ -3,6 +3,7 @@
 #include "logicpilot/dsl/parser.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -136,6 +137,8 @@ class Extractor {
         out.atomics.push_back(extract_atomic(member));
       } else if (node_is(member, "agent_declaration")) {
         out.agents.push_back(extract_agent(member));
+      } else if (node_is(member, "continuous_declaration")) {
+        out.continuous.push_back(extract_continuous(member));
       } else if (node_is(member, "experiment_declaration")) {
         out.experiments.push_back(extract_experiment(member));
       } else if (node_is(member, "couple_declaration")) {
@@ -391,6 +394,60 @@ class Extractor {
       }
     });
     return experiment;
+  }
+
+  EquationDecl extract_continuous(const TSNode& decl) {
+    EquationDecl continuous;
+    continuous.span = span_of(decl);
+    const TSNode name = field(decl, "name");
+    continuous.name = text_of(name);
+    continuous.name_span = span_of(name);
+    const TSNode body = field(decl, "body");
+    each_named_child(body, [&](const TSNode& field_node) {
+      if (node_is(field_node, "state_field")) {
+        StateVarDecl var;
+        const TSNode var_name = field(field_node, "name");
+        var.name = text_of(var_name);
+        var.name_span = span_of(var_name);
+        var.value = extract_value(field(field_node, "value"));
+        continuous.state.push_back(std::move(var));
+      } else if (node_is(field_node, "param_field")) {
+        EquationDecl::ParamDecl param;
+        const TSNode param_name = field(field_node, "name");
+        param.name = text_of(param_name);
+        param.name_span = span_of(param_name);
+        param.span = span_of(field_node);
+        double value = 0.0;
+        if (double_of(field(field_node, "value"), value)) {
+          param.value = value;
+        }
+        continuous.params.push_back(std::move(param));
+      } else if (node_is(field_node, "equation_field")) {
+        EquationDecl::Equation equation;
+        equation.span = span_of(field_node);
+        equation.var = text_of(field(field_node, "name"));
+        const TSNode rhs = field(field_node, "rhs");
+        std::string rhs_text = text_of(rhs);
+        // Trim the surrounding whitespace captured by the raw token.
+        const auto trim = [](std::string& text) {
+          const auto not_space = [](unsigned char c) {
+            return !std::isspace(c);
+          };
+          const auto first =
+              std::find_if(text.begin(), text.end(), not_space);
+          if (first == text.end()) {
+            text.clear();
+            return;
+          }
+          const auto last = std::find_if(text.rbegin(), text.rend(), not_space);
+          text = std::string(first, last.base());
+        };
+        trim(rhs_text);
+        equation.rhs_text = rhs_text;
+        continuous.equations.push_back(std::move(equation));
+      }
+    });
+    return continuous;
   }
 
   // arrival_expr / service_time_expr -> Distribution.

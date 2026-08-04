@@ -380,6 +380,42 @@ flatbuffers::Offset<logicpilot::ir::Model> lower_process(
       builder, logicpilot::ir::ModelKind_ProcessModel, model.Union());
 }
 
+// continuous -> ir::EquationModel (variables = state with initial values,
+// equations = rhs strings, params = named constants).
+flatbuffers::Offset<logicpilot::ir::Model> lower_continuous_v1(
+    flatbuffers::FlatBufferBuilder& builder, const EquationDecl& continuous,
+    const std::string& source_file) {
+  const auto metadata = lower_metadata(builder, continuous.name, source_file,
+                                       continuous.span);
+  std::vector<flatbuffers::Offset<logicpilot::ir::EquationVariable>> variables;
+  const auto initial_value = [](const AtomicValue& value) {
+    if (value.kind == AtomicValueKind::kFloat) {
+      return value.float_value;
+    }
+    if (value.kind == AtomicValueKind::kInt) {
+      return static_cast<double>(value.int_value);
+    }
+    return 0.0;
+  };
+  for (const StateVarDecl& var : continuous.state) {
+    variables.push_back(logicpilot::ir::CreateEquationVariable(
+        builder, builder.CreateString(var.name), initial_value(var.value), 0));
+  }
+  std::vector<flatbuffers::Offset<flatbuffers::String>> equations;
+  for (const EquationDecl::Equation& equation : continuous.equations) {
+    equations.push_back(builder.CreateString(equation.rhs_text));
+  }
+  std::vector<flatbuffers::Offset<logicpilot::ir::Param>> params;
+  for (const EquationDecl::ParamDecl& param : continuous.params) {
+    params.push_back(make_float_param(builder, param.name.c_str(), param.value));
+  }
+  const auto model = logicpilot::ir::CreateEquationModel(
+      builder, metadata, builder.CreateVector(variables),
+      builder.CreateVector(equations), builder.CreateVector(params));
+  return logicpilot::ir::CreateModel(
+      builder, logicpilot::ir::ModelKind_EquationModel, model.Union());
+}
+
 }  // namespace
 
 LoweredIr lower_to_ir(const ModelAst& model, const std::string& source_file) {
@@ -403,6 +439,10 @@ LoweredIr lower_to_ir(const ModelAst& model, const std::string& source_file) {
   }
   for (const AgentDecl& agent : model.agents) {
     children.push_back(lower_agent(builder, agent, source_file));
+  }
+  for (const EquationDecl& continuous : model.continuous) {
+    children.push_back(
+        lower_continuous_v1(builder, continuous, source_file));
   }
 
   // Root-level couplings from `couple` declarations (atomic wiring).
@@ -703,6 +743,51 @@ flatbuffers::Offset<v2::Node> v2_agent(
       builder.CreateVector(behaviors), 0);
 }
 
+// continuous -> {sd, equation} Node: typed state (initial), params, and
+// structured continuous equations.
+flatbuffers::Offset<v2::Node> v2_continuous(
+    flatbuffers::FlatBufferBuilder& builder, const EquationDecl& continuous,
+    const std::string& source_file) {
+  std::vector<flatbuffers::Offset<v2::Var>> state;
+  const auto initial_value = [](const AtomicValue& value) {
+    if (value.kind == AtomicValueKind::kFloat) {
+      return value.float_value;
+    }
+    if (value.kind == AtomicValueKind::kInt) {
+      return static_cast<double>(value.int_value);
+    }
+    return 0.0;
+  };
+  for (const StateVarDecl& var : continuous.state) {
+    state.push_back(v2_var_float(builder, var.name.c_str(),
+                                 initial_value(var.value)));
+  }
+  std::vector<flatbuffers::Offset<v2::Var>> params;
+  for (const EquationDecl::ParamDecl& param : continuous.params) {
+    params.push_back(v2_var_float(builder, param.name.c_str(), param.value));
+  }
+  std::vector<flatbuffers::Offset<v2::Equation>> equations;
+  const auto state_initial = [&](const std::string& name) {
+    for (const StateVarDecl& var : continuous.state) {
+      if (var.name == name) {
+        return initial_value(var.value);
+      }
+    }
+    return 0.0;
+  };
+  for (const EquationDecl::Equation& equation : continuous.equations) {
+    equations.push_back(v2::CreateEquation(
+        builder, builder.CreateString(equation.var),
+        builder.CreateString(equation.rhs_text),
+        state_initial(equation.var)));
+  }
+  return v2::CreateNode(
+      builder, v2_metadata(builder, continuous.name, source_file),
+      builder.CreateVector(state), builder.CreateVector(params), 0,
+      v2_semantics(builder, "sd", "equation"), 0, 0, 0, 0,
+      builder.CreateVector(equations));
+}
+
 flatbuffers::Offset<v2::Experiment> v2_experiment(
     flatbuffers::FlatBufferBuilder& builder, const ExperimentDecl& experiment) {
   return v2::CreateExperiment(
@@ -739,6 +824,9 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
   }
   for (const AgentDecl& agent : model.agents) {
     children.push_back(v2_agent(builder, agent, source_file));
+  }
+  for (const EquationDecl& continuous : model.continuous) {
+    children.push_back(v2_continuous(builder, continuous, source_file));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;

@@ -18,6 +18,7 @@
 //   LP6001  unknown agent behavior handler
 //   LP6002  agent behavior argument mismatch
 //   LP7001  experiment field value is not supported (v0.1)
+//   LP8001  continuous equation lhs references an undeclared state variable
 //
 // Phase 3 will extend this registry (warnings, notes, fixits); the struct
 // layout is already the wire shape used by the diagnostics protocol.

@@ -190,6 +190,55 @@
     }
   },
   {
+    "type": "continuous_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "equation_field",
+          "named": true
+        },
+        {
+          "type": "param_field",
+          "named": true
+        },
+        {
+          "type": "state_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "continuous_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "continuous_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "count_field",
     "named": true,
     "fields": {
@@ -290,6 +339,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "equation_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "rhs": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "rhs_text",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -425,6 +500,10 @@
         },
         {
           "type": "atomic_declaration",
+          "named": true
+        },
+        {
+          "type": "continuous_declaration",
           "named": true
         },
         {
@@ -594,6 +673,32 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "param_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "float",
             "named": true
           }
         ]
@@ -1055,6 +1160,10 @@
     "named": false
   },
   {
+    "type": "/dt",
+    "named": false
+  },
+  {
     "type": ":",
     "named": false
   },
@@ -1092,11 +1201,19 @@
     "named": false
   },
   {
+    "type": "continuous",
+    "named": false
+  },
+  {
     "type": "count",
     "named": false
   },
   {
     "type": "couple",
+    "named": false
+  },
+  {
+    "type": "d",
     "named": false
   },
   {
@@ -1156,6 +1273,10 @@
     "named": false
   },
   {
+    "type": "param",
+    "named": false
+  },
+  {
     "type": "poisson",
     "named": false
   },
@@ -1174,6 +1295,10 @@
   {
     "type": "resource",
     "named": false
+  },
+  {
+    "type": "rhs_text",
+    "named": true
   },
   {
     "type": "service",

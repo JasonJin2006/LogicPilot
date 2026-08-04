@@ -156,6 +156,27 @@ struct AgentDecl {
   std::vector<TickBehavior> behaviors;
 };
 
+// `continuous` block: structured ODEs (Phase D2).
+struct EquationDecl {
+  std::string name;
+  Span name_span;
+  Span span;
+  std::vector<StateVarDecl> state;  // `state <name> = <initial>`
+  struct ParamDecl {
+    std::string name;
+    Span name_span;
+    double value{0.0};
+    Span span;
+  };
+  std::vector<ParamDecl> params;  // `param <name> = <value>`
+  struct Equation {
+    std::string var;
+    std::string rhs_text;
+    Span span;
+  };
+  std::vector<Equation> equations;  // `d <var>/dt = <rhs>`
+};
+
 // `experiment` block: the model declares its own run/optimization setup
 // (IR v2 direction; v1 carries it as a compile sidecar, not in F1).
 struct ExperimentDecl {
@@ -209,6 +230,7 @@ struct ModelAst {
   std::vector<ProcessDecl> processes;
   std::vector<AtomicDecl> atomics;
   std::vector<AgentDecl> agents;
+  std::vector<EquationDecl> continuous;
   std::vector<ExperimentDecl> experiments;
   std::vector<CoupleDecl> couplings;
 };

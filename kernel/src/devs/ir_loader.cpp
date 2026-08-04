@@ -432,13 +432,9 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     if (v2_root->semantics() != nullptr &&
         v2_root->semantics()->block() != nullptr) {
       const std::string block = v2_root->semantics()->block()->str();
-      if (block == "equation" && v2_root->continuous() != nullptr &&
-          v2_root->continuous()->size() > 0) {
-        return std::make_unique<ContinuousReplicationModel>(file.v2_bytes,
-                                                            v2_root);
-      }
       bool atomic_only = block == "atomic";
       bool agent_only = block == "agent";
+      bool equation_only = block == "equation";
       const auto children_only = [&](const char* expected) {
         if (v2_root->children() == nullptr ||
             v2_root->children()->size() == 0) {
@@ -456,6 +452,7 @@ std::unique_ptr<ReplicationModel> build_replication_model(
       if (block == "model") {
         atomic_only = children_only("atomic");
         agent_only = children_only("agent");
+        equation_only = children_only("equation");
       }
       if (atomic_only) {
         return std::make_unique<DevsReplicationModel>(file.v2_bytes,
@@ -464,6 +461,17 @@ std::unique_ptr<ReplicationModel> build_replication_model(
       if (agent_only) {
         return std::make_unique<AgentReplicationModel>(file.v2_bytes,
                                                        v2_root);
+      }
+      if (equation_only) {
+        // Resolve the actual equation node (bare root or the sole child of
+        // the core/model container).
+        const ir::v2::Node* equation_node = v2_root;
+        if (block == "model" && v2_root->children() != nullptr &&
+            v2_root->children()->size() > 0) {
+          equation_node = v2_root->children()->Get(0);
+        }
+        return std::make_unique<ContinuousReplicationModel>(file.v2_bytes,
+                                                            equation_node);
       }
     }
   }
@@ -487,6 +495,21 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   }
   if (root->kind_type() == ir::ModelKind_CoupledModel) {
     const ir::CoupledModel* coupled = root->kind_as_CoupledModel();
+    // v1 equation compatibility: a CoupledModel wrapping one EquationModel.
+    if (coupled->children() != nullptr) {
+      int equation_count = 0;
+      const ir::EquationModel* equation = nullptr;
+      for (const ir::Model* child : *coupled->children()) {
+        if (child->kind_type() == ir::ModelKind_EquationModel) {
+          ++equation_count;
+          equation = child->kind_as_EquationModel();
+        }
+      }
+      if (equation_count == 1) {
+        return std::make_unique<ContinuousReplicationModel>(file.bytes,
+                                                            equation);
+      }
+    }
     // Milestone 1b: a coupled tree whose children are AtomicModels executes
     // through the DEVS-lite executor (generic DEVS semantics). Mixed trees
     // with a ProcessModel child keep the process lowering (v1).
