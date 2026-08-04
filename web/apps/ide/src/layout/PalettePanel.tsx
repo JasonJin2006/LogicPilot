@@ -1,34 +1,35 @@
-// Side panel (Palette view): the process library blocks, draggable onto the
-// modeling canvas. The block set mirrors libraries/process.lplib.
+// Side panel (Palette view): the process-library blocks as AnyLogic-style
+// icons (each flow block shows its in/out ports on the chip edges),
+// draggable onto the modeling canvas.
 
 import { setDraggedKind } from '../model/paletteDnd';
-
-const BLOCKS = [
-  { kind: 'resource', hint: 'capacity / failure_rate' },
-  { kind: 'source', hint: 'arrival rate' },
-  { kind: 'queue', hint: 'buffer capacity' },
-  { kind: 'service', hint: 'resource + time' },
-  { kind: 'sink', hint: 'terminal stage' },
-];
+import { BLOCK_DEFS } from '../model/blockDefs';
+import { BlockIcon } from '../model/BlockIcon';
 
 export function PalettePanel() {
   return (
     <div className="side-panel-body">
-      <p className="side-hint">Drag blocks onto the canvas to build models (P1-6).</p>
       <ul className="palette-list">
-        {BLOCKS.map((block) => (
+        {BLOCK_DEFS.map((block) => (
           <li
             key={block.kind}
             className="palette-item"
             draggable
+            title={`${block.kind} — ${block.hint}`}
             onDragStart={(event) => {
               event.dataTransfer.setData('text/plain', block.kind);
               event.dataTransfer.effectAllowed = 'copy';
               setDraggedKind(block.kind);
             }}
           >
-            <code className="palette-kind">{block.kind}</code>
-            <span className="palette-hint">{block.hint}</span>
+            <span className="palette-chip">
+              <span className="palette-chip-icon">
+                <BlockIcon kind={block.kind} />
+              </span>
+              {block.in && <span className="palette-port port-in" aria-hidden />}
+              {block.out && <span className="palette-port port-out" aria-hidden />}
+            </span>
+            <span className="palette-name">{block.kind}</span>
           </li>
         ))}
       </ul>

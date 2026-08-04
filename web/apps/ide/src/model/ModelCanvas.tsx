@@ -9,6 +9,8 @@ import type { DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from 'r
 import { useModelStore } from '../state/modelStore';
 import type { BlockKind } from '@logicpilot/editor';
 import { getDraggedKind } from './paletteDnd';
+import { blockPorts } from './blockDefs';
+import { BlockIcon } from './BlockIcon';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -268,17 +270,24 @@ export function ModelCanvas() {
         className="model-world"
         style={{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }}
       >
-        {document.nodes.map((node) => (
-          <div
-            key={node.id}
-            className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}`}
-            style={{ left: node.x, top: node.y }}
-            onClick={(event) => onCardClick(event, node.id)}
-          >
-            <span className="model-block-kind">{node.kind}</span>
-            <span className="model-block-name">{node.name}</span>
-          </div>
-        ))}
+        {document.nodes.map((node) => {
+          const ports = blockPorts(node.kind);
+          return (
+            <div
+              key={node.id}
+              className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}`}
+              style={{ left: node.x, top: node.y }}
+              onClick={(event) => onCardClick(event, node.id)}
+            >
+              <span className="model-block-icon">
+                <BlockIcon kind={node.kind} />
+              </span>
+              <span className="model-block-name">{node.name}</span>
+              {ports.in && <span className="model-port port-in" data-port="in" title="in" />}
+              {ports.out && <span className="model-port port-out" data-port="out" title="out" />}
+            </div>
+          );
+        })}
       </div>
       {document.nodes.length === 0 && (
         <div className="model-empty">Drag blocks from the palette to build a model.</div>
