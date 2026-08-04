@@ -5,16 +5,15 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: calc(var(--status-h) * 2);
+  height: calc(var(--status-h) * 4 / 3);
   padding: 0 14px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
 }
 
 .top-logo {
-  display: flex;
-  align-items: center;
-  color: var(--accent);
+  width: 20px;
+  height: 20px;
 }
 
 .search-box {
