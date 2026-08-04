@@ -131,8 +131,23 @@
 }
 
 .area-center .tab-bar {
+  position: relative;
   min-height: 26px;
   padding: 2px 0 0;
+  border-bottom: none;
+}
+
+/* The center bar's bottom line spans the whole row (through the splitter
+   columns) so it meets the side panels' vertical borders with no gap. */
+.area-center .tab-bar::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--splitter-w));
+  right: calc(-1 * var(--splitter-w));
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
 }
 
 .area-right .tab-bar,
@@ -241,6 +256,18 @@
 .tab.active {
   background: var(--body-bg);
   color: var(--text);
+}
+
+/* The active tab blends into the pane below: its background (plus this
+   cover line) hides the bar's bottom line under the tab. */
+.tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--body-bg);
 }
 
 .tab-label {
