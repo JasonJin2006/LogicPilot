@@ -1,7 +1,8 @@
-// IR v2 draft - thin Node container + semantics references (library registry).
-// NOT wired into the build yet: this is the migration target described in
-// docs/specs/ir-v2.md. The frozen v1 contract (schemas/ir.fbs) is unchanged
-// until Phase B performs the reviewed freeze upgrade.
+// IR v2 - thin Node container + semantics references (library registry).
+// Wired into the build and frozen (baseline copy in schemas/baseline/):
+// `lpcli compile` emits this contract by default (file_identifier "LP2R");
+// the v1 contract (schemas/ir.fbs) remains a pure compatibility layer.
+// Migration design: docs/specs/ir-v2.md.
 
 namespace logicpilot.ir.v2;
 

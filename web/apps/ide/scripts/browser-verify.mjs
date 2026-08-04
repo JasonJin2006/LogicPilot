@@ -133,6 +133,11 @@ try {
   if (!optimizeText?.includes('best servers=')) {
     throw new Error('AI panel did not show an optimization result');
   }
+  const curve = await page.$('.ai-opt-chart polyline');
+  if (!curve) {
+    throw new Error('AI panel did not render the optimization curve');
+  }
+  log('AI panel charted the optimization curve over the search space');
   log('AI panel optimized a model parameter from the prompt');
   await page.screenshot({ path: join(OUT, '5-ai-optimize.png') });
 

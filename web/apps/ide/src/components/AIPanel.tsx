@@ -105,6 +105,81 @@ function TrajectoryChart({
   );
 }
 
+// Optimization curve: variable value on the x axis, metric score on the y
+// axis, with the best evaluated point highlighted (min or max per objective).
+function OptimizeChart({
+  evaluations,
+  objective,
+}: {
+  evaluations: Array<{ value: number; score: number }>;
+  objective: string;
+}) {
+  if (evaluations.length < 2) {
+    return null;
+  }
+  const width = 260;
+  const height = 120;
+  const pad = 6;
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  let bestIndex = 0;
+  let bestScore = evaluations[0]!.score;
+  for (let i = 0; i < evaluations.length; ++i) {
+    const { value, score } = evaluations[i]!;
+    xMin = Math.min(xMin, value);
+    xMax = Math.max(xMax, value);
+    yMin = Math.min(yMin, score);
+    yMax = Math.max(yMax, score);
+    const better =
+        objective === 'maximize' ? score > bestScore : score < bestScore;
+    if (better) {
+      bestIndex = i;
+      bestScore = score;
+    }
+  }
+  if (xMin === xMax) {
+    xMax = xMin + 1;
+  }
+  if (yMin === yMax) {
+    yMin -= 1;
+    yMax += 1;
+  }
+  const x = (v: number) =>
+      pad + ((v - xMin) / (xMax - xMin)) * (width - 2 * pad);
+  const y = (s: number) =>
+      pad + (1 - (s - yMin) / (yMax - yMin)) * (height - 2 * pad);
+  const points = evaluations
+      .map(
+          (entry) =>
+              `${x(entry.value).toFixed(1)},${y(entry.score).toFixed(1)}`,
+      )
+      .join(' ');
+  const best = evaluations[bestIndex]!;
+  return (
+    <svg
+      className="ai-trajectory ai-opt-chart"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke={TRAJECTORY_COLORS[0]}
+        strokeWidth="1.5"
+      />
+      <circle
+        cx={x(best.value).toFixed(1)}
+        cy={y(best.score).toFixed(1)}
+        r="3"
+        fill={TRAJECTORY_COLORS[1]}
+      />
+    </svg>
+  );
+}
+
 export function AIPanel() {
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
   const [busy, setBusy] = useState(false);
@@ -210,6 +285,10 @@ export function AIPanel() {
             {optimized.objective} {optimized.metric} → {optimized.best.score},
             {optimized.strategy}, {optimized.evaluations.length} evaluations)
           </p>
+          <OptimizeChart
+            evaluations={optimized.evaluations}
+            objective={optimized.objective}
+          />
           <table className="ai-scores">
             <thead>
               <tr>

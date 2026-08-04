@@ -25,7 +25,7 @@
 1. **git 纪律**: 每个里程碑结束由集成者提交 checkpoint（`main`，中文或英文常规 commit message）；未获请求不新建分支；工作区不承诺不提交（子代理一律不提交，改动留在工作区由集成者统一提交）。
 2. **构建隔离**: 每个工作流使用独立的构建目录 `build/<workstream>-dev`，禁止并发 ninja 进同一构建目录（会损坏 `.ninja_log`/`.ninja_deps`）。
 3. **契约冻结**: F1（`schemas/ir.fbs`）与 F2（`schemas/wire.fbs`）为冻结契约；任何变更必须走 `scripts/check-schema-conform.ps1` 冻结流程并同 commit 更新 `schemas/baseline/`。子代理默认不得改动 `schemas/`。
-4. **验收标准**: 新功能必须有 (a) 单元测试、(b) 端到端验收（理论值对拍或黄金值）、(c) 确定性（固定种子逐位复现）三件套之一以上；不得破坏现有 88 个 ctest 与前端测试。
+4. **验收标准**: 新功能必须有 (a) 单元测试、(b) 端到端验收（理论值对拍或黄金值）、(c) 确定性（固定种子逐位复现）三件套之一以上；不得破坏现有 139 个 ctest 与前端测试。
 5. **跨组对齐**: 涉及两个以上工作流的语义变更，由集成者先写契约规格（`docs/specs/`），子代理按规格实现，禁止自行发明接口。
 
 ## 路线图状态
@@ -35,10 +35,13 @@
   AtomicModel DEVS 通用执行（IR 解释器 + DevsExecutor + atomic DSL，里程碑 1b）；
   ✅ AgentModel E2E（agent DSL + tick 循环 + 内置行为，里程碑 1c）——五种模型
   种类全部可执行（Phase D：Equation 结构化方程 + ODE 引擎，解析解验收）。
-- Phase 2（DSL）: ✅ v0 + atomic 块完成；✅ 结构化诊断（AI 闭环地基）；
-  experiment/表达式 未开始。
+- Phase 2（DSL）: ✅ v0 + atomic/agent/continuous 块完成；✅ 结构化诊断（AI 闭环地基）；
+  ✅ `experiment` 块（模型声明实验，v2 `ModelFile.experiments`）；表达式 未开始。
 - Phase 6（AI）: 🔶 AI 建模闭环（NL→DSL + 诊断迭代，rule-based provider 离线可用、
   LLM provider 可选）完成第一刀（`scripts/ai-build.mjs`，见 `docs/specs/ai-loop.md`）；
-  自动优化/瓶颈归因 未开始。
-- Phase 3（Web IDE）: 🔶 2D 可视化切片完成；拖拽建模/AI 面板未开始。
+  ✅ 自动优化（`scripts/ai-optimize.mjs`，模型声明实验 + grid/GA 搜索，AI 面板可触发）；
+  ✅ 瓶颈归因第一刀（`scripts/ai-explain.mjs`，池级利用率/可用性/等待占比）；
+  细粒度逐环节归因 未开始。
+- Phase 3（Web IDE）: 🔶 2D 可视化切片 + AI 面板（build/optimize/explain/连续模型轨迹
+  曲线）完成；拖拽建模 未开始。
 - Phase 4/5/6（2D/3D、行业库、AI）: ⬜ 未开始。

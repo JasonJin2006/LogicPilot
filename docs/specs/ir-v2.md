@@ -1,8 +1,9 @@
 # IR v2 迁移设计：薄契约 + 引擎注册表
 
-状态: 设计定稿，Phase B 第一部分已实现（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
-工程纪律（类型化/版本化/冻结/确定性/span/诊断）。配套草案见 `schemas/ir_v2.fbs`
-（尚未接入构建，仅作为迁移参照物）。
+状态: 全部阶段已实现（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
+工程纪律（类型化/版本化/冻结/确定性/span/诊断）。`schemas/ir_v2.fbs` 已接入 C++/TS
+codegen（file_identifier `LP2R`）并成为 `lpcli compile` 的默认发射契约；`lpcli
+compile --ir-version 1` 与 v1 读取器保留为纯兼容层。
 
 ## 1. 结论（来自架构评审）
 
@@ -87,6 +88,14 @@ Node（容器契约，故意薄）
   谐振子解析解验收）。同时修复 IR 指针生命周期缺陷：模型构造器一律从自身拷贝的
   缓冲重新派生指针（此前 lpcli 局部 `IrLoadResult` 析构会导致 use-after-free
   间歇崩溃）。139/139 ctest 连续通过。
+- **F3 互操作门禁（已实现）**: `scripts/interop` writer 同时发射 v1/v2 缓冲
+  （`model_file.bin` + `model_v2.bin` + `counters_frame.bin`），
+  `verify-interop.mjs` 逐字段双向校验（117 checks）——C++ 与 TS 的运行时
+  编解码对齐成为 CI 硬门禁，不再只靠 schema conform 防漂移。
+- **Web 连续模型可视化（已实现）**: `lpcli run --trajectory <path>` 输出采样轨迹
+  JSON，AI 面板渲染 ODE 曲线（浏览器 E2E 覆盖）；decay 端到端测试断言轨迹逐点
+  值。迁移收尾时评审遗留 Minor（IrModelFile move-only、控制消息 JSON 转义、
+  Session 写队列上限）均已修复。
 
 ## v1 读取器退役决策
 
@@ -107,5 +116,8 @@ Node（容器契约，故意薄）
 - 冻结流程不变：`flatc --conform` + `.bfbs` SHA256 双门禁，契约变更与 baseline
   更新同 commit（ADR-0004）。
 - v2 读取器必须能读 v1（迁移测试固定种子逐位对拍）。
+- 确定性声明的 "bit-exact" 指**同构建内**固定种子逐位可复现；libm 超越函数
+  （exp/log/sqrt/sin/cos）跨工具链（MSVC / clang-libc++）不保证逐位一致，跨平台
+  黄金值对比需自研位精确实现后再引入（评审 m4）。
 - span/诊断贯穿 Node/Experiment，AI 闭环不回归。
 - 每个引擎独立验收（M/M/c 理论、DEVS 确定性、agent 轨迹、未来 ODE 解析解）。
