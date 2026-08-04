@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import {
   addNode,
   createDocument,
+  moveNode,
   renameNode,
   setParam,
   type AddNodeInput,
@@ -16,6 +17,7 @@ interface ModelState {
   document: ModelDocument;
   selectedId: string | null;
   addBlock: (input: AddNodeInput) => void;
+  moveBlock: (id: string, x: number, y: number) => void;
   select: (id: string | null) => void;
   renameBlock: (id: string, name: string) => void;
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
@@ -26,6 +28,8 @@ export const useModelStore = create<ModelState>((set) => ({
   document: createDocument('Model'),
   selectedId: null,
   addBlock: (input) => set((state) => ({ document: addNode(state.document, input) })),
+  moveBlock: (id, x, y) =>
+    set((state) => ({ document: moveNode(state.document, id, x, y) })),
   select: (id) => set({ selectedId: id }),
   renameBlock: (id, name) => set((state) => ({ document: renameNode(state.document, id, name) })),
   setBlockParam: (id, key, value) =>

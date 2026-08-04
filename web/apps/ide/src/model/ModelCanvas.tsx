@@ -5,9 +5,9 @@
 // arrowheads and numeric ticks. Blocks from the palette drop in world coords.
 
 import { useEffect, useRef, useState } from 'react';
-import type { DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useModelStore } from '../state/modelStore';
-import type { BlockKind } from '@logicpilot/editor';
+import type { BlockKind, ModelNode } from '@logicpilot/editor';
 import { getDraggedKind } from './paletteDnd';
 import { blockPorts } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
@@ -40,17 +40,6 @@ function niceStep(raw: number): number {
   return largest * Math.ceil(raw / largest);
 }
 
-function stepDecimals(step: number): number {
-  const text = step.toFixed(10).replace(/0+$/, '');
-  const dot = text.indexOf('.');
-  return dot === -1 ? 0 : text.length - dot - 1;
-}
-
-function formatTick(value: number, decimals: number): string {
-  const fixed = value.toFixed(decimals);
-  return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed;
-}
-
 interface View {
   scale: number;
   panX: number;
@@ -61,17 +50,27 @@ export function ModelCanvas() {
   const document = useModelStore((state) => state.document);
   const selectedId = useModelStore((state) => state.selectedId);
   const addBlock = useModelStore((state) => state.addBlock);
+  const moveBlock = useModelStore((state) => state.moveBlock);
   const select = useModelStore((state) => state.select);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const drag = useRef<{
     startX: number;
     startY: number;
     panX: number;
     panY: number;
+    moved: boolean;
+  } | null>(null);
+  const blockDrag = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    worldX: number;
+    worldY: number;
     moved: boolean;
   } | null>(null);
 
@@ -154,21 +153,59 @@ export function ModelCanvas() {
     select(null);
   };
 
-  const onCardClick = (event: MouseEvent, id: string) => {
+  // Drag a block card to move it in world coordinates; a plain click
+  // (no movement) selects it instead.
+  const onBlockPointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    node: ModelNode,
+  ) => {
+    if (event.button !== 0) return;
+    if ((event.target as Element).closest('.model-port')) return;
     event.stopPropagation();
-    select(id);
+    blockDrag.current = {
+      id: node.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      worldX: node.x,
+      worldY: node.y,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingId(node.id);
+  };
+
+  const onBlockPointerMove = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    node: ModelNode,
+  ) => {
+    const gesture = blockDrag.current;
+    if (!gesture || gesture.id !== node.id) return;
+    const dx = event.clientX - gesture.startX;
+    const dy = event.clientY - gesture.startY;
+    if (!gesture.moved && Math.hypot(dx, dy) < 3) return;
+    gesture.moved = true;
+    moveBlock(gesture.id, gesture.worldX + dx / view.scale, gesture.worldY + dy / view.scale);
+  };
+
+  const onBlockPointerUp = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    node: ModelNode,
+  ) => {
+    const gesture = blockDrag.current;
+    blockDrag.current = null;
+    setDraggingId(null);
+    if (gesture && gesture.id === node.id && !gesture.moved) {
+      select(node.id);
+    }
   };
 
   // Grid + axes, computed in screen space.
   const { scale, panX, panY } = view;
   const step = niceStep(GRID_TARGET_PX / scale);
-  const decimals = stepDecimals(step);
   const x0 = Math.floor(-panX / step);
   const x1 = Math.ceil((size.width - panX) / step);
   const y0 = Math.floor(-panY / step);
   const y1 = Math.ceil((size.height - panY) / step);
-  const xTicksOn = panY >= 0 && panY <= size.height - 18;
-  const yTicksOn = panX >= 6 && panX <= size.width - 36;
   // Snap lines to the pixel grid (+0.5 centers a 1px stroke on one pixel
   // row/column) so the grid stays crisp at any pan/zoom instead of rendering
   // as blurry 2px soft lines.
@@ -176,8 +213,6 @@ export function ModelCanvas() {
   const axisY = Math.round(panY) + 0.5;
   const verticals = [];
   const horizontals = [];
-  const xTicks = [];
-  const yTicks = [];
   for (let k = x0; k <= x1; k++) {
     const sx = Math.round(k * step * scale + panX) + 0.5;
     const major = k % MAJOR_EVERY === 0;
@@ -191,13 +226,6 @@ export function ModelCanvas() {
         style={{ stroke: major ? 'var(--border-strong)' : 'var(--border)' }}
       />,
     );
-    if (major && k !== 0 && xTicksOn && sx >= 20 && sx <= size.width - 20) {
-      xTicks.push(
-        <text key={`xt${k}`} x={Math.round(sx)} y={Math.round(axisY) + 14} textAnchor="middle">
-          {formatTick(k * step, decimals)}
-        </text>,
-      );
-    }
   }
   for (let k = y0; k <= y1; k++) {
     const sy = Math.round(k * step * scale + panY) + 0.5;
@@ -212,13 +240,6 @@ export function ModelCanvas() {
         style={{ stroke: major ? 'var(--border-strong)' : 'var(--border)' }}
       />,
     );
-    if (major && yTicksOn && sy >= 10 && sy <= size.height - 12) {
-      yTicks.push(
-        <text key={`yt${k}`} x={Math.round(axisX) - 6} y={Math.round(sy) + 3} textAnchor="end">
-          {formatTick(k * step, decimals)}
-        </text>,
-      );
-    }
   }
   const xAxisVisible = panY >= 0 && panY <= size.height;
   const yAxisVisible = panX >= 0 && panX <= size.width;
@@ -263,8 +284,6 @@ export function ModelCanvas() {
             )}
           </g>
         )}
-        {xTicks}
-        {yTicks}
       </svg>
       <div
         className="model-world"
@@ -275,14 +294,34 @@ export function ModelCanvas() {
           return (
             <div
               key={node.id}
-              className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}`}
+              className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
               style={{ left: node.x, top: node.y }}
-              onClick={(event) => onCardClick(event, node.id)}
+              onPointerDown={(event) => onBlockPointerDown(event, node)}
+              onPointerMove={(event) => onBlockPointerMove(event, node)}
+              onPointerUp={(event) => onBlockPointerUp(event, node)}
+              onPointerCancel={() => {
+                blockDrag.current = null;
+                setDraggingId(null);
+              }}
             >
               <span className="model-block-icon">
                 <BlockIcon kind={node.kind} />
-                {ports.in && <span className="model-port port-in" data-port="in" title="in" />}
-                {ports.out && <span className="model-port port-out" data-port="out" title="out" />}
+                {ports.in && (
+                  <span
+                    className="model-port port-in"
+                    data-port="in"
+                    title="in"
+                    onPointerDown={(event) => event.stopPropagation()}
+                  />
+                )}
+                {ports.out && (
+                  <span
+                    className="model-port port-out"
+                    data-port="out"
+                    title="out"
+                    onPointerDown={(event) => event.stopPropagation()}
+                  />
+                )}
               </span>
               <span className="model-block-name">{node.name}</span>
             </div>
