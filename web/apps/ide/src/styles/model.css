@@ -20,6 +20,20 @@
   min-height: 0;
 }
 
+.canvas-run {
+  position: absolute;
+  z-index: 3;
+  left: 8px;
+  top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  box-shadow: var(--shadow);
+}
+
 .model-canvas {
   position: relative;
   flex: 1;

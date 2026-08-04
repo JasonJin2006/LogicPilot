@@ -155,6 +155,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    滚动）；Recent 追踪最近拖放的块（持久化）；自定义库 JSON 导入
    （`logicpilot.palette` 持久化），自定义块可拖入画布（DSL 会照常生成，
    编译器对未注册 kind 报 LP2004）。
+   **设置重规划 ✅ 已完成**（2026-08-05）：设置弹层只保留 IDE 级外围偏好
+   （外观置顶 + 连接）；运行配置与控制移出设置，改为画布悬浮 Run 按钮打开
+   的 Run 对话框（seed/reps/arrivals/warmup/speed + Start/Pause/Resume/
+   Step/Stop）——空画布跑网关内建模型，有画布模型时先编译再带参数运行。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

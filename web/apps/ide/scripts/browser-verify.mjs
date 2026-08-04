@@ -73,8 +73,12 @@ try {
   const darkTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   if (darkTheme !== 'dark') throw new Error(`expected dark theme, got ${darkTheme}`);
   log('theme switching: light <-> dark');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-  // Run parameters + Start from the settings dialog.
+  // Run parameters + Start live in the canvas Run dialog (per-experiment,
+  // not IDE settings). The canvas is empty, so the served model runs.
+  await page.locator('.canvas-run').click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
   for (const [label, value] of [
     ['arrivals', '200'],
     ['warmup', '30'],
@@ -203,8 +207,8 @@ try {
     document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null,
   );
 
-  await page.getByRole('button', { name: 'Settings' }).click();
-  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
+  await page.locator('.canvas-run').click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
   for (const [label, value] of [
     ['arrivals', '100'],
     ['warmup', '10'],
@@ -213,11 +217,8 @@ try {
   ]) {
     await page.locator('label.field', { hasText: label }).locator('input').fill(value);
   }
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
-  await page.locator('.dsl-edge-tab').click();
-  await page.waitForSelector('.dsl-run', { timeout: 5_000 });
-  await page.getByRole('button', { name: 'Run' }).click();
+  await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(
     () => document.querySelector('.console-log')?.textContent?.includes('run run-'),
     undefined,
@@ -239,6 +240,7 @@ try {
     undefined,
     { timeout: 60_000 },
   );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('canvas model ran with live block badges');
 
   // AI panel (right): generate / optimize / explain / trajectory.

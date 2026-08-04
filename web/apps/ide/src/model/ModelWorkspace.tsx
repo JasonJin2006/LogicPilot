@@ -7,9 +7,10 @@
 import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { generateDsl } from '@logicpilot/editor';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play } from 'lucide-react';
 import { useConnectionStore } from '../state/connectionStore';
 import { useModelStore } from '../state/modelStore';
+import { useUiStore } from '../state/uiStore';
 import { ModelCanvas } from './ModelCanvas';
 
 const MIN_EDITOR_W = 220;
@@ -18,7 +19,7 @@ const MAX_EDITOR_W = 560;
 export function ModelWorkspace() {
   const document = useModelStore((state) => state.document);
   const compile = useConnectionStore((state) => state.compile);
-  const runCanvasModel = useConnectionStore((state) => state.runCanvasModel);
+  const openRunDialog = useUiStore((state) => state.openRunDialog);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorWidth, setEditorWidth] = useState(360);
   const splitterDrag = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -42,6 +43,10 @@ export function ModelWorkspace() {
 
   return (
     <div className="model-workspace">
+      <button className="canvas-run" title="Run the model" onClick={openRunDialog}>
+        <Play size={12} />
+        Run
+      </button>
       <div className="model-canvas-host">
         <ModelCanvas />
       </div>
@@ -66,9 +71,6 @@ export function ModelWorkspace() {
               <span className="dsl-title">DSL</span>
               <button className="dsl-compile" onClick={compile}>
                 Compile
-              </button>
-              <button className="dsl-compile dsl-run" onClick={runCanvasModel}>
-                Run
               </button>
             </div>
             <pre className="dsl-source">{generateDsl(document)}</pre>
