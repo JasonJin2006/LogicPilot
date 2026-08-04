@@ -83,7 +83,7 @@ try {
     { timeout: 30_000 },
   );
   log('run started on gateway');
-  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Wait for the run to actually finish on the gateway (its worker is
   // single-threaded; the AI steps below must not race a leftover run).
