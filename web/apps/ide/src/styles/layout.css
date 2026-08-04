@@ -132,6 +132,7 @@
 
 .area-center .tab-bar {
   position: relative;
+  z-index: 0; /* stacking context so the tabs (z1) paint over the line */
   min-height: 26px;
   padding: 2px 0 0;
   border-bottom: none;
