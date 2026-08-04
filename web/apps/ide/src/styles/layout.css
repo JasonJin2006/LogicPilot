@@ -94,6 +94,10 @@
   /* collapsed areas keep only the tab bar */
 }
 
+.activity-spacer {
+  flex: 1;
+}
+
 /* --- splitters ---------------------------------------------------------- */
 
 .splitter {
