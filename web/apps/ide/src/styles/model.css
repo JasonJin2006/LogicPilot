@@ -34,8 +34,16 @@
   cursor: col-resize;
 }
 
-.dsl-splitter:hover,
-.dsl-splitter:active {
+.dsl-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.dsl-splitter:hover::after,
+.dsl-splitter:active::after {
   background: var(--accent);
   opacity: 0.55;
 }
