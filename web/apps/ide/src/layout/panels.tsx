@@ -7,14 +7,13 @@ import type { ComponentType } from 'react';
 import { Boxes, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
 import { ModelCanvas } from '../model/ModelCanvas';
-import { VisualizationCanvas } from '../presentation/VisualizationCanvas';
 import { ConsolePanel } from './ConsolePanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
-export type PanelId = 'queue' | 'model' | 'ai' | 'console' | 'modelInfo' | 'palette';
+export type PanelId = 'model' | 'ai' | 'console' | 'modelInfo' | 'palette';
 
 export interface PanelDef {
   title: string;
@@ -23,8 +22,7 @@ export interface PanelDef {
 }
 
 export const PANELS: Record<PanelId, PanelDef> = {
-  // center: the visualization/model workspace.
-  queue: { title: 'Visualization', area: 'center', component: VisualizationCanvas },
+  // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelCanvas },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
@@ -49,7 +47,7 @@ export const ACTIVITY_VIEWS: Array<{
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
   left: { panels: ['modelInfo', 'palette'], active: 'modelInfo' },
-  center: { panels: ['queue', 'model'], active: 'queue' },
+  center: { panels: ['model'], active: 'model' },
   right: { panels: ['ai'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },
 };

@@ -51,17 +51,17 @@ describe('layoutStore', () => {
 
   it('removePanel closes a center tab and falls the active tab back', () => {
     const store = useLayoutStore.getState();
-    store.removePanel('center', 'queue');
+    store.removePanel('center', 'model');
     const center = useLayoutStore.getState().areas.center;
-    expect(center.panels).toEqual(['model']);
-    // Removing the active panel leaves the center empty; defaults come back
+    expect(center.panels).toEqual([]);
+    // Removing the only panel leaves the center empty; defaults come back
     // on the next rehydrate (mergePersistedLayout).
     expect(center.activePanel).toBe('model');
   });
 
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
-    expect(areas.center.panels).toEqual(['queue', 'model']);
+    expect(areas.center.panels).toEqual(['model']);
     expect(areas.right.panels).toEqual(['ai']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette']);
     expect(areas.bottom.panels).toEqual(['console']);
@@ -74,16 +74,16 @@ describe('layoutStore', () => {
         ...current.areas,
         center: {
           ...current.areas.center,
-          panels: ['queue', 'counters', 'results'],
+          panels: ['model', 'counters', 'results'],
           activePanel: 'counters',
         },
       },
     };
     const merged = mergePersistedLayout(stale, current);
-    // counters/results were removed from the registry; only queue survives
+    // counters/results were removed from the registry; only model survives
     // and the active panel falls back to it.
-    expect(merged.areas.center.panels).toEqual(['queue']);
-    expect(merged.areas.center.activePanel).toBe('queue');
+    expect(merged.areas.center.panels).toEqual(['model']);
+    expect(merged.areas.center.activePanel).toBe('model');
   });
 
   it('merge restores defaults when a persisted area is empty', () => {

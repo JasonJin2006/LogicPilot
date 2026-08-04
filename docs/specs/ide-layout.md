@@ -11,9 +11,9 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ ┌─ 左侧 ────────┐ ┌─ 中央工作区 ──────┐ ┌─ 右侧 ────────────┐ │
-│ │ 侧边栏         │ │ Queue（可视化）    │ │ AI                │ │
-│ │ Run/Model/     │ │ Model（画布·未来） │ │ Properties（未来） │ │
-│ │ Palette 视图   │ ├─ Console ────────┤ │                   │ │
+│ │ 侧边栏         │ │ Model（建模画布）  │ │ AI                │ │
+│ │ Project/       │ ├─ Console ────────┤ │ Properties（未来） │ │
+│ │ Palette 视图   │                   │ │                   │ │
 │ │               │ │ 事件/诊断（可折叠） │ │                   │ │
 │ └───────────────┘ └───────────────────┘ └───────────────────┘ │
 ├──────────────────────────────────────────────────────────────┤
@@ -31,7 +31,7 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 | ---------- | ----------------------------------------------------- | ---- | ------ |
 | `activity` | 活动栏（竖排图标，切换侧边栏视图）                    | —    | —      |
 | `left`     | 侧边栏（跟随活动栏：Run / Model / Palette / AI 视图） | 宽   | ✅     |
-| `center`   | 工作区（Queue 可视化 / 未来建模画布）                 | —    | —      |
+| `center`   | 工作区（Model 建模画布）                              | —    | —      |
 | `right`    | 上下文面板（AI / 未来 Properties）                    | 宽   | ✅     |
 | `bottom`   | 控制台（仅在中央工作区下方，不贯穿左右）              | 高   | ✅     |
 | `status`   | 全局状态条（连接、FPS、错误、ack）                    | —    | —      |
@@ -53,13 +53,15 @@ interface PanelDef {
 
 当前注册表（`src/layout/panels.tsx`）：
 
-| PanelId | title | area   | 说明              |
-| ------- | ----- | ------ | ----------------- |
-| `queue` | Queue | center | PixiJS 队列可视化 |
-| `ai`    | AI    | right  | AI 模型面板       |
+| PanelId     | title   | area    | 说明                     |
+| ----------- | ------- | ------- | ------------------------ |
+| `model`     | Model   | center  | 建模画布（Palette 拖放） |
+| `ai`        | AI      | right   | AI 模型面板              |
+| `console`   | Console | bottom  | 事件/诊断日志            |
+| `modelInfo` | Project | left    | 模型树（活动栏 Project） |
+| `palette`   | Palette | left    | 块库（活动栏 Palette）   |
 
-未来：`modelTree`(left/Model)、`palette`(left/Palette)、`properties`(right)、
-`console`/`diagnostics`(bottom)。加新面板 = 注册一项，布局与路由不动。
+未来：`properties`(right，选中块属性)。加新面板 = 注册一项，布局与路由不动。
 
 ## 3. layoutStore（zustand + persist）
 
@@ -90,7 +92,7 @@ interface LayoutState {
 | 组件          | 职责                                                  |
 | ------------- | ----------------------------------------------------- |
 | `Workspace`   | 读 layoutStore，渲染 CSS Grid 骨架                    |
-| `ActivityBar` | 竖排图标（Run/Model/Palette/AI），切换 `activityView` |
+| `ActivityBar` | 竖排图标（Project/Palette + 底部设置），切换左侧面板    |
 | `PanelArea`   | 一个区域 = `TabBar` + 内容；折叠态处理                |
 | `TabBar`      | 标签条（点击切换；阶段 2 加拖拽）                     |
 | `Panel`       | 单个面板的边框容器                                    |

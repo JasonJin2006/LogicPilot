@@ -1,6 +1,6 @@
 // Browser end-to-end verification for the LogicPilot IDE: loads the Vite
 // dev page, connects through the settings dialog, starts a small M/M/1 run
-// and asserts the queue animation, the gateway event log, the status bar
+// and asserts the modeling canvas, the gateway event log, the status bar
 // and the AI panel all update. Screenshots land in .verify/out (repo root,
 // untracked scratch dir).
 //
@@ -47,17 +47,15 @@ page.on('pageerror', (err) => consoleErrors.push(String(err)));
 try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
-  await page.waitForSelector('.viz-canvas', { timeout: 20_000 });
-  log('page loaded: presentation canvas present');
+  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
+  log('page loaded: modeling canvas present');
   const canvasText = await page.evaluate(
-    () => document.querySelector('.viz-canvas')?.textContent ?? '',
+    () => document.querySelector('.model-canvas')?.textContent ?? '',
   );
-  for (const name of ['Arrivals', 'WaitLine', 'Handle', 'Done']) {
-    if (!canvasText.includes(name)) {
-      throw new Error(`presentation canvas missing element '${name}'`);
-    }
+  if (!canvasText.includes('Drag blocks from the palette')) {
+    throw new Error('modeling canvas missing the empty-state hint');
   }
-  log('presentation canvas composes source/queue/service/sink elements');
+  log('modeling canvas mounted (empty state)');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
   // Connection + run setup live in the settings dialog (activity bar gear).

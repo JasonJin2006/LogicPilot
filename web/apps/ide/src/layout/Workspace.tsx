@@ -6,7 +6,6 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
-import { useRunStore } from '../state/runStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
@@ -81,7 +80,6 @@ function TabBar({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
-  const modelName = useRunStore((s) => s.runInfo?.modelName);
   const perTabClose = area === 'center';
   return (
     <div className="tab-bar">
@@ -91,11 +89,7 @@ function TabBar({ area }: { area: AreaId }) {
           className={`tab${panel === state.activePanel ? ' active' : ''}`}
           onClick={() => setActive(area, panel)}
         >
-          <span className="tab-label">
-            {area === 'center' && panel === 'queue'
-              ? (modelName ?? 'Visualization')
-              : PANELS[panel].title}
-          </span>
+          <span className="tab-label">{PANELS[panel].title}</span>
           {perTabClose && (
             <button
               className="tab-x"
