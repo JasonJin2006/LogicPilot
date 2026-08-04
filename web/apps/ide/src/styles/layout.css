@@ -208,7 +208,9 @@
 }
 
 .splitter-bottom::after {
-  inset: 4px 0 0 0;
+  /* The console's top edge line sits on the cell's bottom border; extend
+     the 2px bar 1px past it so the line runs through the bar. */
+  inset: 5px 0 -1px 0;
 }
 
 /* --- tab bar ------------------------------------------------------------ */
