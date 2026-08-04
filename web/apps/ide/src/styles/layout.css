@@ -127,12 +127,14 @@
   position: relative;
 }
 
+.area-right .tab-bar,
 .area-bottom .tab-bar {
   min-height: 26px;
   padding: 2px 8px 0;
   border-bottom: none;
 }
 
+.area-right .tab,
 .area-bottom .tab {
   padding: 4px 10px;
   font-size: 11px;
@@ -253,6 +255,11 @@
 
 .area-left .panel-pane {
   padding: 12px;
+  overflow-y: auto;
+}
+
+.area-right .panel-pane {
+  padding: 10px 12px;
   overflow-y: auto;
 }
 
