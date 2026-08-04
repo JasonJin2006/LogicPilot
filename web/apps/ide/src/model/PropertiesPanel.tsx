@@ -30,7 +30,7 @@ export function PropertiesPanel() {
     );
   }
 
-  const fields = BLOCK_FIELDS[node.kind];
+  const fields = BLOCK_FIELDS[node.kind] ?? [];
   const valueFor = (field: BlockField) =>
     node.params[field.key] ?? BLOCK_DEFAULTS[node.kind][field.key] ?? '';
 

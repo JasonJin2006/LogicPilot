@@ -16,6 +16,10 @@ export interface ModelNode {
   x: number;
   y: number;
   params: Record<string, string | number | boolean>;
+  /** The palette library the block came from ('process', 'presentation',
+   *  'statechart', 'action', ...). Process-flow blocks emit into the DSL;
+   *  drawing/behavior elements do not. Legacy nodes leave it undefined. */
+  library?: string;
 }
 
 /** A sequential coupling between two block instances (process flow). */
@@ -37,6 +41,7 @@ export interface AddNodeInput {
   x: number;
   y: number;
   params?: Record<string, string | number | boolean>;
+  library?: string;
 }
 
 let nextId = 1;
@@ -62,6 +67,7 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
     x: input.x,
     y: input.y,
     params: { ...input.params },
+    library: input.library,
   };
   return { ...document, nodes: [...document.nodes, node] };
 }

@@ -119,4 +119,25 @@ describe('DSL v2 generation', () => {
     expect(source).toContain('myblock X {');
     expect(source).toContain('rate = 1');
   });
+
+  it('skips drawing and behavior elements (non-process libraries)', () => {
+    let doc = createDocument();
+    doc = addNode(doc, {
+      kind: 'rect' as Parameters<typeof addNode>[1]['kind'],
+      name: 'Box',
+      x: 0,
+      y: 0,
+      library: 'presentation',
+    });
+    doc = addNode(doc, {
+      kind: 'state' as Parameters<typeof addNode>[1]['kind'],
+      name: 'Idle',
+      x: 100,
+      y: 0,
+      library: 'statechart',
+    });
+    const source = generateDsl(doc);
+    expect(source).not.toContain('rect');
+    expect(source).not.toContain('state');
+  });
 });

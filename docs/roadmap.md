@@ -159,6 +159,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    （外观置顶 + 连接）；运行配置与控制移出设置，改为画布悬浮 Run 按钮打开
    的 Run 对话框（seed/reps/arrivals/warmup/speed + Start/Pause/Resume/
    Step/Stop）——空画布跑网关内建模型，有画布模型时先编译再带参数运行。
+   **Palette 多库 ✅ 已完成**（2026-08-05）：新增演示库（rect/roundedRect/
+   oval/line/polyline/arc/curve/text/image/group，画布上渲染为真实 SVG 形状，
+   可拖动/选中）、状态图库（state/initialState/finalState/transition/
+   historyState/branch）、行动图库（action/decision/whileLoop/forLoop/
+   doWhileLoop/break/return/localVariable），均配图标；节点带 `library`
+   标记，非 process 库元素不进 DSL（`generateDsl` 只发射 process 流）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

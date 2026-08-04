@@ -8,9 +8,15 @@ import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { useModelStore } from '../state/modelStore';
 import type { BlockKind, ModelNode } from '@logicpilot/editor';
-import { getDraggedKind } from './paletteDnd';
-import { BLOCK_DEFAULTS, blockPorts, portAnchor } from './blockDefs';
+import { getDraggedKind, getDraggedLibrary } from './paletteDnd';
+import {
+  BLOCK_DEFAULTS,
+  blockPorts,
+  portAnchor,
+  PRESENTATION_KINDS,
+} from './blockDefs';
 import { BlockIcon } from './BlockIcon';
+import { PresentationShape } from './PresentationShape';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 
@@ -114,7 +120,7 @@ export function ModelCanvas() {
     panY: number;
     moved: boolean;
   } | null>(null);
-  const blockDrag = useRef<{
+  const elementDrag = useRef<{
     id: string;
     startX: number;
     startY: number;
@@ -162,7 +168,7 @@ export function ModelCanvas() {
   // Drag on empty space pans the plane; a plain click deselects.
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    if ((event.target as Element).closest('.model-block')) return;
+    if ((event.target as Element).closest('.model-block, .model-shape')) return;
     drag.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -195,10 +201,14 @@ export function ModelCanvas() {
     event.preventDefault();
     const kind =
       (event.dataTransfer.getData('text/plain') as BlockKind) || (getDraggedKind() as BlockKind);
+    const library =
+      event.dataTransfer.getData('application/x-logicpilot-library') ||
+      getDraggedLibrary() ||
+      'process';
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left - view.panX) / view.scale;
     const y = (event.clientY - rect.top - view.panY) / view.scale;
-    addBlock({ kind, name: kind, x, y, params: BLOCK_DEFAULTS[kind] });
+    addBlock({ kind, name: kind, x, y, params: BLOCK_DEFAULTS[kind], library });
     recordUse(kind);
     select(null);
   };
@@ -288,16 +298,16 @@ export function ModelCanvas() {
   const live = vizState.tickVersion > 0;
   const queueLength = live ? vizState.queueLength : 0;
 
-  // Drag a block card to move it in world coordinates; a plain click
-  // (no movement) selects it instead.
-  const onBlockPointerDown = (
-    event: ReactPointerEvent<HTMLDivElement>,
+  // Drag a block card or presentation shape to move it in world coordinates;
+  // a plain click (no movement) selects it instead.
+  const onElementPointerDown = (
+    event: ReactPointerEvent<HTMLElement | SVGElement>,
     node: ModelNode,
   ) => {
     if (event.button !== 0) return;
     if ((event.target as Element).closest('.model-port')) return;
     event.stopPropagation();
-    blockDrag.current = {
+    elementDrag.current = {
       id: node.id,
       startX: event.clientX,
       startY: event.clientY,
@@ -309,11 +319,11 @@ export function ModelCanvas() {
     setDraggingId(node.id);
   };
 
-  const onBlockPointerMove = (
-    event: ReactPointerEvent<HTMLDivElement>,
+  const onElementPointerMove = (
+    event: ReactPointerEvent<HTMLElement | SVGElement>,
     node: ModelNode,
   ) => {
-    const gesture = blockDrag.current;
+    const gesture = elementDrag.current;
     if (!gesture || gesture.id !== node.id) return;
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
@@ -322,12 +332,12 @@ export function ModelCanvas() {
     moveBlock(gesture.id, gesture.worldX + dx / view.scale, gesture.worldY + dy / view.scale);
   };
 
-  const onBlockPointerUp = (
-    event: ReactPointerEvent<HTMLDivElement>,
+  const onElementPointerUp = (
+    event: ReactPointerEvent<HTMLElement | SVGElement>,
     node: ModelNode,
   ) => {
-    const gesture = blockDrag.current;
-    blockDrag.current = null;
+    const gesture = elementDrag.current;
+    elementDrag.current = null;
     setDraggingId(null);
     if (gesture && gesture.id === node.id && !gesture.moved) {
       select(node.id);
@@ -452,6 +462,41 @@ export function ModelCanvas() {
     );
   }
 
+  // Presentation shapes: rendered as real drawing shapes in a bounds-fitted
+  // svg inside the world layer (canvas annotations, not process blocks).
+  const shapeNodes = document.nodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
+  let shapesView: ReactElement | null = null;
+  if (shapeNodes.length > 0) {
+    const pad = 80;
+    const minX = Math.min(...shapeNodes.map((node) => node.x)) - pad;
+    const minY = Math.min(...shapeNodes.map((node) => node.y)) - pad;
+    const maxX = Math.max(...shapeNodes.map((node) => node.x)) + pad;
+    const maxY = Math.max(...shapeNodes.map((node) => node.y)) + pad;
+    shapesView = (
+      <svg
+        className="model-shapes"
+        style={{ left: minX, top: minY, width: maxX - minX, height: maxY - minY }}
+      >
+        {shapeNodes.map((node) => (
+          <PresentationShape
+            key={node.id}
+            node={node}
+            ox={minX}
+            oy={minY}
+            selected={node.id === selectedId}
+            onPointerDown={(event) => onElementPointerDown(event, node)}
+            onPointerMove={(event) => onElementPointerMove(event, node)}
+            onPointerUp={(event) => onElementPointerUp(event, node)}
+            onPointerCancel={() => {
+              elementDrag.current = null;
+              setDraggingId(null);
+            }}
+          />
+        ))}
+      </svg>
+    );
+  }
+
   return (
     <div
       ref={viewportRef}
@@ -498,18 +543,22 @@ export function ModelCanvas() {
         style={{ transform: `translate(${panX}px, ${panY}px) scale(${scale})` }}
       >
         {edgesView}
+        {shapesView}
         {document.nodes.map((node) => {
+          if (PRESENTATION_KINDS.has(node.kind)) {
+            return null; // rendered as a real shape above
+          }
           const ports = blockPorts(node.kind);
           return (
             <div
               key={node.id}
               className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
               style={{ left: node.x, top: node.y }}
-              onPointerDown={(event) => onBlockPointerDown(event, node)}
-              onPointerMove={(event) => onBlockPointerMove(event, node)}
-              onPointerUp={(event) => onBlockPointerUp(event, node)}
+              onPointerDown={(event) => onElementPointerDown(event, node)}
+              onPointerMove={(event) => onElementPointerMove(event, node)}
+              onPointerUp={(event) => onElementPointerUp(event, node)}
               onPointerCancel={() => {
-                blockDrag.current = null;
+                elementDrag.current = null;
                 setDraggingId(null);
               }}
             >

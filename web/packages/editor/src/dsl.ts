@@ -78,11 +78,17 @@ function orderStages(
 export function generateDsl(document: ModelDocument): string {
   const modelName = document.name || 'Model';
   const resources = document.nodes.filter((node) => node.kind === 'resource');
-  // Every non-resource node is a stage in the single process container.
-  // Custom-library kinds emit too: the compiler reports them as unknown
-  // (LP2004) until the matching library is registered in the kernel.
+  // Process-flow stages only: the single process container. Drawing and
+  // behavior elements (presentation/statechart/action libraries) are canvas
+  // annotations and do not emit. Custom-library kinds (library 'process')
+  // emit too: the compiler reports them as unknown (LP2004) until the
+  // matching library is registered in the kernel.
   const stages = orderStages(
-    document.nodes.filter((node) => node.kind !== 'resource'),
+    document.nodes.filter(
+      (node) =>
+        node.kind !== 'resource' &&
+        (node.library === undefined || node.library === 'process'),
+    ),
     document.edges,
     document,
   );

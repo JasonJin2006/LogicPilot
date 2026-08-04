@@ -173,6 +173,32 @@
   cursor: grabbing;
 }
 
+/* Presentation shapes: real drawing elements on the canvas. */
+.model-shapes {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.model-shapes .model-shape {
+  fill: transparent;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.model-shapes .model-shape.selected {
+  stroke: var(--accent);
+}
+
+.model-shapes .model-shape text {
+  stroke: none;
+  fill: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
 .model-grid {
   position: absolute;
   inset: 0;

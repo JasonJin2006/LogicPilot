@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { Plus } from 'lucide-react';
 import { setDraggedKind } from '../model/paletteDnd';
-import { BLOCK_DEFS } from '../model/blockDefs';
+import { BLOCK_DEFS, LIBRARIES } from '../model/blockDefs';
 import { BlockIcon } from '../model/BlockIcon';
 import { usePaletteStore } from '../state/paletteStore';
 
@@ -15,6 +15,7 @@ const DRAG_IMAGE_SIZE = 34;
 
 interface PaletteBlock {
   kind: string;
+  library?: string;
   name: string;
   hint?: string;
   in?: boolean;
@@ -63,7 +64,14 @@ export function PalettePanel() {
 
   const defs = new Map<string, PaletteBlock>();
   for (const block of BLOCK_DEFS) {
-    defs.set(block.kind, { kind: block.kind, name: block.kind, hint: block.hint, in: block.in, out: block.out });
+    defs.set(block.kind, {
+      kind: block.kind,
+      library: block.library,
+      name: block.name,
+      hint: block.hint,
+      in: block.in,
+      out: block.out,
+    });
   }
   for (const custom of Object.values(customLibraries)) {
     for (const block of custom.blocks) {
@@ -79,13 +87,9 @@ export function PalettePanel() {
       .map((kind) => defs.get(kind))
       .filter((block): block is PaletteBlock => block !== undefined);
   } else if (library === 'process') {
-    visible = BLOCK_DEFS.map((block) => ({
-      kind: block.kind,
-      name: block.kind,
-      hint: block.hint,
-      in: block.in,
-      out: block.out,
-    }));
+    visible = BLOCK_DEFS.filter((block) => block.library === 'process');
+  } else if (library === 'presentation' || library === 'statechart' || library === 'action') {
+    visible = BLOCK_DEFS.filter((block) => block.library === library);
   } else {
     visible = customLibraries[library]?.blocks ?? [];
   }
@@ -103,7 +107,7 @@ export function PalettePanel() {
   const tabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
-    { id: 'process', label: 'process' },
+    ...LIBRARIES.map((entry) => ({ id: entry.id, label: entry.name })),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
     id: custom.name,
@@ -141,8 +145,9 @@ export function PalettePanel() {
             title={block.hint ? `${block.kind} - ${block.hint}` : block.kind}
             onDragStart={(event) => {
               event.dataTransfer.setData('text/plain', block.kind);
+              event.dataTransfer.setData('application/x-logicpilot-library', block.library ?? 'process');
               event.dataTransfer.effectAllowed = 'copy';
-              setDraggedKind(block.kind);
+              setDraggedKind(block.kind, block.library ?? 'process');
               event.currentTarget.classList.add('dragging');
               installIconDragImage(event, event.currentTarget.querySelector('.palette-chip-icon svg'));
             }}
