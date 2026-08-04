@@ -81,8 +81,10 @@
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: var(--left-w) 6px minmax(0, 1fr) 6px var(--right-w);
-  grid-template-rows: minmax(0, 1fr) 6px var(--bottom-h);
+  grid-template-columns: var(--left-w) var(--splitter-w) minmax(0, 1fr) var(--splitter-w) var(
+      --right-w
+    );
+  grid-template-rows: minmax(0, 1fr) var(--splitter-w) var(--bottom-h);
   grid-template-areas:
     'left sl center sr right'
     'left sl sb    sr right'
@@ -108,7 +110,6 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
 }
 
 .panel-area.area-center {
@@ -123,17 +124,31 @@
 
 .panel-area.area-bottom {
   grid-area: bottom;
-  border-top: 1px solid var(--border);
+  position: relative;
 }
 
 .area-bottom .tab-bar {
   min-height: 26px;
   padding: 2px 8px 0;
+  border-bottom: none;
 }
 
 .area-bottom .tab {
   padding: 4px 10px;
   font-size: 11px;
+}
+
+/* The console's top edge line spans the whole row (through the splitter
+   columns) so it meets the side panels' vertical borders with no gap. */
+.area-bottom::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--splitter-w));
+  right: calc(-1 * var(--splitter-w));
+  height: 1px;
+  background: var(--border);
+  pointer-events: none;
 }
 
 .panel-area.collapsed {
