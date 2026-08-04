@@ -37,9 +37,17 @@ enum class IrStatus {
 [[nodiscard]] const char* to_string(IrStatus status);
 
 // Loaded, verified ModelFile. `root` is a zero-copy view into `bytes`.
+// Move-only: copying would deep-copy `bytes` while the pointer kept pointing
+// into the source buffer, leaving a dangling `root` once the source is gone.
 struct IrModelFile {
   std::vector<std::uint8_t> bytes;
   const ir::ModelFile* root{nullptr};
+
+  IrModelFile() = default;
+  IrModelFile(const IrModelFile&) = delete;
+  IrModelFile& operator=(const IrModelFile&) = delete;
+  IrModelFile(IrModelFile&&) = default;
+  IrModelFile& operator=(IrModelFile&&) = default;
 };
 
 struct IrLoadResult {

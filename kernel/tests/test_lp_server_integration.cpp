@@ -471,6 +471,26 @@ TEST_CASE("lp-server rejects unknown and invalid control messages",
   REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
   REQUIRE(client.payload().find("unknown command") != std::string::npos);
 
+  // Echoed cmd values are JSON-escaped so the error reply stays valid JSON
+  // even when the value contains quotes, backslashes, or control characters.
+  client.send_text("{\"cmd\":\"a\\\"b\\\\c\"}");
+  REQUIRE(client.read_one());
+  REQUIRE(!client.was_binary());
+  REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
+  REQUIRE(client.payload().find("unknown command") != std::string::npos);
+  // `a\` is extracted as the cmd value; the backslash must appear doubled
+  // (raw `\\` bytes) in the reply, never emitted bare.
+  REQUIRE(client.payload().find("a\\\\") != std::string::npos);
+
+  client.send_text("{\"cmd\":\"line1\nline2\"}");  // raw LF inside the value
+  REQUIRE(client.read_one());
+  REQUIRE(!client.was_binary());
+  REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
+  // The reply must be printable ASCII only (no raw control characters).
+  for (const char c : client.payload()) {
+    REQUIRE(static_cast<unsigned char>(c) >= 0x20);
+  }
+
   client.send_text("not json at all");
   REQUIRE(client.read_one());
   REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);

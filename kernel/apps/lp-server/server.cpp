@@ -42,13 +42,37 @@ namespace {
 // wall-clock pacing only.
 // Frame-size budget guard for per-tick agent deltas.
 constexpr std::size_t kMaxAgentsPerTick = 1024;
+// Slow-consumer guard: a client that stops reading would otherwise grow the
+// per-session write queue without bound at 10 Hz telemetry. When the queue
+// exceeds this, the oldest pending frames are dropped (the in-flight frame is
+// never dropped). Chosen generously above any burst a single tick emits.
+constexpr std::size_t kMaxWriteQueue = 256;
+
+// Minimal JSON string escaping. Error replies echo caller-supplied input, so
+// quotes/backslashes/control characters must be escaped or the reply itself
+// becomes invalid JSON (breaking the client's parser).
+std::string json_escape(const std::string& text) {
+  std::string out;
+  out.reserve(text.size() + 8);
+  for (const char c : text) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      default: out += c; break;
+    }
+  }
+  return out;
+}
 
 std::string json_error(const std::string& message) {
-  return fmt::format(R"({{"ok":false,"error":"{}"}})", message);
+  return fmt::format(R"({{"ok":false,"error":"{}"}})", json_escape(message));
 }
 
 std::string json_ok(const std::string& cmd) {
-  return fmt::format(R"({{"ok":true,"cmd":"{}"}})", cmd);
+  return fmt::format(R"({{"ok":true,"cmd":"{}"}})", json_escape(cmd));
 }
 
 // --- minimal JSON field extraction (control messages are flat objects) ------
@@ -142,11 +166,13 @@ class Session : public std::enable_shared_from_this<Session> {
   void do_write();
   void on_write(beast::error_code ec, std::size_t bytes);
   void do_close();
+  void enqueue(OutMessage message);
 
   websocket::stream<tcp::socket> ws_;
   SimServer::Impl& server_;
   beast::flat_buffer read_buffer_;
   std::deque<OutMessage> write_queue_;
+  OutMessage in_flight_;
   bool writing_{false};
   bool closing_{false};
 };
@@ -590,10 +616,7 @@ void Session::send_binary(std::shared_ptr<const std::vector<std::uint8_t>> frame
     OutMessage message;
     message.binary = true;
     message.binary_data = std::move(frame);
-    self->write_queue_.push_back(std::move(message));
-    if (!self->writing_) {
-      self->do_write();
-    }
+    self->enqueue(std::move(message));
   });
 }
 
@@ -606,25 +629,36 @@ void Session::send_text(std::string text) {
     OutMessage message;
     message.binary = false;
     message.text = std::make_shared<const std::string>(std::move(text));
-    self->write_queue_.push_back(std::move(message));
-    if (!self->writing_) {
-      self->do_write();
-    }
+    self->enqueue(std::move(message));
   });
+}
+
+void Session::enqueue(OutMessage message) {
+  write_queue_.push_back(std::move(message));
+  // Bound memory for slow/stuck clients: drop the oldest pending frames. The
+  // in-flight frame lives in in_flight_ (popped by do_write), so dropping the
+  // queue front can never orphan the buffer the current async_write uses.
+  while (write_queue_.size() > kMaxWriteQueue) {
+    write_queue_.pop_front();
+  }
+  if (!writing_) {
+    do_write();
+  }
 }
 
 void Session::do_write() {
   writing_ = true;
-  const OutMessage& message = write_queue_.front();
-  ws_.binary(message.binary);
+  in_flight_ = std::move(write_queue_.front());
+  write_queue_.pop_front();
+  ws_.binary(in_flight_.binary);
   auto self = shared_from_this();
-  if (message.binary) {
-    ws_.async_write(asio::buffer(*message.binary_data),
+  if (in_flight_.binary) {
+    ws_.async_write(asio::buffer(*in_flight_.binary_data),
                     [self](beast::error_code ec, std::size_t n) {
                       self->on_write(ec, n);
                     });
   } else {
-    ws_.async_write(asio::buffer(*message.text),
+    ws_.async_write(asio::buffer(*in_flight_.text),
                     [self](beast::error_code ec, std::size_t n) {
                       self->on_write(ec, n);
                     });
@@ -632,11 +666,11 @@ void Session::do_write() {
 }
 
 void Session::on_write(beast::error_code ec, std::size_t) {
+  in_flight_ = OutMessage{};
   if (ec) {
     server_.remove_session(this);
     return;
   }
-  write_queue_.pop_front();
   if (!write_queue_.empty()) {
     do_write();
   } else {

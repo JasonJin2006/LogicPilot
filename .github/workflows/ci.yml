@@ -50,16 +50,29 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y clang
 
+      - name: Setup Node (schema interop verifier)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: CMake configure
         run: cmake --preset ${{ matrix.preset }}
-        env:
-          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
 
       - name: CMake build
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Test (ctest)
         run: ctest --preset ${{ matrix.preset }} || ctest --test-dir build/${{ matrix.preset }} --output-on-failure
+
+      - name: Schema interop (F1/F2 C++ <-> TS runtime)
+        # Runs after the C++ build: scripts/run-schema-interop.ps1 builds the
+        # standalone C++ writer (scripts/interop), emits model_file.bin +
+        # counters_frame.bin, and verifies both with the TypeScript runtime
+        # (web/packages/protocol/test/verify-interop.mjs). This is the only CI
+        # gate that proves the C++ and TS encoders agree at runtime, not just
+        # that the .fbs schemas stay conformant.
+        shell: pwsh
+        run: scripts/run-schema-interop.ps1
 
   web:
     name: web (pnpm)
@@ -78,9 +91,15 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+        # Frozen-lockfile only: a drifted pnpm-lock.yaml must fail CI instead of
+        # being silently rewritten by the fallback install.
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        # Web packages are scaffolded in a later phase; this job validates the
-        # workspace wiring and stays green while the frontend is empty.
         run: pnpm build
+
+      - name: Test
+        # renderer2d vitest cases are the TS-side regression defense for the F2
+        # wire contract; @logicpilot/protocol's verify-interop needs the C++
+        # schema_interop_writer artifacts and therefore runs in the kernel job.
+        run: pnpm test

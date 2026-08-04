@@ -13,12 +13,30 @@
 //
 // Default bin dir: build/interop/interop-out.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ByteBuffer } from 'flatbuffers';
 
-import {
+const here = dirname(fileURLToPath(import.meta.url));
+// test/ -> protocol -> packages -> web -> repo root.
+const root = join(here, '..', '..', '..', '..');
+const binDir = process.argv[2] ?? join(root, 'build', 'interop', 'interop-out');
+
+// The buffers are produced by the C++ schema_interop_writer
+// (scripts/run-schema-interop.ps1). Without them there is nothing to verify;
+// skip loudly so `pnpm test` stays usable in toolchain-less jobs, while the
+// kernel CI job's "Schema interop" step enforces the real check.
+if (!existsSync(join(binDir, 'model_file.bin')) ||
+    !existsSync(join(binDir, 'counters_frame.bin'))) {
+  console.warn(
+    `[verify-interop] SKIP: C++ interop artifacts not found in ${binDir}. ` +
+      'Run pwsh scripts/run-schema-interop.ps1 first.',
+  );
+  process.exit(0);
+}
+
+const { ByteBuffer } = await import('flatbuffers');
+const {
   ModelFile,
   ModelKind,
   ParamValue,
@@ -41,12 +59,7 @@ import {
   FrameKind,
   FramePayload,
   Counters,
-} from '../dist/index.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-// test/ -> protocol -> packages -> web -> repo root.
-const root = join(here, '..', '..', '..', '..');
-const binDir = process.argv[2] ?? join(root, 'build', 'interop', 'interop-out');
+} = await import('../dist/index.js');
 
 let failures = 0;
 let checks = 0;

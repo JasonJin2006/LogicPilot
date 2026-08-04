@@ -1,7 +1,11 @@
 // Sampling distributions over any 64-bit engine (operator() -> uint64_t).
 //
 // Every distribution is a pure state machine over the engine: fixed seed =>
-// identical sample sequence, bit-exact across runs (ADR-0007).
+// identical sample sequence within a single build (ADR-0007). Exponential /
+// Normal / Poisson call libm transcendentals (log/sqrt/sin/cos/exp), whose
+// implementations are not guaranteed bit-identical across toolchains, so
+// cross-toolchain reproducibility is NOT implied; the surrounding
+// xoshiro256++/SeedStreams/int64-fixed-point pipeline is bit-exact.
 //   Uniform<T>     - real [a, b) or integer [a, b] (Lemire, unbiased)
 //   Exponential    - inverse transform, rate lambda
 //   Normal         - Box-Muller with cached mate (deterministic pairing)

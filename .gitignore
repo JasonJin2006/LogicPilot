@@ -52,3 +52,7 @@ schemas/*.bfbs
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local scratch: browser-verify screenshots, server/dev logs
+# ---------------------------------------------------------------------------
+.verify/
