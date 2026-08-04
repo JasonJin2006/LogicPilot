@@ -202,10 +202,12 @@ export function ModelCanvas() {
   // Grid + axes, computed in screen space.
   const { scale, panX, panY } = view;
   const step = niceStep(GRID_TARGET_PX / scale);
-  const x0 = Math.floor(-panX / step);
-  const x1 = Math.ceil((size.width - panX) / step);
-  const y0 = Math.floor(-panY / step);
-  const y1 = Math.ceil((size.height - panY) / step);
+  // Line indices whose raw screen positions fall inside the viewport. Note
+  // the /scale: k is in world units (k*step), screen = k*step*scale + pan.
+  const x0 = Math.floor(-panX / (step * scale));
+  const x1 = Math.ceil((size.width - panX) / (step * scale));
+  const y0 = Math.floor(-panY / (step * scale));
+  const y1 = Math.ceil((size.height - panY) / (step * scale));
   // Snap lines to the pixel grid (+0.5 centers a 1px stroke on one pixel
   // row/column) so the grid stays crisp at any pan/zoom instead of rendering
   // as blurry 2px soft lines.
@@ -215,6 +217,8 @@ export function ModelCanvas() {
   const horizontals = [];
   for (let k = x0; k <= x1; k++) {
     const sx = Math.round(k * step * scale + panX) + 0.5;
+    // Skip lines that round to a half-visible sliver exactly on the edge.
+    if (sx < 1 || sx > size.width - 1) continue;
     const major = k % MAJOR_EVERY === 0;
     verticals.push(
       <line
@@ -229,6 +233,7 @@ export function ModelCanvas() {
   }
   for (let k = y0; k <= y1; k++) {
     const sy = Math.round(k * step * scale + panY) + 0.5;
+    if (sy < 1 || sy > size.height - 1) continue;
     const major = k % MAJOR_EVERY === 0;
     horizontals.push(
       <line
