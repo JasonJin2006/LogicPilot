@@ -17,7 +17,8 @@ model TwoServers {
     queue WaitLine {
       capacity = 1000000
     }
-    service Server {
+    service Handle {
+      resource = Server
       time = exponential(1.0)
     }
   }

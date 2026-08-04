@@ -134,6 +134,29 @@ TEST_CASE("lowering: constant service time maps to Constant distribution",
                          dump_ir(loaded.file));
 }
 
+TEST_CASE("lowering: explicit resource reference decouples the service "
+          "name from the resource", "[dsl][lowering]") {
+  const IrLoadResult loaded = compile_and_load(
+      "model Demo {\n"
+      "  resource Server { capacity = 3 failure_rate = 0.1 }\n"
+      "  process Flow {\n"
+      "    source In { arrival = poisson(1.5) }\n"
+      "    service Handle { resource = Server; time = exponential(2) }\n"
+      "  }\n"
+      "}\n",
+      "demo.lp");
+
+  const v2::Node* root = loaded.file.v2_root->root();
+  const v2::Node* flow = root->children()->Get(1);
+  REQUIRE(flow->children()->size() == 2);
+  const v2::Node* service = flow->children()->Get(1);
+  REQUIRE(service->metadata()->name()->str() == "Handle");
+  REQUIRE(service->params()->Get(1)->string_value()->str() == "Server");
+  // servers comes from the referenced resource's capacity, not the name.
+  REQUIRE(service->params()->Get(2)->int_value() == 3);
+  REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Handle");
+}
+
 TEST_CASE("lowering: ir_loader consumes the DSL output end to end",
           "[dsl][lowering]") {
   const std::string source = logicpilot::testing::read_text_file(kMm1Path);

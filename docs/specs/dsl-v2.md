@@ -303,8 +303,12 @@ model Decay {
   校验；corpus 重写为 40 用例；示例/测试/`scripts/ai-provider.mjs` 同步为 v2
   写法（`on_<trigger> { }` 行为；`poisson` 保留为 `rate` 等价别名）。
   修复 D1/D2/D8。
-- **Phase C（显式引用）**: `service { resource = R }` + `ref` 校验
-  （`LP2001` 族）；修复 D3。
+- **Phase C（显式引用）**: ✅ 已完成（2026-08-04）：`service { resource = R }`
+  显式引用替代同名魔法绑定——`resource` 字段进 service 块形状（`LP2005` 放行），
+  引用目标必须指向已声明资源（`LP4001`，span 指向引用处）；字段缺失时保留
+  v0 同名绑定作为过渡回退；lowering 按引用解析 `resource`/`servers` 参数。
+  示例（mm1/mm1_failure/two_servers）迁移为 `service Handle { resource = Server; ... }`，
+  AI provider 同步；golden 与新增 `LP4001` 引用测试覆盖。修复 D3。
 - **Phase D（表达式）**: 表达式文法 + 常量折叠 → 参数引用；模型级 `param`；
   修复 D6；吸收 roadmap P1-5。
 - **Phase E（行为统一 + 实验 + 库元层）**: `on_<trigger> { }` 统一；experiment

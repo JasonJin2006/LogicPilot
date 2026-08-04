@@ -20,7 +20,8 @@ model_declaration    := 'model' Identifier model_body
 model_body           := '{' (use_declaration | variable_declaration | declaration | couple_declaration)* '}'
 use_declaration      := 'use' Identifier
 declaration          := Identifier Identifier declaration_body   // kind name { ... }
-declaration_body     := '{' (field | variable_declaration | port_declaration | behavior | equation | declaration | couple_declaration)* '}'
+declaration_body     := '{' (member (';' | ',')?)* '}'          // optional separators
+member               := field | variable_declaration | port_declaration | behavior | equation | declaration | couple_declaration
 field                := Identifier '=' value | range_field
 range_field          := 'range' '=' Integer '..' Integer
 variable_declaration := ('state' | 'param') Identifier (':' type_name)? '=' value

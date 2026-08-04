@@ -36,7 +36,9 @@ module.exports = grammar({
 
     model_body: $ => seq(
       '{',
-      repeat($._model_member),
+      // Optional `;` / `,` separators: both `a = 1; b = 2` and newline-
+      // separated members are accepted (separators are anonymous tokens).
+      repeat(seq($._model_member, optional(choice(';', ',')))),
       '}',
     ),
 
@@ -65,7 +67,7 @@ module.exports = grammar({
 
     declaration_body: $ => seq(
       '{',
-      repeat($._declaration_member),
+      repeat(seq($._declaration_member, optional(choice(';', ',')))),
       '}',
     ),
 

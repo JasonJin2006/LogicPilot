@@ -329,7 +329,7 @@ class Analyzer {
       return;
     }
     if (node.kind == "service") {
-      check_shape(node, {"time"}, {});
+      check_shape(node, {"time", "resource"}, {});
       const Field* time = field_of(node, "time");
       check_missing(node, "time", time);
       check_duplicate(node, "time");
@@ -345,9 +345,27 @@ class Analyzer {
           check_distribution(dist, "service '" + node.name + "' time");
         }
       }
-      // v0 binding: the service identifier names the resource it consumes
-      // (explicit `resource = R` references land in Phase C).
-      if (!resource_declared(node.name)) {
+      // Explicit `resource = R` reference (Phase C). When the field is
+      // absent the v0 identifier binding is kept as a transitional fallback
+      // (examples migrate to the explicit form).
+      const Field* resource = field_of(node, "resource");
+      if (resource != nullptr) {
+        check_duplicate(node, "resource");
+        if (resource->value.kind == ValueKind::kIdentifier) {
+          if (!resource_declared(resource->value.string_value)) {
+            error("LP4001",
+                  "service '" + node.name + "' references undeclared "
+                  "resource '" + resource->value.string_value + "'",
+                  resource->value.span);
+          }
+        } else {
+          error("LP4001",
+                "service '" + node.name +
+                    "' resource must reference a declared resource "
+                    "(identifier)",
+                resource->span);
+        }
+      } else if (!resource_declared(node.name)) {
         error("LP4001",
               "service '" + node.name +
                   "' references undeclared resource '" + node.name + "'",

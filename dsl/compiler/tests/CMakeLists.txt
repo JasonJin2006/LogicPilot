@@ -180,6 +180,13 @@ add_test(NAME lpcli_compile_rejects_unresolved_resource
 set_tests_properties(lpcli_compile_rejects_unresolved_resource PROPERTIES
   PASS_REGULAR_EXPRESSION "error\\[LP4001\\]")
 
+add_test(NAME lpcli_compile_rejects_unresolved_resource_ref
+  COMMAND lpcli compile
+          "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/unresolved_resource_ref.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/bad2b.ir.bin")
+set_tests_properties(lpcli_compile_rejects_unresolved_resource_ref PROPERTIES
+  PASS_REGULAR_EXPRESSION "error\\[LP4001\\]")
+
 add_test(NAME lpcli_compile_rejects_bad_experiment
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/bad_experiment.lp"

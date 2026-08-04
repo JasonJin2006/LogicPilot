@@ -9,9 +9,9 @@ root     node 'Arrivals' library='process' block='source'
 root       param arrival = distribution(Poisson params=[0.8])
 root     node 'WaitLine' library='process' block='queue'
 root       param capacity = int(1000000)
-root     node 'Server' library='process' block='service'
+root     node 'Handle' library='process' block='service'
 root       param rate = distribution(Exponential params=[1])
 root       param resource = string('Server')
 root       param servers = int(1)
 root     coupling 'Arrivals'.out -> 'WaitLine'.in
-root     coupling 'WaitLine'.out -> 'Server'.in
+root     coupling 'WaitLine'.out -> 'Handle'.in

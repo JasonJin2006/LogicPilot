@@ -126,6 +126,34 @@ TEST_CASE("semantic snapshot: unresolved resource reference",
       "diag_unresolved_resource.txt");
 }
 
+TEST_CASE("semantic snapshot: unresolved explicit resource reference",
+          "[dsl][semantic]") {
+  expect_diagnostic_snapshot(
+      "model M {\n"
+      "  resource Machine { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = poisson(1) }\n"
+      "    service Worker { resource = Missing; time = exponential(1) }\n"
+      "  }\n"
+      "}\n",
+      "diag_unresolved_resource_ref.txt");
+}
+
+TEST_CASE("semantic: explicit resource reference resolves to a declared "
+          "resource", "[dsl][semantic]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  resource Machine { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = poisson(1) }\n"
+      "    service Worker { resource = Machine; time = exponential(1) }\n"
+      "  }\n"
+      "}\n",
+      "ok.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
+}
+
 TEST_CASE("semantic snapshot: numeric ranges", "[dsl][semantic]") {
   expect_diagnostic_snapshot(
       "model M {\n"

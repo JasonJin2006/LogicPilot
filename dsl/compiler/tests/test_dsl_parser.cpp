@@ -27,7 +27,8 @@ model MM1 {
     queue WaitLine {
       capacity = 1000000
     }
-    service Server {
+    service Handle {
+      resource = Server
       time = exponential(1.0)
     }
   }
@@ -94,6 +95,9 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
 
   const Node& service = flow->children[2];
   REQUIRE(service.kind == "service");
+  REQUIRE(field_of(service, "resource") != nullptr);
+  REQUIRE(field_of(service, "resource")->value.kind == ValueKind::kIdentifier);
+  REQUIRE(field_of(service, "resource")->value.string_value == "Server");
   Distribution service_time;
   REQUIRE(distribution_from_value(field_of(service, "time")->value,
                                   service_time));

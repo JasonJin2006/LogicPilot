@@ -38,10 +38,10 @@ Expression grammar is the remaining open item (see §5).
 - A `process` executes its stages in declaration order: entities arrive at the
   `source`, pass through `queue`(s), are served by `service`(s), and (v2)
   exit via `sink`.
-- A `service` whose identifier matches a declared `resource` consumes one unit
-  of that resource's capacity (v2 stage 1 keeps the identifier binding;
-  explicit `resource = R` references land in Phase C); if unavailable, the
-  entity waits in the preceding queue.
+- A `service` declares which `resource` it consumes with an explicit
+  `resource = R` reference (validated `LP4001`); when the field is absent the
+  v0 identifier binding is kept as a transitional fallback. If the resource is
+  unavailable, the entity waits in the preceding queue.
 - Distribution parameters are deterministic literals in v2 stage 1 (no
   expressions, no variables; `rate` and `poisson` are equivalent Poisson
   arrivals — `poisson` is deprecated from Phase D on).

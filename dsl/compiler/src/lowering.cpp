@@ -169,9 +169,17 @@ flatbuffers::Offset<v2::Node> v2_process_block(
       (void)distribution_from_value(field->value, service_time);
     }
     params.push_back(v2_var_distribution(builder, "rate", service_time));
-    params.push_back(v2_var_string(builder, "resource", stage.name));
+    // Explicit `resource = R` reference (Phase C); the v0 identifier
+    // binding is the fallback when the field is absent.
+    std::string resource_name = stage.name;
+    const Field* resource_field = field_of(stage, "resource");
+    if (resource_field != nullptr &&
+        resource_field->value.kind == ValueKind::kIdentifier) {
+      resource_name = resource_field->value.string_value;
+    }
+    params.push_back(v2_var_string(builder, "resource", resource_name));
     std::int64_t servers = 1;
-    const auto it = resources.find(stage.name);
+    const auto it = resources.find(resource_name);
     if (it != resources.end()) {
       const Field* capacity = field_of(*it->second, "capacity");
       if (capacity && capacity->value.kind == ValueKind::kInt) {

@@ -89,7 +89,8 @@ model ${spec.model} {
     queue WaitLine {
       capacity = ${spec.queueCapacity}
     }
-    service ${spec.resourceName} {
+    service Service {
+      resource = ${spec.resourceName}
       time = exponential(${number(spec.mu)})
     }
   }
