@@ -2,6 +2,8 @@
 // Types mirror the server responses (scripts/ai-build.mjs, ai-optimize.mjs,
 // ai-explain.mjs).
 
+import { getAppConfig } from '../state/appConfig';
+
 export interface AiDiagnostic {
   code: string;
   message: string;
@@ -45,7 +47,8 @@ export interface ExplainResult {
 }
 
 async function post<T>(endpoint: string, prompt: string): Promise<T> {
-  const response = await fetch(endpoint, {
+  const config = await getAppConfig();
+  const response = await fetch(`${config?.apiBase ?? ''}${endpoint}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ prompt, run: true }),

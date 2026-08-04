@@ -10,6 +10,7 @@ import { SimClient, type ConnState, type StartOptions } from '../client/simClien
 import { resetVizState, vizState, type VizAgent } from './vizState';
 import { useModelStore } from './modelStore';
 import { useRunStore } from './runStore';
+import { getAppConfig } from './appConfig';
 
 const DEFAULT_URL = 'ws://127.0.0.1:8089/sim';
 
@@ -60,6 +61,11 @@ const MAX_EVENTS = 200;
 async function resolveGatewayConfig(): Promise<void> {
   if (configResolved) return;
   configResolved = true;
+  const desktop = await getAppConfig();
+  if (desktop?.wsUrl) {
+    useConnectionStore.setState({ url: desktop.wsUrl });
+    return;
+  }
   try {
     const response = await fetch('/api/config', { cache: 'no-store' });
     if (response.ok) {

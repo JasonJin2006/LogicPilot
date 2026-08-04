@@ -68,6 +68,12 @@ function freePort() {
   });
 }
 
+function setCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type');
+}
+
 async function startGateway() {
   const exe = findLpServer();
   if (!exe) {
@@ -108,20 +114,30 @@ async function main() {
   process.env.LOGICPILOT_WS_URL = `ws://127.0.0.1:${gateway.port}/sim`;
 
   const server = createServer(async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      setCors(res);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
     if (pathname === '/api/ai-build') {
+      setCors(res);
       await handleAiBuild(req, res);
       return;
     }
     if (pathname === '/api/ai-optimize') {
+      setCors(res);
       await handleAiOptimize(req, res);
       return;
     }
     if (pathname === '/api/ai-explain') {
+      setCors(res);
       await handleAiExplain(req, res);
       return;
     }
     if (pathname === '/api/config') {
+      setCors(res);
       handleConfig(req, res);
       return;
     }

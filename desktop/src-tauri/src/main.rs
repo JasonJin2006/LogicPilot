@@ -1,14 +1,32 @@
 // LogicPilot desktop client: spawns the app server (Node) which in turn
-// manages lp-server and the AI endpoints, then opens a window on the served
-// frontend. The app server reports its HTTP port on stdout as
-// `LOGICPILOT_PORT <n>`.
+// manages lp-server and the AI endpoints, then opens a window on the bundled
+// frontend (tauri://localhost, so the window controls' IPC is allowed). The
+// app server reports its ports on stdout; a command hands them to the page.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
+use serde::Serialize;
 use tauri::WebviewUrl;
 use tauri::WebviewWindowBuilder;
+
+static APP_ENDPOINTS: OnceLock<AppEndpoints> = OnceLock::new();
+
+#[derive(Clone, Serialize)]
+struct AppEndpoints {
+    api_base: String,
+    ws_url: String,
+}
+
+#[tauri::command]
+fn app_config() -> AppEndpoints {
+    APP_ENDPOINTS
+        .get()
+        .cloned()
+        .expect("app endpoints not set")
+}
 
 fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
@@ -44,19 +62,26 @@ fn main() {
         .spawn()
         .expect("failed to start the LogicPilot app server");
 
-    // Wait for the app server to report its HTTP port, then open the window.
-    let window_url = {
+    // Wait for the app server to report its ports, then hand them to the
+    // frontend through the app_config command.
+    let endpoints = {
         let stdout = app_server.stdout.take().expect("app server stdout");
         let mut reader = BufReader::new(stdout);
-        let mut url = None;
+        let mut http_port = None;
+        let mut ws_port = None;
         let mut line = String::new();
         loop {
             line.clear();
             if reader.read_line(&mut line).unwrap_or(0) == 0 {
                 break;
             }
-            if let Some(port) = line.trim().strip_prefix("LOGICPILOT_PORT ") {
-                url = Some(format!("http://127.0.0.1:{}", port));
+            let trimmed = line.trim();
+            if let Some(port) = trimmed.strip_prefix("LOGICPILOT_PORT ") {
+                http_port = Some(port.to_string());
+            } else if let Some(port) = trimmed.strip_prefix("LOGICPILOT_WS_PORT ") {
+                ws_port = Some(port.to_string());
+            }
+            if http_port.is_some() && ws_port.is_some() {
                 break;
             }
         }
@@ -76,18 +101,26 @@ fn main() {
                 }
             }
         });
-        url.unwrap_or_else(|| {
-            eprintln!("app server did not report a port");
-            std::process::exit(1);
-        })
+        match (http_port, ws_port) {
+            (Some(http_port), Some(ws_port)) => AppEndpoints {
+                api_base: format!("http://127.0.0.1:{}", http_port),
+                ws_url: format!("ws://127.0.0.1:{}/sim", ws_port),
+            },
+            _ => {
+                eprintln!("app server did not report its ports");
+                std::process::exit(1);
+            }
+        }
     };
+    let _ = APP_ENDPOINTS.set(endpoints.clone());
 
     let app = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![app_config])
         .setup(move |app| {
             WebviewWindowBuilder::new(
                 app,
                 "main",
-                WebviewUrl::External(window_url.parse().expect("invalid window url")),
+                WebviewUrl::App("index.html".into()),
             )
             .title("LogicPilot")
             .inner_size(1440.0, 900.0)

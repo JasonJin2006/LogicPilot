@@ -189,9 +189,14 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    （`decorations: false`）+ 顶栏内嵌最小化/最大化/关闭按钮（Tauri 环境
    下渲染，`@tauri-apps/api` 控制窗口，capabilities 授予 window 权限）；
    顶栏空白区作 `data-tauri-drag-region` 拖动窗口；搜索框保持居中与可
-   交互；浏览器模式不渲染这些控件（无回归）。修复 Rust 读完端口即关
-   闭子进程 stdout 管道导致服务自毁的问题（改为后台线程排空 + 退出时
-   kill 子进程）。
+  交互；浏览器模式不渲染这些控件（无回归）。修复 Rust 读完端口即关
+  闭子进程 stdout 管道导致服务自毁的问题（改为后台线程排空 + 退出时
+  kill 子进程）。
+   **桌面窗口控制修复 ✅**（2026-08-05）：外部 URL（http://127.0.0.1）下
+   Tauri ACL 按 URL 作用域拦截窗口 IPC（报错 `allowed on [URL: local]`）
+   ——改为窗口加载**打包资产**（`tauri://localhost`，local 域放行 IPC），
+   Rust 注册 `app_config` 命令把 app server 的 http 基址与网关 ws 地址交给
+   页面；app server 的 /api 加 CORS；拖拽用显式 `startDragging()`。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 
