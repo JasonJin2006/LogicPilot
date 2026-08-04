@@ -18,7 +18,6 @@
 #include "logicpilot/dsl/diagnostics.h"
 #include "logicpilot/dsl/experiments_json.h"
 #include "logicpilot/dsl/json_diagnostics.h"
-#include "logicpilot/devs/ir_v2_convert.h"
 
 namespace logicpilot::cli {
 namespace {
@@ -158,17 +157,8 @@ int compile_command(std::span<const std::string> args) {
     }
   }
 
-  std::vector<std::uint8_t> output_bytes = compiled.ir_bytes;
-  if (ir_version == 2) {
-    std::string convert_error;
-    output_bytes = logicpilot::convert_v1_to_v2(
-        compiled.ir_bytes.data(), compiled.ir_bytes.size(), &convert_error);
-    if (output_bytes.empty()) {
-      fmt::print(stderr, "error: v1 -> v2 conversion failed: {}\n",
-                 convert_error);
-      return 1;
-    }
-  }
+  const std::vector<std::uint8_t>& output_bytes =
+      ir_version == 2 ? compiled.v2_bytes : compiled.ir_bytes;
 
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
   if (!out) {

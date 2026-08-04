@@ -13,6 +13,8 @@
 #include "logicpilot/devs/ir_v2_convert.h"
 #include "logicpilot/dsl/compile.h"
 
+#include "ir_v2_generated.h"
+
 using namespace logicpilot;
 
 namespace {
@@ -180,4 +182,78 @@ TEST_CASE("v2 agent trees execute natively from behavior bindings",
     REQUIRE(position.x >= 0.0F);
     REQUIRE(position.x <= 1.0F);
   }
+}
+
+TEST_CASE("native v2 lowering (LP2R) matches the v1 lowering bit-exactly",
+          "[ir-v2][migration]") {
+  // The DSL compiler now emits v2 natively; a model compiled to v2 must run
+  // bit-identically to the same model compiled to v1 (no converter involved).
+  constexpr const char* kModels[] = {
+      LOGICPILOT_EXAMPLES_DIR "/mm1_failure.lp",
+      LOGICPILOT_EXAMPLES_DIR "/two_servers.lp",
+      LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp",
+      LOGICPILOT_EXAMPLES_DIR "/agents.lp",
+  };
+  for (const char* example : kModels) {
+    const dsl::CompileResult compiled = dsl::compile_file(example);
+    REQUIRE(compiled.ok);
+    REQUIRE_FALSE(compiled.v2_bytes.empty());
+    // The native v2 buffer carries the LP2R identifier.
+    REQUIRE(flatbuffers::BufferHasIdentifier(compiled.v2_bytes.data(), "LP2R"));
+
+    const IrLoadResult v1_loaded = load_v1(compiled);
+    const ReplicationMetrics v1_metrics = run_model(v1_loaded, 42, 4000, 400);
+    const IrLoadResult v2_loaded = load_model_buffer(
+        compiled.v2_bytes.data(), compiled.v2_bytes.size());
+    REQUIRE(v2_loaded.ok());
+    const ReplicationMetrics v2_metrics =
+        run_model(v2_loaded, 42, 4000, 400);
+
+    REQUIRE(v2_metrics.departures == v1_metrics.departures);
+    REQUIRE(v2_metrics.horizon_seconds == v1_metrics.horizon_seconds);
+    REQUIRE(v2_metrics.throughput == v1_metrics.throughput);
+    REQUIRE(v2_metrics.mean_wait == v1_metrics.mean_wait);
+    REQUIRE(v2_metrics.mean_in_system == v1_metrics.mean_in_system);
+    REQUIRE(v2_metrics.mean_in_queue == v1_metrics.mean_in_queue);
+    REQUIRE(v2_metrics.mean_sojourn == v1_metrics.mean_sojourn);
+    REQUIRE(v2_metrics.utilization == v1_metrics.utilization);
+    REQUIRE(v2_metrics.availability == v1_metrics.availability);
+    REQUIRE(v2_metrics.arrivals == v1_metrics.arrivals);
+    REQUIRE(v2_metrics.final_value == v1_metrics.final_value);
+  }
+}
+
+TEST_CASE("experiment blocks ride in the native v2 ModelFile",
+          "[ir-v2][migration]") {
+  const std::string source =
+      "model Opt {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process Flow {\n"
+      "    source S { arrival = poisson(0.8) }\n"
+      "    queue Q { capacity = 1000000 }\n"
+      "    service Server { time = exponential(1.0) }\n"
+      "  }\n"
+      "  experiment Optimization {\n"
+      "    objective = minimize\n"
+      "    metric = Wq\n"
+      "    variable = servers\n"
+      "    range = 1..4\n"
+      "    budget = 20\n"
+      "  }\n"
+      "}\n";
+  const dsl::CompileResult compiled =
+      dsl::compile_source(source, "inline.lp");
+  REQUIRE(compiled.ok);
+  REQUIRE_FALSE(compiled.v2_bytes.empty());
+  const auto* file =
+      logicpilot::ir::v2::GetModelFile(compiled.v2_bytes.data());
+  REQUIRE(file != nullptr);
+  REQUIRE(file->experiments() != nullptr);
+  REQUIRE(file->experiments()->size() == 1);
+  const auto* experiment = file->experiments()->Get(0);
+  REQUIRE(experiment->variable()->str() == "servers");
+  REQUIRE(experiment->objective()->str() == "minimize");
+  REQUIRE(experiment->metric()->str() == "Wq");
+  REQUIRE(experiment->range_min() == 1);
+  REQUIRE(experiment->range_max() == 4);
 }

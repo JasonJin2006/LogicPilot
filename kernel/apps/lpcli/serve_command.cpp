@@ -194,7 +194,7 @@ int serve_command(std::span<const std::string> args) {
                  compiled.diagnostics.size());
       return 1;
     }
-    ir_bytes = compiled.ir_bytes;
+    ir_bytes = compiled.v2_bytes;
     // Validate + name the model from the freshly compiled IR.
     logicpilot::IrLoadResult loaded =
         logicpilot::load_model_buffer(ir_bytes.data(), ir_bytes.size());

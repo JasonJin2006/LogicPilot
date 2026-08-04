@@ -16,6 +16,9 @@
 // Distributions: poisson(r)->Poisson[r], exponential(r)->Exponential[r],
 // normal(m,s)->Normal[m,s], constant(v)->Constant[v].
 // The buffer is finished with file_identifier "LPIR" and schema_version 1.
+// The v2 lowering (lower_to_ir_v2) emits the thin Node/SemanticsRef contract
+// ("LP2R", schema_version 2) directly, so the compile path no longer needs
+// the v1->v2 converter (which remains a compatibility/migration tool).
 #pragma once
 
 #include <cstdint>
@@ -33,5 +36,11 @@ struct LoweredIr {
 // Precondition: analyze_model() returned no diagnostics for `model`.
 [[nodiscard]] LoweredIr lower_to_ir(const ModelAst& model,
                                     const std::string& source_file);
+
+// v2 contract ("LP2R", schema_version 2): model -> core/model Node whose
+// children carry their method semantics (process/devs/agent); experiment
+// blocks lower into ModelFile.experiments. Same precondition as lower_to_ir.
+[[nodiscard]] LoweredIr lower_to_ir_v2(const ModelAst& model,
+                                       const std::string& source_file);
 
 }  // namespace logicpilot::dsl

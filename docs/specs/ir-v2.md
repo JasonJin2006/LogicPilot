@@ -78,6 +78,16 @@ Node（容器契约，故意薄）
   `continuous` 方程）与 v1 `EquationModel` 兼容路径；`final_value` 指标入
   `lpcli run` 摘要；指数衰减与 logistic 的**解析解验收**（129/129 ctest）。
   **五种模型种类至此全部可执行**。
+- **Lowering 原生 v2 发射（已实现）**: `lower_to_ir_v2` 让 DSL 编译器**直接发射
+  v2 契约**（`LP2R`，含 `ModelFile.experiments`），编译主路径不再经过 v1→v2 转换器
+  （转换器保留为迁移/兼容工具）。默认输出即 v2；`--ir-version 1` 走原生 v1 发射。
+  四类模型的原生 v2 与 v1 运行逐位一致（131/131 ctest）。
+
+## v1 读取器退役决策
+
+**保留 v1 读取为纯兼容层**：旧 `.lpir` 文件与 `scripts/interop` 继续读 v1；
+新编译默认发射 v2。v1 发射（`--ir-version 1`）与 v1 读取器不设退役期限，直到
+外部工具链（interop/TS）整体切换到 v2 后另行决策。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
   纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
   SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器

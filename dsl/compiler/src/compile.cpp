@@ -28,8 +28,10 @@ CompileResult compile_source(const std::string& source,
   }
 
   LoweredIr lowered = lower_to_ir(*parsed.model, path);
+  LoweredIr lowered_v2 = lower_to_ir_v2(*parsed.model, path);
   result.ok = true;
   result.ir_bytes = std::move(lowered.bytes);
+  result.v2_bytes = std::move(lowered_v2.bytes);
   result.model_name = parsed.model->name;
   result.experiments = std::move(parsed.model->experiments);
   return result;
