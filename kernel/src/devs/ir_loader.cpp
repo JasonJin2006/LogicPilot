@@ -414,20 +414,32 @@ std::unique_ptr<ReplicationModel> build_replication_model(
         v2_root->semantics()->block() != nullptr) {
       const std::string block = v2_root->semantics()->block()->str();
       bool atomic_only = block == "atomic";
-      if (block == "model" && v2_root->children() != nullptr) {
-        atomic_only = v2_root->children()->size() > 0;
+      bool agent_only = block == "agent";
+      const auto children_only = [&](const char* expected) {
+        if (v2_root->children() == nullptr ||
+            v2_root->children()->size() == 0) {
+          return false;
+        }
         for (const ir::v2::Node* child : *v2_root->children()) {
           if (child->semantics() == nullptr ||
               child->semantics()->block() == nullptr ||
-              child->semantics()->block()->str() != "atomic") {
-            atomic_only = false;
-            break;
+              child->semantics()->block()->str() != expected) {
+            return false;
           }
         }
+        return true;
+      };
+      if (block == "model") {
+        atomic_only = children_only("atomic");
+        agent_only = children_only("agent");
       }
       if (atomic_only) {
         return std::make_unique<DevsReplicationModel>(file.v2_bytes,
                                                       v2_root);
+      }
+      if (agent_only) {
+        return std::make_unique<AgentReplicationModel>(file.v2_bytes,
+                                                       v2_root);
       }
     }
   }

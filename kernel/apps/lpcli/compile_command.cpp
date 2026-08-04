@@ -31,8 +31,8 @@ void print_usage() {
       "                        [--experiments-json <path>]\n"
       "  compiles a LogicPilot DSL source to FlatBuffers IR (LPIR)\n"
       "  -o, --output <path>  output file (default <input>.ir.bin)\n"
-      "  --ir-version <n>     emit the frozen v1 contract (1, default) or the\n"
-      "                       v2 Node/SemanticsRef contract (2)\n"
+      "  --ir-version <n>     emit the v2 Node/SemanticsRef contract (2,\n"
+      "                       default) or the frozen v1 contract (1)\n"
       "  --diagnostics-json <path>  write machine-readable diagnostics JSON\n"
       "  --experiments-json <path>  write the model's declared experiments\n");
 }
@@ -54,7 +54,7 @@ int compile_command(std::span<const std::string> args) {
   std::string output;
   std::string diagnostics_json;
   std::string experiments_json;
-  int ir_version = 1;
+  int ir_version = 2;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];

@@ -9,6 +9,7 @@
 
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/ir_atomic.h"
+#include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_v2_convert.h"
 #include "logicpilot/dsl/compile.h"
 
@@ -141,4 +142,42 @@ TEST_CASE("v2 DEVS trees execute natively from the v2 Statechart",
   const auto seen = atom->state("seen");
   REQUIRE(seen.has_value());
   REQUIRE(std::get<bool>(*seen));
+}
+
+TEST_CASE("v2 agent trees execute natively from behavior bindings",
+          "[ir-v2][migration][agent]") {
+  const dsl::CompileResult compiled =
+      dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/agents.lp");
+  REQUIRE(compiled.ok);
+  std::string error;
+  const std::vector<std::uint8_t> v2 = convert_v1_to_v2(
+      compiled.ir_bytes.data(), compiled.ir_bytes.size(), &error);
+  REQUIRE_FALSE(v2.empty());
+
+  IrLoadResult loaded = load_model_buffer(v2.data(), v2.size());
+  REQUIRE(loaded.ok());
+  REQUIRE(loaded.file.v2_root != nullptr);
+
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 5;
+  config.warmup_arrivals = 0;
+  const ReplicationMetrics native = model->run(config, nullptr);
+  const ReplicationMetrics baseline =
+      run_model(load_v1(compiled), 7, 5, 0);
+  REQUIRE(native.arrivals == baseline.arrivals);
+  REQUIRE(native.horizon_seconds == baseline.horizon_seconds);
+
+  // The v2-native agent runtime applies the behavior bindings: active toggled.
+  const auto* agents = dynamic_cast<const AgentReplicationModel*>(model.get());
+  REQUIRE(agents != nullptr);
+  REQUIRE(agents->agent_count() == 3);
+  REQUIRE(std::get<bool>(agents->agent_state(0).values.at("active")) == false);
+  for (const Position& position : agents->last_positions()) {
+    REQUIRE(position.x >= 0.0F);
+    REQUIRE(position.x <= 1.0F);
+  }
 }

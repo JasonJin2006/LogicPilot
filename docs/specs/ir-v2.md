@@ -69,6 +69,10 @@ Node（容器契约，故意薄）
   （Message 转移 = delta_ext、Timeout 转移 = delta_int + ta），`build_replication_model`
   对 v2 devs 树走**原生执行**（不再先转 v1）；转换层对 process/agent 仍是兼容路径。
   原生执行与 v1 基线 bit-exact（123/123 ctest）。
+- **Phase C 第二步（已实现）**: `AgentReplicationModel` 支持 v2 原生（typed
+  state + count 参数 + 行为绑定），v2 agent 树不再走 v1 往返；
+  **`lpcli compile` 默认输出切到 v2**（`--ir-version 2`），全套 124 个测试与
+  浏览器 E2E 都在 v2 契约路径上通过——v1 读取器从此是纯兼容层。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
   纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
   SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器

@@ -8,9 +8,34 @@
 #include "logicpilot/agent/agent_runtime.h"
 
 #include "ir_generated.h"
+#include "ir_v2_generated.h"
 
 namespace logicpilot {
 namespace {
+
+namespace v2 = logicpilot::ir::v2;
+
+std::optional<IrValue> v2_var_value(const v2::Var* var) {
+  if (var == nullptr) {
+    return std::nullopt;
+  }
+  switch (var->type()) {
+    case v2::VarType_Bool:
+      return IrValue{var->bool_value()};
+    case v2::VarType_Int:
+      return IrValue{var->int_value()};
+    case v2::VarType_Float:
+      return IrValue{var->float_value()};
+    default:
+      return std::nullopt;
+  }
+}
+
+bool v2_node_is(const v2::Node* node, const char* block) {
+  return node != nullptr && node->semantics() != nullptr &&
+         node->semantics()->block() != nullptr &&
+         std::strcmp(node->semantics()->block()->c_str(), block) == 0;
+}
 
 constexpr float kDt = 1.0F;  // fixed sim-time per tick (v0.1)
 
@@ -54,26 +79,45 @@ AgentReplicationModel::AgentReplicationModel(std::vector<std::uint8_t> bytes,
                                              const ir::Model* root)
     : bytes_{std::move(bytes)}, root_{root} {}
 
+AgentReplicationModel::AgentReplicationModel(
+    std::vector<std::uint8_t> v2_bytes, const v2::Node* v2_root)
+    : bytes_{std::move(v2_bytes)}, v2_root_{v2_root}, v2_native_{true} {}
+
 ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
                                               TraceRecorder* trace) {
   ReplicationMetrics metrics;
   metrics.arrivals = 0;
 
+  // v2-native: parse count/state/behaviors from the v2 agent Node.
   const ir::AgentModel* spec = nullptr;
-  if (root_->kind_type() == ir::ModelKind_AgentModel) {
-    spec = root_->kind_as_AgentModel();
-  } else if (root_->kind_type() == ir::ModelKind_CoupledModel) {
-    const ir::CoupledModel* coupled = root_->kind_as_CoupledModel();
-    if (coupled->children() != nullptr) {
-      for (const ir::Model* child : *coupled->children()) {
-        if (child->kind_type() == ir::ModelKind_AgentModel) {
-          spec = child->kind_as_AgentModel();
-          break;
+  const v2::Node* v2_agent = nullptr;
+  if (v2_native_) {
+    if (v2_node_is(v2_root_, "agent")) {
+      v2_agent = v2_root_;
+    } else if (v2_node_is(v2_root_, "model") &&
+               v2_root_->children() != nullptr &&
+               v2_root_->children()->size() == 1) {
+      const v2::Node* child = v2_root_->children()->Get(0);
+      if (v2_node_is(child, "agent")) {
+        v2_agent = child;
+      }
+    }
+  } else {
+    if (root_->kind_type() == ir::ModelKind_AgentModel) {
+      spec = root_->kind_as_AgentModel();
+    } else if (root_->kind_type() == ir::ModelKind_CoupledModel) {
+      const ir::CoupledModel* coupled = root_->kind_as_CoupledModel();
+      if (coupled->children() != nullptr) {
+        for (const ir::Model* child : *coupled->children()) {
+          if (child->kind_type() == ir::ModelKind_AgentModel) {
+            spec = child->kind_as_AgentModel();
+            break;
+          }
         }
       }
     }
   }
-  if (spec == nullptr) {
+  if (spec == nullptr && v2_agent == nullptr) {
     return metrics;
   }
 
@@ -82,7 +126,25 @@ ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
     std::string arg;
   };
   std::vector<Behavior> behaviors;
-  if (spec->behaviors() != nullptr) {
+  if (v2_agent != nullptr) {
+    if (v2_agent->behaviors() != nullptr) {
+      for (const v2::BehaviorBinding* binding : *v2_agent->behaviors()) {
+        if (binding->trigger() == nullptr ||
+            binding->trigger()->str() != "on_tick" ||
+            binding->handler_ref() == nullptr) {
+          continue;
+        }
+        Behavior b;
+        b.handler = binding->handler_ref()->str();
+        if (binding->params() != nullptr &&
+            binding->params()->size() > 0 &&
+            binding->params()->Get(0)->name() != nullptr) {
+          b.arg = binding->params()->Get(0)->name()->str();
+        }
+        behaviors.push_back(std::move(b));
+      }
+    }
+  } else if (spec->behaviors() != nullptr) {
     for (const ir::Behavior* behavior : *spec->behaviors()) {
       if (behavior->trigger() == nullptr ||
           behavior->trigger()->str() != "on_tick" ||
@@ -107,7 +169,18 @@ ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
     return false;
   }();
 
-  const std::int64_t count = count_param(spec);
+  std::int64_t count = 1;
+  if (v2_agent != nullptr && v2_agent->params() != nullptr) {
+    for (const v2::Var* var : *v2_agent->params()) {
+      if (var->name() != nullptr && var->name()->str() == "count" &&
+          var->type() == v2::VarType_Int) {
+        count = var->int_value();
+        break;
+      }
+    }
+  } else {
+    count = count_param(spec);
+  }
   AgentRuntime runtime;
   std::vector<entt::entity> entities;
   entities.reserve(count);
@@ -122,7 +195,20 @@ ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
     const AgentHandle handle = runtime.create_agent(
         position, velocity, AgentState{AgentState::kActiveBit});
     ModelAgentState state;
-    if (spec->state() != nullptr) {
+    const auto apply_state_vars = [&](const auto& list) {
+      if (list == nullptr) {
+        return;
+      }
+      for (const auto* item : *list) {
+        const auto value = v2_var_value(item);
+        if (value && item->name() != nullptr) {
+          state.values.emplace(item->name()->str(), *value);
+        }
+      }
+    };
+    if (v2_agent != nullptr) {
+      apply_state_vars(v2_agent->state());
+    } else if (spec->state() != nullptr) {
       for (const ir::Param* param : *spec->state()) {
         if (const auto value = param_value(param)) {
           state.values.emplace(param->name()->str(), *value);
