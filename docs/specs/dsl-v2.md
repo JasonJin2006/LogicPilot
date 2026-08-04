@@ -30,6 +30,25 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 5. **行为统一**：atomic statechart、agent on_tick、process 阶段统一为
    "状态 + 触发器 + 效果"，由内核引擎注册表解释。
 
+## 2.5 AnyLogic 官方设计对照（依据 anylogic.help 文档）
+
+DSL v2 的形态不是凭空设计，而是对齐 AnyLogic 官方建模模型。逐条对照：
+
+| AnyLogic 官方做法 | 出处 | DSL v2 对应 |
+|---|---|---|
+| Agent 是唯一建模单元：可定义 variables / events / statecharts / SD 图 / 内嵌 agent / process 流程图 | `agent.html` | 统一 `Node` 容器（state/ports/behavior/continuous/children） |
+| Statechart 转移触发器 = Timeout / Rate / Message / Condition | 官方 tutorial + statechart 文档 | v2 `TriggerKind` 已含四类；DSL 统一 `on_<trigger> { }` |
+| Source 的到达模式：Rate（= 指数到达，1/rate）或 Interarrival time | `source.html` | `arrival = rate(λ)` 与 `arrival = interarrival(exp(μ))` 显式区分（当前 poisson 隐含指数到达，不透明） |
+| Queue 有 discipline：FIFO / LIFO / priority / comparison，容量可无限 | `queue.html` | `queue { capacity = N; ordering = fifo\|lifo }`（新增 ordering 字段） |
+| Service = Seize + Delay + Release 组合，容量由 ResourcePool 决定 | `service.html` | `service { resource = R; time = ... }` 显式引用资源（语义即 seize-delay-release） |
+| 模型文件 = 元素树（ALP 单文件 / ALPX 分目录，元素含 Parameters/Variables/Events/Statecharts/嵌入 agent） | `model-formats.html` | IR v2 已是 `core/model` Node 树；DSL 只是它的薄语法层 |
+| 实验 = Simulation / Monte Carlo（固定输入变 seed）/ Parameter Variation / Optimization（参数 + objective + constraints，OptQuest） | `about-experiments.html`、`optimization.html` | `experiment { variable = 参数路径; range = 上下界; objective/metric/budget }` 已对齐；后续可加 constraints |
+| 参数是"root agent"的属性，优化通过注入参数值驱动 | `optimization.html` | 模型级 `param` + `variable = <限定路径>` |
+| 引擎只维护事件队列 + 默认 RNG | `engine.html` | 与我们的内核一致（二叉堆 + xoshiro256++） |
+
+结论：AnyLogic 的"块 = 库组件 + 属性面板（type/expression 化的属性）"是 DSL v2 的属性
+设计蓝本——**块名保持友好，属性名与官方对齐，引用显式化**。
+
 ## 3. 目标语法（草案）
 
 ### 3.1 统一声明
