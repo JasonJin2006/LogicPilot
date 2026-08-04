@@ -1,0 +1,5 @@
+/* LogicPilot IDE styles, split by domain: base / run / ai (model/ lands
+   with the drag-and-drop editor). */
+@import './base.css';
+@import './run.css';
+@import './ai.css';

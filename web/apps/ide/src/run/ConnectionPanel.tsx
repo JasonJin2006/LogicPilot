@@ -1,22 +1,10 @@
 // Connection + run control panel: server URL, start parameters and the
-// start / pause / resume / step / stop command buttons.
+// start / pause / resume / step / stop command buttons. Reads the
+// connection store directly; the parameter fields are local form state.
 
 import { useState } from 'react';
-import type { ConnState, StartOptions } from '../client/simClient';
-
-interface ConnectionPanelProps {
-  conn: ConnState;
-  url: string;
-  onUrlChange: (url: string) => void;
-  onConnect: () => void;
-  onDisconnect: () => void;
-  onStart: (options: StartOptions) => void;
-  onPause: () => void;
-  onResume: () => void;
-  onStep: () => void;
-  onStop: () => void;
-  onSetSpeed: (speed: number) => void;
-}
+import type { StartOptions } from '../client/simClient';
+import { useConnectionStore } from '../state/connectionStore';
 
 interface NumberFieldProps {
   label: string;
@@ -44,30 +32,42 @@ function parseNum(text: string): number | undefined {
   return text.trim() !== '' && Number.isFinite(n) ? n : undefined;
 }
 
-export function ConnectionPanel(props: ConnectionPanelProps) {
+export function ConnectionPanel() {
+  const url = useConnectionStore((state) => state.url);
+  const conn = useConnectionStore((state) => state.conn);
+  const setUrl = useConnectionStore((state) => state.setUrl);
+  const connect = useConnectionStore((state) => state.connect);
+  const disconnect = useConnectionStore((state) => state.disconnect);
+  const start = useConnectionStore((state) => state.start);
+  const pause = useConnectionStore((state) => state.pause);
+  const resume = useConnectionStore((state) => state.resume);
+  const step = useConnectionStore((state) => state.step);
+  const stop = useConnectionStore((state) => state.stop);
+  const setSpeed = useConnectionStore((state) => state.setSpeed);
+
   const [seed, setSeed] = useState('42');
   const [reps, setReps] = useState('3');
   const [arrivals, setArrivals] = useState('4000');
   const [warmup, setWarmup] = useState('400');
-  const [speed, setSpeed] = useState('10');
+  const [speed, setSpeedField] = useState('10');
 
-  const connected = props.conn === 'connected';
-  const connecting = props.conn === 'connecting';
+  const connected = conn === 'connected';
+  const connecting = conn === 'connecting';
 
   return (
     <div className="connection-panel">
       <div className="panel-row">
         <input
           className="url-input"
-          value={props.url}
+          value={url}
           spellCheck={false}
           disabled={connected || connecting}
-          onChange={(e) => props.onUrlChange(e.target.value)}
+          onChange={(e) => setUrl(e.target.value)}
         />
         {connected || connecting ? (
-          <button onClick={props.onDisconnect}>Disconnect</button>
+          <button onClick={disconnect}>Disconnect</button>
         ) : (
-          <button onClick={props.onConnect} disabled={connecting}>
+          <button onClick={connect} disabled={connecting}>
             Connect
           </button>
         )}
@@ -82,11 +82,11 @@ export function ConnectionPanel(props: ConnectionPanelProps) {
           disabled={!connected}
         />
         <NumberField label="warmup" value={warmup} onChange={setWarmup} disabled={!connected} />
-        <NumberField label="speed" value={speed} onChange={setSpeed} disabled={!connected} />
+        <NumberField label="speed" value={speed} onChange={setSpeedField} disabled={!connected} />
         <button
           disabled={!connected}
           onClick={() =>
-            props.onStart({
+            start({
               seed: parseNum(seed),
               reps: parseNum(reps),
               arrivals: parseNum(arrivals),
@@ -99,23 +99,23 @@ export function ConnectionPanel(props: ConnectionPanelProps) {
         </button>
       </div>
       <div className="panel-row">
-        <button disabled={!connected} onClick={props.onPause}>
+        <button disabled={!connected} onClick={pause}>
           Pause
         </button>
-        <button disabled={!connected} onClick={props.onResume}>
+        <button disabled={!connected} onClick={resume}>
           Resume
         </button>
-        <button disabled={!connected} onClick={props.onStep}>
+        <button disabled={!connected} onClick={step}>
           Step
         </button>
-        <button disabled={!connected} onClick={props.onStop}>
+        <button disabled={!connected} onClick={stop}>
           Stop
         </button>
         <button
           disabled={!connected}
           onClick={() => {
-            const s = parseNum(speed);
-            if (s !== undefined) props.onSetSpeed(s);
+            const value = parseNum(speed);
+            if (value !== undefined) setSpeed(value);
           }}
         >
           Set speed

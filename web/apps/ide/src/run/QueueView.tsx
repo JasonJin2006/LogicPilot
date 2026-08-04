@@ -6,12 +6,8 @@
 
 import { Application, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
-import type { VizState } from '../state/vizState';
-
-interface QueueViewProps {
-  viz: VizState;
-  onFps: (fps: number) => void;
-}
+import { useConnectionStore } from '../state/connectionStore';
+import { vizState } from '../state/vizState';
 
 interface DisplayAgent {
   x: number;
@@ -29,12 +25,11 @@ const COLORS = {
   label: 0x8b949e,
 };
 
-export function QueueView({ viz, onFps }: QueueViewProps) {
+export function QueueView() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const vizRef = useRef(viz);
-  vizRef.current = viz;
-  const onFpsRef = useRef(onFps);
-  onFpsRef.current = onFps;
+  const setFps = useConnectionStore((state) => state.setFps);
+  const setFpsRef = useRef(setFps);
+  setFpsRef.current = setFps;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -49,7 +44,7 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
     let lastFpsPush = 0;
 
     const draw = (dtSeconds: number) => {
-      const state = vizRef.current;
+      const state = vizState;
       const { width, height } = app.screen;
       const originX = 110;
       const originY = height * 0.55;
@@ -70,10 +65,7 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
         }
       }
       const queueStartX = originX + servers * cellW;
-      const spacing = Math.min(
-          34,
-          Math.max(12, (width - queueStartX - 60) / maxQueue),
-      );
+      const spacing = Math.min(34, Math.max(12, (width - queueStartX - 60) / maxQueue));
 
       // Interpolate toward the latest Tick targets (exponential smoothing,
       // ~100 ms convergence to match the 10 Hz telemetry cadence).
@@ -106,22 +98,14 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
       const downServers = Math.max(0, Math.min(state.downServers, servers));
       for (let i = 0; i < servers; ++i) {
         const down = i >= servers - downServers;
-        const color = down
-          ? COLORS.serverDown
-          : state.busy
-            ? COLORS.serverBusy
-            : COLORS.serverIdle;
+        const color = down ? COLORS.serverDown : state.busy ? COLORS.serverBusy : COLORS.serverIdle;
         const cx = originX + i * cellW;
         layer
           .roundRect(cx + 2, originY - 42, cellW - 14, 84, 8)
           .fill({ color, alpha: down || state.busy ? 0.9 : 0.5 })
           .stroke({
             width: 2,
-            color: down
-              ? COLORS.serverDown
-              : state.busy
-                ? COLORS.serverBusy
-                : COLORS.label,
+            color: down ? COLORS.serverDown : state.busy ? COLORS.serverBusy : COLORS.label,
           });
       }
 
@@ -148,7 +132,7 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
         const now = performance.now();
         if (now - lastFpsPush > 500) {
           lastFpsPush = now;
-          onFpsRef.current(Math.round(ticker.FPS));
+          setFpsRef.current(Math.round(ticker.FPS));
         }
       });
       el.appendChild(app.canvas);

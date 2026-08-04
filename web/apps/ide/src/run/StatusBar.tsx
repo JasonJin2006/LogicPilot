@@ -1,27 +1,16 @@
 // Status strip: connection state, last frame seq, simulated time, render
 // FPS, latest gateway ack and decode errors.
 
-import type { ConnState } from '../client/simClient';
+import { useConnectionStore } from '../state/connectionStore';
 
-interface StatusBarProps {
-  conn: ConnState;
-  seq: bigint | null;
-  simTimeNs: bigint | null;
-  fps: number;
-  lastAck: string;
-  error: string;
-  badFrames: number;
-}
-
-export function StatusBar({
-  conn,
-  seq,
-  simTimeNs,
-  fps,
-  lastAck,
-  error,
-  badFrames,
-}: StatusBarProps) {
+export function StatusBar() {
+  const conn = useConnectionStore((state) => state.conn);
+  const seq = useConnectionStore((state) => state.seq);
+  const simTimeNs = useConnectionStore((state) => state.simTimeNs);
+  const fps = useConnectionStore((state) => state.fps);
+  const lastAck = useConnectionStore((state) => state.lastAck);
+  const error = useConnectionStore((state) => state.error);
+  const badFrames = useConnectionStore((state) => state.badFrames);
   const simSeconds = simTimeNs === null ? null : Number(simTimeNs) / 1e9;
   return (
     <div className="status-bar">

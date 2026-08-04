@@ -1,0 +1,184 @@
+/* Run-visualization domain: connection panel, queue view, status bar,
+   counter charts and the results table. */
+
+.connection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.url-input {
+  min-width: 280px;
+  flex: 1;
+}
+
+.queue-view {
+  position: relative;
+  flex: 1;
+  min-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.queue-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.queue-legend {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.dot-serving {
+  background: #3fb950;
+}
+
+.dot-waiting {
+  background: #58a6ff;
+}
+
+.dot-server {
+  background: #ffb020;
+}
+
+.dot-down {
+  background: #f85149;
+}
+
+.status-bar {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.conn-badge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.conn-connected {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--ok);
+}
+
+.conn-connecting {
+  background: rgba(255, 176, 32, 0.15);
+  color: var(--warn);
+}
+
+.conn-disconnected {
+  background: rgba(139, 148, 158, 0.15);
+  color: var(--muted);
+}
+
+.status-bar .error {
+  color: var(--error);
+}
+
+.status-bar .warn {
+  color: var(--warn);
+}
+
+.status-bar .ack {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.charts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chart-block {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.chart-title {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.results {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.results.empty {
+  color: var(--muted);
+}
+
+.run-info {
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.run-info code {
+  color: var(--text);
+}
+
+.run-status {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.status-completed {
+  color: var(--ok);
+}
+
+.status-failed {
+  color: var(--error);
+}
+
+.status-cancelled {
+  color: var(--warn);
+}
+
+.results table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.results td {
+  padding: 2px 4px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+}
+
+.results td.num {
+  text-align: right;
+  color: var(--accent);
+}

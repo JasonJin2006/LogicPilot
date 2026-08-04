@@ -1,9 +1,12 @@
 // Rolling-window counter charts (uPlot): queue_length / throughput /
-// mean_wait versus simulated time, fed by 10 Hz Counters frames.
+// mean_wait versus simulated time, fed by 10 Hz Counters frames. The
+// imperative handle registers itself into the run store, so the frame
+// handler can append samples without React props.
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
+import { useRunStore } from '../state/runStore';
 
 export interface ChartsHandle {
   /** Append one Counters sample at simulated time t (seconds). */
@@ -50,7 +53,7 @@ function makeOptions(width: number, metric: Metric): uPlot.Options {
   };
 }
 
-export const ChartPanel = forwardRef<ChartsHandle, object>(function ChartPanel(_props, ref) {
+export function ChartPanel() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const plotEls = useRef<Array<HTMLDivElement | null>>([]);
   const plots = useRef<Array<uPlot | null>>([]);
@@ -93,10 +96,11 @@ export const ChartPanel = forwardRef<ChartsHandle, object>(function ChartPanel(_
     };
   }, []);
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      push: (t: number, counters: Record<string, number>) => {
+  // Register the imperative handle into the run store for the duration of
+  // the mount.
+  useEffect(() => {
+    const handle: ChartsHandle = {
+      push: (t, counters) => {
         // sim_time goes backwards when the gateway restarts a replication
         // (or a new run begins without RunStarted): start a fresh window.
         if (t < lastT.current) {
@@ -126,9 +130,10 @@ export const ChartPanel = forwardRef<ChartsHandle, object>(function ChartPanel(_
         });
         redraw();
       },
-    }),
-    [],
-  );
+    };
+    useRunStore.getState().registerCharts(handle);
+    return () => useRunStore.getState().registerCharts(null);
+  }, []);
 
   return (
     <div ref={wrapRef} className="charts">
@@ -146,4 +151,4 @@ export const ChartPanel = forwardRef<ChartsHandle, object>(function ChartPanel(_
       ))}
     </div>
   );
-});
+}

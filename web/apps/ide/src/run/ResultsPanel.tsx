@@ -1,12 +1,7 @@
 // Terminal run summary: RunFinished stats table (cross-replication means,
 // std-devs and Student-t confidence intervals).
 
-import type { RunFinishedView, RunStartedView } from '@logicpilot/renderer2d';
-
-interface ResultsPanelProps {
-  runInfo: RunStartedView | null;
-  results: RunFinishedView | null;
-}
+import { useRunStore } from '../state/runStore';
 
 function formatValue(value: number): string {
   if (!Number.isFinite(value)) return String(value);
@@ -15,7 +10,9 @@ function formatValue(value: number): string {
     : value.toFixed(3);
 }
 
-export function ResultsPanel({ runInfo, results }: ResultsPanelProps) {
+export function ResultsPanel() {
+  const runInfo = useRunStore((state) => state.runInfo);
+  const results = useRunStore((state) => state.results);
   if (!runInfo && !results) {
     return <div className="results empty">Run results will appear here.</div>;
   }

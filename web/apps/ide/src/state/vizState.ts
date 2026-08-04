@@ -35,3 +35,9 @@ export function resetVizState(viz: VizState): void {
   viz.downServers = 0;
   viz.tickVersion += 1;
 }
+
+// Module-level singleton shared by the frame handler (10 Hz wire frames)
+// and the PixiJS render loop (requestAnimationFrame). Kept outside React
+// state on purpose: interpolation runs at display rate and must not trigger
+// React re-renders.
+export const vizState = createVizState();

@@ -1,0 +1,130 @@
+// Editor block-graph model (P1-6 drag-and-drop modeling).
+//
+// A ModelDocument is the source of truth the canvas renders and the DSL
+// generator consumes. Operations are pure (they return a new document) so
+// the IDE can layer undo/redo and diagnostics on top without mutating
+// shared state.
+
+export type BlockKind = 'resource' | 'source' | 'queue' | 'service' | 'sink';
+
+/** One block instance on the canvas. `params` are field values keyed by
+ *  the block's registered param name (see libraries/process.lplib). */
+export interface ModelNode {
+  id: string;
+  kind: BlockKind;
+  name: string;
+  x: number;
+  y: number;
+  params: Record<string, string | number | boolean>;
+}
+
+/** A sequential coupling between two block instances (process flow). */
+export interface ModelEdge {
+  id: string;
+  from: string;
+  to: string;
+}
+
+export interface ModelDocument {
+  name: string;
+  nodes: ModelNode[];
+  edges: ModelEdge[];
+}
+
+export interface AddNodeInput {
+  kind: BlockKind;
+  name: string;
+  x: number;
+  y: number;
+  params?: Record<string, string | number | boolean>;
+}
+
+let nextId = 1;
+
+/** Deterministic id for tests and the canvas key. */
+export function freshId(prefix: string): string {
+  return `${prefix}-${nextId++}`;
+}
+
+export function createDocument(name = 'Model'): ModelDocument {
+  return { name, nodes: [], edges: [] };
+}
+
+export function findNode(document: ModelDocument, id: string): ModelNode | undefined {
+  return document.nodes.find((node) => node.id === id);
+}
+
+export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocument {
+  const node: ModelNode = {
+    id: freshId(input.kind),
+    kind: input.kind,
+    name: input.name,
+    x: input.x,
+    y: input.y,
+    params: { ...input.params },
+  };
+  return { ...document, nodes: [...document.nodes, node] };
+}
+
+export function removeNode(document: ModelDocument, id: string): ModelDocument {
+  return {
+    ...document,
+    nodes: document.nodes.filter((node) => node.id !== id),
+    edges: document.edges.filter((edge) => edge.from !== id && edge.to !== id),
+  };
+}
+
+export function moveNode(document: ModelDocument, id: string, x: number, y: number): ModelDocument {
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => (node.id === id ? { ...node, x, y } : node)),
+  };
+}
+
+export function renameNode(document: ModelDocument, id: string, name: string): ModelDocument {
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => (node.id === id ? { ...node, name } : node)),
+  };
+}
+
+export function setParam(
+  document: ModelDocument,
+  id: string,
+  key: string,
+  value: string | number | boolean,
+): ModelDocument {
+  return {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === id ? { ...node, params: { ...node.params, [key]: value } } : node,
+    ),
+  };
+}
+
+export interface ConnectResult {
+  document: ModelDocument;
+  /** Rejected connections carry the reason; the document is unchanged. */
+  error?: string;
+}
+
+export function connect(document: ModelDocument, from: string, to: string): ConnectResult {
+  if (from === to) {
+    return { document, error: 'a block cannot connect to itself' };
+  }
+  if (!findNode(document, from) || !findNode(document, to)) {
+    return { document, error: 'connection references an unknown block' };
+  }
+  if (document.edges.some((edge) => edge.from === from && edge.to === to)) {
+    return { document, error: 'connection already exists' };
+  }
+  const edge = { id: freshId('edge'), from, to };
+  return { document: { ...document, edges: [...document.edges, edge] } };
+}
+
+export function disconnect(document: ModelDocument, id: string): ModelDocument {
+  return {
+    ...document,
+    edges: document.edges.filter((edge) => edge.id !== id),
+  };
+}
