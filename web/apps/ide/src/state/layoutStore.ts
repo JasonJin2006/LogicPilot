@@ -1,0 +1,93 @@
+// Layout store: panel areas (size / collapse / active tab / panel order),
+// persisted to localStorage. Panel *content* lives in the registry
+// (layout/panels.tsx); this store only describes the workspace geometry.
+// See docs/specs/ide-layout.md.
+
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { DEFAULT_LAYOUT, type AreaId, type PanelId } from '../layout/panels';
+
+export interface AreaState {
+  size: number; // left/right width, bottom height (px)
+  collapsed: boolean;
+  activePanel: PanelId;
+  panels: PanelId[];
+}
+
+export type Areas = Record<AreaId, AreaState>;
+
+export interface LayoutState {
+  areas: Areas;
+  setSize: (area: AreaId, size: number) => void;
+  toggleCollapse: (area: AreaId) => void;
+  setActive: (area: AreaId, panel: PanelId) => void;
+  resetLayout: () => void;
+}
+
+const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
+  left: { min: 220, max: 560 },
+  center: { min: 0, max: 0 },
+  right: { min: 240, max: 560 },
+  bottom: { min: 100, max: 480 },
+};
+
+const DEFAULT_SIZE: Record<AreaId, number> = {
+  left: 280,
+  center: 0,
+  right: 360,
+  bottom: 180,
+};
+
+function defaultAreas(): Areas {
+  const areas = {} as Areas;
+  for (const area of ['left', 'center', 'right', 'bottom'] as const) {
+    areas[area] = {
+      size: DEFAULT_SIZE[area],
+      collapsed: false,
+      activePanel: DEFAULT_LAYOUT[area].active,
+      panels: [...DEFAULT_LAYOUT[area].panels],
+    };
+  }
+  return areas;
+}
+
+export const useLayoutStore = create<LayoutState>()(
+  persist(
+    (set) => ({
+      areas: defaultAreas(),
+      setSize: (area, size) =>
+        set((state) => {
+          const range = SIZE_RANGE[area];
+          const clamped = Math.min(range.max, Math.max(range.min, size));
+          return { areas: { ...state.areas, [area]: { ...state.areas[area], size: clamped } } };
+        }),
+      toggleCollapse: (area) =>
+        set((state) => ({
+          areas: {
+            ...state.areas,
+            [area]: { ...state.areas[area], collapsed: !state.areas[area].collapsed },
+          },
+        })),
+      setActive: (area, panel) =>
+        set((state) => ({
+          areas: { ...state.areas, [area]: { ...state.areas[area], activePanel: panel } },
+        })),
+      resetLayout: () => set({ areas: defaultAreas() }),
+    }),
+    {
+      name: 'logicpilot.layout',
+      version: 1,
+      merge: (persisted, current) => {
+        // Merge per-area so a layout stored by an older version keeps
+        // defaults for any area/panel it does not know about.
+        const stored = (persisted ?? {}) as Partial<LayoutState>;
+        const base = current.areas;
+        const areas = {} as Areas;
+        for (const area of ['left', 'center', 'right', 'bottom'] as const) {
+          areas[area] = { ...base[area], ...(stored.areas?.[area] ?? {}) };
+        }
+        return { ...current, ...stored, areas };
+      },
+    },
+  ),
+);

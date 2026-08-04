@@ -1,0 +1,319 @@
+/* Panel workspace (docs/specs/ide-layout.md): activity bar + CSS Grid
+   skeleton with resizable left/center/right/bottom areas. */
+
+.app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.activity-bar {
+  width: 46px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+}
+
+.activity-item {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.activity-item:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.activity-item.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--border);
+}
+
+.workspace {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--left-w) 6px minmax(0, 1fr) 6px var(--right-w);
+  grid-template-rows: minmax(0, 1fr) 6px var(--bottom-h);
+  grid-template-areas:
+    'left sl center sr right'
+    'sb   sb sb    sb  sb'
+    'bottom bottom bottom bottom bottom';
+}
+
+.panel-area {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+}
+
+.panel-area.area-left {
+  grid-area: left;
+  border-right: 1px solid var(--border);
+}
+
+.panel-area.area-center {
+  grid-area: center;
+  background: var(--bg);
+}
+
+.panel-area.area-right {
+  grid-area: right;
+  border-left: 1px solid var(--border);
+}
+
+.panel-area.area-bottom {
+  grid-area: bottom;
+  border-top: 1px solid var(--border);
+}
+
+.panel-area.collapsed {
+  /* collapsed areas keep only the tab bar */
+}
+
+/* --- splitters ---------------------------------------------------------- */
+
+.splitter {
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.splitter::after {
+  content: '';
+  position: absolute;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.splitter:hover::after,
+.splitter:active::after {
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.splitter-v {
+  cursor: col-resize;
+}
+
+.splitter-v::after {
+  inset: 0 2px;
+}
+
+.splitter-h {
+  cursor: row-resize;
+}
+
+.splitter-h::after {
+  inset: 2px 0;
+}
+
+/* --- tab bar ------------------------------------------------------------ */
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  min-height: 34px;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: 0;
+}
+
+.tab:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-collapse {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--r-sm);
+}
+
+.tab-collapse:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* --- pane content ------------------------------------------------------- */
+
+.panel-area-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-pane.active {
+  display: flex;
+}
+
+.area-left .panel-pane {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.area-bottom .panel-pane {
+  overflow-y: auto;
+}
+
+/* --- side panel shared bits --------------------------------------------- */
+
+.side-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.side-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.side-kv .k {
+  color: var(--text-muted);
+}
+
+.side-kv .v {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.side-kv .v.warn {
+  color: var(--warn);
+}
+
+.side-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.palette-kind {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.palette-hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* --- console ------------------------------------------------------------ */
+
+.console-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: 10px 12px;
+}
+
+.console-log {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 8px 12px;
+  gap: 2px;
+}
+
+.console-line {
+  display: flex;
+  gap: 10px;
+  line-height: 1.5;
+}
+
+.console-time {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.console-text {
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.console-ack .console-text {
+  color: var(--ok);
+}
+
+.console-error .console-text {
+  color: var(--error);
+}
+
+.console-bad .console-text {
+  color: var(--warn);
+}
+
+.console-info .console-text {
+  color: var(--accent);
+}

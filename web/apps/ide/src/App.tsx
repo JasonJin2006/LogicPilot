@@ -1,14 +1,11 @@
-// LogicPilot IDE root layout: the connection panel, the PixiJS queue view,
-// the counter charts, the results panel and the AI panel. All state lives in
-// the domain stores (state/connectionStore, state/runStore); components
-// subscribe with selectors, so 10 Hz telemetry only re-renders the slices
-// that display it.
+// LogicPilot IDE root layout: header (brand + connection/run control),
+// activity bar + panel workspace (VS Code + AnyLogic style), and a global
+// status bar. Panels and layout are driven by the layout store + registry
+// (see docs/specs/ide-layout.md); domain state lives in the domain stores.
 
-import { AIPanel } from './ai/AIPanel';
-import { ChartPanel } from './run/ChartPanel';
+import { ActivityBar } from './layout/ActivityBar';
+import { Workspace } from './layout/Workspace';
 import { ConnectionPanel } from './run/ConnectionPanel';
-import { QueueView } from './run/QueueView';
-import { ResultsPanel } from './run/ResultsPanel';
 import { StatusBar } from './run/StatusBar';
 
 export default function App() {
@@ -18,19 +15,11 @@ export default function App() {
         <h1>LogicPilot</h1>
         <ConnectionPanel />
       </header>
-      <main className="app-main">
-        <section className="viz-column">
-          <QueueView />
-          <StatusBar />
-        </section>
-        <aside className="side-column">
-          <h2>counters</h2>
-          <ChartPanel />
-          <h2>results</h2>
-          <ResultsPanel />
-          <AIPanel />
-        </aside>
-      </main>
+      <div className="app-body">
+        <ActivityBar />
+        <Workspace />
+      </div>
+      <StatusBar />
     </div>
   );
 }

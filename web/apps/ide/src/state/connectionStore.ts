@@ -11,6 +11,13 @@ import { useRunStore } from './runStore';
 
 const DEFAULT_URL = 'ws://127.0.0.1:8089/sim';
 
+export interface LogEvent {
+  id: number;
+  time: string;
+  kind: 'ack' | 'error' | 'bad' | 'info';
+  text: string;
+}
+
 interface ConnectionStore {
   url: string;
   conn: ConnState;
@@ -20,6 +27,7 @@ interface ConnectionStore {
   lastAck: string;
   error: string;
   badFrames: number;
+  events: LogEvent[];
 
   setUrl: (url: string) => void;
   setFps: (fps: number) => void;
@@ -34,6 +42,20 @@ interface ConnectionStore {
 }
 
 let client: SimClient | null = null;
+let nextEventId = 1;
+
+const MAX_EVENTS = 200;
+
+function appendEvent(state: ConnectionStore, kind: LogEvent['kind'], text: string): LogEvent[] {
+  const event: LogEvent = {
+    id: nextEventId++,
+    time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    kind,
+    text,
+  };
+  const events = [...state.events, event];
+  return events.length > MAX_EVENTS ? events.slice(events.length - MAX_EVENTS) : events;
+}
 
 // Apply one telemetry frame to viz + run stores (single writer).
 function applyFrame(frame: WireFrame): void {
@@ -42,7 +64,10 @@ function applyFrame(frame: WireFrame): void {
       resetVizState(vizState);
       useRunStore.getState().reset();
       useRunStore.getState().started(frame.payload);
-      useConnectionStore.setState({ badFrames: 0 });
+      useConnectionStore.setState((state) => ({
+        badFrames: 0,
+        events: appendEvent(state, 'info', `run ${frame.payload.runId} started`),
+      }));
       break;
     }
     case 'tick': {
@@ -82,6 +107,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   lastAck: '',
   error: '',
   badFrames: 0,
+  events: [],
 
   setUrl: (url) => set({ url }),
   setFps: (fps) => set({ fps }),
@@ -90,10 +116,23 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     set({ conn: 'connecting' });
     client = new SimClient({
       onFrame: applyFrame,
-      onBadFrame: (reason) => set((state) => ({ badFrames: state.badFrames + 1, error: reason })),
-      onText: (message) => set({ lastAck: message }),
+      onBadFrame: (reason) =>
+        set((state) => ({
+          badFrames: state.badFrames + 1,
+          error: reason,
+          events: appendEvent(state, 'bad', reason),
+        })),
+      onText: (message) =>
+        set((state) => ({
+          lastAck: message,
+          events: appendEvent(state, 'ack', message),
+        })),
       onStateChange: (conn) => set({ conn }),
-      onError: (message) => set({ error: message }),
+      onError: (message) =>
+        set((state) => ({
+          error: message,
+          events: appendEvent(state, 'error', message),
+        })),
     });
     client.connect(get().url);
   },

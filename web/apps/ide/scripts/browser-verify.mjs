@@ -102,7 +102,8 @@ try {
   log(`charts drawn (3 uPlot canvases); status bar: ${chartState.fpsText.trim()}`);
   await page.screenshot({ path: join(OUT, '2-running.png') });
 
-  // Wait for RunFinished -> stats panel.
+  // Wait for RunFinished -> stats panel (Results tab of the side panel).
+  await page.getByRole('button', { name: 'Results' }).click();
   await page.waitForSelector('.run-status.status-completed', { timeout: 180_000 });
   const statsText = await page.locator('.results').textContent();
   for (const key of ['Wq.mean', 'throughput.mean', 'L.mean', 'confidence']) {
@@ -111,9 +112,11 @@ try {
   log('RunFinished panel shows Completed + full stats table');
   await page.screenshot({ path: join(OUT, '3-finished.png') });
 
-  // AI model panel: generate a model from a natural-language prompt.
-  await page.locator('.ai-input').fill(
-      'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  // AI model panel (AI tab): generate a model from a natural-language prompt.
+  await page.getByRole('button', { name: 'AI' }).click();
+  await page
+    .locator('.ai-input')
+    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
   await page.getByRole('button', { name: 'generate + run' }).click();
   await page.waitForSelector('.ai-result', { timeout: 90_000 });
   const aiText = await page.locator('.ai-result').textContent();
@@ -124,9 +127,9 @@ try {
   await page.screenshot({ path: join(OUT, '4-ai-model.png') });
 
   // AI panel: parameter optimization from a natural-language prompt.
-  await page.locator('.ai-input').fill(
-      'minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 ' +
-      'and service 1.0');
+  await page
+    .locator('.ai-input')
+    .fill('minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 ' + 'and service 1.0');
   await page.getByRole('button', { name: 'optimize' }).click();
   await page.waitForSelector('.ai-scores', { timeout: 90_000 });
   const optimizeText = await page.locator('.ai-result').textContent();
@@ -142,8 +145,9 @@ try {
   await page.screenshot({ path: join(OUT, '5-ai-optimize.png') });
 
   // AI panel: bottleneck attribution from a prompt.
-  await page.locator('.ai-input').fill(
-      'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  await page
+    .locator('.ai-input')
+    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
   await page.getByRole('button', { name: 'explain' }).click();
   await page.waitForSelector('.ai-findings', { timeout: 90_000 });
   const explainText = await page.locator('.ai-result').textContent();
@@ -154,8 +158,7 @@ try {
   await page.screenshot({ path: join(OUT, '6-ai-explain.png') });
 
   // AI panel: continuous-model trajectory chart.
-  await page.locator('.ai-input').fill(
-      'build an exponential decay model with rate 0.5');
+  await page.locator('.ai-input').fill('build an exponential decay model with rate 0.5');
   await page.getByRole('button', { name: 'generate + run' }).click();
   await page.waitForSelector('.ai-trajectory', { timeout: 90_000 });
   log('AI panel charted a continuous-model trajectory');
