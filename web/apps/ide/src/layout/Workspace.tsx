@@ -82,7 +82,11 @@ function PanelArea({ area }: { area: AreaId }) {
       {!state.collapsed && (
         <div className="panel-area-body">
           {state.panels.map((panel) => {
-            const PanelComponent = PANELS[panel].component;
+            const definition = PANELS[panel];
+            if (definition === undefined) {
+              return null; // stale persisted panel: skipped defensively
+            }
+            const PanelComponent = definition.component;
             return (
               <div
                 key={panel}

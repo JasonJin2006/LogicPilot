@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_LAYOUT, type AreaId, type PanelId } from '../layout/panels';
+import { DEFAULT_LAYOUT, PANELS, type AreaId, type PanelId } from '../layout/panels';
 
 export interface AreaState {
   size: number; // left/right width, bottom height (px)
@@ -51,6 +51,27 @@ function defaultAreas(): Areas {
   return areas;
 }
 
+// Merge a persisted layout with the current defaults, dropping panels that
+// are no longer registered (registry changes must not crash rendering with
+// a stale localStorage layout) and fixing the active panel.
+export function mergePersistedLayout(persisted: unknown, current: LayoutState): LayoutState {
+  const stored = (persisted ?? {}) as Partial<LayoutState>;
+  const areas = {} as Areas;
+  for (const area of ['left', 'center', 'right', 'bottom'] as const) {
+    const merged = {
+      ...current.areas[area],
+      ...(stored.areas?.[area] ?? {}),
+    };
+    const panels = (merged.panels ?? []).filter((panel): panel is PanelId => panel in PANELS);
+    if (panels.length === 0) {
+      panels.push(...DEFAULT_LAYOUT[area].panels);
+    }
+    const active = panels.includes(merged.activePanel as PanelId) ? merged.activePanel : panels[0]!;
+    areas[area] = { ...merged, panels, activePanel: active };
+  }
+  return { ...current, ...stored, areas };
+}
+
 export const useLayoutStore = create<LayoutState>()(
   persist(
     (set) => ({
@@ -77,17 +98,7 @@ export const useLayoutStore = create<LayoutState>()(
     {
       name: 'logicpilot.layout',
       version: 1,
-      merge: (persisted, current) => {
-        // Merge per-area so a layout stored by an older version keeps
-        // defaults for any area/panel it does not know about.
-        const stored = (persisted ?? {}) as Partial<LayoutState>;
-        const base = current.areas;
-        const areas = {} as Areas;
-        for (const area of ['left', 'center', 'right', 'bottom'] as const) {
-          areas[area] = { ...base[area], ...(stored.areas?.[area] ?? {}) };
-        }
-        return { ...current, ...stored, areas };
-      },
+      merge: mergePersistedLayout,
     },
   ),
 );

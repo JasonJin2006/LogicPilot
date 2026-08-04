@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useLayoutStore } from './layoutStore';
+import { mergePersistedLayout, useLayoutStore } from './layoutStore';
+import type { LayoutState } from './layoutStore';
 
 describe('layoutStore', () => {
   beforeEach(() => {
@@ -29,5 +30,36 @@ describe('layoutStore', () => {
     expect(areas.right.panels).toEqual(['ai']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette', 'runInfo']);
     expect(areas.bottom.panels).toEqual(['console']);
+  });
+
+  it('merge drops panels that are no longer registered', () => {
+    const current = useLayoutStore.getState();
+    const stale = {
+      areas: {
+        ...current.areas,
+        center: {
+          ...current.areas.center,
+          panels: ['queue', 'counters', 'results'],
+          activePanel: 'counters',
+        },
+      },
+    };
+    const merged = mergePersistedLayout(stale, current);
+    // counters/results were removed from the registry; only queue survives
+    // and the active panel falls back to it.
+    expect(merged.areas.center.panels).toEqual(['queue']);
+    expect(merged.areas.center.activePanel).toBe('queue');
+  });
+
+  it('merge restores defaults when a persisted area is empty', () => {
+    const current = useLayoutStore.getState();
+    const stale = {
+      areas: {
+        ...current.areas,
+        right: { ...current.areas.right, panels: [] },
+      },
+    };
+    const merged = mergePersistedLayout(stale, current);
+    expect(merged.areas.right.panels).toEqual(['ai']);
   });
 });
