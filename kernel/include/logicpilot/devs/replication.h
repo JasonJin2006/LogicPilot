@@ -31,6 +31,9 @@ struct ReplicationMetrics {
   double mean_in_queue{0.0};     // Lq - time-average number waiting
   double mean_sojourn{0.0};      // W  - mean time in system (per customer)
   double mean_wait{0.0};         // Wq - mean wait before service
+  // Milestone 1d: server-pool health (0 for non-flow models).
+  double utilization{0.0};       // busy servers / servers, time-averaged
+  double availability{0.0};      // 1 - down servers / servers, time-averaged
 };
 
 // Deterministic FNV-1a (64-bit) streaming hash over the event trace.
@@ -89,6 +92,8 @@ struct ReplicationSummary {
   MetricSummary mean_in_queue;
   MetricSummary mean_sojourn;
   MetricSummary mean_wait;
+  MetricSummary utilization;
+  MetricSummary availability;
 };
 
 // Two-sided Student-t critical value for `confidence` at `df` degrees of

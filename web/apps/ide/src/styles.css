@@ -294,6 +294,13 @@ button:disabled {
 .ai-scores th {
   color: #8b949e;
 }
+.ai-findings {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e6edf3;
+}
 
 .charts {
   display: flex;

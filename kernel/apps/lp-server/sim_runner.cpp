@@ -71,10 +71,14 @@ void SimRunner::reset(const StreamRunConfig& config) {
   in_system_ = 0;
   in_queue_ = 0;
   departures_ = 0;
+  busy_servers_ = 0;
+  down_servers_ = 0;
   finished_ = false;
   last_ns_ = 0;
   area_system_ns_ = 0;
   area_queue_ns_ = 0;
+  area_busy_ns_ = 0;
+  area_down_ns_ = 0;
   sojourn_sum_ = 0.0;
   sojourn_count_ = 0;
   wait_sum_ = 0.0;
@@ -84,6 +88,8 @@ void SimRunner::reset(const StreamRunConfig& config) {
     const std::int64_t dt = now_ns - last_ns_;
     area_system_ns_ += dt * static_cast<std::int64_t>(in_system_);
     area_queue_ns_ += dt * static_cast<std::int64_t>(in_queue_);
+    area_busy_ns_ += dt * busy_servers_;
+    area_down_ns_ += dt * down_servers_;
     last_ns_ = now_ns;
   };
 
@@ -94,6 +100,7 @@ void SimRunner::reset(const StreamRunConfig& config) {
                                     std::uint64_t customer) {
     server_state_[server] = ServerState::kBusy;
     server_customer_[server] = customer;
+    ++busy_servers_;
     service_start_ns_[customer] = clock_.now().as_ns();
     const std::int64_t service_ns = to_ns(spec_.service(engine_));
     if (!spec_.failure) {
@@ -131,6 +138,7 @@ void SimRunner::reset(const StreamRunConfig& config) {
     }
 
     server_state_[server] = ServerState::kIdle;
+    --busy_servers_;
     if (!queue_.empty()) {
       const std::uint64_t next = queue_.front();
       queue_.pop_front();
@@ -175,6 +183,8 @@ void SimRunner::reset(const StreamRunConfig& config) {
     accumulate_area(now_ns);
     const std::uint64_t id = server_customer_[server];
     server_state_[server] = ServerState::kDown;
+    --busy_servers_;
+    ++down_servers_;
     // Preemptive-repeat: the customer in service returns to the queue head.
     queue_.push_front(id);
     ++in_queue_;
@@ -188,6 +198,7 @@ void SimRunner::reset(const StreamRunConfig& config) {
     const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
     server_state_[server] = ServerState::kIdle;
+    --down_servers_;
     if (!queue_.empty()) {
       const std::uint64_t next = queue_.front();
       queue_.pop_front();
@@ -237,6 +248,15 @@ ReplicationMetrics SimRunner::metrics() const {
       sojourn_count_ == 0
           ? 0.0
           : sojourn_sum_ / static_cast<double>(sojourn_count_);
+  const double servers_total = static_cast<double>(server_state_.size());
+  if (horizon_ns > 0 && servers_total > 0.0) {
+    metrics.utilization =
+        static_cast<double>(area_busy_ns_) /
+        static_cast<double>(horizon_ns) / servers_total;
+    metrics.availability =
+        1.0 - static_cast<double>(area_down_ns_) /
+                  static_cast<double>(horizon_ns) / servers_total;
+  }
   return metrics;
 }
 

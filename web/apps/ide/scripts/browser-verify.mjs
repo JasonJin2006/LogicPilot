@@ -136,6 +136,18 @@ try {
   log('AI panel optimized a model parameter from the prompt');
   await page.screenshot({ path: join(OUT, '5-ai-optimize.png') });
 
+  // AI panel: bottleneck attribution from a prompt.
+  await page.locator('.ai-input').fill(
+      'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  await page.getByRole('button', { name: 'explain' }).click();
+  await page.waitForSelector('.ai-findings', { timeout: 90_000 });
+  const explainText = await page.locator('.ai-result').textContent();
+  if (!explainText?.includes('throughput=')) {
+    throw new Error('AI panel did not show an explanation');
+  }
+  log('AI panel explained the model bottleneck from the prompt');
+  await page.screenshot({ path: join(OUT, '6-ai-explain.png') });
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);
   }

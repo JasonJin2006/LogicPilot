@@ -4,7 +4,11 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { handleAiBuild, handleAiOptimize } from './ai-endpoint.mjs';
+import {
+  handleAiBuild,
+  handleAiExplain,
+  handleAiOptimize,
+} from './ai-endpoint.mjs';
 
 const flag = process.argv.indexOf('--lpcli');
 if (flag >= 0 && process.argv[flag + 1]) {
@@ -14,6 +18,8 @@ if (flag >= 0 && process.argv[flag + 1]) {
 const server = createServer((req, res) => {
   if (req.url?.startsWith('/api/ai-optimize')) {
     void handleAiOptimize(req, res);
+  } else if (req.url?.startsWith('/api/ai-explain')) {
+    void handleAiExplain(req, res);
   } else {
     void handleAiBuild(req, res);
   }
@@ -62,6 +68,22 @@ try {
   assert.equal(optData.kind, 'optimize');
   assert.equal(optData.variable, 'servers');
   assert.equal(optData.best.value, 4);
+
+  // Explain endpoint: prompt -> metrics + findings.
+  const explain = await fetch(`http://127.0.0.1:${port}/api/ai-explain`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt:
+          'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0',
+      question: 'why is the queue slow?',
+    }),
+  });
+  assert.equal(explain.status, 200);
+  const explainData = await explain.json();
+  assert.equal(explainData.kind, 'explain');
+  assert.ok(explainData.findings.length >= 1);
+  assert.ok(Number.isFinite(explainData.metrics.availability));
 
   console.log('AI-ENDPOINT TEST: PASS');
 } finally {

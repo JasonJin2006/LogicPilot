@@ -94,6 +94,8 @@ class SimRunner {
   std::uint64_t in_system_{0};
   std::uint64_t in_queue_{0};
   std::uint64_t departures_{0};
+  std::int64_t busy_servers_{0};
+  std::int64_t down_servers_{0};
   bool finished_{false};
 
   // Stats accumulators (cumulative sums instead of the kernel's wait_times_
@@ -101,6 +103,8 @@ class SimRunner {
   std::int64_t last_ns_{0};
   std::int64_t area_system_ns_{0};
   std::int64_t area_queue_ns_{0};
+  std::int64_t area_busy_ns_{0};
+  std::int64_t area_down_ns_{0};
   double sojourn_sum_{0.0};
   std::uint64_t sojourn_count_{0};
   double wait_sum_{0.0};

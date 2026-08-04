@@ -109,6 +109,13 @@ add_test(NAME ai_optimize_smoke
 set_tests_properties(ai_optimize_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "OPTIMIZE TEST: PASS")
 
+# Bottleneck attribution (run + rule-based explanation).
+add_test(NAME ai_explain_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-explain.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(ai_explain_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "EXPLAIN TEST: PASS")
+
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"

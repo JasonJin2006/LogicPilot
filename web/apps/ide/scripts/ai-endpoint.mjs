@@ -21,6 +21,12 @@ async function loadAiOptimize() {
   return module.aiOptimize;
 }
 
+async function loadAiExplain() {
+  const module = await import(
+      pathToFileURL(join(root, 'scripts', 'ai-explain.mjs')).href);
+  return module.aiExplain;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -94,6 +100,35 @@ export async function handleAiOptimize(req, res) {
   try {
     const aiOptimize = await loadAiOptimize();
     const result = await aiOptimize({ prompt });
+    send(res, 200, result);
+  } catch (error) {
+    send(res, 500, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+export async function handleAiExplain(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    send(res, 400, { ok: false, error: 'invalid JSON body' });
+    return;
+  }
+  const prompt = String(payload?.prompt ?? '').trim();
+  if (!prompt) {
+    send(res, 400, { ok: false, error: 'missing prompt' });
+    return;
+  }
+  try {
+    const aiExplain = await loadAiExplain();
+    const result = await aiExplain({
+      prompt,
+      question: payload.question ?? 'why is throughput low?',
+    });
     send(res, 200, result);
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });

@@ -28,6 +28,20 @@ interface OptimizeResult {
   dslTemplate: string;
 }
 
+interface ExplainResult {
+  kind: 'explain';
+  question: string;
+  metrics: {
+    throughput: number;
+    W: number;
+    Wq: number;
+    Lq: number;
+    utilization: number;
+    availability: number;
+  };
+  findings: string[];
+}
+
 const EXAMPLE_PROMPT =
     'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
 
@@ -36,6 +50,7 @@ export function AIPanel() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
   const [optimized, setOptimized] = useState<OptimizeResult | null>(null);
+  const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [error, setError] = useState('');
 
   const post = async (endpoint: string) => {
@@ -43,20 +58,22 @@ export function AIPanel() {
     setError('');
     setResult(null);
     setOptimized(null);
+    setExplained(null);
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ prompt, run: true }),
       });
-      const data = (await response.json()) as AiResult & OptimizeResult & {
-        error?: string;
-      };
+      const data: unknown = await response.json();
       if (!response.ok) {
-        throw new Error(data.error ?? `HTTP ${response.status}`);
+        const error = (data as { error?: string })?.error;
+        throw new Error(error ?? `HTTP ${response.status}`);
       }
       if (endpoint === '/api/ai-optimize') {
         setOptimized(data as OptimizeResult);
+      } else if (endpoint === '/api/ai-explain') {
+        setExplained(data as ExplainResult);
       } else {
         setResult(data as AiResult);
       }
@@ -90,6 +107,12 @@ export function AIPanel() {
           onClick={() => void post('/api/ai-optimize')}
         >
           optimize
+        </button>
+        <button
+          disabled={busy || prompt.trim() === ''}
+          onClick={() => void post('/api/ai-explain')}
+        >
+          explain
         </button>
       </div>
       {error !== '' && <p className="ai-error">{error}</p>}
@@ -139,6 +162,22 @@ export function AIPanel() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {explained !== null && (
+        <div className="ai-result">
+          <p className="ai-meta">{explained.question}</p>
+          <ul className="ai-findings">
+            {explained.findings.map((finding, index) => (
+              <li key={index}>{finding}</li>
+            ))}
+          </ul>
+          <p className="ai-meta">
+            throughput={explained.metrics.throughput.toFixed(3)} Wq=
+            {explained.metrics.Wq.toFixed(2)} utilization=
+            {(explained.metrics.utilization * 100).toFixed(1)}% availability=
+            {(explained.metrics.availability * 100).toFixed(1)}%
+          </p>
         </div>
       )}
     </div>

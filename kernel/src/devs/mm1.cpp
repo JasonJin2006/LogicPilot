@@ -68,12 +68,16 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
   std::uint64_t in_system = 0;
   std::uint64_t in_queue = 0;
   std::uint64_t departures = 0;
+  std::int64_t busy_servers = 0;
+  std::int64_t down_servers = 0;
   const bool has_failure = static_cast<bool>(spec_.failure);
 
   // Statistics accumulators.
   std::int64_t last_ns = 0;
   std::int64_t area_system_ns = 0;  // sum of in_system * dt
   std::int64_t area_queue_ns = 0;
+  std::int64_t area_busy_ns = 0;    // sum of busy servers * dt
+  std::int64_t area_down_ns = 0;    // sum of down servers * dt
   double sojourn_sum = 0.0;
   std::uint64_t sojourn_count = 0;
 
@@ -81,6 +85,8 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
     const std::int64_t dt = now_ns - last_ns;
     area_system_ns += dt * static_cast<std::int64_t>(in_system);
     area_queue_ns += dt * static_cast<std::int64_t>(in_queue);
+    area_busy_ns += dt * busy_servers;
+    area_down_ns += dt * down_servers;
     last_ns = now_ns;
   };
 
@@ -97,6 +103,7 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
     Server& s = servers[server];
     s.state = ServerState::kBusy;
     s.customer = customer;
+    ++busy_servers;
     service_start_ns[customer] = clock.now().as_ns();
     const std::int64_t service_ns = to_ns(spec_.service(engine));
     if (!has_failure) {
@@ -132,6 +139,7 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
     }
 
     s.state = ServerState::kIdle;
+    --busy_servers;
     if (!queue.empty()) {
       const std::uint64_t next = queue.front();
       queue.pop_front();
@@ -178,6 +186,8 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
     Server& s = servers[server];
     const std::uint64_t id = s.customer;
     s.state = ServerState::kDown;
+    --busy_servers;
+    ++down_servers;
     // Preemptive-repeat: the customer in service returns to the queue head
     // (preempted customers bypass the finite-buffer capacity check).
     queue.push_front(id);
@@ -192,6 +202,7 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
     accumulate_area(now_ns);
     Server& s = servers[server];
     s.state = ServerState::kIdle;
+    --down_servers;
     if (!queue.empty()) {
       const std::uint64_t next = queue.front();
       queue.pop_front();
@@ -237,6 +248,15 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
   metrics.mean_sojourn = sojourn_count == 0
                              ? 0.0
                              : sojourn_sum / static_cast<double>(sojourn_count);
+  const double servers_total = static_cast<double>(servers.size());
+  if (horizon_ns > 0 && servers_total > 0.0) {
+    metrics.utilization =
+        static_cast<double>(area_busy_ns) /
+        static_cast<double>(horizon_ns) / servers_total;
+    metrics.availability =
+        1.0 - static_cast<double>(area_down_ns) /
+                  static_cast<double>(horizon_ns) / servers_total;
+  }
 
   if (trace != nullptr) {
     // Fold final stat bits so the trace hash covers outcomes, not just the

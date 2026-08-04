@@ -259,6 +259,8 @@ int run_command(std::span<const std::string> args) {
   print_row("Lq", summary.mean_in_queue, theory.lq, is_builtin_mm1);
   print_row("W", summary.mean_sojourn, theory.w, is_builtin_mm1);
   print_row("Wq", summary.mean_wait, theory.wq, is_builtin_mm1);
+  print_row("utilization", summary.utilization, theory.rho, is_builtin_mm1);
+  print_row("availability", summary.availability, 0.0, false);
 
   if (is_builtin_mm1 && !summary.mean_wait.covers(theory.wq)) {
     fmt::print(stderr, "warning: Wq CI does not cover theory\n");

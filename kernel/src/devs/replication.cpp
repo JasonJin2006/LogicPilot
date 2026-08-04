@@ -129,6 +129,12 @@ ReplicationSummary summarize_replications(
   out.mean_wait = summarize([](const ReplicationMetrics& m) {
     return m.mean_wait;
   });
+  out.utilization = summarize([](const ReplicationMetrics& m) {
+    return m.utilization;
+  });
+  out.availability = summarize([](const ReplicationMetrics& m) {
+    return m.availability;
+  });
   return out;
 }
 
