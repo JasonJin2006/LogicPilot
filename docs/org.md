@@ -45,3 +45,5 @@
 - Phase 3（Web IDE）: 🔶 2D 可视化切片 + AI 面板（build/optimize/explain/连续模型轨迹
   曲线）完成；拖拽建模 未开始。
 - Phase 4/5/6（2D/3D、行业库、AI）: ⬜ 未开始。
+- 📖 用户手册: ✅ VitePress 文档站（`docs/manual`，`pnpm docs:dev` 本地开发、
+  `pnpm docs:build` 构建、`pnpm docs:preview` 预览；CI 已接入 docs 构建门禁）。

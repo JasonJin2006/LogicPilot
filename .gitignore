@@ -26,6 +26,8 @@ coverage/
 *.tsbuildinfo
 .env
 .env.local
+docs/.vitepress/cache/
+docs/.vitepress/dist/
 
 # ---------------------------------------------------------------------------
 # Rust (dsl/compiler future workspace members)

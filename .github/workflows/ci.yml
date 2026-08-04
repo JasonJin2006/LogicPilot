@@ -103,3 +103,8 @@ jobs:
         # wire contract; @logicpilot/protocol's verify-interop needs the C++
         # schema_interop_writer artifacts and therefore runs in the kernel job.
         run: pnpm test
+
+      - name: Docs build (VitePress user manual)
+        # The user manual lives in docs/ and is built with VitePress; a broken
+        # page or markdown error must fail CI instead of shipping.
+        run: pnpm docs:build
