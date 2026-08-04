@@ -1,6 +1,8 @@
 // Side panel (Palette view): the process library blocks, draggable onto the
 // modeling canvas. The block set mirrors libraries/process.lplib.
 
+import { setDraggedKind } from '../model/paletteDnd';
+
 const BLOCKS = [
   { kind: 'resource', hint: 'capacity / failure_rate' },
   { kind: 'source', hint: 'arrival rate' },
@@ -19,7 +21,11 @@ export function PalettePanel() {
             key={block.kind}
             className="palette-item"
             draggable
-            onDragStart={(event) => event.dataTransfer.setData('text/plain', block.kind)}
+            onDragStart={(event) => {
+              event.dataTransfer.setData('text/plain', block.kind);
+              event.dataTransfer.effectAllowed = 'copy';
+              setDraggedKind(block.kind);
+            }}
           >
             <code className="palette-kind">{block.kind}</code>
             <span className="palette-hint">{block.hint}</span>

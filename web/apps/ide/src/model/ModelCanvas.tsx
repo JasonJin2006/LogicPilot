@@ -4,6 +4,7 @@
 import type { DragEvent, MouseEvent } from 'react';
 import { useModelStore } from '../state/modelStore';
 import type { BlockKind } from '@logicpilot/editor';
+import { getDraggedKind } from './paletteDnd';
 
 export function ModelCanvas() {
   const document = useModelStore((state) => state.document);
@@ -13,7 +14,8 @@ export function ModelCanvas() {
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const kind = event.dataTransfer.getData('text/plain') as BlockKind;
+    const kind =
+      (event.dataTransfer.getData('text/plain') as BlockKind) || (getDraggedKind() as BlockKind);
     const canvas = event.currentTarget.getBoundingClientRect();
     const x = event.clientX - canvas.left;
     const y = event.clientY - canvas.top;
@@ -29,6 +31,7 @@ export function ModelCanvas() {
   return (
     <div
       className="model-canvas"
+      onDragEnter={(event) => event.preventDefault()}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
       onClick={() => select(null)}
