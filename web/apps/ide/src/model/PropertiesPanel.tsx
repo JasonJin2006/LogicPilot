@@ -44,13 +44,21 @@ export function PropertiesPanel() {
       {fields.map((field) => (
         <label className="props-field" key={field.key}>
           <span>{field.key}</span>
-          <input
-            type={field.type === 'int' || field.type === 'float' ? 'number' : 'text'}
-            value={String(valueFor(field))}
-            onChange={(event) =>
-              setBlockParam(node.id, field.key, parseFieldValue(field, event.target.value))
-            }
-          />
+          {field.type === 'bool' ? (
+            <input
+              type="checkbox"
+              checked={valueFor(field) === true}
+              onChange={(event) => setBlockParam(node.id, field.key, event.target.checked)}
+            />
+          ) : (
+            <input
+              type={field.type === 'int' || field.type === 'float' ? 'number' : 'text'}
+              value={String(valueFor(field))}
+              onChange={(event) =>
+                setBlockParam(node.id, field.key, parseFieldValue(field, event.target.value))
+              }
+            />
+          )}
         </label>
       ))}
       <div className="props-meta">

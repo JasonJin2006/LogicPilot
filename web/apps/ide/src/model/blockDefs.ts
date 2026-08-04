@@ -102,16 +102,17 @@ export function blockPorts(kind: string): { in?: boolean; out?: boolean } {
   return { in: def?.in, out: def?.out };
 }
 
-export type FieldType = 'int' | 'float' | 'distribution' | 'ref';
+export type FieldType = 'int' | 'float' | 'distribution' | 'ref' | 'bool';
 
 export interface BlockField {
   key: string;
   type: FieldType;
 }
 
-/** Library field shapes (process.lplib for the core; the extended PML
- *  blocks carry a subset for canvas editing until their kernel lowering
- *  lands). */
+/** Library field shapes. The five kernel blocks (resource/source/queue/
+ *  service/sink) stay bound to libraries/process.lplib so they keep
+ *  compiling; the extended PML blocks carry AnyLogic-faithful properties
+ *  (they compile with LP2004 until their kernel lowering lands). */
 export const BLOCK_FIELDS: Record<string, BlockField[]> = {
   resource: [
     { key: 'capacity', type: 'int' },
@@ -119,27 +120,42 @@ export const BLOCK_FIELDS: Record<string, BlockField[]> = {
   ],
   source: [{ key: 'arrival', type: 'distribution' }],
   queue: [{ key: 'capacity', type: 'int' }],
-  delay: [{ key: 'time', type: 'distribution' }],
+  delay: [
+    { key: 'time', type: 'distribution' },
+    { key: 'capacity', type: 'int' },
+  ],
   service: [
     { key: 'resource', type: 'ref' },
     { key: 'time', type: 'distribution' },
   ],
   split: [{ key: 'copies', type: 'int' }],
   combine: [{ key: 'agents', type: 'int' }],
-  batch: [{ key: 'size', type: 'int' }],
+  batch: [
+    { key: 'size', type: 'int' },
+    { key: 'permanent', type: 'bool' },
+  ],
   unbatch: [],
-  seize: [{ key: 'resource', type: 'ref' }],
-  release: [{ key: 'resource', type: 'ref' }],
-  wait: [{ key: 'capacity', type: 'int' }],
-  hold: [],
+  seize: [
+    { key: 'resource', type: 'ref' },
+    { key: 'quantity', type: 'int' },
+  ],
+  release: [
+    { key: 'resource', type: 'ref' },
+    { key: 'quantity', type: 'int' },
+  ],
+  wait: [
+    { key: 'capacity', type: 'int' },
+    { key: 'maximumCapacity', type: 'bool' },
+  ],
+  hold: [{ key: 'freeze', type: 'bool' }],
   match: [],
   selectOutput: [{ key: 'probability', type: 'float' }],
   enter: [],
   exit: [],
-  moveTo: [],
-  timeMeasureStart: [],
-  timeMeasureEnd: [],
-  assembler: [],
+  moveTo: [{ key: 'node', type: 'ref' }],
+  timeMeasureStart: [{ key: 'measurement', type: 'ref' }],
+  timeMeasureEnd: [{ key: 'measurement', type: 'ref' }],
+  assembler: [{ key: 'parts', type: 'int' }],
   count: [],
   sink: [],
 };
@@ -150,15 +166,20 @@ export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boo
   resource: { capacity: 1, failure_rate: 0 },
   source: { arrival: 'poisson(10)' },
   queue: { capacity: 100 },
-  delay: { time: 'exponential(1.0)' },
+  delay: { time: 'exponential(1.0)', capacity: 10 },
   service: { time: 'exponential(1)' },
   split: { copies: 2 },
   combine: { agents: 2 },
-  batch: { size: 2 },
-  seize: { resource: '' },
-  release: { resource: '' },
-  wait: { capacity: 100 },
+  batch: { size: 2, permanent: false },
+  seize: { resource: '', quantity: 1 },
+  release: { resource: '', quantity: 1 },
+  wait: { capacity: 100, maximumCapacity: false },
+  hold: { freeze: false },
   selectOutput: { probability: 0.5 },
+  moveTo: { node: '' },
+  timeMeasureStart: { measurement: 'time' },
+  timeMeasureEnd: { measurement: 'time' },
+  assembler: { parts: 2 },
   sink: {},
 };
 
