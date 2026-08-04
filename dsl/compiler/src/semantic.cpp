@@ -23,6 +23,10 @@ class Analyzer {
     for (const ProcessDecl& process : model.processes) {
       check_process(process);
     }
+    for (const AtomicDecl& atomic : model.atomics) {
+      check_atomic(atomic);
+    }
+    check_couplings(model);
     // Deterministic ordering for golden output: source order, then code.
     std::stable_sort(diagnostics_.begin(), diagnostics_.end(),
                      [](const Diagnostic& a, const Diagnostic& b) {
@@ -67,6 +71,124 @@ class Analyzer {
     }
     for (const ProcessDecl& process : model.processes) {
       declare(process.name, process.name_span, "process");
+    }
+    for (const AtomicDecl& atomic : model.atomics) {
+      declare(atomic.name, atomic.name_span, "atomic");
+    }
+  }
+
+  void check_atomic(const AtomicDecl& atomic) {
+    std::unordered_map<std::string, Span> state_names;
+    for (const StateVarDecl& var : atomic.state) {
+      const auto [it, inserted] = state_names.emplace(var.name,
+                                                      var.name_span);
+      if (!inserted) {
+        push(Severity::kError, "LP1002",
+             "duplicate state variable '" + var.name + "' in atomic '" +
+                 atomic.name + "'",
+             var.name_span);
+      }
+    }
+    if (atomic.ta.count > 1) {
+      push(Severity::kError, "LP1002",
+           "duplicate field 'time_advance' in atomic '" + atomic.name + "'",
+           atomic.ta.span);
+    }
+    if (atomic.ta.has) {
+      if (atomic.ta.kind == TaKind::kConstant && atomic.ta.value < 0.0) {
+        push(Severity::kError, "LP3001",
+             "atomic '" + atomic.name + "' time_advance must be >= 0 (got " +
+                 std::to_string(atomic.ta.value) + ")",
+             atomic.ta.span);
+      }
+      if (atomic.ta.kind == TaKind::kExponential &&
+          !(atomic.ta.value > 0.0)) {
+        push(Severity::kError, "LP3001",
+             "atomic '" + atomic.name +
+                 "' time_advance exponential rate must be > 0",
+             atomic.ta.span);
+      }
+    }
+    // v1 IR (F1) constraint: a single external transition (one input port)
+    // and a single internal transition.
+    if (atomic.on_input.size() > 1) {
+      push(Severity::kError, "LP2003",
+           "atomic '" + atomic.name +
+               "' supports at most one on_input transition in v1 (F1 IR "
+               "constraint)",
+           atomic.on_input[1].span);
+    }
+    for (const TransitionDecl& transition : atomic.on_input) {
+      check_effects(atomic, transition.effects);
+    }
+    if (atomic.on_timeout.count > 1) {
+      push(Severity::kError, "LP1002",
+           "duplicate 'on_timeout' in atomic '" + atomic.name + "'",
+           atomic.on_timeout.span);
+    }
+    check_effects(atomic, atomic.on_timeout.effects);
+  }
+
+  void check_effects(const AtomicDecl& atomic,
+                     const std::vector<Effect>& effects) {
+    for (const Effect& effect : effects) {
+      bool declared = false;
+      for (const StateVarDecl& var : atomic.state) {
+        if (var.name == effect.name) {
+          declared = true;
+          break;
+        }
+      }
+      if (!declared) {
+        push(Severity::kError, "LP5001",
+             "effect references undeclared state variable '" + effect.name +
+                 "' in atomic '" + atomic.name + "'",
+             effect.name_span);
+      }
+    }
+  }
+
+  void check_couplings(const ModelAst& model) {
+    std::unordered_map<std::string, const AtomicDecl*> atomics;
+    for (const AtomicDecl& atomic : model.atomics) {
+      atomics.emplace(atomic.name, &atomic);
+    }
+    for (const CoupleDecl& couple : model.couplings) {
+      const auto from = atomics.find(couple.from_model);
+      const auto to = atomics.find(couple.to_model);
+      if (from == atomics.end()) {
+        push(Severity::kError, "LP5002",
+             "coupling references undeclared atomic model '" +
+                 couple.from_model + "'",
+             couple.span);
+        continue;
+      }
+      if (to == atomics.end()) {
+        push(Severity::kError, "LP5002",
+             "coupling references undeclared atomic model '" +
+                 couple.to_model + "'",
+             couple.span);
+        continue;
+      }
+      // from_port must be an emitted output; to_port must be an input.
+      const bool valid_from =
+          from->second->on_timeout.has && from->second->on_timeout.emit &&
+          from->second->on_timeout.emit_port == couple.from_port;
+      const bool valid_to =
+          !to->second->on_input.empty() &&
+          to->second->on_input.front().port == couple.to_port;
+      if (!valid_from) {
+        push(Severity::kError, "LP5003",
+             "coupling port '" + couple.from_model + "." +
+                 couple.from_port + "' is not an emitted output port",
+             couple.span);
+      }
+      if (!valid_to) {
+        push(Severity::kError, "LP5003",
+             "coupling port '" + couple.to_model + "." + couple.to_port +
+                 "' is not an input port",
+             couple.span);
+      }
     }
   }
 

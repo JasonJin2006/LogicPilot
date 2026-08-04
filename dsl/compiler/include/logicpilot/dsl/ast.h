@@ -70,6 +70,76 @@ struct ResourceDecl {
   Span failure_rate_field_span;
 };
 
+// Value kinds for atomic state variables and transition effects (v1:
+// literals only - no expressions).
+enum class AtomicValueKind { kBool, kInt, kFloat };
+
+struct AtomicValue {
+  AtomicValueKind kind{AtomicValueKind::kBool};
+  bool bool_value{false};
+  std::int64_t int_value{0};
+  double float_value{0.0};
+  Span span;
+};
+
+// One transition effect: `state = literal`.
+struct Effect {
+  std::string name;
+  Span name_span;
+  AtomicValue value;
+};
+
+// `time_advance = <value | constant(...) | exponential(...) | infinite>`.
+enum class TaKind { kConstant, kExponential, kInfinite };
+
+struct TimeAdvanceDecl {
+  bool has{false};
+  int count{0};
+  Span span;
+  TaKind kind{TaKind::kConstant};
+  double value{0.0};  // seconds (constant value or exponential rate)
+};
+
+// One state-variable declaration (each occurrence is one StateVarDecl; the
+// analyzer flags duplicates by name).
+struct StateVarDecl {
+  std::string name;
+  Span name_span;
+  AtomicValue value;
+};
+
+// `on_input <port>: effects` or `on_timeout: effects [emit <port>]`.
+struct TransitionDecl {
+  bool has{false};
+  int count{0};
+  Span span;
+  std::string port;  // on_input trigger port; "" for on_timeout
+  Span port_span;
+  std::vector<Effect> effects;
+  bool emit{false};
+  std::string emit_port;  // on_timeout output port
+  Span emit_span;
+};
+
+struct AtomicDecl {
+  std::string name;
+  Span name_span;
+  Span span;
+  std::vector<StateVarDecl> state;
+  TimeAdvanceDecl ta;
+  std::vector<TransitionDecl> on_input;
+  TransitionDecl on_timeout;
+};
+
+// `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
+struct CoupleDecl {
+  std::string from_model;
+  std::string from_port;
+  std::string to_model;
+  std::string to_port;
+  Span span;
+};
+
 struct ProcessDecl {
   std::string name;
   Span name_span;
@@ -83,6 +153,8 @@ struct ModelAst {
   Span span;
   std::vector<ResourceDecl> resources;
   std::vector<ProcessDecl> processes;
+  std::vector<AtomicDecl> atomics;
+  std::vector<CoupleDecl> couplings;
 };
 
 }  // namespace logicpilot::dsl

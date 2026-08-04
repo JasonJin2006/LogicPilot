@@ -12,6 +12,9 @@
 //   LP2003  stage multiplicity violation (v0: at most one source/queue/service)
 //   LP3001  numeric value out of range
 //   LP4001  unresolved resource reference
+//   LP5001  effect references an undeclared state variable
+//   LP5002  coupling references an undeclared atomic model
+//   LP5003  coupling port is not an emitted output / declared input
 //
 // Phase 3 will extend this registry (warnings, notes, fixits); the struct
 // layout is already the wire shape used by the diagnostics protocol.

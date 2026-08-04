@@ -31,6 +31,64 @@
     }
   },
   {
+    "type": "atomic_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "on_input_field",
+          "named": true
+        },
+        {
+          "type": "on_timeout_field",
+          "named": true
+        },
+        {
+          "type": "state_field",
+          "named": true
+        },
+        {
+          "type": "time_advance_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "atomic_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "atomic_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "boolean_literal",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "capacity_field",
     "named": true,
     "fields": {
@@ -64,6 +122,93 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "couple_declaration",
+    "named": true,
+    "fields": {
+      "from_model": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "from_port": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "to_model": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "to_port": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "effect",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "value_literal",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "effect_list",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "effect",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -120,6 +265,14 @@
       "multiple": true,
       "required": false,
       "types": [
+        {
+          "type": "atomic_declaration",
+          "named": true
+        },
+        {
+          "type": "couple_declaration",
+          "named": true
+        },
         {
           "type": "process_declaration",
           "named": true
@@ -185,6 +338,58 @@
           },
           {
             "type": "integer",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "on_input_field",
+    "named": true,
+    "fields": {
+      "effects": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "effect_list",
+            "named": true
+          }
+        ]
+      },
+      "port": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "on_timeout_field",
+    "named": true,
+    "fields": {
+      "effects": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "effect_list",
+            "named": true
+          }
+        ]
+      },
+      "port": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -468,6 +673,79 @@
     }
   },
   {
+    "type": "state_field",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "value_literal",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "time_advance_expr",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "constant_call",
+          "named": true
+        },
+        {
+          "type": "exponential_call",
+          "named": true
+        },
+        {
+          "type": "float",
+          "named": true
+        },
+        {
+          "type": "infinite_literal",
+          "named": true
+        },
+        {
+          "type": "integer",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "time_advance_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "time_advance_expr",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "time_field",
     "named": true,
     "fields": {
@@ -484,6 +762,29 @@
     }
   },
   {
+    "type": "value_literal",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "boolean_literal",
+          "named": true
+        },
+        {
+          "type": "float",
+          "named": true
+        },
+        {
+          "type": "integer",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "(",
     "named": false
   },
@@ -496,11 +797,27 @@
     "named": false
   },
   {
+    "type": "->",
+    "named": false
+  },
+  {
+    "type": ".",
+    "named": false
+  },
+  {
+    "type": ":",
+    "named": false
+  },
+  {
     "type": "=",
     "named": false
   },
   {
     "type": "arrival",
+    "named": false
+  },
+  {
+    "type": "atomic",
     "named": false
   },
   {
@@ -517,6 +834,14 @@
     "named": false
   },
   {
+    "type": "couple",
+    "named": false
+  },
+  {
+    "type": "emit",
+    "named": false
+  },
+  {
     "type": "exponential",
     "named": false
   },
@@ -525,7 +850,15 @@
     "named": false
   },
   {
+    "type": "false",
+    "named": false
+  },
+  {
     "type": "identifier",
+    "named": true
+  },
+  {
+    "type": "infinite_literal",
     "named": true
   },
   {
@@ -534,6 +867,14 @@
   },
   {
     "type": "normal",
+    "named": false
+  },
+  {
+    "type": "on_input",
+    "named": false
+  },
+  {
+    "type": "on_timeout",
     "named": false
   },
   {
@@ -561,7 +902,19 @@
     "named": false
   },
   {
+    "type": "state",
+    "named": false
+  },
+  {
     "type": "time",
+    "named": false
+  },
+  {
+    "type": "time_advance",
+    "named": false
+  },
+  {
+    "type": "true",
     "named": false
   },
   {

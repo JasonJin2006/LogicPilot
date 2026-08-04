@@ -55,6 +55,13 @@ class DevsExecutor {
 
   [[nodiscard]] std::size_t atom_count() const { return atoms_.size(); }
   [[nodiscard]] std::size_t dispatched_total() const { return dispatched_; }
+  // Internal-transition budget for the next run(): after `budget` internal
+  // firings the executor stops re-arming atoms, so perpetual emitters
+  // terminate deterministically (0 = unlimited, the default).
+  void set_internal_budget(std::size_t budget) { internal_budget_ = budget; }
+  [[nodiscard]] std::size_t internal_transitions() const {
+    return internal_transitions_;
+  }
   [[nodiscard]] SimulationClock& clock() { return clock_; }
 
  private:
@@ -95,6 +102,8 @@ class DevsExecutor {
   std::vector<EventToken> pending_;
   std::vector<ExtInput> ext_inputs_;
   std::size_t dispatched_{0};
+  std::size_t internal_budget_{0};
+  std::size_t internal_transitions_{0};
 };
 
 }  // namespace logicpilot

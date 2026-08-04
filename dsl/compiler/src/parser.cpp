@@ -132,6 +132,10 @@ class Extractor {
         out.resources.push_back(extract_resource(member));
       } else if (node_is(member, "process_declaration")) {
         out.processes.push_back(extract_process(member));
+      } else if (node_is(member, "atomic_declaration")) {
+        out.atomics.push_back(extract_atomic(member));
+      } else if (node_is(member, "couple_declaration")) {
+        out.couplings.push_back(extract_couple(member));
       }
     });
     return true;
@@ -184,6 +188,111 @@ class Extractor {
   bool param_of(const TSNode& call, const char* field_name, double& out) {
     const TSNode value = field(call, field_name);
     return !ts_node_is_null(value) && double_of(value, out);
+  }
+
+  // value_literal -> AtomicValue (bool / int / float literal).
+  AtomicValue extract_value(const TSNode& literal) {
+    AtomicValue value;
+    value.span = span_of(literal);
+    const TSNode token = ts_node_named_child(literal, 0);
+    if (node_is(token, "boolean_literal")) {
+      value.kind = AtomicValueKind::kBool;
+      value.bool_value = text_of(token) == "true";
+    } else if (node_is(token, "integer")) {
+      value.kind = AtomicValueKind::kInt;
+      integer_of(token, value.int_value);
+    } else if (node_is(token, "float")) {
+      value.kind = AtomicValueKind::kFloat;
+      double_of(token, value.float_value);
+    }
+    return value;
+  }
+
+  void extract_effects(const TSNode& effects_node, TransitionDecl& out) {
+    each_named_child(effects_node, [&](const TSNode& effect_node) {
+      if (!node_is(effect_node, "effect")) {
+        return;
+      }
+      Effect effect;
+      const TSNode name = field(effect_node, "name");
+      effect.name = text_of(name);
+      effect.name_span = span_of(name);
+      effect.value = extract_value(field(effect_node, "value"));
+      out.effects.push_back(std::move(effect));
+    });
+  }
+
+  AtomicDecl extract_atomic(const TSNode& decl) {
+    AtomicDecl atomic;
+    atomic.span = span_of(decl);
+    const TSNode name = field(decl, "name");
+    atomic.name = text_of(name);
+    atomic.name_span = span_of(name);
+    const TSNode body = field(decl, "body");
+    each_named_child(body, [&](const TSNode& field_node) {
+      if (node_is(field_node, "state_field")) {
+        StateVarDecl var;
+        const TSNode var_name = field(field_node, "name");
+        var.name = text_of(var_name);
+        var.name_span = span_of(var_name);
+        var.value = extract_value(field(field_node, "value"));
+        atomic.state.push_back(std::move(var));
+      } else if (node_is(field_node, "time_advance_field")) {
+        atomic.ta.has = true;
+        atomic.ta.count += 1;
+        atomic.ta.span = span_of(field_node);
+        const TSNode expr = field(field_node, "value");
+        const TSNode call = ts_node_named_child(expr, 0);
+        if (node_is(call, "constant_call")) {
+          atomic.ta.kind = TaKind::kConstant;
+          param_of(call, "value", atomic.ta.value);
+        } else if (node_is(call, "exponential_call")) {
+          atomic.ta.kind = TaKind::kExponential;
+          param_of(call, "rate", atomic.ta.value);
+        } else if (node_is(call, "infinite_literal")) {
+          atomic.ta.kind = TaKind::kInfinite;
+        } else {
+          // Bare number literal.
+          atomic.ta.kind = TaKind::kConstant;
+          double_of(call, atomic.ta.value);
+        }
+      } else if (node_is(field_node, "on_input_field")) {
+        TransitionDecl transition;
+        transition.has = true;
+        transition.count += 1;
+        transition.span = span_of(field_node);
+        const TSNode port = field(field_node, "port");
+        transition.port = text_of(port);
+        transition.port_span = span_of(port);
+        extract_effects(field(field_node, "effects"), transition);
+        atomic.on_input.push_back(std::move(transition));
+      } else if (node_is(field_node, "on_timeout_field")) {
+        atomic.on_timeout.has = true;
+        atomic.on_timeout.count += 1;
+        atomic.on_timeout.span = span_of(field_node);
+        const TSNode effects = field(field_node, "effects");
+        if (!ts_node_is_null(effects)) {
+          extract_effects(effects, atomic.on_timeout);
+        }
+        const TSNode emit_port = field(field_node, "port");
+        if (!ts_node_is_null(emit_port)) {
+          atomic.on_timeout.emit = true;
+          atomic.on_timeout.emit_port = text_of(emit_port);
+          atomic.on_timeout.emit_span = span_of(emit_port);
+        }
+      }
+    });
+    return atomic;
+  }
+
+  CoupleDecl extract_couple(const TSNode& decl) {
+    CoupleDecl couple;
+    couple.span = span_of(decl);
+    couple.from_model = text_of(field(decl, "from_model"));
+    couple.from_port = text_of(field(decl, "from_port"));
+    couple.to_model = text_of(field(decl, "to_model"));
+    couple.to_port = text_of(field(decl, "to_port"));
+    return couple;
   }
 
   // arrival_expr / service_time_expr -> Distribution.

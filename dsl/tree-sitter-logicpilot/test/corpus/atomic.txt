@@ -1,0 +1,104 @@
+==================
+Atomic blocks: state, time advance, transitions, couplings
+==================
+
+model PulseChain {
+  atomic Pulser {
+    time_advance = constant(1.0)
+    on_timeout: emit pulse
+  }
+  atomic Sink {
+    state seen = false
+    on_input pulse: seen = true
+  }
+  couple Pulser.pulse -> Sink.pulse
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (atomic_declaration
+        name: (identifier)
+        body: (atomic_body
+          (time_advance_field
+            value: (time_advance_expr
+              (constant_call
+                value: (float))))
+          (on_timeout_field
+            port: (identifier))))
+      (atomic_declaration
+        name: (identifier)
+        body: (atomic_body
+          (state_field
+            name: (identifier)
+            value: (value_literal
+              (boolean_literal)))
+          (on_input_field
+            port: (identifier)
+            effects: (effect_list
+              (effect
+                name: (identifier)
+                value: (value_literal
+                  (boolean_literal)))))))
+      (couple_declaration
+        from_model: (identifier)
+        from_port: (identifier)
+        to_model: (identifier)
+        to_port: (identifier)))))
+
+==================
+Atomic: effects list and exponential time advance
+==================
+
+model Machine {
+  atomic Cell {
+    state busy = false
+    state load = 0
+    time_advance = exponential(2.0)
+    on_input job_in: busy = true, load = 1
+    on_timeout: busy = false emit done
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (atomic_declaration
+        name: (identifier)
+        body: (atomic_body
+          (state_field
+            name: (identifier)
+            value: (value_literal
+              (boolean_literal)))
+          (state_field
+            name: (identifier)
+            value: (value_literal
+              (integer)))
+          (time_advance_field
+            value: (time_advance_expr
+              (exponential_call
+                rate: (float))))
+          (on_input_field
+            port: (identifier)
+            effects: (effect_list
+              (effect
+                name: (identifier)
+                value: (value_literal
+                  (boolean_literal)))
+              (effect
+                name: (identifier)
+                value: (value_literal
+                  (integer)))))
+          (on_timeout_field
+            effects: (effect_list
+              (effect
+                name: (identifier)
+                value: (value_literal
+                  (boolean_literal))))
+            port: (identifier)))))))

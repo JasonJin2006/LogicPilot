@@ -55,6 +55,21 @@ set_tests_properties(lpcli_run_mm1_failure PROPERTIES
   DEPENDS lpcli_compile_mm1_failure
   PASS_REGULAR_EXPRESSION "summary: 3 replications")
 
+# Milestone 1b: DEVS atomic blocks survive the DSL -> IR -> executor chain.
+add_test(NAME lpcli_compile_atomic
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/pulse_chain.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.ir.bin")
+set_tests_properties(lpcli_compile_atomic PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_atomic
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.ir.bin"
+          --seed=42 --reps=1 --arrivals=5 --warmup=0)
+set_tests_properties(lpcli_run_atomic PROPERTIES
+  DEPENDS lpcli_compile_atomic
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"

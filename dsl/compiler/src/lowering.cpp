@@ -128,6 +128,148 @@ flatbuffers::Offset<logicpilot::ir::ProcessNode> lower_stage(
   return {};
 }
 
+// atomic -> ir::AtomicModel (state params, ta, single external/internal
+// transition with literal effects, ports from the transitions).
+flatbuffers::Offset<logicpilot::ir::Model> lower_atomic(
+    flatbuffers::FlatBufferBuilder& builder, const AtomicDecl& atomic,
+    const std::string& source_file) {
+  const auto metadata = lower_metadata(builder, atomic.name, source_file,
+                                       atomic.span);
+
+  std::vector<flatbuffers::Offset<logicpilot::ir::Param>> state;
+  for (const StateVarDecl& var : atomic.state) {
+    const auto name = builder.CreateString(var.name);
+    switch (var.value.kind) {
+      case AtomicValueKind::kBool: {
+        const auto value = logicpilot::ir::CreateBoolValue(
+                               builder, var.value.bool_value)
+                               .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_BoolValue, value));
+        break;
+      }
+      case AtomicValueKind::kInt: {
+        const auto value =
+            logicpilot::ir::CreateIntValue(builder, var.value.int_value)
+                .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_IntValue, value));
+        break;
+      }
+      case AtomicValueKind::kFloat: {
+        const auto value =
+            logicpilot::ir::CreateFloatValue(builder, var.value.float_value)
+                .Union();
+        state.push_back(logicpilot::ir::CreateParam(
+            builder, name, logicpilot::ir::ParamValue_FloatValue, value));
+        break;
+      }
+    }
+  }
+
+  flatbuffers::Offset<logicpilot::ir::TimeAdvance> ta;
+  if (!atomic.ta.has) {
+    // Absent time_advance = passive model (ta = infinity).
+    ta = logicpilot::ir::CreateTimeAdvance(
+        builder, logicpilot::ir::TimeAdvanceKind_Infinite);
+  } else {
+    switch (atomic.ta.kind) {
+      case TaKind::kConstant:
+        ta = logicpilot::ir::CreateTimeAdvance(
+            builder, logicpilot::ir::TimeAdvanceKind_Constant,
+            atomic.ta.value, 0, 0);
+        break;
+      case TaKind::kExponential: {
+        const std::vector<double> params{atomic.ta.value};
+        const auto dist = logicpilot::ir::CreateDistribution(
+            builder, logicpilot::ir::DistributionKind_Exponential,
+            builder.CreateVector(params));
+        ta = logicpilot::ir::CreateTimeAdvance(
+            builder, logicpilot::ir::TimeAdvanceKind_Distribution, 0.0, dist,
+            0);
+        break;
+      }
+      default:
+        ta = logicpilot::ir::CreateTimeAdvance(
+            builder, logicpilot::ir::TimeAdvanceKind_Infinite);
+        break;
+    }
+  }
+
+  const auto lower_effects =
+      [&](const std::vector<Effect>& effects)
+      -> flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<
+          logicpilot::ir::Param>>> {
+    std::vector<flatbuffers::Offset<logicpilot::ir::Param>> params;
+    for (const Effect& effect : effects) {
+      const auto name = builder.CreateString(effect.name);
+      switch (effect.value.kind) {
+        case AtomicValueKind::kBool: {
+          const auto value = logicpilot::ir::CreateBoolValue(
+                                 builder, effect.value.bool_value)
+                                 .Union();
+          params.push_back(logicpilot::ir::CreateParam(
+              builder, name, logicpilot::ir::ParamValue_BoolValue, value));
+          break;
+        }
+        case AtomicValueKind::kInt: {
+          const auto value =
+              logicpilot::ir::CreateIntValue(builder, effect.value.int_value)
+                  .Union();
+          params.push_back(logicpilot::ir::CreateParam(
+              builder, name, logicpilot::ir::ParamValue_IntValue, value));
+          break;
+        }
+        case AtomicValueKind::kFloat: {
+          const auto value = logicpilot::ir::CreateFloatValue(
+                                 builder, effect.value.float_value)
+                                 .Union();
+          params.push_back(logicpilot::ir::CreateParam(
+              builder, name, logicpilot::ir::ParamValue_FloatValue, value));
+          break;
+        }
+      }
+    }
+    return builder.CreateVector(params);
+  };
+
+  std::vector<flatbuffers::Offset<logicpilot::ir::Port>> input_ports;
+  std::vector<flatbuffers::Offset<logicpilot::ir::Port>> output_ports;
+  flatbuffers::Offset<logicpilot::ir::TransitionSpec> external = 0;
+  flatbuffers::Offset<logicpilot::ir::TransitionSpec> internal = 0;
+
+  if (atomic.on_input.size() == 1) {
+    const TransitionDecl& t = atomic.on_input.front();
+    const auto trigger = builder.CreateString(t.port);
+    const auto description = builder.CreateString("on_input " + t.port);
+    external = logicpilot::ir::CreateTransitionSpec(
+        builder, description, trigger, 0, 0, lower_effects(t.effects));
+    const auto port = builder.CreateString(t.port);
+    input_ports.push_back(logicpilot::ir::CreatePort(
+        builder, port, logicpilot::ir::PortDirection_Input, 0));
+  }
+  if (atomic.on_timeout.has) {
+    const auto description = builder.CreateString("on_timeout");
+    flatbuffers::Offset<flatbuffers::String> output = 0;
+    if (atomic.on_timeout.emit) {
+      output = builder.CreateString(atomic.on_timeout.emit_port);
+      const auto port = builder.CreateString(atomic.on_timeout.emit_port);
+      output_ports.push_back(logicpilot::ir::CreatePort(
+          builder, port, logicpilot::ir::PortDirection_Output, 0));
+    }
+    internal = logicpilot::ir::CreateTransitionSpec(
+        builder, description, 0, output, 0,
+        lower_effects(atomic.on_timeout.effects));
+  }
+
+  const auto model = logicpilot::ir::CreateAtomicModel(
+      builder, metadata, builder.CreateVector(state), ta, external, internal,
+      builder.CreateVector(input_ports), builder.CreateVector(output_ports),
+      0);
+  return logicpilot::ir::CreateModel(
+      builder, logicpilot::ir::ModelKind_AtomicModel, model.Union());
+}
+
 // process -> ProcessModel with declaration-order nodes + chain couplings.
 flatbuffers::Offset<logicpilot::ir::Model> lower_process(
     flatbuffers::FlatBufferBuilder& builder, const ProcessDecl& process,
@@ -178,11 +320,26 @@ LoweredIr lower_to_ir(const ModelAst& model, const std::string& source_file) {
     children.push_back(
         lower_process(builder, process, source_file, resources));
   }
+  for (const AtomicDecl& atomic : model.atomics) {
+    children.push_back(lower_atomic(builder, atomic, source_file));
+  }
+
+  // Root-level couplings from `couple` declarations (atomic wiring).
+  std::vector<flatbuffers::Offset<logicpilot::ir::Coupling>> couplings;
+  for (const CoupleDecl& couple : model.couplings) {
+    const auto from_model = builder.CreateString(couple.from_model);
+    const auto from_port = builder.CreateString(couple.from_port);
+    const auto to_model = builder.CreateString(couple.to_model);
+    const auto to_port = builder.CreateString(couple.to_port);
+    couplings.push_back(logicpilot::ir::CreateCoupling(
+        builder, from_model, from_port, to_model, to_port));
+  }
 
   const auto root_metadata = lower_metadata(builder, model.name, source_file,
                                             model.span);
   const auto coupled = logicpilot::ir::CreateCoupledModel(
-      builder, root_metadata, builder.CreateVector(children));
+      builder, root_metadata, builder.CreateVector(children),
+      builder.CreateVector(couplings));
   const auto root = logicpilot::ir::CreateModel(
       builder, logicpilot::ir::ModelKind_CoupledModel, coupled.Union());
 

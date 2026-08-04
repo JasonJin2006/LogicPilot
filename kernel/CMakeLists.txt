@@ -52,6 +52,7 @@ find_package(fmt CONFIG REQUIRED)
 add_library(logicpilot_phase1b STATIC
   src/agent/soa_agent_store.cpp
   src/devs/executor.cpp
+  src/devs/ir_atomic.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp
@@ -84,6 +85,13 @@ if(LOGICPILOT_BUILD_TESTS)
     LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
   )
   catch_discover_tests(logicpilot_phase1b_tests)
+endif()
+
+if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
+  # IR atomic execution tests compile examples/pulse_chain.lp in-process, so
+  # they need the DSL compiler (mirrors logicpilot_server_tests).
+  target_sources(logicpilot_phase1b_tests PRIVATE tests/test_ir_atomic.cpp)
+  target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)
 endif()
 
 # ---------------------------------------------------------------------------

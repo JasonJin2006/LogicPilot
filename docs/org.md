@@ -31,7 +31,10 @@
 ## 路线图状态
 
 - Phase 0（理论设计）: ✅ 完成（ADR-0001..0008、dsl-spec、F1/F2 冻结）。
-- Phase 1（核心引擎）: 🔶 MVP 完成；多方法执行（多服务器、故障、Agent E2E、AtomicModel 语义）进行中。
-- Phase 2（DSL）: 🔶 v0 完成；结构化诊断（AI 闭环地基）进行中。
+- Phase 1（核心引擎）: ✅ MVP 完成；✅ 多服务器 M/M/c + 机器故障（里程碑 1）；✅
+  AtomicModel DEVS 通用执行（IR 解释器 + DevsExecutor + atomic DSL，里程碑 1b）；
+  Agent E2E 未开始。
+- Phase 2（DSL）: ✅ v0 + atomic 块完成；✅ 结构化诊断（AI 闭环地基）；
+  experiment/表达式 未开始。
 - Phase 3（Web IDE）: 🔶 2D 可视化切片完成；拖拽建模/AI 面板未开始。
 - Phase 4/5/6（2D/3D、行业库、AI）: ⬜ 未开始。

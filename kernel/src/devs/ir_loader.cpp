@@ -13,6 +13,7 @@
 #include "ir_generated.h"
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/devs/mm1.h"
+#include "logicpilot/devs/ir_atomic.h"
 
 namespace logicpilot {
 
@@ -384,7 +385,25 @@ std::unique_ptr<ReplicationModel> build_replication_model(
                                error);
   }
   if (root->kind_type() == ir::ModelKind_CoupledModel) {
-    return build_coupled_model(*root->kind_as_CoupledModel(), error);
+    const ir::CoupledModel* coupled = root->kind_as_CoupledModel();
+    // Milestone 1b: a coupled tree whose children are AtomicModels executes
+    // through the DEVS-lite executor (generic DEVS semantics). Mixed trees
+    // with a ProcessModel child keep the process lowering (v1).
+    if (coupled->children() != nullptr) {
+      bool has_process = false;
+      bool has_atomic = false;
+      for (const ir::Model* child : *coupled->children()) {
+        has_process |= child->kind_type() == ir::ModelKind_ProcessModel;
+        has_atomic |= child->kind_type() == ir::ModelKind_AtomicModel;
+      }
+      if (has_atomic && !has_process) {
+        return std::make_unique<DevsReplicationModel>(file.bytes, root);
+      }
+    }
+    return build_coupled_model(*coupled, error);
+  }
+  if (root->kind_type() == ir::ModelKind_AtomicModel) {
+    return std::make_unique<DevsReplicationModel>(file.bytes, root);
   }
   if (error != nullptr) {
     *error = std::string("no executable lowering for ") +

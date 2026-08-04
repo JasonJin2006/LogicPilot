@@ -223,6 +223,7 @@ void DevsExecutor::deliver_internal(std::uint32_t atom) {
   AtomicModel& model = *atoms_[atom];
   const SimTime now = clock_.now();
   pending_[atom] = EventToken{};
+  ++internal_transitions_;
 
   model.internal_transition(now);
 
@@ -238,7 +239,9 @@ void DevsExecutor::deliver_internal(std::uint32_t atom) {
   }
   model.clear_outputs();
 
-  reschedule(atom);
+  if (internal_budget_ == 0 || internal_transitions_ < internal_budget_) {
+    reschedule(atom);
+  }
 }
 
 void DevsExecutor::deliver_external(std::uint32_t atom,

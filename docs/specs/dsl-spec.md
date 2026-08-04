@@ -113,3 +113,36 @@ success and failure):
 map 1:1 to `logicpilot::dsl::Diagnostic` (§2); severity uses the registry
 names (`error`/`warning`/`note`). This is the contract consumed by the AI
 model generator: the LLM receives the JSON, repairs the DSL, and recompiles.
+
+## 7. Atomic models (DEVS, v0.1)
+
+`atomic` blocks declare classic DEVS atoms whose transitions are **literal
+state effects** (no expressions in v0.1). Example:
+
+```logicpilot
+model PulseChain {
+  atomic Pulser {
+    time_advance = constant(1.0)     // or exponential(rate) / infinite
+    on_timeout: emit pulse
+  }
+  atomic Sink {
+    state seen = false               // bool / int / float literals
+    on_input pulse: seen = true
+  }
+  couple Pulser.pulse -> Sink.pulse  // explicit port wiring
+}
+```
+
+Semantics:
+- `state` declares initial variables; transition `effects` assign literals
+  (`LP5001` rejects undeclared targets).
+- `time_advance` is constant / exponential (sampled once per run at
+  construction, fixed seed => deterministic) / infinite (passive). Absent =
+  infinite.
+- v0.1 constraints (mirroring the frozen F1 IR `AtomicModel`): **at most one
+  `on_input`** (a single external transition, `LP2003`) and **at most one
+  `on_timeout`** (a single internal transition).
+- `couple` wires an emitted output port to an input port (`LP5002`/`LP5003`).
+- The kernel executes these via the IR atomic interpreter on the DEVS-lite
+  executor; `lpcli run --arrivals N` is the internal-transition budget, so
+  perpetual emitters terminate deterministically.
