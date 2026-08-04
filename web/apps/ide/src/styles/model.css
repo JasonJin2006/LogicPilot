@@ -142,7 +142,9 @@
 .dsl-editor .dsl-edge-tab {
   position: absolute;
   z-index: 2;
-  left: -13px;
+  /* Button width + the editor's 1px left border: the right edge sits
+     exactly on the DSL area's left edge, flush instead of embedded. */
+  left: -23px;
   top: 0;
   border-right: none;
   border-radius: var(--r-sm) 0 0 var(--r-sm);
