@@ -24,8 +24,10 @@ function Splitter({
     const startSize = useLayoutStore.getState().areas[area].size;
     const move = (moveEvent: PointerEvent) => {
       const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
-      // Dragging the center/right boundary left shrinks the center and
-      // grows the right panel, so the right splitter's delta is inverted.
+      // Splitters must follow the cursor. For a fixed-size area whose
+      // boundary sits between it and a flex area (right, bottom), moving
+      // the boundary toward the flex area shrinks the fixed area, so the
+      // delta is inverted.
       useLayoutStore.getState().setSize(area, startSize + (invert ? -delta : delta));
     };
     const up = () => {
@@ -116,7 +118,7 @@ export function Workspace() {
       <PanelArea area="center" />
       <Splitter area="right" vertical gridArea="sr" invert />
       <PanelArea area="right" />
-      <Splitter area="bottom" vertical={false} gridArea="sb" />
+      <Splitter area="bottom" vertical={false} gridArea="sb" invert />
       <PanelArea area="bottom" />
     </div>
   );
