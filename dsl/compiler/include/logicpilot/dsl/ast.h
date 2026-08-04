@@ -156,6 +156,35 @@ struct AgentDecl {
   std::vector<TickBehavior> behaviors;
 };
 
+// `experiment` block: the model declares its own run/optimization setup
+// (IR v2 direction; v1 carries it as a compile sidecar, not in F1).
+struct ExperimentDecl {
+  std::string name;
+  Span name_span;
+  Span span;
+  bool has_objective{false};
+  int objective_count{0};
+  std::string objective;  // "maximize" | "minimize"
+  Span objective_span;
+  bool has_metric{false};
+  int metric_count{0};
+  std::string metric;  // "throughput" | "Wq" | "W" | "Lq"
+  Span metric_span;
+  bool has_variable{false};
+  int variable_count{0};
+  std::string variable;  // v0.1: "servers"
+  Span variable_span;
+  bool has_range{false};
+  int range_count{0};
+  std::int64_t range_min{1};
+  std::int64_t range_max{1};
+  Span range_span;
+  bool has_budget{false};
+  int budget_count{0};
+  std::int64_t budget{20};
+  Span budget_span;
+};
+
 // `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
 struct CoupleDecl {
   std::string from_model;
@@ -180,6 +209,7 @@ struct ModelAst {
   std::vector<ProcessDecl> processes;
   std::vector<AtomicDecl> atomics;
   std::vector<AgentDecl> agents;
+  std::vector<ExperimentDecl> experiments;
   std::vector<CoupleDecl> couplings;
 };
 

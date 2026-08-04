@@ -96,6 +96,8 @@ assert.equal(substitute('capacity = {{servers}}', 'servers', 3),
   assert.equal(result.metric, 'Wq');
   assert.equal(result.best.value, 4);
   assert.match(result.dslTemplate, /\{\{servers\}\}/);
+  // The search spec must have come from the model's declared experiment.
+  assert.equal(result.declaredByModel, true);
 }
 
 console.log('OPTIMIZE TEST: PASS');

@@ -40,6 +40,7 @@ endif()
 add_library(logicpilot_dsl STATIC
   "${LOGICPILOT_GRAMMAR_DIR}/src/parser.c"
   src/diagnostics.cpp
+  src/experiments_json.cpp
   src/json_diagnostics.cpp
   src/parser.cpp
   src/semantic.cpp

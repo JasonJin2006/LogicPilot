@@ -1,0 +1,72 @@
+# IR v2 迁移设计：薄契约 + 引擎注册表
+
+状态: 设计定稿（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
+工程纪律（类型化/版本化/冻结/确定性/span/诊断）。配套草案见 `schemas/ir_v2.fbs`
+（尚未接入构建，仅作为迁移参照物）。
+
+## 1. 结论（来自架构评审）
+
+- AnyLogic 没有"多形式 IR"：它靠 **一个 Agent 基座 + 块库（palette Java 类）+ XML
+  模型描述 + 生成代码** 统一方法；SD 编译成 ODE 由引擎积分器在事件间隙驱动。
+- 我们不该抄"模型 = 生成代码"（不可验证、不可被 AI 可靠修复）与"无冻结纪律"；
+  该抄的是"**薄容器 + 每方法引擎**"形态，并升级为 FMI 式的
+  **薄契约 + 引擎注册表**。
+- "Agent 统一"若理解为"一个万能运行时对象"，会把我们压回 AnyLogic 的范畴
+  （丢掉多物理/宏观/GPU）；正确形态是 B：**Node 只承诺组合与时间对齐，方法内部
+  进各自的引擎**。
+
+## 2. 目标架构
+
+```
+Node（容器契约，故意薄）
+  ├─ typed state / params（Var）
+  ├─ typed ports（带事件类型）
+  ├─ time / 事件接口
+  ├─ couplings（结构化端口引用）
+  ├─ behavior: Statechart（可选，可执行行为数据）
+  ├─ continuous: [Equation]（可选，结构化方程，非字符串袋）
+  └─ semantics: SemanticsRef { library, block, version, params }
+
+引擎注册表（按 semantics 分发，各方法各一个引擎）：
+  process → QueueingFlowSim（事件引擎，现状）
+  devs    → DevsExecutor（DEVS-lite，现状）
+  agent   → AgentRuntime tick（ECS，现状）
+  sd/eqn  → ODE/DAE 求解器（未来，结构化方程）
+  physics → PDE/FEM/SPH 引擎（未来）
+  cluster → 分布式/GPU 内核（未来）
+```
+
+加一种新方法 = 注册一个新引擎 + 新库，schema 不动（FMI 思路）。
+
+## 3. v1 → v2 差异（每条都有落点）
+
+| v1 问题 | v2 修正 | 影响文件 |
+|---|---|---|
+| 五种模型 = union 五个互不相干的表 | 一个 `Node` + `SemanticsRef`（库注册表） | `schemas/ir_v2.fbs`、`lowering.cpp`、`ir_loader.cpp` |
+| `TransitionSpec` = description/handler_ref/effects 魔法袋 | `Statechart` 数据（状态 + 类型化触发器转移 + 动作） | `ir_v2.fbs`、`ir_atomic.cpp`、`ir_agent.cpp` |
+| `resource` 靠字符串名匹配 | `Resource` 级 `SemanticsRef`（块参数） | `ir_v2.fbs`、`lowering.cpp` |
+| 端口无类型 | `Port.event_type` 类型化（复用 F2 类型名） | `ir_v2.fbs` |
+| 实验散在 CLI/脚本（`--reps/--arrivals`、prompt 解析） | `Experiment` 进模型（simulation/optimization/MC） | `ir_v2.fbs`、DSL `experiment` 块、`ai-optimize.mjs` |
+| `EquationModel` 字符串袋 | 结构化 `[Equation]` + ODE 引擎 | `ir_v2.fbs`（未来） |
+
+## 4. 分阶段实施
+
+- **Phase A（本轮）**: 本设计文档 + `schemas/ir_v2.fbs` 草案（flatc 可编译）+ DSL
+  `experiment` 块（sidecar JSON，不碰冻结的 F1）+ `ai-optimize` 改为读模型声明的
+  实验。运行时可执行路径行为不变。
+- **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
+  纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
+  SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器
+  正确解释）。
+- **Phase C**: `Statechart` 数据替换 `TransitionSpec`；`Var` 替换 `Param` 魔法袋；
+  `Experiment` 从 sidecar 并入 `ModelFile.experiments`。
+- **Phase D**: `EquationModel` 结构化方程 + ODE 引擎注册；interop/TS 生成随 schema
+  升级走一次完整冻结流程（`writer.cpp` + `verify-interop.mjs` 双向校验）。
+
+## 5. 迁移纪律（沿用并强化）
+
+- 冻结流程不变：`flatc --conform` + `.bfbs` SHA256 双门禁，契约变更与 baseline
+  更新同 commit（ADR-0004）。
+- v2 读取器必须能读 v1（迁移测试固定种子逐位对拍）。
+- span/诊断贯穿 Node/Experiment，AI 闭环不回归。
+- 每个引擎独立验收（M/M/c 理论、DEVS 确定性、agent 轨迹、未来 ODE 解析解）。

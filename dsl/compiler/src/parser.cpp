@@ -136,6 +136,8 @@ class Extractor {
         out.atomics.push_back(extract_atomic(member));
       } else if (node_is(member, "agent_declaration")) {
         out.agents.push_back(extract_agent(member));
+      } else if (node_is(member, "experiment_declaration")) {
+        out.experiments.push_back(extract_experiment(member));
       } else if (node_is(member, "couple_declaration")) {
         out.couplings.push_back(extract_couple(member));
       }
@@ -338,6 +340,57 @@ class Extractor {
       }
     });
     return agent;
+  }
+
+  ExperimentDecl extract_experiment(const TSNode& decl) {
+    ExperimentDecl experiment;
+    experiment.span = span_of(decl);
+    const TSNode name = field(decl, "name");
+    experiment.name = text_of(name);
+    experiment.name_span = span_of(name);
+    const TSNode body = field(decl, "body");
+    each_named_child(body, [&](const TSNode& field_node) {
+      const auto string_field = [&](const char* f) {
+        return text_of(field(field_node, f));
+      };
+      if (node_is(field_node, "objective_field")) {
+        experiment.has_objective = true;
+        experiment.objective_count += 1;
+        experiment.objective = string_field("value");
+        experiment.objective_span = span_of(field(field_node, "value"));
+      } else if (node_is(field_node, "metric_field")) {
+        experiment.has_metric = true;
+        experiment.metric_count += 1;
+        experiment.metric = string_field("value");
+        experiment.metric_span = span_of(field(field_node, "value"));
+      } else if (node_is(field_node, "variable_field")) {
+        experiment.has_variable = true;
+        experiment.variable_count += 1;
+        experiment.variable = string_field("value");
+        experiment.variable_span = span_of(field(field_node, "value"));
+      } else if (node_is(field_node, "range_field")) {
+        experiment.has_range = true;
+        experiment.range_count += 1;
+        experiment.range_span = span_of(field_node);
+        std::int64_t min = 0;
+        std::int64_t max = 0;
+        if (integer_of(field(field_node, "min"), min)) {
+          experiment.range_min = min;
+        }
+        if (integer_of(field(field_node, "max"), max)) {
+          experiment.range_max = max;
+        }
+      } else if (node_is(field_node, "budget_field")) {
+        experiment.has_budget = true;
+        experiment.budget_count += 1;
+        experiment.budget_span = span_of(field(field_node, "value"));
+        std::int64_t value = 0;
+        if (integer_of(field(field_node, "value"), value)) {
+          experiment.budget = value;
+        }
+      }
+    });
+    return experiment;
   }
 
   // arrival_expr / service_time_expr -> Distribution.

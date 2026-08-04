@@ -31,6 +31,7 @@ CompileResult compile_source(const std::string& source,
   result.ok = true;
   result.ir_bytes = std::move(lowered.bytes);
   result.model_name = parsed.model->name;
+  result.experiments = std::move(parsed.model->experiments);
   return result;
 }
 

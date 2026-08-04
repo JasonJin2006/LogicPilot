@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 
-function findLpcli() {
+export function findLpcli() {
   if (process.env.LPCLI && existsSync(process.env.LPCLI)) {
     return process.env.LPCLI;
   }
@@ -40,7 +40,7 @@ function findLpcli() {
   return 'lpcli';
 }
 
-function runLpcli(lpcli, args) {
+export function runLpcli(lpcli, args) {
   if (process.platform === 'win32') {
     const mingwBin = 'C:\\msys64\\ucrt64\\bin';
     if (existsSync(mingwBin) &&

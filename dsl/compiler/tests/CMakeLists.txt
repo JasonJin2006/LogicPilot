@@ -136,3 +136,10 @@ add_test(NAME lpcli_compile_rejects_unresolved_resource
           -o "${CMAKE_CURRENT_BINARY_DIR}/bad2.ir.bin")
 set_tests_properties(lpcli_compile_rejects_unresolved_resource PROPERTIES
   PASS_REGULAR_EXPRESSION "error\\[LP4001\\]")
+
+add_test(NAME lpcli_compile_rejects_bad_experiment
+  COMMAND lpcli compile
+          "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/bad_experiment.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/bad3.ir.bin")
+set_tests_properties(lpcli_compile_rejects_bad_experiment PROPERTIES
+  PASS_REGULAR_EXPRESSION "error\\[LP7001\\]")

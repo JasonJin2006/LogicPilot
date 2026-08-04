@@ -29,6 +29,9 @@ class Analyzer {
     for (const AgentDecl& agent : model.agents) {
       check_agent(agent);
     }
+    for (const ExperimentDecl& experiment : model.experiments) {
+      check_experiment(experiment);
+    }
     check_couplings(model);
     // Deterministic ordering for golden output: source order, then code.
     std::stable_sort(diagnostics_.begin(), diagnostics_.end(),
@@ -155,6 +158,77 @@ class Analyzer {
                  "' takes no argument",
              behavior.arg_span);
       }
+    }
+  }
+
+  bool known_metric(const std::string& metric) const {
+    return metric == "throughput" || metric == "Wq" || metric == "W" ||
+           metric == "Lq";
+  }
+
+  void check_experiment(const ExperimentDecl& experiment) {
+    const auto duplicate = [&](int count, const char* field,
+                               const Span& span) {
+      if (count > 1) {
+        push(Severity::kError, "LP1002",
+             "duplicate field '" + std::string(field) + "' in experiment '" +
+                 experiment.name + "'",
+             span);
+      }
+    };
+    duplicate(experiment.objective_count, "objective", experiment.objective_span);
+    duplicate(experiment.metric_count, "metric", experiment.metric_span);
+    duplicate(experiment.variable_count, "variable", experiment.variable_span);
+    duplicate(experiment.range_count, "range", experiment.range_span);
+    duplicate(experiment.budget_count, "budget", experiment.budget_span);
+
+    const auto required = [&](bool has, const char* field) {
+      if (!has) {
+        push(Severity::kError, "LP2001",
+             "missing required field '" + std::string(field) +
+                 "' in experiment '" + experiment.name + "'",
+             experiment.span);
+      }
+    };
+    required(experiment.has_objective, "objective");
+    required(experiment.has_metric, "metric");
+    required(experiment.has_variable, "variable");
+    required(experiment.has_range, "range");
+
+    if (experiment.has_objective &&
+        experiment.objective != "maximize" &&
+        experiment.objective != "minimize") {
+      push(Severity::kError, "LP7001",
+           "experiment '" + experiment.name + "' objective must be " +
+               "'maximize' or 'minimize' (got '" + experiment.objective + "')",
+           experiment.objective_span);
+    }
+    if (experiment.has_metric && !known_metric(experiment.metric)) {
+      push(Severity::kError, "LP7001",
+           "experiment '" + experiment.name + "' metric must be one of " +
+               "throughput/Wq/W/Lq (got '" + experiment.metric + "')",
+           experiment.metric_span);
+    }
+    if (experiment.has_variable && experiment.variable != "servers") {
+      push(Severity::kError, "LP7001",
+           "experiment '" + experiment.name +
+               "' v0.1 optimizable variable is 'servers' (got '" +
+               experiment.variable + "')",
+           experiment.variable_span);
+    }
+    if (experiment.has_range &&
+        (experiment.range_min < 1 || experiment.range_max < experiment.range_min)) {
+      push(Severity::kError, "LP3001",
+           "experiment '" + experiment.name + "' range must satisfy " +
+               "1 <= min <= max (got " +
+               std::to_string(experiment.range_min) + ".." +
+               std::to_string(experiment.range_max) + ")",
+           experiment.range_span);
+    }
+    if (experiment.has_budget && experiment.budget < 1) {
+      push(Severity::kError, "LP3001",
+           "experiment '" + experiment.name + "' budget must be >= 1",
+           experiment.budget_span);
     }
   }
 

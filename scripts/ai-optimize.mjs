@@ -3,7 +3,11 @@
 // grid/GA search -> best configuration.
 //
 // Usage: node scripts/ai-optimize.mjs "<prompt>" [--json] [--lpcli <path>]
-import { optimize } from './optimize.mjs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { findLpcli, optimize, runLpcli } from './optimize.mjs';
 import { ruleBasedProvider } from './ai-provider.mjs';
 
 function parseOptimizeSpec(prompt) {
@@ -36,6 +40,17 @@ function parameterize(dsl, variable) {
   return dsl.replace(/capacity = \d+/, `capacity = {{${variable}}}`);
 }
 
+function experimentBlock(spec) {
+  return `  experiment Optimization {
+    objective = ${spec.objective}
+    metric = ${spec.metric}
+    variable = ${spec.variable}
+    range = ${spec.range[0]}..${spec.range[1]}
+    budget = ${spec.budget ?? 20}
+  }
+`;
+}
+
 export async function aiOptimize({
   prompt,
   lpcli = '',
@@ -45,18 +60,56 @@ export async function aiOptimize({
   const spec = parseOptimizeSpec(prompt);
   const base = ruleBasedProvider(prompt);
   const template = parameterize(base, spec.variable);
-  const result = await optimize({
-    template,
-    variable: spec.variable,
-    min: spec.range[0],
-    max: spec.range[1],
-    objective: spec.objective,
-    metric: spec.metric,
-    strategy,
-    budget,
-    lpcli: lpcli || undefined,
-  });
-  return { ...result, kind: 'optimize', prompt, dslTemplate: template };
+  const resolvedLpcli = lpcli || process.env.LPCLI || findLpcli();
+  let declaredByModel = false;
+
+  // Declare the experiment inside the model and read it back: the search
+  // spec comes from the model (IR v2 direction), not from prompt parsing.
+  const dir = mkdtempSync(join(tmpdir(), 'ai-optimize-'));
+  try {
+    const declaredModel = base.replace(/\}\s*$/, experimentBlock(spec) + '}');
+    const lp = join(dir, 'declared.lp');
+    const json = join(dir, 'declared.json');
+    writeFileSync(lp, declaredModel, 'utf8');
+    try {
+      runLpcli(resolvedLpcli, ['compile', lp, '--experiments-json', json]);
+      const parsed = JSON.parse(readFileSync(json, 'utf8'));
+      const experiment = parsed.experiments?.[0];
+      if (experiment) {
+        spec.objective = experiment.objective;
+        spec.metric = experiment.metric;
+        spec.variable = experiment.variable;
+        spec.range = [experiment.range[0], experiment.range[1]];
+        if (Number.isFinite(experiment.budget) && experiment.budget > 0) {
+          budget = experiment.budget;
+        }
+        declaredByModel = true;
+      }
+    } catch {
+      // Prompt-parsed spec is the fallback when the sidecar cannot be read.
+    }
+
+    const result = await optimize({
+      template,
+      variable: spec.variable,
+      min: spec.range[0],
+      max: spec.range[1],
+      objective: spec.objective,
+      metric: spec.metric,
+      strategy,
+      budget,
+      lpcli: resolvedLpcli || undefined,
+    });
+    return {
+      ...result,
+      kind: 'optimize',
+      prompt,
+      dslTemplate: template,
+      declaredByModel,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 async function main() {

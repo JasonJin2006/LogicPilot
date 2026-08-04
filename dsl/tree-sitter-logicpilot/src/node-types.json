@@ -138,6 +138,22 @@
     "fields": {}
   },
   {
+    "type": "budget_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "integer",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "capacity_field",
     "named": true,
     "fields": {
@@ -277,6 +293,63 @@
     }
   },
   {
+    "type": "experiment_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "budget_field",
+          "named": true
+        },
+        {
+          "type": "metric_field",
+          "named": true
+        },
+        {
+          "type": "objective_field",
+          "named": true
+        },
+        {
+          "type": "range_field",
+          "named": true
+        },
+        {
+          "type": "variable_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "experiment_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "experiment_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "exponential_call",
     "named": true,
     "fields": {
@@ -323,6 +396,22 @@
     "fields": {}
   },
   {
+    "type": "metric_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "model_body",
     "named": true,
     "fields": {},
@@ -340,6 +429,10 @@
         },
         {
           "type": "couple_declaration",
+          "named": true
+        },
+        {
+          "type": "experiment_declaration",
           "named": true
         },
         {
@@ -407,6 +500,22 @@
           },
           {
             "type": "integer",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "objective_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -595,6 +704,32 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "range_field",
+    "named": true,
+    "fields": {
+      "max": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "integer",
+            "named": true
+          }
+        ]
+      },
+      "min": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "integer",
             "named": true
           }
         ]
@@ -880,6 +1015,22 @@
     }
   },
   {
+    "type": "variable_field",
+    "named": true,
+    "fields": {
+      "value": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "(",
     "named": false
   },
@@ -900,6 +1051,10 @@
     "named": false
   },
   {
+    "type": "..",
+    "named": false
+  },
+  {
     "type": ":",
     "named": false
   },
@@ -917,6 +1072,10 @@
   },
   {
     "type": "atomic",
+    "named": false
+  },
+  {
+    "type": "budget",
     "named": false
   },
   {
@@ -945,6 +1104,10 @@
     "named": false
   },
   {
+    "type": "experiment",
+    "named": false
+  },
+  {
     "type": "exponential",
     "named": false
   },
@@ -965,11 +1128,19 @@
     "named": true
   },
   {
+    "type": "metric",
+    "named": false
+  },
+  {
     "type": "model",
     "named": false
   },
   {
     "type": "normal",
+    "named": false
+  },
+  {
+    "type": "objective",
     "named": false
   },
   {
@@ -994,6 +1165,10 @@
   },
   {
     "type": "queue",
+    "named": false
+  },
+  {
+    "type": "range",
     "named": false
   },
   {
@@ -1022,6 +1197,10 @@
   },
   {
     "type": "true",
+    "named": false
+  },
+  {
+    "type": "variable",
     "named": false
   },
   {

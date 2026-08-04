@@ -17,6 +17,7 @@
 //   LP5003  coupling port is not an emitted output / declared input
 //   LP6001  unknown agent behavior handler
 //   LP6002  agent behavior argument mismatch
+//   LP7001  experiment field value is not supported (v0.1)
 //
 // Phase 3 will extend this registry (warnings, notes, fixits); the struct
 // layout is already the wire shape used by the diagnostics protocol.

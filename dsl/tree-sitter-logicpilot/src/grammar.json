@@ -73,6 +73,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "experiment_declaration"
+        },
+        {
+          "type": "SYMBOL",
           "name": "couple_declaration"
         }
       ]
@@ -690,6 +694,74 @@
       "type": "SEQ",
       "members": [
         { "type": "STRING", "value": "count" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "integer" } }
+      ]
+    },
+    "_experiment_member": {
+      "type": "CHOICE",
+      "members": [
+        { "type": "SYMBOL", "name": "objective_field" },
+        { "type": "SYMBOL", "name": "metric_field" },
+        { "type": "SYMBOL", "name": "variable_field" },
+        { "type": "SYMBOL", "name": "range_field" },
+        { "type": "SYMBOL", "name": "budget_field" }
+      ]
+    },
+    "experiment_body": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "{" },
+        { "type": "REPEAT", "content": { "type": "SYMBOL", "name": "_experiment_member" } },
+        { "type": "STRING", "value": "}" }
+      ]
+    },
+    "experiment_declaration": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "experiment" },
+        { "type": "FIELD", "name": "name", "content": { "type": "SYMBOL", "name": "identifier" } },
+        { "type": "FIELD", "name": "body", "content": { "type": "SYMBOL", "name": "experiment_body" } }
+      ]
+    },
+    "objective_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "objective" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "identifier" } }
+      ]
+    },
+    "metric_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "metric" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "identifier" } }
+      ]
+    },
+    "variable_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "variable" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "identifier" } }
+      ]
+    },
+    "range_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "range" },
+        { "type": "STRING", "value": "=" },
+        { "type": "FIELD", "name": "min", "content": { "type": "SYMBOL", "name": "integer" } },
+        { "type": "STRING", "value": ".." },
+        { "type": "FIELD", "name": "max", "content": { "type": "SYMBOL", "name": "integer" } }
+      ]
+    },
+    "budget_field": {
+      "type": "SEQ",
+      "members": [
+        { "type": "STRING", "value": "budget" },
         { "type": "STRING", "value": "=" },
         { "type": "FIELD", "name": "value", "content": { "type": "SYMBOL", "name": "integer" } }
       ]

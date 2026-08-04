@@ -1,0 +1,143 @@
+// IR v2 draft - thin Node container + semantics references (library registry).
+// NOT wired into the build yet: this is the migration target described in
+// docs/specs/ir-v2.md. The frozen v1 contract (schemas/ir.fbs) is unchanged
+// until Phase B performs the reviewed freeze upgrade.
+
+namespace logicpilot.ir.v2;
+
+enum VarType : byte { Bool = 0, Int = 1, Float = 2, String = 3, Distribution = 4 }
+enum PortDirection : byte { Input = 0, Output = 1, InOut = 2 }
+enum TriggerKind : byte { Timeout = 0, Rate = 1, Message = 2, Condition = 3 }
+enum ExperimentKind : byte {
+  Simulation = 0,
+  Optimization = 1,
+  MonteCarlo = 2,
+  ParameterVariation = 3
+}
+
+table SourceSpan {
+  line: uint32;
+  column: uint32;
+  byte_offset: uint32;
+  byte_length: uint32;
+}
+
+table Metadata {
+  name: string;
+  version: string;
+  source_file: string;
+  span: SourceSpan;
+}
+
+table Distribution {
+  kind: byte;
+  params: [double];
+}
+
+// Typed variable: replaces the v1 Param magic bag. Exactly one value field
+// is meaningful per `type`.
+table Var {
+  name: string;
+  type: VarType;
+  bool_value: bool;
+  int_value: long;
+  float_value: double;
+  string_value: string;
+  distribution: Distribution;
+}
+
+table Port {
+  name: string;
+  direction: PortDirection;
+  // Typed message channel: reuses the F2 wire schema names (e.g. "Job").
+  event_type: string;
+}
+
+// Semantics reference: the runtime engine registry looks up { library, block }
+// (AnyLogic palette / FMI FMU interface idea). `params` are typed block
+// parameters (e.g. resource name, capacity, failure rate).
+table SemanticsRef {
+  library: string;
+  block: string;
+  version: string;
+  params: [Var];
+}
+
+table Coupling {
+  from_model: string;
+  from_port: string;
+  to_model: string;
+  to_port: string;
+}
+
+// --- Statechart behavior data (replaces TransitionSpec magic bags) ---------
+table State { name: string; }
+
+table Action {
+  set_state: string;
+  set_value: Var;
+  emit_port: string;
+}
+
+table Transition {
+  from: string;
+  to: string;
+  trigger: TriggerKind;
+  timeout_value: double;
+  rate: double;
+  message_port: string;
+  condition_text: string;
+  actions: [Action];
+}
+
+table Statechart {
+  states: [State];
+  transitions: [Transition];
+  initial: string;
+}
+
+// Structured continuous equations (SD / physics), NOT a string bag.
+table Equation {
+  lhs: string;
+  rhs_text: string;
+}
+
+// The one container: children + couplings + behavior + continuous, with the
+// executable semantics delegated to a registered engine via `semantics`.
+table Node {
+  metadata: Metadata;
+  state: [Var];
+  params: [Var];
+  ports: [Port];
+  semantics: SemanticsRef;
+  children: [Node];
+  couplings: [Coupling];
+  behavior: Statechart;
+  continuous: [Equation];
+}
+
+// Experiments are part of the model (v1 keeps them as a compile sidecar
+// until Phase B; v2 carries them natively).
+table Experiment {
+  kind: ExperimentKind;
+  name: string;
+  variable: string;
+  objective: string;      // "maximize" | "minimize"
+  metric: string;         // "throughput" | "Wq" | "W" | "Lq" | ...
+  range_min: double;
+  range_max: double;
+  budget: uint32;
+  replications: uint32;
+  seed: uint64;
+}
+
+table ModelFile {
+  schema_version: uint32;
+  root: Node;
+  experiments: [Experiment];
+  metadata: Metadata;
+}
+
+root_type ModelFile;
+file_identifier "LPIR";
+file_extension "lpir";
