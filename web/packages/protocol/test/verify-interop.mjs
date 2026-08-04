@@ -27,6 +27,7 @@ const binDir = process.argv[2] ?? join(root, 'build', 'interop', 'interop-out');
 // skip loudly so `pnpm test` stays usable in toolchain-less jobs, while the
 // kernel CI job's "Schema interop" step enforces the real check.
 if (!existsSync(join(binDir, 'model_file.bin')) ||
+    !existsSync(join(binDir, 'model_v2.bin')) ||
     !existsSync(join(binDir, 'counters_frame.bin'))) {
   console.warn(
     `[verify-interop] SKIP: C++ interop artifacts not found in ${binDir}. ` +
@@ -59,6 +60,16 @@ const {
   FrameKind,
   FramePayload,
   Counters,
+  ModelFileV2,
+  NodeV2,
+  SemanticsRefV2,
+  VarV2,
+  VarTypeV2,
+  PortDirectionV2,
+  StatechartV2,
+  TransitionV2,
+  TriggerKindV2,
+  BehaviorBindingV2,
 } = await import('../dist/index.js');
 
 let failures = 0;
@@ -216,6 +227,93 @@ check('counters length', counters?.valuesLength(), 4);
     check(`counters[${name}]`, c?.value(), expected[name]);
   }
 }
+
+// ---------------------------------------------------------------------------
+// F3: the same model as the IR v2 contract (model_v2.bin, thin Node)
+// ---------------------------------------------------------------------------
+const v2Bytes = new Uint8Array(readFileSync(join(binDir, 'model_v2.bin')));
+const v2Buf = new ByteBuffer(v2Bytes);
+check('ModelFileV2 identifier', ModelFileV2.bufferHasIdentifier(v2Buf), true);
+const mf2 = ModelFileV2.getRootAsModelFile(v2Buf);
+check('ModelFileV2 schema_version', mf2.schemaVersion(), 2);
+const root2 = mf2.root();
+check('v2 root library', root2?.semantics()?.library(), 'core');
+check('v2 root block', root2?.semantics()?.block(), 'model');
+check('v2 root children', root2?.childrenLength(), 3);
+
+// child 0: DEVS atomic Server (state + typed ports + Statechart)
+const server2 = root2?.children(0);
+check('v2 child[0] library', server2?.semantics()?.library(), 'devs');
+check('v2 child[0] block', server2?.semantics()?.block(), 'atomic');
+check('v2 child[0] name', server2?.metadata()?.name(), 'Server');
+check('v2 Server state[0] name', server2?.state(0)?.name(), 'busy');
+check('v2 Server state[0] type', server2?.state(0)?.type(), VarTypeV2.Bool);
+check('v2 Server state[0] value', server2?.state(0)?.boolValue(), false);
+check('v2 Server ports', server2?.portsLength(), 2);
+check('v2 Server port[0]', server2?.ports(0)?.name(), 'job_in');
+check('v2 Server port[0] dir', server2?.ports(0)?.direction(),
+      PortDirectionV2.Input);
+check('v2 Server port[1]', server2?.ports(1)?.name(), 'job_out');
+check('v2 Server port[1] dir', server2?.ports(1)?.direction(),
+      PortDirectionV2.Output);
+const statechart2 = server2?.behavior();
+check('v2 statechart initial', statechart2?.initial(), 'active');
+check('v2 statechart states', statechart2?.statesLength(), 1);
+check('v2 statechart transitions', statechart2?.transitionsLength(), 2);
+check('v2 transition[0] trigger', statechart2?.transitions(0)?.trigger(),
+      TriggerKindV2.Message);
+check('v2 transition[0] port', statechart2?.transitions(0)?.messagePort(),
+      'job_in');
+check('v2 transition[1] trigger', statechart2?.transitions(1)?.trigger(),
+      TriggerKindV2.Timeout);
+check('v2 transition[1] ta kind',
+      statechart2?.transitions(1)?.timeoutDistribution()?.kind(), 3);
+check('v2 transition[1] ta rate',
+      statechart2?.transitions(1)?.timeoutDistribution()?.params(0), 3.0);
+
+// child 1: process flow (source/queue/service blocks + couplings)
+const flow2 = root2?.children(1);
+check('v2 child[1] library', flow2?.semantics()?.library(), 'process');
+check('v2 child[1] block', flow2?.semantics()?.block(), 'flow');
+check('v2 child[1] name', flow2?.metadata()?.name(), 'Arrivals');
+check('v2 flow children', flow2?.childrenLength(), 3);
+check('v2 flow source block', flow2?.children(0)?.semantics()?.block(),
+      'source');
+check('v2 flow source name', flow2?.children(0)?.metadata()?.name(),
+      'Clients');
+check('v2 source arrival kind',
+      flow2?.children(0)?.params(0)?.distribution()?.kind(), 4);
+check('v2 source arrival rate',
+      flow2?.children(0)?.params(0)?.distribution()?.params(0), 2.0);
+check('v2 flow queue block', flow2?.children(1)?.semantics()?.block(),
+      'queue');
+check('v2 queue capacity', flow2?.children(1)?.params(0)?.intValue(), 0);
+check('v2 flow service block', flow2?.children(2)?.semantics()?.block(),
+      'service');
+check('v2 service rate kind',
+      flow2?.children(2)?.params(0)?.distribution()?.kind(), 3);
+check('v2 service resource', flow2?.children(2)?.params(1)?.stringValue(),
+      'Server');
+check('v2 service servers', flow2?.children(2)?.params(2)?.intValue(), 1);
+check('v2 flow couplings', flow2?.couplingsLength(), 2);
+check('v2 coupling[0]',
+      [flow2?.couplings(0)?.fromModel(), flow2?.couplings(0)?.toModel()]
+          .join('->'),
+      'Clients->WaitLine');
+check('v2 coupling[1]',
+      [flow2?.couplings(1)?.fromModel(), flow2?.couplings(1)?.toModel()]
+          .join('->'),
+      'WaitLine->Server');
+
+// child 2: ABM agent (behavior bindings)
+const agent2 = root2?.children(2);
+check('v2 child[2] library', agent2?.semantics()?.library(), 'agent');
+check('v2 child[2] block', agent2?.semantics()?.block(), 'agent');
+check('v2 child[2] name', agent2?.metadata()?.name(), 'Observer');
+check('v2 agent behaviors', agent2?.behaviorsLength(), 1);
+check('v2 behavior trigger', agent2?.behaviors(0)?.trigger(), 'on_tick');
+check('v2 behavior handler', agent2?.behaviors(0)?.handlerRef(),
+      'agent.observer.collect');
 
 // ---------------------------------------------------------------------------
 console.log('');

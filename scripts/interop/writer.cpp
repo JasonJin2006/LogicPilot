@@ -16,10 +16,12 @@
 #include <vector>
 
 #include "ir_generated.h"
+#include "ir_v2_generated.h"
 #include "wire_generated.h"
 
 namespace fs = std::filesystem;
 namespace ir = logicpilot::ir;
+namespace v2 = logicpilot::ir::v2;
 namespace wire = logicpilot::wire;
 
 namespace {
@@ -32,6 +34,12 @@ Offset<ir::Distribution> MakeDistribution(FlatBufferBuilder& fbb,
                                           ir::DistributionKind kind,
                                           std::vector<double> params) {
   return ir::CreateDistributionDirect(fbb, kind, &params);
+}
+
+Offset<v2::Distribution> MakeDistributionV2(FlatBufferBuilder& fbb,
+                                            std::uint8_t kind,
+                                            std::vector<double> params) {
+  return v2::CreateDistribution(fbb, kind, fbb.CreateVector(params));
 }
 
 bool WriteBuffer(const fs::path& path,
@@ -188,6 +196,135 @@ flatbuffers::Offset<wire::Frame> BuildCountersFrame(
                            counters.Union());
 }
 
+// ---------------------------------------------------------------------------
+// F3: the same model as the IR v2 contract (thin Node / SemanticsRef)
+// ---------------------------------------------------------------------------
+flatbuffers::Offset<v2::Node> BuildAtomicV2(FlatBufferBuilder& fbb) {
+  const auto meta = v2::CreateMetadata(
+      fbb, fbb.CreateString("Server"), fbb.CreateString("1"),
+      fbb.CreateString("scripts/interop/writer.cpp"), 0);
+  const auto busy = v2::CreateVar(fbb, fbb.CreateString("busy"),
+                                  v2::VarType_Bool, false, 0, 0.0, 0, 0);
+  const std::vector<Offset<v2::Var>> state{busy};
+  const std::vector<Offset<v2::Port>> ports{
+      v2::CreatePort(fbb, fbb.CreateString("job_in"),
+                     v2::PortDirection_Input, fbb.CreateString("Job")),
+      v2::CreatePort(fbb, fbb.CreateString("job_out"),
+                     v2::PortDirection_Output, fbb.CreateString("Job")),
+  };
+  const auto active = fbb.CreateString("active");
+  const std::vector<Offset<v2::State>> states{
+      v2::CreateState(fbb, active)};
+  const std::vector<Offset<v2::Transition>> transitions{
+      v2::CreateTransition(fbb, active, active, v2::TriggerKind_Message, 0.0,
+                           0, 0.0, fbb.CreateString("job_in"), 0, 0),
+      v2::CreateTransition(fbb, active, active, v2::TriggerKind_Timeout, 0.0,
+                           MakeDistributionV2(fbb, 3, {3.0}), 0.0, 0, 0, 0),
+  };
+  const auto statechart = v2::CreateStatechart(
+      fbb, fbb.CreateVector(states), fbb.CreateVector(transitions), active);
+  const auto semantics = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("devs"), fbb.CreateString("atomic"), 0, 0);
+  return v2::CreateNode(fbb, meta, fbb.CreateVector(state), 0,
+                        fbb.CreateVector(ports), semantics, 0, 0, statechart,
+                        0, 0);
+}
+
+flatbuffers::Offset<v2::Node> BuildProcessV2(FlatBufferBuilder& fbb) {
+  const auto meta = v2::CreateMetadata(
+      fbb, fbb.CreateString("Arrivals"), fbb.CreateString("1"),
+      fbb.CreateString("scripts/interop/writer.cpp"), 0);
+  const auto source_params = std::vector<Offset<v2::Var>>{
+      v2::CreateVar(fbb, fbb.CreateString("arrival"),
+                    v2::VarType_Distribution, false, 0, 0.0, 0,
+                    MakeDistributionV2(fbb, 4, {2.0})),
+  };
+  const auto source_sem = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("process"), fbb.CreateString("source"), 0, 0);
+  const auto source = v2::CreateNode(
+      fbb,
+      v2::CreateMetadata(fbb, fbb.CreateString("Clients"),
+                         fbb.CreateString("1"),
+                         fbb.CreateString("scripts/interop/writer.cpp"), 0),
+      0, fbb.CreateVector(source_params), 0, source_sem, 0, 0, 0, 0, 0);
+
+  const auto queue_params = std::vector<Offset<v2::Var>>{
+      v2::CreateVar(fbb, fbb.CreateString("capacity"), v2::VarType_Int, false,
+                    0, 0.0, 0, 0),
+  };
+  const auto queue_sem = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("process"), fbb.CreateString("queue"), 0, 0);
+  const auto queue = v2::CreateNode(
+      fbb,
+      v2::CreateMetadata(fbb, fbb.CreateString("WaitLine"),
+                         fbb.CreateString("1"),
+                         fbb.CreateString("scripts/interop/writer.cpp"), 0),
+      0, fbb.CreateVector(queue_params), 0, queue_sem, 0, 0, 0, 0, 0);
+
+  const auto service_params = std::vector<Offset<v2::Var>>{
+      v2::CreateVar(fbb, fbb.CreateString("rate"), v2::VarType_Distribution,
+                    false, 0, 0.0, 0, MakeDistributionV2(fbb, 3, {3.0})),
+      v2::CreateVar(fbb, fbb.CreateString("resource"), v2::VarType_String,
+                    false, 0, 0.0, fbb.CreateString("Server"), 0),
+      v2::CreateVar(fbb, fbb.CreateString("servers"), v2::VarType_Int, false,
+                    1, 0.0, 0, 0),
+  };
+  const auto service_sem = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("process"), fbb.CreateString("service"), 0, 0);
+  const auto service = v2::CreateNode(
+      fbb,
+      v2::CreateMetadata(fbb, fbb.CreateString("Server"),
+                         fbb.CreateString("1"),
+                         fbb.CreateString("scripts/interop/writer.cpp"), 0),
+      0, fbb.CreateVector(service_params), 0, service_sem, 0, 0, 0, 0, 0);
+
+  const std::vector<Offset<v2::Node>> children{source, queue, service};
+  const std::vector<Offset<v2::Coupling>> couplings{
+      v2::CreateCoupling(fbb, fbb.CreateString("Clients"),
+                         fbb.CreateString("out"), fbb.CreateString("WaitLine"),
+                         fbb.CreateString("in")),
+      v2::CreateCoupling(fbb, fbb.CreateString("WaitLine"),
+                         fbb.CreateString("out"), fbb.CreateString("Server"),
+                         fbb.CreateString("in")),
+  };
+  const auto flow_sem = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("process"), fbb.CreateString("flow"), 0, 0);
+  return v2::CreateNode(fbb, meta, 0, 0, 0, flow_sem,
+                        fbb.CreateVector(children),
+                        fbb.CreateVector(couplings), 0, 0, 0);
+}
+
+flatbuffers::Offset<v2::Node> BuildAgentV2(FlatBufferBuilder& fbb) {
+  const auto meta = v2::CreateMetadata(
+      fbb, fbb.CreateString("Observer"), fbb.CreateString("1"),
+      fbb.CreateString("scripts/interop/writer.cpp"), 0);
+  const std::vector<Offset<v2::BehaviorBinding>> behaviors{
+      v2::CreateBehaviorBinding(fbb, fbb.CreateString("on_tick"),
+                                fbb.CreateString("agent.observer.collect"), 0),
+  };
+  const auto semantics = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("agent"), fbb.CreateString("agent"), 0, 0);
+  return v2::CreateNode(fbb, meta, 0, 0, 0, semantics, 0, 0, 0,
+                        fbb.CreateVector(behaviors), 0);
+}
+
+flatbuffers::Offset<v2::ModelFile> BuildModelFileV2(
+    FlatBufferBuilder& fbb) {
+  const std::vector<Offset<v2::Node>> children{
+      BuildAtomicV2(fbb), BuildProcessV2(fbb), BuildAgentV2(fbb)};
+  const auto root_meta = v2::CreateMetadata(
+      fbb, fbb.CreateString("QueueDemo"), fbb.CreateString("1"),
+      fbb.CreateString("scripts/interop/writer.cpp"), 0);
+  const auto root_sem = v2::CreateSemanticsRef(
+      fbb, fbb.CreateString("core"), fbb.CreateString("model"), 0, 0);
+  const auto root = v2::CreateNode(fbb, root_meta, 0, 0, 0, root_sem,
+                                   fbb.CreateVector(children), 0, 0, 0, 0);
+  const auto file_meta = v2::CreateMetadata(
+      fbb, fbb.CreateString("interop-demo"), fbb.CreateString("1.0.0"),
+      fbb.CreateString("scripts/interop/writer.cpp"), 0);
+  return v2::CreateModelFile(fbb, 2, root, 0, file_meta);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -217,6 +354,16 @@ int main(int argc, char** argv) {
     const auto path = out_dir / "counters_frame.bin";
     if (!WriteBuffer(path, fbb)) return 1;
     std::cout << "[writer] Counters   -> " << path.string() << " ("
+              << fbb.GetSize() << " bytes)\n";
+  }
+
+  {
+    flatbuffers::FlatBufferBuilder fbb(4096);
+    const auto model_file = BuildModelFileV2(fbb);
+    v2::FinishModelFileBuffer(fbb, model_file);
+    const auto path = out_dir / "model_v2.bin";
+    if (!WriteBuffer(path, fbb)) return 1;
+    std::cout << "[writer] ModelFileV2 -> " << path.string() << " ("
               << fbb.GetSize() << " bytes)\n";
   }
 
