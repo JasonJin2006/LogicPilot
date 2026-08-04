@@ -6,7 +6,7 @@
 import type { ComponentType } from 'react';
 import { Boxes, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
-import { VisualizationPlaceholder } from '../model/VisualizationPlaceholder';
+import { VisualizationCanvas } from '../presentation/VisualizationCanvas';
 import { ConsolePanel } from './ConsolePanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
@@ -23,7 +23,7 @@ export interface PanelDef {
 
 export const PANELS: Record<PanelId, PanelDef> = {
   // center: the visualization/model workspace.
-  queue: { title: 'Visualization', area: 'center', component: VisualizationPlaceholder },
+  queue: { title: 'Visualization', area: 'center', component: VisualizationCanvas },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // bottom: diagnostics / event stream.

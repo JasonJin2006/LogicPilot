@@ -47,8 +47,17 @@ page.on('pageerror', (err) => consoleErrors.push(String(err)));
 try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
-  await page.waitForSelector('.viz-empty', { timeout: 20_000 });
-  log('page loaded: center visualization area present');
+  await page.waitForSelector('.viz-canvas', { timeout: 20_000 });
+  log('page loaded: presentation canvas present');
+  const canvasText = await page.evaluate(
+    () => document.querySelector('.viz-canvas')?.textContent ?? '',
+  );
+  for (const name of ['Arrivals', 'WaitLine', 'Handle', 'Done']) {
+    if (!canvasText.includes(name)) {
+      throw new Error(`presentation canvas missing element '${name}'`);
+    }
+  }
+  log('presentation canvas composes source/queue/service/sink elements');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
   // Connection + run setup live in the settings dialog (activity bar gear).
