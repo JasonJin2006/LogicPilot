@@ -165,6 +165,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    historyState/branch）、行动图库（action/decision/whileLoop/forLoop/
    doWhileLoop/break/return/localVariable），均配图标；节点带 `library`
    标记，非 process 库元素不进 DSL（`generateDsl` 只发射 process 流）。
+   **流程库扩充 ✅ 已完成**（2026-08-05）：按 AnyLogic PML 补齐至 23 块——
+   delay/split/combine/batch/unbatch/seize/release/wait/hold/match/
+   selectOutput/enter/exit/moveTo/timeMeasureStart/timeMeasureEnd/
+   assembler/count，均配图标与 in/out 端口；新增块的常用字段进 Properties
+   （delay.time、seize/release.resource、split.copies、batch.size 等）；
+   DSL 会照常生成（内核尚未注册的新块编译时报 LP2004）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

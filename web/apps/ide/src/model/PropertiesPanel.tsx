@@ -32,7 +32,7 @@ export function PropertiesPanel() {
 
   const fields = BLOCK_FIELDS[node.kind] ?? [];
   const valueFor = (field: BlockField) =>
-    node.params[field.key] ?? BLOCK_DEFAULTS[node.kind][field.key] ?? '';
+    node.params[field.key] ?? BLOCK_DEFAULTS[node.kind]?.[field.key] ?? '';
 
   return (
     <div className="side-panel-body properties">

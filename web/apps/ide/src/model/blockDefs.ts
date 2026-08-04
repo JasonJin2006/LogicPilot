@@ -3,8 +3,6 @@
 // (flow blocks carry in/out ports); presentation/statechart/action mirror
 // AnyLogic's drawing and behavior elements (canvas annotations, not DSL).
 
-import type { BlockKind } from '@logicpilot/editor';
-
 export type LibraryId = 'process' | 'presentation' | 'statechart' | 'action';
 
 export interface BlockDef {
@@ -28,7 +26,25 @@ const PROCESS_DEFS: BlockDef[] = [
   { kind: 'resource', library: 'process', name: 'resource', hint: 'capacity / failure_rate' },
   { kind: 'source', library: 'process', name: 'source', hint: 'arrival rate', out: true },
   { kind: 'queue', library: 'process', name: 'queue', hint: 'buffer capacity', in: true, out: true },
+  { kind: 'delay', library: 'process', name: 'delay', hint: 'hold agents for a time', in: true, out: true },
   { kind: 'service', library: 'process', name: 'service', hint: 'resource + time', in: true, out: true },
+  { kind: 'split', library: 'process', name: 'split', hint: 'clone each agent', in: true, out: true },
+  { kind: 'combine', library: 'process', name: 'combine', hint: 'merge agents into one', in: true, out: true },
+  { kind: 'batch', library: 'process', name: 'batch', hint: 'accumulate agents', in: true, out: true },
+  { kind: 'unbatch', library: 'process', name: 'unbatch', hint: 'release a batch', in: true, out: true },
+  { kind: 'seize', library: 'process', name: 'seize', hint: 'grab a resource unit', in: true, out: true },
+  { kind: 'release', library: 'process', name: 'release', hint: 'return a resource unit', in: true, out: true },
+  { kind: 'wait', library: 'process', name: 'wait', hint: 'buffer with capacity', in: true, out: true },
+  { kind: 'hold', library: 'process', name: 'hold', hint: 'hold/resume the flow', in: true, out: true },
+  { kind: 'match', library: 'process', name: 'match', hint: 'pair agents', in: true, out: true },
+  { kind: 'selectOutput', library: 'process', name: 'selectOutput', hint: 'route by condition', in: true, out: true },
+  { kind: 'enter', library: 'process', name: 'enter', hint: 'enter the process', out: true },
+  { kind: 'exit', library: 'process', name: 'exit', hint: 'leave the process', in: true },
+  { kind: 'moveTo', library: 'process', name: 'moveTo', hint: 'move agents to a node', in: true, out: true },
+  { kind: 'timeMeasureStart', library: 'process', name: 'timeMeasureStart', hint: 'start timing', out: true },
+  { kind: 'timeMeasureEnd', library: 'process', name: 'timeMeasureEnd', hint: 'end timing', in: true },
+  { kind: 'assembler', library: 'process', name: 'assembler', hint: 'assemble from parts', in: true, out: true },
+  { kind: 'count', library: 'process', name: 'count', hint: 'count passed agents', in: true, out: true },
   { kind: 'sink', library: 'process', name: 'sink', hint: 'terminal stage', in: true },
 ];
 
@@ -93,28 +109,56 @@ export interface BlockField {
   type: FieldType;
 }
 
-/** Library field shapes (mirrors libraries/process.lplib). */
-export const BLOCK_FIELDS: Record<BlockKind, BlockField[]> = {
+/** Library field shapes (process.lplib for the core; the extended PML
+ *  blocks carry a subset for canvas editing until their kernel lowering
+ *  lands). */
+export const BLOCK_FIELDS: Record<string, BlockField[]> = {
   resource: [
     { key: 'capacity', type: 'int' },
     { key: 'failure_rate', type: 'float' },
   ],
   source: [{ key: 'arrival', type: 'distribution' }],
   queue: [{ key: 'capacity', type: 'int' }],
+  delay: [{ key: 'time', type: 'distribution' }],
   service: [
     { key: 'resource', type: 'ref' },
     { key: 'time', type: 'distribution' },
   ],
+  split: [{ key: 'copies', type: 'int' }],
+  combine: [{ key: 'agents', type: 'int' }],
+  batch: [{ key: 'size', type: 'int' }],
+  unbatch: [],
+  seize: [{ key: 'resource', type: 'ref' }],
+  release: [{ key: 'resource', type: 'ref' }],
+  wait: [{ key: 'capacity', type: 'int' }],
+  hold: [],
+  match: [],
+  selectOutput: [{ key: 'probability', type: 'float' }],
+  enter: [],
+  exit: [],
+  moveTo: [],
+  timeMeasureStart: [],
+  timeMeasureEnd: [],
+  assembler: [],
+  count: [],
   sink: [],
 };
 
 /** Friendly defaults applied when a block is dropped. service.resource is
  *  deliberately left empty so the user picks a resource reference. */
-export const BLOCK_DEFAULTS: Record<BlockKind, Record<string, string | number | boolean>> = {
+export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boolean>> = {
   resource: { capacity: 1, failure_rate: 0 },
   source: { arrival: 'poisson(10)' },
   queue: { capacity: 100 },
+  delay: { time: 'exponential(1.0)' },
   service: { time: 'exponential(1)' },
+  split: { copies: 2 },
+  combine: { agents: 2 },
+  batch: { size: 2 },
+  seize: { resource: '' },
+  release: { resource: '' },
+  wait: { capacity: 100 },
+  selectOutput: { probability: 0.5 },
   sink: {},
 };
 

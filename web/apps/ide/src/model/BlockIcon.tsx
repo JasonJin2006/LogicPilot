@@ -71,6 +71,157 @@ export function BlockIcon({ kind }: { kind: string }) {
           </text>
         </Glyph>
       );
+    case 'delay':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 14v6l4 3" />
+        </Glyph>
+      );
+    case 'split':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M13 20h8" />
+          <path d="M21 15l4 5-4 5" />
+        </Glyph>
+      );
+    case 'combine':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M27 20h-8" />
+          <path d="M19 15l-4 5 4 5" />
+        </Glyph>
+      );
+    case 'batch':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <rect x="15" y="13" width="10" height="5" rx="1" />
+          <rect x="15" y="22" width="10" height="5" rx="1" />
+        </Glyph>
+      );
+    case 'unbatch':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <rect x="15" y="13" width="10" height="5" rx="1" />
+          <path d="M18 25h4" />
+        </Glyph>
+      );
+    case 'seize':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 13v8" />
+          <path d="M17 16l3 3 3-3" />
+          <path d="M14 24h12" />
+        </Glyph>
+      );
+    case 'release':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 27v-8" />
+          <path d="M17 24l3-3 3 3" />
+          <path d="M14 13h12" />
+        </Glyph>
+      );
+    case 'wait':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <circle cx="15" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="20" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="25" cy="20" r="1.6" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'hold':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <rect x="15" y="15" width="3" height="10" />
+          <rect x="22" y="15" width="3" height="10" />
+        </Glyph>
+      );
+    case 'match':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M13 20h4" />
+          <path d="M23 20h4" />
+          <path d="M17 20l3-4 3 4" />
+        </Glyph>
+      );
+    case 'selectOutput':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M13 20h3" />
+          <path d="M22 14l5 6-5 6" />
+        </Glyph>
+      );
+    case 'enter':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M12 20h8" />
+          <path d="M16 16l4 4-4 4" />
+        </Glyph>
+      );
+    case 'exit':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 20h8" />
+          <path d="M24 16l4 4-4 4" />
+        </Glyph>
+      );
+    case 'moveTo':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <circle cx="20" cy="20" r="3.5" />
+          <path d="M20 6v5" />
+          <path d="M20 29v5" />
+          <path d="M6 20h5" />
+          <path d="M29 20h5" />
+        </Glyph>
+      );
+    case 'timeMeasureStart':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 13v7l5 3" />
+          <path d="M14 29h12" />
+        </Glyph>
+      );
+    case 'timeMeasureEnd':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 13v7l5 3" />
+          <path d="M14 11h12" />
+        </Glyph>
+      );
+    case 'assembler':
+      return (
+        <Glyph>
+          <rect x="7" y="8" width="10" height="10" rx="2" />
+          <rect x="7" y="22" width="10" height="10" rx="2" />
+          <rect x="23" y="14" width="10" height="12" rx="2" />
+        </Glyph>
+      );
+    case 'count':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M15 15v10" />
+          <path d="M20 15v10" />
+          <path d="M25 15v10" />
+        </Glyph>
+      );
     case 'rect':
       return (
         <Glyph>
