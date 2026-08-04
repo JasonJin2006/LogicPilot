@@ -66,13 +66,15 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 ### P1 — 核心功能（下一个开发主战场）
 
-5. **DSL 表达式**
-   现状：所有数值位置只接受字面量/分布构造器；表达式为 `dsl-spec` §5 明确未开始。
-   范围：算术表达式（`+ - * /`、括号、常量折叠）+ 参数引用；tree-sitter 文法 →
-   parser → semantic（诊断）→ lowering（v1/v2）。
-   验收：`arrival = poisson(10 * 2)`、`time = normal(20, 5 + x)` 可编译，
-   常量折叠值进入 IR；非法表达式有结构化诊断。
-   入口：`dsl/tree-sitter-logicpilot/grammar.js`、`dsl/compiler/src/{parser,semantic,lowering}.cpp`。
+5. **DSL v2 重设计（含表达式）**
+   现状：DSL 语法与绑定混乱（grammar.js 与 parser.c 脱节、同名魔法绑定、行为三套
+   写法、无表达式），详见 `docs/specs/dsl-v2.md`（草案待评审）。
+   范围：统一声明语法 + 显式引用 + 类型化参数 + 表达式（常量折叠→参数引用）+
+   行为统一，并按 `docs/specs/dsl-v2.md` §5 分 Phase B–E 落地。
+   验收：`service { resource = R }` 显式绑定、`arrival = poisson(rate * 2)` 可编译、
+   全部示例/测试/AI provider 同步，136 ctest 不回归。
+   入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
+   `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
 
 6. **Web IDE 拖拽建模**
    现状：IDE 只有运行可视化切片；建模靠手写 DSL / AI 生成。
