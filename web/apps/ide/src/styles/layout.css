@@ -145,6 +145,12 @@
   font-size: 11px;
 }
 
+/* The console sits directly under the canvas, so its tab needs a little
+   extra top air to read as far from the top edge as the AI tab. */
+.area-bottom .tab-bar {
+  padding-top: 5px;
+}
+
 /* The console's top edge line spans the whole row (through the splitter
    columns) so it meets the side panels' vertical borders with no gap. */
 .area-bottom::before {
