@@ -21,12 +21,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | 理论设计（Phase 0） | ✅ | ADR-0001..0008、`dsl-spec`、F1/F2 契约冻结 |
 | 内核基础（Phase 1） | ✅ | 二叉堆调度器、xoshiro256++、int64 定点时间、SlabPool/Arena |
 | 多方法执行 | ✅ | process（M/M/1、M/M/c+故障）、DEVS atomic、agent tick、continuous ODE（RK4+耦合+RHS 函数）——五类模型全部可执行 |
-| DSL（Phase 2） | 🔶 | v0 + atomic + agent + continuous + experiment 块、结构化诊断 JSON；**表达式未开始** |
+| DSL（Phase 2） | ✅ | DSL v2 全量完成：薄核心文法 + process 库注册表（`.lplib`）、显式资源引用、表达式/参数引用、行为统一、实验限定路径；结构化诊断 JSON |
 | IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役** |
 | AI Copilot（Phase 6 第一刀） | 🔶 | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始** |
-| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**拖拽建模未开始** |
+| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**拖拽建模未开始** |
 | 工程与文档 | ✅ | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册 |
-| 测试基线 | ✅ | 131 ctest、renderer2d 5 vitest、interop 58 checks、浏览器 E2E |
+| 测试基线 | ✅ | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E |
 
 ## 3. 契约与工程纪律状态
 
@@ -51,17 +51,21 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    超限（`kMaxWriteQueue`）仍无专门测试**。
    验收：新增写队列超限丢弃最旧帧的集成测试。
    入口：`kernel/tests/test_lp_server_integration.cpp`、`kernel/apps/lp-server/server.cpp`。
+   ✅ 已完成：写队列上限（丢弃最旧帧）与 JSON 解析器边界单测、tree-sitter
+   corpus CI 一并补齐（`ca52e3f`）。
 
 3. **手写 JSON 控制解析器单元测试**
    现状：`json_string_field` 等仅由集成测试间接触及（转义、截断、数字格式）。
    验收：直接对 `server.cpp` 的 JSON 辅助函数做边界用例单测。
    入口：`kernel/apps/lp-server/server.cpp`。
+   ✅ 已完成（`ca52e3f`）。
 
 4. **tree-sitter corpus 测试接入 CI**
    现状：`dsl/tree-sitter-logicpilot/test/corpus/` 需要 `tree-sitter test` CLI，
    CI 未安装；文法回归由 C++ 侧 `test_dsl_parser` 间接承担。
    验收：CI 增加一步运行 `tree-sitter test`（或等效的 corpus 校验）。
    入口：`dsl/tree-sitter-logicpilot/`、`.github/workflows/ci.yml`。
+   ✅ 已完成（`ca52e3f`，dsl-grammar job 跑 `tree-sitter test`，45 用例）。
 
 ### P1 — 核心功能（下一个开发主战场）
 
@@ -96,6 +100,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 6. **Web IDE 拖拽建模**
    现状：IDE 只有运行可视化切片；建模靠手写 DSL / AI 生成。
+   **前端重构 ✅ 已完成**（`f7fe9a8`）：zustand 域 store（connection/run）、
+   `src/run` `src/ai` `src/state` `src/styles` 目录、`@logicpilot/editor` 包
+   （图文档模型 + DSL v2 生成器，8 vitest）。
    范围：块面板（source/queue/service/atomic/agent/continuous）→ 画布拖拽 →
    属性编辑 → DSL 生成 → 编译诊断回显。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。

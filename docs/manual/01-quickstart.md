@@ -14,22 +14,30 @@ LogicPilot 是一个 AI 原生、Web 化的多方法仿真平台。一条典型�
 ```powershell
 cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
 cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 139+ 个测试
+ctest --preset windows-msvc-dev      # 153+ 个测试
 ```
 
 产物位于 `build/<preset>/kernel/apps/lpcli/lpcli.exe`（`lp-server` 在同目录 `build/<preset>/kernel/lp-server.exe`）。
 
 ## 第一条仿真：命令行跑通 M/M/1
 
-仓库自带示例 `examples/mm1.lp`：
+仓库自带示例 `examples/mm1.lp`（DSL v2：模型级 `param` + `rate(...)` 到达 +
+`service { resource = R }` 显式资源引用）：
 
 ```logicpilot
-model QueueDemo {
-  resource Server { capacity = 1 }
-  process Arrivals {
-    source Clients { arrival = poisson(2) }
-    queue WaitLine { capacity = 0 }
-    service Server { time = exponential(3) }
+model MM1 {
+  use process
+  param arrival_rate: float = 0.8
+  param service_rate: float = 1.0
+
+  resource Server {
+    capacity = 1
+  }
+
+  process Flow {
+    source Arrivals { arrival = rate(arrival_rate) }
+    queue WaitLine { capacity = 1000000 }
+    service Handle { resource = Server; time = exponential(service_rate) }
   }
 }
 ```
@@ -43,10 +51,14 @@ lpcli run --model-file build/mm1.ir.bin --seed 42 --reps 3 --arrivals 500 --warm
 
 ```text
 summary: 3 replications, 95% CI
-  throughput   mean=0.8226 std=0.0532 CI=[0.6905, 0.9548]
-  utilization  mean=0.7936 std=0.0409 CI=[0.6921, 0.8952]
-  availability mean=0.9215 std=0.0248 CI=[0.8599, 0.9832]
+  throughput   mean=0.8012 std=0.0341 CI=[0.7165, 0.8858] theory=0.8000 covered
+  Wq           mean=2.8597 std=0.9148 CI=[0.5869, 5.1324] theory=4.0000 covered
+  utilization  mean=0.7674 std=0.0275 CI=[0.6992, 0.8356] theory=0.8000 covered
+  availability mean=1.0000 std=0.0000 CI=[1.0000, 1.0000]
 ```
+
+每行末尾的 `theory=... covered` 表示该指标落在理论解析解的置信区间内
+（验收纪律，见 [确定性复现与契约](./06-determinism)）。
 
 也可以用内置模型快速体验：`lpcli run --model built-in:mm1`。
 

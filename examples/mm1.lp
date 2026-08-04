@@ -1,4 +1,4 @@
-// M/M/1 queue - LogicPilot DSL v0 example (docs/specs/dsl-spec.md).
+// M/M/1 queue - LogicPilot DSL v2 example (docs/specs/dsl-v2.md).
 //
 // Semantics: Poisson arrivals at rate lambda = 0.8 (exponential
 // inter-arrival times), one server with exponential service rate

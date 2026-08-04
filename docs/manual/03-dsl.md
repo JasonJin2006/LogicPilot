@@ -37,14 +37,34 @@ model MM1Failure {
     queue WaitLine {
       capacity = 1000000      // 0 = 无缓冲
     }
-    service Server {          // 服务块按名称绑定资源
+    service Handle {          // 服务块名与资源名解耦
+      resource = Server       // 显式引用资源（LP4001 校验）
       time = exponential(1.0) // 服务时间：exponential(μ) 或 normal(均值, 标准差)
     }
   }
 }
 ```
 
-实体按声明顺序流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`resource` 的 `capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模（可用性 `a = r/(f+r)`）。
+实体按声明顺序流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`service` 通过 `resource = R` 显式引用资源（不写则回退为按服务块名匹配）；`resource` 的 `capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模（可用性 `a = r/(f+r)`）。
+
+## 表达式与参数
+
+数值字段接受**编译期常量表达式**（`+ - * /`、一元负、括号），并可通过
+模型级 `param` 引用：
+
+```logicpilot
+model Tuned {
+  param arrival_rate: float = 0.4
+  resource Server { capacity = 1 }
+  process Flow {
+    source A { arrival = rate(arrival_rate * 2) }  // = rate(0.8)
+    service R { resource = Server; time = exponential(1) }
+  }
+}
+```
+
+未声明标识符或非常量表达式 → `LP2006`。`poisson(λ)` 与 `rate(λ)` 等价
+（`poisson` 已弃用）。
 
 ## atomic：DEVS 原子
 
@@ -101,13 +121,15 @@ model Decay {
 experiment Optimization {
   objective = minimize
   metric = Wq
-  variable = servers
+  variable = arrival_rate   // 引用已声明模型参数（'servers' 保留 v0.1 兼容）
   range = 1..8
   budget = 20
 }
 ```
 
-实验作为模型的一部分进入 v2 IR（`ModelFile.experiments`），`lpcli compile --experiments-json` 可导出，AI 优化脚本据此做 grid/GA 搜索。
+实验作为模型的一部分进入 v2 IR（`ModelFile.experiments`），`lpcli compile
+--experiments-json` 可导出，AI 优化脚本据此做 grid/GA 搜索。`variable` 必须
+引用已声明的模型参数（`LP7001` 校验）。
 
 ## 示例模型
 
