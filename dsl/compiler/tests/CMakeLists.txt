@@ -86,6 +86,14 @@ add_test(NAME ai_endpoint_smoke
 set_tests_properties(ai_endpoint_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-ENDPOINT TEST: PASS")
 
+# Parameter optimization (grid via lpcli + deterministic GA) and the NL
+# optimization path.
+add_test(NAME ai_optimize_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-optimize.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(ai_optimize_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "OPTIMIZE TEST: PASS")
+
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"

@@ -1,9 +1,7 @@
 // HTTP endpoint wrapping the AI model build loop for the IDE dev server.
 //
-// Mounted at /api/ai-build by vite.config.ts (dev only). POST
-//   { "prompt": "...", "run": true, "maxIterations": 3 }
-// returns the loop result as JSON:
-//   { ok, iterations, dsl, diagnostics[], runSummary }
+// Mounted at /api/ai-build and /api/ai-optimize by vite.config.ts (dev
+// only). Both take { "prompt": "..." } and return JSON.
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -15,6 +13,12 @@ async function loadBuildModel() {
   const module = await import(
       pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
   return module.buildModel;
+}
+
+async function loadAiOptimize() {
+  const module = await import(
+      pathToFileURL(join(root, 'scripts', 'ai-optimize.mjs')).href);
+  return module.aiOptimize;
 }
 
 function readBody(req) {
@@ -65,6 +69,32 @@ export async function handleAiBuild(req, res) {
       diagnostics: result.lastDiagnostics,
       runSummary: result.runSummary,
     });
+  } catch (error) {
+    send(res, 500, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+export async function handleAiOptimize(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    send(res, 400, { ok: false, error: 'invalid JSON body' });
+    return;
+  }
+  const prompt = String(payload?.prompt ?? '').trim();
+  if (!prompt) {
+    send(res, 400, { ok: false, error: 'missing prompt' });
+    return;
+  }
+  try {
+    const aiOptimize = await loadAiOptimize();
+    const result = await aiOptimize({ prompt });
+    send(res, 200, result);
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });
   }

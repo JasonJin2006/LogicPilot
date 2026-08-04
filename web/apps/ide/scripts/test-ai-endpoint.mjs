@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
-import { handleAiBuild } from './ai-endpoint.mjs';
+import { handleAiBuild, handleAiOptimize } from './ai-endpoint.mjs';
 
 const flag = process.argv.indexOf('--lpcli');
 if (flag >= 0 && process.argv[flag + 1]) {
@@ -12,7 +12,11 @@ if (flag >= 0 && process.argv[flag + 1]) {
 }
 
 const server = createServer((req, res) => {
-  void handleAiBuild(req, res);
+  if (req.url?.startsWith('/api/ai-optimize')) {
+    void handleAiOptimize(req, res);
+  } else {
+    void handleAiBuild(req, res);
+  }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
@@ -42,6 +46,22 @@ try {
     body: JSON.stringify({}),
   });
   assert.equal(bad.status, 400);
+
+  // Optimization endpoint: POST /api/ai-optimize returns the search result.
+  const opt = await fetch(`http://127.0.0.1:${port}/api/ai-optimize`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt:
+          'minimize Wq over servers 1..4 for an M/M/1 queue with arrival ' +
+          '0.8 and service 1.0',
+    }),
+  });
+  assert.equal(opt.status, 200);
+  const optData = await opt.json();
+  assert.equal(optData.kind, 'optimize');
+  assert.equal(optData.variable, 'servers');
+  assert.equal(optData.best.value, 4);
 
   console.log('AI-ENDPOINT TEST: PASS');
 } finally {

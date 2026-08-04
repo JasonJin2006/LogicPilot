@@ -279,6 +279,21 @@ button:disabled {
   font-size: 12px;
   padding-left: 18px;
 }
+.ai-scores {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.ai-scores th,
+.ai-scores td {
+  border: 1px solid #30363d;
+  padding: 2px 8px;
+  text-align: right;
+}
+.ai-scores th {
+  color: #8b949e;
+}
 
 .charts {
   display: flex;

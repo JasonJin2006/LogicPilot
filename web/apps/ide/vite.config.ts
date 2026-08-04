@@ -7,7 +7,7 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
-import { handleAiBuild } from './scripts/ai-endpoint.mjs';
+import { handleAiBuild, handleAiOptimize } from './scripts/ai-endpoint.mjs';
 
 // Exposes the AI model build loop (scripts/ai-build.mjs) to the IDE at
 // POST /api/ai-build during development.
@@ -16,6 +16,9 @@ const aiBuildPlugin = (): Plugin => ({
   configureServer(server) {
     server.middlewares.use('/api/ai-build', (req, res) => {
       void handleAiBuild(req, res);
+    });
+    server.middlewares.use('/api/ai-optimize', (req, res) => {
+      void handleAiOptimize(req, res);
     });
   },
 });

@@ -123,6 +123,19 @@ try {
   log('AI panel generated and ran a model from the prompt');
   await page.screenshot({ path: join(OUT, '4-ai-model.png') });
 
+  // AI panel: parameter optimization from a natural-language prompt.
+  await page.locator('.ai-input').fill(
+      'minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 ' +
+      'and service 1.0');
+  await page.getByRole('button', { name: 'optimize' }).click();
+  await page.waitForSelector('.ai-scores', { timeout: 90_000 });
+  const optimizeText = await page.locator('.ai-result').textContent();
+  if (!optimizeText?.includes('best servers=')) {
+    throw new Error('AI panel did not show an optimization result');
+  }
+  log('AI panel optimized a model parameter from the prompt');
+  await page.screenshot({ path: join(OUT, '5-ai-optimize.png') });
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);
   }
