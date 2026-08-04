@@ -259,6 +259,7 @@
 /* queue (center workspace) tabs: outlined label with a blended active edge */
 .area-center .tab {
   border: 1px solid transparent;
+  border-radius: 0;
 }
 
 .area-center .tab:hover:not(:disabled) {
