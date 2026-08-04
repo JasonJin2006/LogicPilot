@@ -185,6 +185,13 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    起 app server 并打开 WebView2 窗口，含 Windows 图标）；`desktop/README.md`
    含构建/运行说明。打包分发（`tauri build` 产物 + 捆绑 Node/lp-server
    二进制）为后续项。
+   **桌面自定义标题栏 ✅ 已完成**（2026-08-05）：无边框窗口
+   （`decorations: false`）+ 顶栏内嵌最小化/最大化/关闭按钮（Tauri 环境
+   下渲染，`@tauri-apps/api` 控制窗口，capabilities 授予 window 权限）；
+   顶栏空白区作 `data-tauri-drag-region` 拖动窗口；搜索框保持居中与可
+   交互；浏览器模式不渲染这些控件（无回归）。修复 Rust 读完端口即关
+   闭子进程 stdout 管道导致服务自毁的问题（改为后台线程排空 + 退出时
+   kill 子进程）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

@@ -10,6 +10,9 @@ Tauri shell around the web IDE. The desktop client:
 3. the frontend resolves the gateway URL through `/api/config` (falling back
    to `ws://127.0.0.1:8089/sim` in the vite dev server).
 
+The window is frameless (`decorations: false`): minimize / maximize / close
+live on the IDE's own top bar, which also doubles as the drag region.
+
 ## Build & run
 
 ```text

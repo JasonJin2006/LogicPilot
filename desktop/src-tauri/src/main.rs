@@ -47,23 +47,42 @@ fn main() {
     // Wait for the app server to report its HTTP port, then open the window.
     let window_url = {
         let stdout = app_server.stdout.take().expect("app server stdout");
-        let reader = BufReader::new(stdout);
-        let mut url: Option<String> = None;
-        for line in reader.lines() {
-            let line = line.unwrap_or_default();
-            if let Some(port) = line.strip_prefix("LOGICPILOT_PORT ") {
+        let mut reader = BufReader::new(stdout);
+        let mut url = None;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                break;
+            }
+            if let Some(port) = line.trim().strip_prefix("LOGICPILOT_PORT ") {
                 url = Some(format!("http://127.0.0.1:{}", port));
                 break;
             }
         }
+        // Keep reading the server's stdout on a background thread: the pipe
+        // must stay open (the server treats a closed stdout as "parent died"
+        // and shuts its gateway down) and the buffer must not fill.
+        std::thread::spawn(move || {
+            let mut rest = String::new();
+            loop {
+                rest.clear();
+                if reader.read_line(&mut rest).unwrap_or(0) == 0 {
+                    break;
+                }
+                let trimmed = rest.trim();
+                if !trimmed.is_empty() {
+                    println!("[app-server] {trimmed}");
+                }
+            }
+        });
         url.unwrap_or_else(|| {
             eprintln!("app server did not report a port");
-            let _ = app_server.kill();
             std::process::exit(1);
         })
     };
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(move |app| {
             WebviewWindowBuilder::new(
                 app,
@@ -73,9 +92,15 @@ fn main() {
             .title("LogicPilot")
             .inner_size(1440.0, 900.0)
             .min_inner_size(1024.0, 700.0)
+            .decorations(false)
             .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running the LogicPilot desktop app");
+        .build(tauri::generate_context!())
+        .expect("error while building the LogicPilot desktop app");
+    app.run(move |_app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let _ = app_server.kill();
+        }
+    });
 }

@@ -11,6 +11,36 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Frameless-window controls (Tauri desktop client) on the top bar. */
+.window-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: auto;
+}
+
+.window-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-muted);
+}
+
+.window-control:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.window-control-close:hover:not(:disabled) {
+  background: var(--error);
+  color: var(--on-accent);
+}
+
 .top-logo {
   width: 20px;
   height: 20px;
