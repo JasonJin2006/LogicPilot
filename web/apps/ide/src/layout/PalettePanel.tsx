@@ -111,7 +111,7 @@ export function PalettePanel() {
   }));
 
   return (
-    <div className="side-panel-body">
+    <div className="side-panel-body palette-body">
       <div className="palette-library-bar" ref={barRef}>
         {[...tabs, ...customTabs].map((tab) => (
           <button

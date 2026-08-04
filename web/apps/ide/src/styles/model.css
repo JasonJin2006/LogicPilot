@@ -1,5 +1,10 @@
 /* Modeling domain (P1-6): palette + canvas + block cards. */
 
+.area-left .panel-pane:has(.palette-body) {
+  /* The library bar hugs the panel title; the grid keeps its own padding. */
+  padding: 0;
+}
+
 .model-workspace {
   position: relative;
   display: flex;
