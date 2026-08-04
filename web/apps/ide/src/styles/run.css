@@ -215,16 +215,6 @@
   color: var(--text);
 }
 
-.bell-dot {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 .notif-popover {
   position: absolute;
   right: 0;
@@ -330,11 +320,6 @@
 
 .status-bar .warn {
   color: var(--warn);
-}
-
-.status-bar .ack {
-  color: var(--muted);
-  opacity: 0.8;
 }
 
 .charts {

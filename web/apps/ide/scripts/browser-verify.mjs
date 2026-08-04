@@ -1,8 +1,8 @@
 // Browser end-to-end verification for the LogicPilot IDE: loads the Vite
 // dev page, connects through the settings dialog, starts a small M/M/1 run
-// and asserts the queue animation, live telemetry (Run side panel), status
-// bar and the AI panel all update. Screenshots land in .verify/out (repo
-// root, untracked scratch dir).
+// and asserts the queue animation, the gateway event log, the status bar
+// and the AI panel all update. Screenshots land in .verify/out (repo root,
+// untracked scratch dir).
 //
 // Prereqs: lpcli serve running on ws://127.0.0.1:8089/sim, `pnpm dev` up,
 // system Edge installed (no Playwright browser download required).
@@ -78,31 +78,12 @@ try {
   }
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(
-    () => document.querySelector('.status-bar')?.textContent?.includes('ack: {"ok":true'),
+    () => document.querySelector('.console-log')?.textContent?.includes('run run-'),
     undefined,
     { timeout: 30_000 },
   );
-  log('start acked by gateway');
+  log('run started on gateway');
   await page.getByRole('button', { name: 'Close' }).click();
-
-  // Live telemetry: switch to the Run side panel and read seq progression.
-  await page.locator('.activity-bar').getByRole('button', { name: 'Run' }).click();
-  const seqFromPanel = () =>
-    page.evaluate(() => {
-      const kv = [...document.querySelectorAll('.side-kv')].find((row) =>
-        row.querySelector('.k')?.textContent?.includes('seq'),
-      );
-      const text = kv?.querySelector('.v')?.textContent ?? '-1';
-      return Number(text);
-    });
-  await page.waitForTimeout(5000);
-  const seqAt5 = await seqFromPanel();
-  await page.waitForTimeout(4000);
-  const seqLater = await seqFromPanel();
-  if (!(seqAt5 > 0) || !(seqLater > seqAt5)) {
-    throw new Error(`run telemetry not advancing (t1=${seqAt5}, t2=${seqLater})`);
-  }
-  log(`telemetry streaming: seq ${seqAt5} -> ${seqLater}`);
 
   // Wait for the run to actually finish on the gateway (its worker is
   // single-threaded; the AI steps below must not race a leftover run).

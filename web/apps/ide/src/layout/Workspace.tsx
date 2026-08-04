@@ -4,7 +4,6 @@
 // writing size values into the store. See docs/specs/ide-layout.md.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react';
 import { useLayoutStore } from '../state/layoutStore';
 import { PANELS, type AreaId } from './panels';
 
@@ -52,15 +51,6 @@ function Splitter({
 function TabBar({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const setActive = useLayoutStore((s) => s.setActive);
-  const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
-  const CollapseIcon =
-    area === 'bottom'
-      ? state.collapsed
-        ? ChevronUp
-        : ChevronDown
-      : state.collapsed
-        ? ChevronRight
-        : ChevronLeft;
   return (
     <div className="tab-bar">
       {state.panels.map((panel) => (
@@ -72,13 +62,6 @@ function TabBar({ area }: { area: AreaId }) {
           {PANELS[panel].title}
         </button>
       ))}
-      <button
-        className="tab-collapse"
-        title={state.collapsed ? 'expand' : 'collapse'}
-        onClick={() => toggleCollapse(area)}
-      >
-        <CollapseIcon size={13} />
-      </button>
     </div>
   );
 }
