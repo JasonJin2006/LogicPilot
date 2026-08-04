@@ -44,7 +44,18 @@ export function ModelWorkspace() {
       <div className="model-canvas-host">
         <ModelCanvas />
       </div>
-      {editorOpen ? (
+      {/* The edge tab lives at the top-right corner: it is the DSL header's
+          right end when open and the pull-out handle when collapsed, so it
+          never moves. The arrow points left when collapsed ("pull out") and
+          right when open ("push in"). */}
+      <button
+        className="dsl-edge-tab"
+        title={editorOpen ? 'Collapse DSL editor' : 'Show DSL editor'}
+        onClick={() => setEditorOpen((value) => !value)}
+      >
+        {editorOpen ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+      </button>
+      {editorOpen && (
         <>
           <div
             className="dsl-splitter"
@@ -59,22 +70,10 @@ export function ModelWorkspace() {
               <button className="dsl-compile" onClick={compile}>
                 Compile
               </button>
-              <button
-                className="dsl-collapse"
-                title="Collapse DSL editor"
-                onClick={() => setEditorOpen(false)}
-              >
-                <ChevronRight size={13} />
-              </button>
             </div>
             <pre className="dsl-source">{generateDsl(document)}</pre>
           </div>
         </>
-      ) : (
-        <button className="dsl-open" title="Show DSL editor" onClick={() => setEditorOpen(true)}>
-          <ChevronLeft size={13} />
-          DSL
-        </button>
       )}
     </div>
   );

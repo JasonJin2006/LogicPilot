@@ -55,7 +55,10 @@
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  height: 26px;
+  padding: 0 8px;
+  /* Keep the title + Compile clear of the edge tab at the header's right. */
+  padding-right: 30px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -72,23 +75,6 @@
   line-height: 1.6;
 }
 
-.dsl-collapse {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-  padding: 2px 4px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-}
-
-.dsl-collapse:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
 .dsl-source {
   flex: 1;
   min-height: 0;
@@ -102,22 +88,31 @@
   white-space: pre;
 }
 
-.dsl-open {
+/* The edge tab: always at the top-right corner of the model area, at the
+   DSL title-bar height. Collapsed it is the pull-out handle on the model /
+   right-sidebar boundary; open it is the DSL header's right end - same
+   position in both states. */
+.dsl-edge-tab {
   position: absolute;
+  z-index: 2;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px 7px;
-  font-size: 11px;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-right: none;
   border-radius: var(--r-sm) 0 0 var(--r-sm);
-  opacity: 0.75;
+  color: var(--text-muted);
 }
 
-.dsl-open:hover {
-  opacity: 1;
+.dsl-edge-tab:hover {
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .model-canvas.panning {

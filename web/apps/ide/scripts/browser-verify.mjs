@@ -126,7 +126,7 @@ try {
     );
   });
   await page.waitForSelector('.model-block', { timeout: 5_000 });
-  await page.locator('.dsl-open').click();
+  await page.locator('.dsl-edge-tab').click();
   await page.waitForSelector('.dsl-source', { timeout: 5_000 });
   const dslText = await page.locator('.dsl-source').textContent();
   if (!dslText?.includes('process Flow')) {
