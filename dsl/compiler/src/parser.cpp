@@ -208,7 +208,8 @@ class Extractor {
     return text.substr(0, end);
   }
 
-  // value -> Value (literal / identifier / numeric call).
+  // value -> Value expression tree (literal / identifier / call /
+  // arithmetic).
   Value extract_value(const TSNode& node) {
     Value value;
     value.span = span_of(node);
@@ -240,11 +241,22 @@ class Extractor {
       value.call_name = text_of(field(child, "name"));
       const TSNode args = field(child, "args");
       each_named_child(args, [&](const TSNode& arg_node) {
-        double arg = 0.0;
-        if (double_of(arg_node, arg)) {
-          value.call_args.push_back(arg);
-        }
+        value.call_args.push_back(extract_value(arg_node));
       });
+    } else if (node_is(child, "binary_expression")) {
+      const std::string op = text_of(field(child, "op"));
+      value.kind = op == "+" ? ValueKind::kAdd
+                  : op == "-" ? ValueKind::kSub
+                  : op == "*" ? ValueKind::kMul
+                              : ValueKind::kDiv;
+      value.operands.push_back(extract_value(field(child, "left")));
+      value.operands.push_back(extract_value(field(child, "right")));
+    } else if (node_is(child, "unary_expression")) {
+      value.kind = ValueKind::kNegate;
+      value.operands.push_back(extract_value(field(child, "operand")));
+    } else if (node_is(child, "parenthesized_expression")) {
+      value.kind = ValueKind::kParen;
+      value.operands.push_back(extract_value(field(child, "value")));
     }
     return value;
   }
@@ -502,29 +514,168 @@ bool distribution_from_value(const Value& value, Distribution& out) {
   if (value.kind != ValueKind::kCall) {
     return false;
   }
+  const auto args_as_doubles = [](const std::vector<Value>& args) {
+    std::vector<double> out;
+    for (const Value& arg : args) {
+      if (arg.kind == ValueKind::kInt) {
+        out.push_back(static_cast<double>(arg.int_value));
+      } else if (arg.kind == ValueKind::kFloat) {
+        out.push_back(arg.float_value);
+      } else {
+        return std::vector<double>{};
+      }
+    }
+    return out;
+  };
   if (value.call_name == "poisson" || value.call_name == "rate") {
-    if (value.call_args.size() != 1) return false;
+    const std::vector<double> args = args_as_doubles(value.call_args);
+    if (args.size() != 1) return false;
     out.kind = DistKind::kPoisson;
-    out.params = value.call_args;
+    out.params = args;
     return true;
   }
   if (value.call_name == "exponential") {
-    if (value.call_args.size() != 1) return false;
+    const std::vector<double> args = args_as_doubles(value.call_args);
+    if (args.size() != 1) return false;
     out.kind = DistKind::kExponential;
-    out.params = value.call_args;
+    out.params = args;
     return true;
   }
   if (value.call_name == "normal") {
-    if (value.call_args.size() != 2) return false;
+    const std::vector<double> args = args_as_doubles(value.call_args);
+    if (args.size() != 2) return false;
     out.kind = DistKind::kNormal;
-    out.params = value.call_args;
+    out.params = args;
     return true;
   }
   if (value.call_name == "constant") {
-    if (value.call_args.size() != 1) return false;
+    const std::vector<double> args = args_as_doubles(value.call_args);
+    if (args.size() != 1) return false;
     out.kind = DistKind::kConstant;
-    out.params = value.call_args;
+    out.params = args;
     return true;
+  }
+  return false;
+}
+
+bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
+  out = value;
+  switch (value.kind) {
+    case ValueKind::kBool:
+    case ValueKind::kInt:
+    case ValueKind::kFloat:
+    case ValueKind::kString:
+      return true;
+    case ValueKind::kIdentifier: {
+      FoldedValue resolved;
+      if (!scope.lookup(value.string_value, resolved)) {
+        return false;
+      }
+      out = Value{};
+      out.span = value.span;
+      out.kind = resolved.kind;
+      out.bool_value = resolved.bool_value;
+      out.int_value = resolved.int_value;
+      out.float_value = resolved.float_value;
+      out.string_value = resolved.string_value;
+      return true;
+    }
+    case ValueKind::kCall: {
+      Value folded;
+      folded.kind = ValueKind::kCall;
+      folded.call_name = value.call_name;
+      folded.span = value.span;
+      for (const Value& arg : value.call_args) {
+        Value arg_out;
+        if (!fold_value(arg, scope, arg_out)) {
+          return false;
+        }
+        folded.call_args.push_back(std::move(arg_out));
+      }
+      out = std::move(folded);
+      return true;
+    }
+    case ValueKind::kParen:
+      return fold_value(value.operands.empty() ? value : value.operands[0],
+                        scope, out);
+    case ValueKind::kNegate: {
+      if (value.operands.empty()) {
+        return false;
+      }
+      Value operand;
+      if (!fold_value(value.operands[0], scope, operand)) {
+        return false;
+      }
+      out = Value{};
+      out.span = value.span;
+      if (operand.kind == ValueKind::kInt) {
+        out.kind = ValueKind::kInt;
+        out.int_value = -operand.int_value;
+        return true;
+      }
+      if (operand.kind == ValueKind::kFloat) {
+        out.kind = ValueKind::kFloat;
+        out.float_value = -operand.float_value;
+        return true;
+      }
+      return false;
+    }
+    case ValueKind::kAdd:
+    case ValueKind::kSub:
+    case ValueKind::kMul:
+    case ValueKind::kDiv: {
+      if (value.operands.size() != 2) {
+        return false;
+      }
+      Value left;
+      Value right;
+      if (!fold_value(value.operands[0], scope, left) ||
+          !fold_value(value.operands[1], scope, right)) {
+        return false;
+      }
+      const bool both_int =
+          left.kind == ValueKind::kInt && right.kind == ValueKind::kInt;
+      const bool numeric =
+          (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
+          (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
+      if (!numeric) {
+        return false;
+      }
+      const double l =
+          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value)
+                                       : left.float_value;
+      const double r =
+          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value)
+                                        : right.float_value;
+      out = Value{};
+      out.span = value.span;
+      if (value.kind == ValueKind::kDiv) {
+        if (r == 0.0) {
+          return false;
+        }
+        out.kind = ValueKind::kFloat;
+        out.float_value = l / r;
+        return true;
+      }
+      if (both_int) {
+        out.kind = ValueKind::kInt;
+        switch (value.kind) {
+          case ValueKind::kAdd: out.int_value = left.int_value + right.int_value; break;
+          case ValueKind::kSub: out.int_value = left.int_value - right.int_value; break;
+          case ValueKind::kMul: out.int_value = left.int_value * right.int_value; break;
+          default: break;
+        }
+        return true;
+      }
+      out.kind = ValueKind::kFloat;
+      switch (value.kind) {
+        case ValueKind::kAdd: out.float_value = l + r; break;
+        case ValueKind::kSub: out.float_value = l - r; break;
+        case ValueKind::kMul: out.float_value = l * r; break;
+        default: break;
+      }
+      return true;
+    }
   }
   return false;
 }

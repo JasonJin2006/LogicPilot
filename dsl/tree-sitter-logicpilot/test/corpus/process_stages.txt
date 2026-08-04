@@ -29,7 +29,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Source with rate float arrival
@@ -60,7 +62,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (float))))))))))))
+                      (value
+                        (value_literal
+                          (float))))))))))))))
 
 ==================
 Queue with zero capacity
@@ -153,8 +157,12 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer)))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Service with exponential distribution
@@ -187,7 +195,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Service with constant distribution
@@ -220,7 +230,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Process stages in declaration order
@@ -253,7 +265,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -273,7 +287,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Sink stage after service
@@ -307,7 +323,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -327,7 +345,9 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (declaration
             kind: (identifier)
             name: (identifier)

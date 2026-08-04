@@ -1,30 +1,17 @@
 ==================
-End-to-end Factory model from dsl-spec
+Binary arithmetic with precedence
 ==================
 
-// Factory example - v0 DSL
-model Factory {
-  resource Machine {
-    capacity = 3
-    failure_rate = 0.01
-  }
-
-  process Production {
-    source Order {
-      arrival = poisson(5)
-    }
-    queue Buffer {
-      capacity = 50
-    }
-    service Machine {
-      time = normal(10, 2)
-    }
+model M {
+  process P {
+    source A { arrival = rate(2 * 0.4) }
+    queue Q { capacity = 100 + 1 }
+    service R { time = normal(10 - 1, 2) }
   }
 }
 ---
 
 (source_file
-  (comment)
   (model_declaration
     name: (identifier)
     body: (model_body
@@ -32,20 +19,6 @@ model Factory {
         kind: (identifier)
         name: (identifier)
         body: (declaration_body
-          (field
-            name: (identifier)
-            value: (value
-              (value_literal
-                (integer))))
-          (field
-            name: (identifier)
-            value: (value
-              (value_literal
-                (float))))))
-      (declaration
-        kind: (identifier)
-        name: (identifier)
-        body: (declaration_body
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -57,8 +30,14 @@ model Factory {
                     name: (identifier)
                     args: (argument_list
                       (value
-                        (value_literal
-                          (integer)))))))))
+                        (binary_expression
+                          left: (value
+                            (value_literal
+                              (integer)))
+                          op: (binary_op)
+                          right: (value
+                            (value_literal
+                              (float)))))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -66,8 +45,14 @@ model Factory {
               (field
                 name: (identifier)
                 value: (value
-                  (value_literal
-                    (integer))))))
+                  (binary_expression
+                    left: (value
+                      (value_literal
+                        (integer)))
+                    op: (binary_op)
+                    right: (value
+                      (value_literal
+                        (integer))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -79,105 +64,26 @@ model Factory {
                     name: (identifier)
                     args: (argument_list
                       (value
-                        (value_literal
-                          (integer)))
+                        (binary_expression
+                          left: (value
+                            (value_literal
+                              (integer)))
+                          op: (binary_op)
+                          right: (value
+                            (value_literal
+                              (integer)))))
                       (value
                         (value_literal
                           (integer))))))))))))))
 
 ==================
-End-to-end M/M/1 queue model
+Unary negation and parentheses
 ==================
 
-// M/M/1: single server, Poisson arrivals, exponential service
-model MM1 {
-  resource Server {
-    capacity = 1
-    failure_rate = 0.0
-  }
-  process Flow {
-    source Jobs {
-      arrival = poisson(1)
-    }
-    queue WaitingLine {
-      capacity = 100
-    }
-    service Server {
-      time = exponential(2)
-    }
-  }
-}
----
-
-(source_file
-  (comment)
-  (model_declaration
-    name: (identifier)
-    body: (model_body
-      (declaration
-        kind: (identifier)
-        name: (identifier)
-        body: (declaration_body
-          (field
-            name: (identifier)
-            value: (value
-              (value_literal
-                (integer))))
-          (field
-            name: (identifier)
-            value: (value
-              (value_literal
-                (float))))))
-      (declaration
-        kind: (identifier)
-        name: (identifier)
-        body: (declaration_body
-          (declaration
-            kind: (identifier)
-            name: (identifier)
-            body: (declaration_body
-              (field
-                name: (identifier)
-                value: (value
-                  (call
-                    name: (identifier)
-                    args: (argument_list
-                      (value
-                        (value_literal
-                          (integer)))))))))
-          (declaration
-            kind: (identifier)
-            name: (identifier)
-            body: (declaration_body
-              (field
-                name: (identifier)
-                value: (value
-                  (value_literal
-                    (integer))))))
-          (declaration
-            kind: (identifier)
-            name: (identifier)
-            body: (declaration_body
-              (field
-                name: (identifier)
-                value: (value
-                  (call
-                    name: (identifier)
-                    args: (argument_list
-                      (value
-                        (value_literal
-                          (integer))))))))))))))
-
-==================
-End-to-end QueueDemo with exponential service
-==================
-
-model QueueDemo {
-  resource Server { capacity = 1 }
-  process Arrivals {
-    source Clients { arrival = poisson(2) }
-    queue WaitLine { capacity = 0 }
-    service Server { time = exponential(3) }
+model M {
+  process P {
+    queue Q { capacity = (10 + 2) * 3 }
+    service R { time = constant(1 * -2) }
   }
 }
 ---
@@ -190,11 +96,77 @@ model QueueDemo {
         kind: (identifier)
         name: (identifier)
         body: (declaration_body
-          (field
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            value: (value
-              (value_literal
-                (integer))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (binary_expression
+                    left: (value
+                      (parenthesized_expression
+                        value: (value
+                          (binary_expression
+                            left: (value
+                              (value_literal
+                                (integer)))
+                            op: (binary_op)
+                            right: (value
+                              (value_literal
+                                (integer)))))))
+                    op: (binary_op)
+                    right: (value
+                      (value_literal
+                        (integer))))))))
+          (declaration
+            kind: (identifier)
+            name: (identifier)
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (value
+                        (binary_expression
+                          left: (value
+                            (value_literal
+                              (integer)))
+                          op: (binary_op)
+                          right: (value
+                            (unary_expression
+                              op: (unary_op)
+                              operand: (value
+                                (value_literal
+                                  (integer))))))))))))))))))
+
+==================
+Parameter references in expressions
+==================
+
+model M {
+  param arrival_rate: float = 0.8
+  process P {
+    source A { arrival = rate(arrival_rate * 2) }
+    queue Q { capacity = 100 }
+    service R { time = exponential(1) }
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (variable_declaration
+        name: (identifier)
+        type: (type_name
+          (identifier))
+        value: (value
+          (value_literal
+            (float))))
       (declaration
         kind: (identifier)
         name: (identifier)
@@ -210,8 +182,13 @@ model QueueDemo {
                     name: (identifier)
                     args: (argument_list
                       (value
-                        (value_literal
-                          (integer)))))))))
+                        (binary_expression
+                          left: (value
+                            (identifier))
+                          op: (binary_op)
+                          right: (value
+                            (value_literal
+                              (integer)))))))))))
           (declaration
             kind: (identifier)
             name: (identifier)

@@ -29,7 +29,9 @@ model PulseChain {
               (call
                 name: (identifier)
                 args: (argument_list
-                  (float)))))
+                  (value
+                    (value_literal
+                      (float)))))))
           (behavior
             trigger: (trigger)
             effects: (effect_list
@@ -100,7 +102,9 @@ model Machine {
               (call
                 name: (identifier)
                 args: (argument_list
-                  (float)))))
+                  (value
+                    (value_literal
+                      (float)))))))
           (behavior
             trigger: (trigger)
             port: (identifier)
@@ -167,7 +171,9 @@ model Cell {
               (call
                 name: (identifier)
                 args: (argument_list
-                  (float)))))
+                  (value
+                    (value_literal
+                      (float)))))))
           (port_declaration
             name: (identifier)
             type: (type_name

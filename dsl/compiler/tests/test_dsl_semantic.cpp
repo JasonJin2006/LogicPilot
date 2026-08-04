@@ -154,6 +154,38 @@ TEST_CASE("semantic: explicit resource reference resolves to a declared "
   REQUIRE(analyze_model(*parsed.model).empty());
 }
 
+TEST_CASE("semantic: parameter references and constant folding",
+          "[dsl][semantic]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  param arrival_rate: float = 0.4\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(arrival_rate * 2) }\n"
+      "    queue Q { capacity = 100 + 1 }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "  }\n"
+      "}\n",
+      "ok.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
+}
+
+TEST_CASE("semantic snapshot: undeclared identifier in an expression",
+          "[dsl][semantic]") {
+  expect_diagnostic_snapshot(
+      "model M {\n"
+      "  param k = 1\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(missing) }\n"
+      "    queue Q { capacity = 100 }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "  }\n"
+      "}\n",
+      "diag_undeclared_identifier.txt");
+}
+
 TEST_CASE("semantic snapshot: numeric ranges", "[dsl][semantic]") {
   expect_diagnostic_snapshot(
       "model M {\n"

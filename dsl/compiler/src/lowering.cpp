@@ -3,7 +3,9 @@
 // Generic kind dispatch: every DSL Node lowers 1:1 to an IR v2 Node with a
 // SemanticsRef{library, block}; process library blocks become
 // {process, <block>} nodes with typed params, method containers become
-// {devs,atomic} / {agent,agent} / {sd,equation} / {process,flow}.
+// {devs,atomic} / {agent,agent} / {sd,equation} / {process,flow}. Numeric
+// fields are constant-folded (Phase D): expressions reduce to literals via
+// parameter references and arithmetic before they reach the IR.
 #include "logicpilot/dsl/lowering.h"
 
 #include <flatbuffers/flatbuffers.h>
@@ -87,6 +89,7 @@ flatbuffers::Offset<v2::Var> v2_var_distribution(
                        v2_distribution(builder, dist));
 }
 
+// Folded scalar -> Var (state initializers, effect assignments).
 flatbuffers::Offset<v2::Var> v2_var_from_value(
     flatbuffers::FlatBufferBuilder& builder, const std::string& name,
     const Value& value) {
@@ -100,8 +103,8 @@ flatbuffers::Offset<v2::Var> v2_var_from_value(
     case ValueKind::kString:
     case ValueKind::kIdentifier:
       return v2_var_string(builder, name.c_str(), value.string_value);
-    case ValueKind::kCall:
-      break;  // call values are not state variable initializers
+    default:
+      break;  // non-constant expressions are rejected by the analyzer
   }
   return v2_var_float(builder, name.c_str(), 0.0);
 }
@@ -116,26 +119,73 @@ const Field* field_of(const Node& node, const char* name) {
 }
 
 // ---------------------------------------------------------------------------
+// Constant folding helpers (Phase D)
+// ---------------------------------------------------------------------------
+
+// Fold an expression, falling back to the raw value when it is not constant
+// (the analyzer rejects non-constant fields, so this is defensive).
+Value fold_or_raw(const Value& value, const ParamScope& scope) {
+  Value out;
+  return fold_value(value, scope, out) ? out : value;
+}
+
+std::int64_t int_field(const Node& node, const char* name,
+                       const ParamScope& scope, std::int64_t fallback) {
+  const Field* field = field_of(node, name);
+  if (field == nullptr) {
+    return fallback;
+  }
+  const Value folded = fold_or_raw(field->value, scope);
+  if (folded.kind == ValueKind::kInt) {
+    return folded.int_value;
+  }
+  if (folded.kind == ValueKind::kFloat) {
+    return static_cast<std::int64_t>(folded.float_value);
+  }
+  return fallback;
+}
+
+double float_field(const Node& node, const char* name,
+                   const ParamScope& scope, double fallback) {
+  const Field* field = field_of(node, name);
+  if (field == nullptr) {
+    return fallback;
+  }
+  const Value folded = fold_or_raw(field->value, scope);
+  if (folded.kind == ValueKind::kInt) {
+    return static_cast<double>(folded.int_value);
+  }
+  if (folded.kind == ValueKind::kFloat) {
+    return folded.float_value;
+  }
+  return fallback;
+}
+
+Distribution distribution_field(const Node& node, const char* name,
+                                const ParamScope& scope) {
+  Distribution dist;
+  const Field* field = field_of(node, name);
+  if (field == nullptr) {
+    return dist;
+  }
+  (void)distribution_from_value(fold_or_raw(field->value, scope), dist);
+  return dist;
+}
+
+// ---------------------------------------------------------------------------
 // Process library blocks
 // ---------------------------------------------------------------------------
 
 // resource -> process/resource block Node (typed capacity/failure_rate).
 flatbuffers::Offset<v2::Node> v2_resource(
     flatbuffers::FlatBufferBuilder& builder, const Node& resource,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  const Field* capacity = field_of(resource, "capacity");
   params.push_back(v2_var_int(
-      builder, "capacity",
-      capacity && capacity->value.kind == ValueKind::kInt
-          ? capacity->value.int_value
-          : 0));
-  const Field* failure_rate = field_of(resource, "failure_rate");
+      builder, "capacity", int_field(resource, "capacity", scope, 0)));
   params.push_back(v2_var_float(
       builder, "failure_rate",
-      failure_rate && failure_rate->value.kind == ValueKind::kFloat
-          ? failure_rate->value.float_value
-          : 0.0));
+      float_field(resource, "failure_rate", scope, 0.0)));
   return v2::CreateNode(
       builder, v2_metadata(builder, resource.name, source_file),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
@@ -147,28 +197,17 @@ flatbuffers::Offset<v2::Node> v2_resource(
 flatbuffers::Offset<v2::Node> v2_process_block(
     flatbuffers::FlatBufferBuilder& builder, const Node& stage,
     const std::unordered_map<std::string, const Node*>& resources,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
   if (stage.kind == "source") {
-    Distribution arrival;
-    const Field* field = field_of(stage, "arrival");
-    if (field != nullptr) {
-      (void)distribution_from_value(field->value, arrival);
-    }
-    params.push_back(v2_var_distribution(builder, "arrival", arrival));
+    params.push_back(v2_var_distribution(
+        builder, "arrival", distribution_field(stage, "arrival", scope)));
   } else if (stage.kind == "queue") {
-    const Field* field = field_of(stage, "capacity");
     params.push_back(v2_var_int(
-        builder, "capacity",
-        field && field->value.kind == ValueKind::kInt ? field->value.int_value
-                                                      : 0));
+        builder, "capacity", int_field(stage, "capacity", scope, 0)));
   } else if (stage.kind == "service") {
-    Distribution service_time;
-    const Field* field = field_of(stage, "time");
-    if (field != nullptr) {
-      (void)distribution_from_value(field->value, service_time);
-    }
-    params.push_back(v2_var_distribution(builder, "rate", service_time));
+    params.push_back(v2_var_distribution(
+        builder, "rate", distribution_field(stage, "time", scope)));
     // Explicit `resource = R` reference (Phase C); the v0 identifier
     // binding is the fallback when the field is absent.
     std::string resource_name = stage.name;
@@ -181,10 +220,7 @@ flatbuffers::Offset<v2::Node> v2_process_block(
     std::int64_t servers = 1;
     const auto it = resources.find(resource_name);
     if (it != resources.end()) {
-      const Field* capacity = field_of(*it->second, "capacity");
-      if (capacity && capacity->value.kind == ValueKind::kInt) {
-        servers = capacity->value.int_value;
-      }
+      servers = int_field(*it->second, "capacity", scope, 1);
     }
     params.push_back(v2_var_int(builder, "servers", servers));
   }
@@ -199,11 +235,11 @@ flatbuffers::Offset<v2::Node> v2_process_block(
 flatbuffers::Offset<v2::Node> v2_process(
     flatbuffers::FlatBufferBuilder& builder, const Node& process,
     const std::unordered_map<std::string, const Node*>& resources,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Node>> children;
   for (const Node& stage : process.children) {
     children.push_back(
-        v2_process_block(builder, stage, resources, source_file));
+        v2_process_block(builder, stage, resources, scope, source_file));
   }
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
   for (std::size_t i = 0; i + 1 < process.children.size(); ++i) {
@@ -229,11 +265,12 @@ flatbuffers::Offset<v2::Node> v2_process(
 // atomic -> devs/atomic Node with a one-state Statechart.
 flatbuffers::Offset<v2::Node> v2_atomic(
     flatbuffers::FlatBufferBuilder& builder, const Node& atomic,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : atomic.vars) {
     if (var.keyword == "state") {
-      state.push_back(v2_var_from_value(builder, var.name, var.value));
+      state.push_back(v2_var_from_value(
+          builder, var.name, fold_or_raw(var.value, scope)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Port>> ports;
@@ -282,7 +319,9 @@ flatbuffers::Offset<v2::Node> v2_atomic(
     for (const Effect& effect : effects) {
       if (effect.kind == Effect::Kind::kAssign) {
         actions.push_back(v2::CreateAction(
-            builder, 0, v2_var_from_value(builder, effect.name, effect.value),
+            builder, 0,
+            v2_var_from_value(builder, effect.name,
+                              fold_or_raw(effect.value, scope)),
             0));
       } else if (effect.kind == Effect::Kind::kEmit) {
         actions.push_back(
@@ -305,20 +344,29 @@ flatbuffers::Offset<v2::Node> v2_atomic(
     flatbuffers::Offset<v2::Distribution> timeout_distribution = 0;
     const Field* ta = field_of(atomic, "time_advance");
     if (ta != nullptr) {
-      const Value& value = ta->value;
-      if (value.kind == ValueKind::kCall &&
-          value.call_name == "exponential" && value.call_args.size() == 1) {
-        const std::vector<double> params{value.call_args[0]};
-        timeout_distribution = v2::CreateDistribution(
-            builder, 3, builder.CreateVector(params));
-      } else if (value.kind == ValueKind::kInt) {
-        timeout_value = static_cast<double>(value.int_value);
-      } else if (value.kind == ValueKind::kFloat) {
-        timeout_value = value.float_value;
-      } else if (value.kind == ValueKind::kCall &&
-                 value.call_name == "constant" &&
-                 value.call_args.size() == 1) {
-        timeout_value = value.call_args[0];
+      const Value folded = fold_or_raw(ta->value, scope);
+      if (folded.kind == ValueKind::kCall &&
+          folded.call_name == "exponential" && folded.call_args.size() == 1) {
+        const Value& rate = folded.call_args[0];
+        if (rate.kind == ValueKind::kInt || rate.kind == ValueKind::kFloat) {
+          const std::vector<double> params{
+              rate.kind == ValueKind::kInt
+                  ? static_cast<double>(rate.int_value)
+                  : rate.float_value};
+          timeout_distribution = v2::CreateDistribution(
+              builder, 3, builder.CreateVector(params));
+        }
+      } else if (folded.kind == ValueKind::kInt) {
+        timeout_value = static_cast<double>(folded.int_value);
+      } else if (folded.kind == ValueKind::kFloat) {
+        timeout_value = folded.float_value;
+      } else if (folded.kind == ValueKind::kCall &&
+                 folded.call_name == "constant" &&
+                 folded.call_args.size() == 1) {
+        const Value& value = folded.call_args[0];
+        timeout_value = value.kind == ValueKind::kInt
+                            ? static_cast<double>(value.int_value)
+                            : value.float_value;
       }
       // identifier `infinite` keeps the default 0.0 (kernel: no timeout).
     }
@@ -341,19 +389,17 @@ flatbuffers::Offset<v2::Node> v2_atomic(
 // agent -> agent Node (typed state, count param, behavior bindings).
 flatbuffers::Offset<v2::Node> v2_agent(
     flatbuffers::FlatBufferBuilder& builder, const Node& agent,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : agent.vars) {
     if (var.keyword == "state") {
-      state.push_back(v2_var_from_value(builder, var.name, var.value));
+      state.push_back(v2_var_from_value(
+          builder, var.name, fold_or_raw(var.value, scope)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  const Field* count = field_of(agent, "count");
-  params.push_back(v2_var_int(
-      builder, "count",
-      count && count->value.kind == ValueKind::kInt ? count->value.int_value
-                                                    : 1));
+  params.push_back(v2_var_int(builder, "count",
+                              int_field(agent, "count", scope, 1)));
   std::vector<flatbuffers::Offset<v2::BehaviorBinding>> behaviors;
   for (const Behavior& behavior : agent.behaviors) {
     if (behavior.trigger != "tick") {
@@ -385,9 +431,10 @@ flatbuffers::Offset<v2::Node> v2_agent(
 // structured continuous equations.
 flatbuffers::Offset<v2::Node> v2_continuous(
     flatbuffers::FlatBufferBuilder& builder, const Node& continuous,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
-  const auto initial_value = [](const Value& value) {
+  const auto initial_value = [&](const Value& raw) {
+    const Value value = fold_or_raw(raw, scope);
     if (value.kind == ValueKind::kFloat) {
       return value.float_value;
     }
@@ -398,15 +445,15 @@ flatbuffers::Offset<v2::Node> v2_continuous(
   };
   for (const VarDecl& var : continuous.vars) {
     if (var.keyword == "state") {
-      state.push_back(
-          v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
+      state.push_back(v2_var_float(builder, var.name.c_str(),
+                                   initial_value(var.value)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
   for (const VarDecl& var : continuous.vars) {
     if (var.keyword == "param") {
-      params.push_back(
-          v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
+      params.push_back(v2_var_float(builder, var.name.c_str(),
+                                    initial_value(var.value)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Equation>> equations;
@@ -447,28 +494,28 @@ flatbuffers::Offset<v2::Experiment> v2_experiment(
 flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
-    const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file) {
   if (node.kind == "resource") {
-    return v2_resource(builder, node, source_file);
+    return v2_resource(builder, node, scope, source_file);
   }
   if (node.kind == "process") {
-    return v2_process(builder, node, resources, source_file);
+    return v2_process(builder, node, resources, scope, source_file);
   }
   if (node.kind == "atomic") {
-    return v2_atomic(builder, node, source_file);
+    return v2_atomic(builder, node, scope, source_file);
   }
   if (node.kind == "agent") {
-    return v2_agent(builder, node, source_file);
+    return v2_agent(builder, node, scope, source_file);
   }
   if (node.kind == "continuous") {
-    return v2_continuous(builder, node, source_file);
+    return v2_continuous(builder, node, scope, source_file);
   }
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment
   // members are handled via ModelFile.experiments, not the node tree.
   if (node.kind == "source" || node.kind == "queue" ||
       node.kind == "service" || node.kind == "sink") {
-    return v2_process_block(builder, node, resources, source_file);
+    return v2_process_block(builder, node, resources, scope, source_file);
   }
   return 0;
 }
@@ -478,6 +525,24 @@ flatbuffers::Offset<v2::Node> v2_node(
 LoweredIr lower_to_ir_v2(const ModelAst& model,
                          const std::string& source_file) {
   flatbuffers::FlatBufferBuilder builder;
+
+  ParamScope model_scope;
+  for (const VarDecl& param : model.params) {
+    Value folded;
+    if (param.keyword == "param" && fold_value(param.value, model_scope,
+                                               folded) &&
+        (folded.kind == ValueKind::kInt || folded.kind == ValueKind::kFloat ||
+         folded.kind == ValueKind::kBool ||
+         folded.kind == ValueKind::kString)) {
+      FoldedValue constant;
+      constant.kind = folded.kind;
+      constant.bool_value = folded.bool_value;
+      constant.int_value = folded.int_value;
+      constant.float_value = folded.float_value;
+      constant.string_value = folded.string_value;
+      model_scope.declare(param.name, constant);
+    }
+  }
 
   std::unordered_map<std::string, const Node*> resources;
   for (const Node& member : model.members) {
@@ -491,7 +556,8 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
     if (member.kind == "experiment") {
       continue;  // experiments live in ModelFile.experiments
     }
-    children.push_back(v2_node(builder, member, resources, source_file));
+    children.push_back(
+        v2_node(builder, member, resources, model_scope, source_file));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
@@ -505,8 +571,9 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
 
   std::vector<flatbuffers::Offset<v2::Var>> root_params;
   for (const VarDecl& param : model.params) {
-    root_params.push_back(v2_var_from_value(builder, param.name,
-                                            param.value));
+    root_params.push_back(
+        v2_var_from_value(builder, param.name, fold_or_raw(param.value,
+                                                           model_scope)));
   }
 
   const auto root_metadata =

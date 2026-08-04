@@ -5,7 +5,9 @@
 // kinds (agent/atomic/process/continuous/experiment) and the builtin
 // process library registry (resource/source/queue/service/sink); block
 // instances are then validated against their registered shape (required
-// fields, duplicates, ranges, references).
+// fields, duplicates, ranges, references). Numeric fields are
+// constant-folded (Phase D): expressions must reduce to literals via
+// arithmetic and parameter references (LP2006 otherwise).
 #include "logicpilot/dsl/semantic.h"
 
 #include <algorithm>
@@ -15,6 +17,27 @@
 
 namespace logicpilot::dsl {
 namespace {
+
+bool is_scalar(const Value& value) {
+  return value.kind == ValueKind::kBool || value.kind == ValueKind::kInt ||
+         value.kind == ValueKind::kFloat || value.kind == ValueKind::kString;
+}
+
+FoldedValue to_folded(const Value& value) {
+  FoldedValue folded;
+  folded.kind = value.kind;
+  folded.bool_value = value.bool_value;
+  folded.int_value = value.int_value;
+  folded.float_value = value.float_value;
+  folded.string_value = value.string_value;
+  return folded;
+}
+
+double folded_double(const Value& value) {
+  return value.kind == ValueKind::kInt
+             ? static_cast<double>(value.int_value)
+             : value.float_value;
+}
 
 class Analyzer {
  public:
@@ -26,12 +49,13 @@ class Analyzer {
       }
     }
     check_model_params(model);
+    build_model_scope(model);
     for (const std::string& library : model.used_libraries) {
-      check_library(library, model);
+      check_library(library);
     }
     check_top_level_names(model);
     for (const Node& member : model.members) {
-      check_decl(member, true);
+      check_decl(member, true, model_scope_);
     }
     for (const ExperimentDecl& experiment : model.experiments) {
       check_experiment(experiment);
@@ -93,11 +117,29 @@ class Analyzer {
     }
   }
 
+  // Fold model-level params into the shared scope (LP2006 on non-constant).
+  void build_model_scope(const ModelAst& model) {
+    for (const VarDecl& param : model.params) {
+      if (param.keyword != "param") {
+        continue;
+      }
+      Value folded;
+      if (!fold_value(param.value, model_scope_, folded) ||
+          !is_scalar(folded)) {
+        error("LP2006",
+              "param '" + param.name +
+                  "' must be a compile-time constant (literals, earlier "
+                  "params, arithmetic)",
+              param.span);
+        continue;
+      }
+      model_scope_.declare(param.name, to_folded(folded));
+    }
+  }
+
   // `use` is validated once multiple libraries land (Phase E); for now the
-  // standard process library is implicitly available, so any identifier is
-  // accepted and unused-library diagnostics are deferred.
-  void check_library(const std::string& library, const ModelAst& model) {
-    (void)model;
+  // standard process library is implicitly available.
+  void check_library(const std::string& library) {
     if (library != "process") {
       error("LP2004",
             "unknown library '" + library +
@@ -129,7 +171,8 @@ class Analyzer {
   // Generic declaration dispatch (kind resolution)
   // ------------------------------------------------------------------
 
-  void check_decl(const Node& node, bool top_level) {
+  void check_decl(const Node& node, bool top_level,
+                  const ParamScope& parent_scope) {
     const std::string& kind = node.kind;
     if (kind == "process") {
       if (!top_level) {
@@ -142,19 +185,19 @@ class Analyzer {
       return;
     }
     if (kind == "atomic") {
-      check_atomic(node);
+      check_atomic(node, scope_with(node, parent_scope));
       return;
     }
     if (kind == "agent") {
-      check_agent(node);
+      check_agent(node, scope_with(node, parent_scope));
       return;
     }
     if (kind == "continuous") {
-      check_continuous(node);
+      check_continuous(node, scope_with(node, parent_scope));
       return;
     }
     if (kind == "resource") {
-      check_resource(node);
+      check_resource(node, parent_scope);
       return;
     }
     if (kind == "experiment") {
@@ -248,6 +291,43 @@ class Analyzer {
     }
   }
 
+  // Container-local param scope: parent scope + this node's `param`s.
+  ParamScope scope_with(const Node& node, const ParamScope& parent) {
+    ParamScope scope = parent;
+    for (const VarDecl& var : node.vars) {
+      if (var.keyword != "param") {
+        continue;
+      }
+      Value folded;
+      if (!fold_value(var.value, scope, folded) || !is_scalar(folded)) {
+        error("LP2006",
+              "param '" + var.name + "' in " + node.kind + " '" +
+                  node.name +
+                  "' must be a compile-time constant (literals, earlier "
+                  "params, arithmetic)",
+              var.span);
+        continue;
+      }
+      scope.declare(var.name, to_folded(folded));
+    }
+    return scope;
+  }
+
+  // Fold a numeric field value; emits LP2006 and returns false when the
+  // expression is not a compile-time constant.
+  bool fold_field(const Field& field, const ParamScope& scope,
+                  const std::string& context, Value& out) {
+    if (!fold_value(field.value, scope, out) || !is_scalar(out)) {
+      error("LP2006",
+            context +
+                " must be a compile-time constant (literals, params, "
+                "arithmetic)",
+            field.span);
+      return false;
+    }
+    return true;
+  }
+
   void check_distribution(const Distribution& dist,
                           const std::string& context) {
     for (const double param : dist.params) {
@@ -265,52 +345,62 @@ class Analyzer {
   // Process library blocks
   // ------------------------------------------------------------------
 
-  void check_resource(const Node& node) {
+  void check_resource(const Node& node, const ParamScope& scope) {
     check_shape(node, {"capacity", "failure_rate"}, {});
     const Field* capacity = field_of(node, "capacity");
     check_missing(node, "capacity", capacity);
     check_duplicate(node, "capacity");
     if (capacity) {
-      if (capacity->value.kind == ValueKind::kInt &&
-          capacity->value.int_value < 1) {
-        error("LP3001",
-              "resource '" + node.name + "' capacity must be >= 1 (got " +
-                  std::to_string(capacity->value.int_value) + ")",
-              capacity->span);
+      Value folded;
+      if (fold_field(*capacity, scope,
+                     "resource '" + node.name + "' capacity", folded)) {
+        if (folded.kind != ValueKind::kInt) {
+          error("LP3001",
+                "resource '" + node.name + "' capacity must be an integer",
+                capacity->span);
+        } else if (folded.int_value < 1) {
+          error("LP3001",
+                "resource '" + node.name + "' capacity must be >= 1 (got " +
+                    std::to_string(folded.int_value) + ")",
+                capacity->span);
+        }
       }
     }
     const Field* failure_rate = field_of(node, "failure_rate");
     check_duplicate(node, "failure_rate");
     if (failure_rate) {
-      if (failure_rate->value.kind == ValueKind::kFloat &&
-          (failure_rate->value.float_value < 0.0 ||
-           failure_rate->value.float_value > 1.0)) {
-        error("LP3001",
-              "resource '" + node.name +
-                  "' failure_rate must be in [0, 1] (got " +
-                  std::to_string(failure_rate->value.float_value) + ")",
-              failure_rate->span);
+      Value folded;
+      if (fold_field(*failure_rate, scope,
+                     "resource '" + node.name + "' failure_rate", folded)) {
+        if (folded.kind != ValueKind::kInt &&
+            folded.kind != ValueKind::kFloat) {
+          error("LP3001",
+                "resource '" + node.name +
+                    "' failure_rate must be a number",
+                failure_rate->span);
+        } else {
+          const double value = folded_double(folded);
+          if (value < 0.0 || value > 1.0) {
+            error("LP3001",
+                  "resource '" + node.name +
+                      "' failure_rate must be in [0, 1] (got " +
+                      std::to_string(value) + ")",
+                  failure_rate->span);
+          }
+        }
       }
     }
   }
 
-  void check_stage(const Node& node) {
+  void check_stage(const Node& node, const ParamScope& scope) {
     if (node.kind == "source") {
       check_shape(node, {"arrival"}, {});
       const Field* arrival = field_of(node, "arrival");
       check_missing(node, "arrival", arrival);
       check_duplicate(node, "arrival");
       if (arrival) {
-        Distribution dist;
-        if (!distribution_from_value(arrival->value, dist)) {
-          error("LP3001",
-                "source '" + node.name +
-                    "' arrival: expected poisson/rate/exponential/normal/"
-                    "constant(...)",
-                arrival->span);
-        } else {
-          check_distribution(dist, "source '" + node.name + "' arrival");
-        }
+        check_distribution_field(*arrival, scope,
+                                 "source '" + node.name + "' arrival");
       }
       return;
     }
@@ -319,12 +409,21 @@ class Analyzer {
       const Field* capacity = field_of(node, "capacity");
       check_missing(node, "capacity", capacity);
       check_duplicate(node, "capacity");
-      if (capacity && capacity->value.kind == ValueKind::kInt &&
-          capacity->value.int_value < 0) {
-        error("LP3001",
-              "queue '" + node.name + "' capacity must be >= 0 (got " +
-                  std::to_string(capacity->value.int_value) + ")",
-              capacity->span);
+      if (capacity) {
+        Value folded;
+        if (fold_field(*capacity, scope,
+                       "queue '" + node.name + "' capacity", folded)) {
+          if (folded.kind != ValueKind::kInt) {
+            error("LP3001",
+                  "queue '" + node.name + "' capacity must be an integer",
+                  capacity->span);
+          } else if (folded.int_value < 0) {
+            error("LP3001",
+                  "queue '" + node.name + "' capacity must be >= 0 (got " +
+                      std::to_string(folded.int_value) + ")",
+                  capacity->span);
+          }
+        }
       }
       return;
     }
@@ -334,20 +433,11 @@ class Analyzer {
       check_missing(node, "time", time);
       check_duplicate(node, "time");
       if (time) {
-        Distribution dist;
-        if (!distribution_from_value(time->value, dist)) {
-          error("LP3001",
-                "service '" + node.name +
-                    "' time: expected poisson/rate/exponential/normal/"
-                    "constant(...)",
-                time->span);
-        } else {
-          check_distribution(dist, "service '" + node.name + "' time");
-        }
+        check_distribution_field(*time, scope,
+                                 "service '" + node.name + "' time");
       }
       // Explicit `resource = R` reference (Phase C). When the field is
-      // absent the v0 identifier binding is kept as a transitional fallback
-      // (examples migrate to the explicit form).
+      // absent the v0 identifier binding is kept as a transitional fallback.
       const Field* resource = field_of(node, "resource");
       if (resource != nullptr) {
         check_duplicate(node, "resource");
@@ -383,6 +473,28 @@ class Analyzer {
           node.name_span);
   }
 
+  void check_distribution_field(const Field& field, const ParamScope& scope,
+                                const std::string& context) {
+    Value folded;
+    if (!fold_value(field.value, scope, folded)) {
+      error("LP2006",
+            context +
+                " must be a compile-time constant (literals, params, "
+                "arithmetic)",
+            field.span);
+      return;
+    }
+    Distribution dist;
+    if (!distribution_from_value(folded, dist)) {
+      error("LP3001",
+            context + ": expected poisson/rate/exponential/normal/"
+                      "constant(...)",
+            field.span);
+      return;
+    }
+    check_distribution(dist, context);
+  }
+
   void check_process(const Node& node) {
     std::unordered_map<std::string, Span> stage_names;
     int sources = 0;
@@ -405,7 +517,7 @@ class Analyzer {
       } else if (stage.kind == "service") {
         ++services;
       }
-      check_stage(stage);
+      check_stage(stage, model_scope_);
     }
     if (sources == 0) {
       error("LP2002",
@@ -441,7 +553,33 @@ class Analyzer {
   // atomic / agent / continuous
   // ------------------------------------------------------------------
 
-  void check_effects(const Node& node,
+  void check_state_vars(const Node& node, const ParamScope& scope) {
+    std::unordered_map<std::string, Span> state_names;
+    for (const VarDecl& var : node.vars) {
+      if (var.keyword != "state") {
+        continue;
+      }
+      const auto [it, inserted] =
+          state_names.emplace(var.name, var.name_span);
+      if (!inserted) {
+        error("LP1002",
+              "duplicate state variable '" + var.name + "' in " + node.kind +
+                  " '" + node.name + "'",
+              var.name_span);
+      }
+      Value folded;
+      if (!fold_value(var.value, scope, folded) || !is_scalar(folded)) {
+        error("LP2006",
+              "state '" + var.name + "' in " + node.kind + " '" +
+                  node.name +
+                  "' must be a compile-time constant (literals, params, "
+                  "arithmetic)",
+              var.span);
+      }
+    }
+  }
+
+  void check_effects(const Node& node, const ParamScope& scope,
                      const std::vector<Effect>& effects) {
     for (const Effect& effect : effects) {
       if (effect.kind != Effect::Kind::kAssign) {
@@ -459,56 +597,75 @@ class Analyzer {
               "effect references undeclared state variable '" +
                   effect.name + "' in atomic '" + node.name + "'",
               effect.name_span);
+        continue;
+      }
+      Value folded;
+      if (!fold_value(effect.value, scope, folded) || !is_scalar(folded)) {
+        error("LP2006",
+              "effect '" + effect.name + "' in atomic '" + node.name +
+                  "' must be a compile-time constant (literals, params, "
+                  "arithmetic)",
+              effect.value.span);
       }
     }
   }
 
-  void check_atomic(const Node& node) {
+  void check_atomic(const Node& node, const ParamScope& scope) {
     check_shape(node, {"time_advance"}, {"state"});
-    std::unordered_map<std::string, Span> state_names;
-    for (const VarDecl& var : node.vars) {
-      const auto [it, inserted] =
-          state_names.emplace(var.name, var.name_span);
-      if (!inserted) {
-        error("LP1002",
-              "duplicate state variable '" + var.name + "' in atomic '" +
-                  node.name + "'",
-              var.name_span);
-      }
-    }
+    check_state_vars(node, scope);
     const Field* ta = field_of(node, "time_advance");
     check_duplicate(node, "time_advance");
     if (ta) {
       const Value& value = ta->value;
-      bool exponential = value.kind == ValueKind::kCall &&
-                         value.call_name == "exponential";
-      double number = 0.0;
-      bool number_value = value.kind == ValueKind::kInt ||
-                          value.kind == ValueKind::kFloat;
-      if (number_value) {
-        number = value.kind == ValueKind::kInt
-                     ? static_cast<double>(value.int_value)
-                     : value.float_value;
-      }
-      if (exponential) {
-        if (value.call_args.size() != 1 || !(value.call_args[0] > 0.0)) {
+      if (value.kind == ValueKind::kIdentifier &&
+          value.string_value == "infinite") {
+        // passive atomic: no time advance
+      } else {
+        Value folded;
+        if (!fold_value(value, scope, folded)) {
+          error("LP2006",
+                "atomic '" + node.name +
+                    "' time_advance must be a compile-time constant "
+                    "(literals, params, arithmetic)",
+                ta->span);
+        } else if (folded.kind == ValueKind::kCall &&
+                   folded.call_name == "exponential" &&
+                   folded.call_args.size() == 1 &&
+                   (folded.call_args[0].kind == ValueKind::kInt ||
+                    folded.call_args[0].kind == ValueKind::kFloat)) {
+          if (!(folded_double(folded.call_args[0]) > 0.0)) {
+            error("LP3001",
+                  "atomic '" + node.name +
+                      "' time_advance exponential rate must be > 0",
+                  ta->span);
+          }
+        } else if (folded.kind == ValueKind::kCall &&
+                   folded.call_name == "constant" &&
+                   folded.call_args.size() == 1 &&
+                   (folded.call_args[0].kind == ValueKind::kInt ||
+                    folded.call_args[0].kind == ValueKind::kFloat)) {
+          if (folded_double(folded.call_args[0]) < 0.0) {
+            error("LP3001",
+                  "atomic '" + node.name + "' time_advance must be >= 0 (got "
+                      + std::to_string(folded_double(folded.call_args[0])) +
+                      ")",
+                  ta->span);
+          }
+        } else if (folded.kind == ValueKind::kInt ||
+                   folded.kind == ValueKind::kFloat) {
+          if (folded_double(folded) < 0.0) {
+            error("LP3001",
+                  "atomic '" + node.name + "' time_advance must be >= 0 (got "
+                      + std::to_string(folded_double(folded)) + ")",
+                  ta->span);
+          }
+        } else {
           error("LP3001",
                 "atomic '" + node.name +
-                    "' time_advance exponential rate must be > 0",
+                    "' time_advance must be a number, constant(...), "
+                    "exponential(...) or infinite",
                 ta->span);
         }
-      } else if (number_value && number < 0.0) {
-        error("LP3001",
-              "atomic '" + node.name + "' time_advance must be >= 0 (got " +
-                  std::to_string(number) + ")",
-              ta->span);
-      } else if (value.kind == ValueKind::kCall &&
-                 value.call_name != "constant") {
-        error("LP3001",
-              "atomic '" + node.name +
-                  "' time_advance must be a number, constant(...), "
-                  "exponential(...) or infinite",
-              ta->span);
       }
     }
     std::vector<const Behavior*> on_input;
@@ -541,10 +698,10 @@ class Analyzer {
             on_input[1]->span);
     }
     for (const Behavior* behavior : on_input) {
-      check_effects(node, behavior->effects);
+      check_effects(node, scope, behavior->effects);
     }
     if (on_timeout != nullptr) {
-      check_effects(node, on_timeout->effects);
+      check_effects(node, scope, on_timeout->effects);
     }
   }
 
@@ -554,27 +711,26 @@ class Analyzer {
     return handler == "noop" || handler == "flip" || handler == "bounce";
   }
 
-  void check_agent(const Node& node) {
+  void check_agent(const Node& node, const ParamScope& scope) {
     check_shape(node, {"count"}, {"state"});
+    check_state_vars(node, scope);
     const Field* count = field_of(node, "count");
     check_missing(node, "count", count);
     check_duplicate(node, "count");
-    if (count && count->value.kind == ValueKind::kInt &&
-        count->value.int_value < 1) {
-      error("LP3001",
-            "agent '" + node.name + "' count must be >= 1 (got " +
-                std::to_string(count->value.int_value) + ")",
-            count->span);
-    }
-    std::unordered_map<std::string, Span> state_names;
-    for (const VarDecl& var : node.vars) {
-      const auto [it, inserted] =
-          state_names.emplace(var.name, var.name_span);
-      if (!inserted) {
-        error("LP1002",
-              "duplicate state variable '" + var.name + "' in agent '" +
-                  node.name + "'",
-              var.name_span);
+    if (count) {
+      Value folded;
+      if (fold_field(*count, scope,
+                     "agent '" + node.name + "' count", folded)) {
+        if (folded.kind != ValueKind::kInt) {
+          error("LP3001",
+                "agent '" + node.name + "' count must be an integer",
+                count->span);
+        } else if (folded.int_value < 1) {
+          error("LP3001",
+                "agent '" + node.name + "' count must be >= 1 (got " +
+                    std::to_string(folded.int_value) + ")",
+                count->span);
+        }
       }
     }
     for (const Behavior& behavior : node.behaviors) {
@@ -633,7 +789,7 @@ class Analyzer {
     }
   }
 
-  void check_continuous(const Node& node) {
+  void check_continuous(const Node& node, const ParamScope& scope) {
     check_shape(node, {}, {"state", "param"});
     std::unordered_map<std::string, Span> names;
     const auto reserved = [&](const std::string& name, const Span& span) {
@@ -654,6 +810,7 @@ class Analyzer {
               var.name_span);
       }
     }
+    check_state_vars(node, scope);
     if (node.equations.empty()) {
       error("LP2001",
             "continuous '" + node.name +
@@ -717,6 +874,14 @@ class Analyzer {
     required(experiment.has_metric, "metric");
     required(experiment.has_variable, "variable");
     required(experiment.has_range, "range");
+
+    // Phase D: experiment numeric fields stay literal-only for now.
+    if (experiment.budget_count > 0 && !experiment.has_budget) {
+      error("LP2006",
+            "experiment '" + experiment.name +
+                "' budget must be an integer literal",
+            experiment.budget_span);
+    }
 
     if (experiment.has_objective && experiment.objective != "maximize" &&
         experiment.objective != "minimize") {
@@ -823,6 +988,7 @@ class Analyzer {
 
   std::vector<Diagnostic> diagnostics_;
   std::unordered_set<std::string> declared_resources_;
+  ParamScope model_scope_;
 };
 
 }  // namespace

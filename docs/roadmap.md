@@ -81,10 +81,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase C（显式引用）✅ 已完成**（2026-08-04）：`service { resource = R }`
    替代同名魔法绑定（`LP4001` 校验引用），缺省回退 v0 绑定；示例/AI provider/
    golden/CLI 夹具同步。
-   剩余：Phase D 表达式（`arrival = rate(arrival_rate)`）、Phase E 行为统一+
-   实验限定路径+`library`/`block` 库元层文件。
-   验收：`arrival = rate(arrival_rate)` 可编译、全部示例/测试/AI provider 同步，
-   143 ctest 不回归。
+   **Phase D（表达式）✅ 已完成**（2026-08-04）：`value` 文法扩展为表达式
+   （`+ - * /`、一元负、括号），常量折叠 + 参数引用（`arrival = rate(arrival_rate)`
+   可编译），模型级 `param` 进 IR 根节点；新 `LP2006`（未声明标识符/非常量）。
+   剩余：Phase E 行为统一+实验限定路径+`library`/`block` 库元层文件。
+   验收：全部示例/测试/AI provider 同步，147 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
 

@@ -19,7 +19,7 @@ Expression grammar is the remaining open item (see §5).
 | R2 | `declaration` | `kind <Identifier> { block }` — generic declaration; `kind` is resolved semantically (core kinds: `agent`/`atomic`/`process`/`continuous`/`experiment`; process library: `resource`/`source`/`queue`/`service`/`sink`). Unknown/misplaced kinds → `LP2004`. |
 | R3 | `field` | `name = <value>` — one field per occurrence; required/optional sets come from the block shape (unknown fields → `LP2005`). |
 | R4 | `variable_declaration` | `state <name> = <value>` / `param <name> = <value>` with optional `: type` annotation (`int`/`float`/`bool`/`string`/`distribution`/`ref`). |
-| R5 | `value` | literal (`bool`/`int`/`float`/`string`), bare identifier, or numeric call `name(<Numeric>, ...)`. |
+| R5 | `value` | expression: literal (`bool`/`int`/`float`/`string`), bare identifier, numeric call `name(<expr>, ...)`, binary `+ - * /` (precedence), unary `-`, parentheses. Constant-folded; parameter references resolve against declared `param`s. |
 | R6 | `behavior` | `on_<trigger> [port] { effect; ... }` — unified behavior block; triggers `timeout`/`input`/`tick`/...; effects are `name = <value>`, `emit <port>` or `call [arg]`. |
 | R7 | `equation` | `d <var>/dt = <rhs>` — structured ODE; raw RHS text until expressions land (Phase D). |
 | R8 | `port_declaration` | `in [name]: <type>` / `out [name]: <type>` / `inout [name]: <type>` — typed ports (unnamed → `entity`). |
@@ -42,9 +42,11 @@ Expression grammar is the remaining open item (see §5).
   `resource = R` reference (validated `LP4001`); when the field is absent the
   v0 identifier binding is kept as a transitional fallback. If the resource is
   unavailable, the entity waits in the preceding queue.
-- Distribution parameters are deterministic literals in v2 stage 1 (no
-  expressions, no variables; `rate` and `poisson` are equivalent Poisson
-  arrivals — `poisson` is deprecated from Phase D on).
+- Distribution parameters and numeric fields are **constant-folded
+  expressions** (Phase D): arithmetic over literals and model-level `param`s
+  reduces at compile time (`rate(arrival_rate * 2)` → Poisson [0.8]);
+  undeclared identifiers are `LP2006`. `rate` and `poisson` are equivalent
+  Poisson arrivals — `poisson` is deprecated.
 - Errors (compile-time): unknown resource reference, negative capacities,
   out-of-range `failure_rate`, duplicate declarations, unknown/misplaced
   kinds (`LP2004`), unknown fields (`LP2005`).
@@ -92,10 +94,12 @@ model QueueDemo {
 `resource/process/atomic/agent/continuous → v2 Node` blocks.
 See `docs/specs/ir-v2.md`.
 
-## 5. Explicitly Out of Scope for v0
+## 5. Explicitly Out of Scope (v2 stage 1)
 
-Variables/expressions, branching (`route`), priorities, batches, replication,
-warmup/run-length settings, multi-file imports, statistics blocks.
+Runtime-variable references in expressions (state variables are not
+compile-time constants), branching (`route`), priorities, batches,
+replication, warmup/run-length settings, multi-file imports, statistics
+blocks, and expression support inside `experiment` blocks (literal-only).
 
 ## 6. Diagnostics JSON Protocol (AI Copilot loop)
 

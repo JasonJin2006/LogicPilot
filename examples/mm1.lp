@@ -6,20 +6,24 @@
 // Wq = rho / (mu - lambda) = 4.0. Acceptance constants live in
 // examples/mm1.expect.json.
 model MM1 {
+  use process
+  param arrival_rate: float = 0.8
+  param service_rate: float = 1.0
+
   resource Server {
     capacity = 1
   }
 
   process Flow {
     source Arrivals {
-      arrival = poisson(0.8)
+      arrival = rate(arrival_rate)
     }
     queue WaitLine {
       capacity = 1000000
     }
     service Handle {
       resource = Server
-      time = exponential(1.0)
+      time = exponential(service_rate)
     }
   }
 }

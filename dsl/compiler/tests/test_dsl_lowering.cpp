@@ -157,6 +157,46 @@ TEST_CASE("lowering: explicit resource reference decouples the service "
   REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Handle");
 }
 
+TEST_CASE("lowering: expressions and parameter references fold before the "
+          "IR", "[dsl][lowering]") {
+  const IrLoadResult loaded = compile_and_load(
+      "model M {\n"
+      "  param arrival_rate: float = 0.4\n"
+      "  param service_rate: float = 2.0\n"
+      "  resource Server { capacity = 1 + 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(arrival_rate * 2) }\n"
+      "    queue Q { capacity = 100 + 1 }\n"
+      "    service R { resource = Server; time = exponential(service_rate) }\n"
+      "  }\n"
+      "}\n",
+      "fold.lp");
+
+  const v2::Node* root = loaded.file.v2_root->root();
+  // Model-level params land on the root node, folded.
+  REQUIRE(root->params()->size() == 2);
+  REQUIRE(root->params()->Get(0)->name()->str() == "arrival_rate");
+  REQUIRE(root->params()->Get(0)->float_value() == 0.4);
+  REQUIRE(root->params()->Get(1)->float_value() == 2.0);
+
+  const v2::Node* resource = root->children()->Get(0);
+  REQUIRE(resource->params()->Get(0)->int_value() == 2);  // 1 + 1
+
+  const v2::Node* flow = root->children()->Get(1);
+  const v2::Node* source = flow->children()->Get(0);
+  // rate(arrival_rate * 2) folds to Poisson [0.8].
+  REQUIRE(source->params()->Get(0)->distribution()->kind() == 4);
+  REQUIRE(source->params()->Get(0)->distribution()->params()->Get(0) == 0.8);
+
+  const v2::Node* queue = flow->children()->Get(1);
+  REQUIRE(queue->params()->Get(0)->int_value() == 101);  // 100 + 1
+
+  const v2::Node* service = flow->children()->Get(2);
+  // exponential(service_rate) folds to Exponential [2.0].
+  REQUIRE(service->params()->Get(0)->distribution()->kind() == 3);
+  REQUIRE(service->params()->Get(0)->distribution()->params()->Get(0) == 2.0);
+}
+
 TEST_CASE("lowering: ir_loader consumes the DSL output end to end",
           "[dsl][lowering]") {
   const std::string source = logicpilot::testing::read_text_file(kMm1Path);

@@ -214,6 +214,45 @@ TEST_CASE("parser: v2 behaviors extract trigger, port and effects",
   REQUIRE(agent.behaviors[0].effects[1].name == "bounce");
 }
 
+TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  param k: float = 2.0\n"
+      "  process P {\n"
+      "    source A { arrival = rate(k * 2) }\n"
+      "    queue Q { capacity = 100 + 1 }\n"
+      "  }\n"
+      "}\n",
+      "inline.lp");
+  REQUIRE(parsed.ok());
+
+  // Model-level param value is a plain float literal.
+  REQUIRE(parsed.model->params.size() == 1);
+  REQUIRE(parsed.model->params[0].value.kind == ValueKind::kFloat);
+  REQUIRE(parsed.model->params[0].value.float_value == 2.0);
+
+  const Node* process = member_of(*parsed.model, "process");
+  // rate(k * 2): call arg is a kMul expression (k * 2).
+  const Value& arrival =
+      field_of(process->children[0], "arrival")->value;
+  REQUIRE(arrival.kind == ValueKind::kCall);
+  REQUIRE(arrival.call_name == "rate");
+  REQUIRE(arrival.call_args.size() == 1);
+  REQUIRE(arrival.call_args[0].kind == ValueKind::kMul);
+  REQUIRE(arrival.call_args[0].operands.size() == 2);
+  REQUIRE(arrival.call_args[0].operands[0].kind == ValueKind::kIdentifier);
+  REQUIRE(arrival.call_args[0].operands[0].string_value == "k");
+  REQUIRE(arrival.call_args[0].operands[1].kind == ValueKind::kInt);
+  REQUIRE(arrival.call_args[0].operands[1].int_value == 2);
+
+  // capacity = 100 + 1: kAdd with two int operands.
+  const Value& capacity = field_of(process->children[1], "capacity")->value;
+  REQUIRE(capacity.kind == ValueKind::kAdd);
+  REQUIRE(capacity.operands.size() == 2);
+  REQUIRE(capacity.operands[0].int_value == 100);
+  REQUIRE(capacity.operands[1].int_value == 1);
+}
+
 TEST_CASE("parser: syntax errors become LP0001 diagnostics", "[dsl][parser]") {
   SECTION("missing closing brace") {
     const ParseOutput parsed =

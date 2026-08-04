@@ -107,7 +107,9 @@ model Shop {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -118,8 +120,12 @@ model Shop {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)
-                      (integer)))))))))
+                      (value
+                        (value_literal
+                          (integer)))
+                      (value
+                        (value_literal
+                          (integer)))))))))))
       (declaration
         kind: (identifier)
         name: (identifier)
@@ -134,7 +140,9 @@ model Shop {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (declaration
             kind: (identifier)
             name: (identifier)
@@ -154,7 +162,9 @@ model Shop {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer))))))))))))
+                      (value
+                        (value_literal
+                          (integer))))))))))))))
 
 ==================
 Comments interleaved everywhere
@@ -217,7 +227,9 @@ model Commented { // model line comment
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))
+                      (value
+                        (value_literal
+                          (integer)))))))
               (comment)))
           (comment)
           (declaration
@@ -239,7 +251,9 @@ model Commented { // model line comment
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)))))))
+                      (value
+                        (value_literal
+                          (integer)))))))))
           (comment)))))
   (comment))
 

@@ -34,9 +34,13 @@ emit_effect          := 'emit' Identifier
 call_effect          := Identifier Identifier?              // greedy arg (prec.right)
 equation             := 'd' Identifier '/dt' '=' rhs_text
 couple_declaration   := 'couple' Identifier '.' Identifier '->' Identifier '.' Identifier
-value                := value_literal | Identifier | call
+value                := binary_expression | unary_expression | parenthesized_expression
+                      | value_literal | Identifier | call
+binary_expression    := value binary_op value            // prec.left: * / (2) tighter than + - (1)
+unary_expression     := '-' value
+parenthesized_expression := '(' value ')'
 value_literal        := boolean_literal | Integer | Float | string_literal
-call                 := Identifier '(' (Numeric (',' Numeric)*) ')'
+call                 := Identifier '(' (value (',' value)*) ')'
 type_name            := Identifier                          // builtins validated semantically
 Integer              := [0-9]+
 Float                := [0-9]+\.[0-9]+

@@ -309,8 +309,12 @@ model Decay {
   v0 同名绑定作为过渡回退；lowering 按引用解析 `resource`/`servers` 参数。
   示例（mm1/mm1_failure/two_servers）迁移为 `service Handle { resource = Server; ... }`，
   AI provider 同步；golden 与新增 `LP4001` 引用测试覆盖。修复 D3。
-- **Phase D（表达式）**: 表达式文法 + 常量折叠 → 参数引用；模型级 `param`；
-  修复 D6；吸收 roadmap P1-5。
+- **Phase D（表达式）**: ✅ 已完成（2026-08-04）：`value` 文法扩展为表达式
+  （二元 `+ - * /` 带优先级、一元取负、括号）；AST 改为表达式树；编译器
+  常量折叠（`rate(2 * 0.4)` → Poisson[0.8]）并解析参数引用
+  （`rate(arrival_rate)` → 取模型级 `param` 值，`LP2006` 拒绝未声明标识符/
+  非常量）；模型级 `param` 落入 IR 根节点 params；示例 mm1 迁移为
+  `param arrival_rate` + `rate(arrival_rate)`。修复 D6；吸收 roadmap P1-5。
 - **Phase E（行为统一 + 实验 + 库元层）**: `on_<trigger> { }` 统一；experiment
   `variable` 改为限定路径；`library`/`block` 元层落地为 `libraries/process.lplib`
   文件 + 注册表加载；修复 D4/D5/D7。

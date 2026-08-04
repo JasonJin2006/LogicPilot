@@ -1,6 +1,8 @@
 ModelFile schema_version=2
 metadata name='MM1'
 root node 'MM1' library='core' block='model'
+root   param arrival_rate = float(0.8)
+root   param service_rate = float(1)
 root   node 'Server' library='process' block='resource'
 root     param capacity = int(1)
 root     param failure_rate = float(0)

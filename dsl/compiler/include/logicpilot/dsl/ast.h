@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "logicpilot/dsl/diagnostics.h"
@@ -28,10 +29,24 @@ struct Distribution {
   Span span;
 };
 
-// A field/effect value in v2 stage 1 (literals, bare identifiers, and
-// numeric calls such as distribution constructors; expressions land in
-// Phase D).
-enum class ValueKind { kBool, kInt, kFloat, kString, kIdentifier, kCall };
+// A field/effect value: expression tree (Phase D). Literals, bare
+// identifiers (references), numeric calls (distribution constructors) and
+// arithmetic (unary/binary/parenthesized) share one node type; the compiler
+// constant-folds numeric positions and resolves parameter references.
+enum class ValueKind {
+  kBool,
+  kInt,
+  kFloat,
+  kString,
+  kIdentifier,
+  kCall,
+  kNegate,
+  kAdd,
+  kSub,
+  kMul,
+  kDiv,
+  kParen,
+};
 
 struct Value {
   ValueKind kind{ValueKind::kInt};
@@ -40,8 +55,39 @@ struct Value {
   double float_value{0.0};
   std::string string_value;   // kString / kIdentifier
   std::string call_name;      // kCall: distribution constructor, ...
-  std::vector<double> call_args;  // kCall numeric arguments
+  std::vector<Value> call_args;  // kCall expression arguments
+  std::vector<Value> operands;   // kNegate/kParen: 1; kAdd/kSub/kMul/kDiv: 2
   Span span;
+};
+
+// A compile-time constant after folding (literal, resolved param, or
+// arithmetic result). `kind` is one of kBool/kInt/kFloat/kString.
+struct FoldedValue {
+  ValueKind kind{ValueKind::kInt};
+  bool bool_value{false};
+  std::int64_t int_value{0};
+  double float_value{0.0};
+  std::string string_value;
+};
+
+// Parameter scope for compile-time expression resolution: model-level
+// `param` declarations plus container-local `param`s.
+class ParamScope {
+ public:
+  void declare(const std::string& name, const FoldedValue& value) {
+    values_[name] = value;
+  }
+  bool lookup(const std::string& name, FoldedValue& out) const {
+    const auto it = values_.find(name);
+    if (it == values_.end()) {
+      return false;
+    }
+    out = it->second;
+    return true;
+  }
+
+ private:
+  std::unordered_map<std::string, FoldedValue> values_;
 };
 
 // One `name = <value>` field (each occurrence is one Field; the analyzer
@@ -182,9 +228,17 @@ struct ModelAst {
                                       const std::string& name);
 
 // value -> distribution (v2 stage 1 constructors: poisson/rate,
-// exponential, normal, constant). Returns false when the value is not a
-// recognized distribution call.
+// exponential, normal, constant); arguments must already be folded
+// literals. Returns false when the value is not a recognized distribution
+// call.
 [[nodiscard]] bool distribution_from_value(const Value& value,
                                            Distribution& out);
+
+// Constant-fold an expression to a literal-only Value (kCall keeps its
+// folded arguments; identifiers resolve against `scope`). Returns false when
+// an identifier cannot be resolved, arithmetic operands are non-numeric, or
+// division by zero occurs.
+[[nodiscard]] bool fold_value(const Value& value, const ParamScope& scope,
+                              Value& out);
 
 }  // namespace logicpilot::dsl

@@ -100,9 +100,13 @@ model M {
                   (call
                     name: (identifier)
                     args: (argument_list
-                      (integer)
+                      (value
+                        (value_literal
+                          (integer)))
                       (comment)
-                      (integer))
+                      (value
+                        (value_literal
+                          (integer))))
                     (comment)))))))))))
 
 ==================

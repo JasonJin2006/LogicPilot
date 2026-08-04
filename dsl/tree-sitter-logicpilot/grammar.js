@@ -189,10 +189,46 @@ module.exports = grammar({
       field('to_port', $.identifier),
     ),
 
+    // Expression grammar (Phase D): literals, identifiers, calls, unary
+    // negation, binary arithmetic and parenthesized groups. Field values
+    // are constant-folded by the compiler; parameter references resolve
+    // against declared `param`s.
     value: $ => choice(
+      $.binary_expression,
+      $.unary_expression,
+      $.parenthesized_expression,
       $.value_literal,
       $.identifier,
       $.call,
+    ),
+
+    binary_expression: $ => choice(
+      // Higher precedence binds tighter: `1 + 2 * 3` = `1 + (2 * 3)`.
+      prec.left(2, seq(
+        field('left', $.value),
+        field('op', $.binary_op),
+        field('right', $.value),
+      )),
+      prec.left(1, seq(
+        field('left', $.value),
+        field('op', $.binary_op),
+        field('right', $.value),
+      )),
+    ),
+
+    binary_op: $ => choice('+', '-', '*', '/'),
+
+    unary_expression: $ => prec(3, seq(
+      field('op', $.unary_op),
+      field('operand', $.value),
+    )),
+
+    unary_op: $ => '-',
+
+    parenthesized_expression: $ => seq(
+      '(',
+      field('value', $.value),
+      ')',
     ),
 
     value_literal: $ => choice(
@@ -206,8 +242,9 @@ module.exports = grammar({
 
     string_literal: $ => token(seq('"', /[^"\n]*/, '"')),
 
-    // Generic call with numeric arguments (distribution constructors in
-    // v2 stage 1: poisson / rate / exponential / normal / constant).
+    // Generic call (distribution constructors in v2 stage 1: poisson /
+    // rate / exponential / normal / constant); arguments are expressions
+    // so `rate(2 * arrival_rate)` folds at compile time.
     call: $ => seq(
       field('name', $.identifier),
       '(',
@@ -216,13 +253,8 @@ module.exports = grammar({
     ),
 
     argument_list: $ => seq(
-      $._argument,
-      repeat(seq(',', $._argument)),
-    ),
-
-    _argument: $ => choice(
-      $.integer,
-      $.float,
+      $.value,
+      repeat(seq(',', $.value)),
     ),
 
     // `prec.right` favours longest match on digit runs: "10" parses as one
