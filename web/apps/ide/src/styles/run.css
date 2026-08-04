@@ -114,6 +114,12 @@
   overflow: hidden;
 }
 
+.viz-empty {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+}
+
 .queue-canvas {
   position: absolute;
   inset: 0;

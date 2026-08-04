@@ -47,8 +47,8 @@ page.on('pageerror', (err) => consoleErrors.push(String(err)));
 try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
-  await page.waitForSelector('.queue-canvas canvas', { timeout: 20_000 });
-  log('page loaded: queue canvas present');
+  await page.waitForSelector('.viz-empty', { timeout: 20_000 });
+  log('page loaded: center visualization area present');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
   // Connection + run setup live in the settings dialog (activity bar gear).
