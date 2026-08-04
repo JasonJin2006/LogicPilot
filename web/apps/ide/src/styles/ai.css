@@ -2,7 +2,7 @@
 
 .ai-panel {
   margin-top: 16px;
-  border-top: 1px solid #30363d;
+  border-top: 1px solid var(--border);
   padding-top: 12px;
 }
 
@@ -10,29 +10,29 @@
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  background: #0d1117;
-  color: #e6edf3;
-  border: 1px solid #30363d;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px;
   font: inherit;
 }
 
 .ai-error {
-  color: #f85149;
+  color: var(--error);
   margin: 8px 0 0;
 }
 
 .ai-meta {
-  color: #7ee787;
+  color: var(--ok-text);
   margin: 8px 0 4px;
   font-size: 12px;
 }
 
 .ai-dsl,
 .ai-run {
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--bg-strong);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px;
   overflow: auto;
@@ -43,19 +43,19 @@
 }
 
 .ai-run {
-  color: #79c0ff;
+  color: var(--accent-text);
 }
 
 .ai-diagnostics {
-  color: #f85149;
+  color: var(--error);
   font-size: 12px;
   padding-left: 18px;
 }
 
 .ai-trajectory {
   display: block;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--bg-strong);
+  border: 1px solid var(--border);
   border-radius: 6px;
   margin-top: 6px;
   max-width: 100%;
@@ -70,13 +70,13 @@
 
 .ai-scores th,
 .ai-scores td {
-  border: 1px solid #30363d;
+  border: 1px solid var(--border);
   padding: 2px 8px;
   text-align: right;
 }
 
 .ai-scores th {
-  color: #8b949e;
+  color: var(--text-muted);
 }
 
 .ai-findings {
@@ -84,5 +84,5 @@
   padding-left: 18px;
   font-size: 12px;
   line-height: 1.5;
-  color: #e6edf3;
+  color: var(--text);
 }

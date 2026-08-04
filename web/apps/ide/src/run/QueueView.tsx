@@ -7,6 +7,7 @@
 import { Application, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
 import { useConnectionStore } from '../state/connectionStore';
+import { resolveTheme, useThemeStore } from '../state/themeStore';
 import { vizState } from '../state/vizState';
 
 interface DisplayAgent {
@@ -15,15 +16,30 @@ interface DisplayAgent {
   serving: boolean;
 }
 
-const COLORS = {
-  background: 0x0d1117,
-  serverIdle: 0x30363d,
-  serverBusy: 0xffb020,
-  serverDown: 0xf85149,
-  serving: 0x3fb950,
-  waiting: 0x58a6ff,
-  label: 0x8b949e,
-};
+// Pixi paints its own canvas, so colors cannot use CSS variables directly;
+// pick the palette by the resolved theme (mirrors the --canvas-bg token).
+const PALETTES = {
+  light: {
+    canvas: 0xffffff,
+    serverIdle: 0xe6e8eb,
+    serverBusy: 0xd29922,
+    serverDown: 0xcf222e,
+    serving: 0x1a7f37,
+    waiting: 0x0969da,
+    label: 0x8b949e,
+    stroke: 0xffffff,
+  },
+  dark: {
+    canvas: 0x0b1018,
+    serverIdle: 0x30363d,
+    serverBusy: 0xffb020,
+    serverDown: 0xf85149,
+    serving: 0x3fb950,
+    waiting: 0x58a6ff,
+    label: 0x8b949e,
+    stroke: 0x0d1117,
+  },
+} as const;
 
 export function QueueView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +60,7 @@ export function QueueView() {
     let lastFpsPush = 0;
 
     const draw = (dtSeconds: number) => {
+      const colors = PALETTES[resolveTheme(useThemeStore.getState().mode)];
       const state = vizState;
       const { width, height } = app.screen;
       const originX = 110;
@@ -87,25 +104,27 @@ export function QueueView() {
       }
 
       layer.clear();
+      // Theme-following canvas background (Pixi paints its own canvas).
+      layer.rect(0, 0, width, height).fill(colors.canvas);
 
       // Ground line through the queue.
       layer
         .moveTo(originX - 60, originY)
         .lineTo(width - 20, originY)
-        .stroke({ width: 1, color: COLORS.label, alpha: 0.25 });
+        .stroke({ width: 1, color: colors.label, alpha: 0.25 });
 
       // Service cells: one per server; the last `downServers` cells are down.
       const downServers = Math.max(0, Math.min(state.downServers, servers));
       for (let i = 0; i < servers; ++i) {
         const down = i >= servers - downServers;
-        const color = down ? COLORS.serverDown : state.busy ? COLORS.serverBusy : COLORS.serverIdle;
+        const color = down ? colors.serverDown : state.busy ? colors.serverBusy : colors.serverIdle;
         const cx = originX + i * cellW;
         layer
           .roundRect(cx + 2, originY - 42, cellW - 14, 84, 8)
           .fill({ color, alpha: down || state.busy ? 0.9 : 0.5 })
           .stroke({
             width: 2,
-            color: down ? COLORS.serverDown : state.busy ? COLORS.serverBusy : COLORS.label,
+            color: down ? colors.serverDown : state.busy ? colors.serverBusy : colors.label,
           });
       }
 
@@ -113,30 +132,36 @@ export function QueueView() {
       for (const agent of display.values()) {
         layer
           .circle(agent.x, agent.y, 9)
-          .fill(agent.serving ? COLORS.serving : COLORS.waiting)
-          .stroke({ width: 1.5, color: 0x0d1117 });
+          .fill(agent.serving ? colors.serving : colors.waiting)
+          .stroke({ width: 1.5, color: colors.stroke });
       }
     };
 
-    void app.init({ resizeTo: el, background: COLORS.background, antialias: true }).then(() => {
-      if (disposed) {
-        // React StrictMode may unmount before init resolves; destroy now
-        // that the app is fully constructed.
-        app.destroy(true);
-        return;
-      }
-      initialized = true;
-      app.stage.addChild(layer);
-      app.ticker.add((ticker) => {
-        draw(ticker.deltaMS / 1000);
-        const now = performance.now();
-        if (now - lastFpsPush > 500) {
-          lastFpsPush = now;
-          setFpsRef.current(Math.round(ticker.FPS));
+    void app
+      .init({
+        resizeTo: el,
+        background: PALETTES[resolveTheme(useThemeStore.getState().mode)].canvas,
+        antialias: true,
+      })
+      .then(() => {
+        if (disposed) {
+          // React StrictMode may unmount before init resolves; destroy now
+          // that the app is fully constructed.
+          app.destroy(true);
+          return;
         }
+        initialized = true;
+        app.stage.addChild(layer);
+        app.ticker.add((ticker) => {
+          draw(ticker.deltaMS / 1000);
+          const now = performance.now();
+          if (now - lastFpsPush > 500) {
+            lastFpsPush = now;
+            setFpsRef.current(Math.round(ticker.FPS));
+          }
+        });
+        el.appendChild(app.canvas);
       });
-      el.appendChild(app.canvas);
-    });
 
     return () => {
       disposed = true;

@@ -143,3 +143,14 @@ type LayoutNode =
 
 拖拽停靠 / 标签合并 / 编辑器拆分 = 树的变换；序列化仍是 JSON，`persist` 与
 `Workspace` 渲染平滑迁移，面板注册表不动。
+
+## 8. 主题系统
+
+- 三态主题（`state/themeStore.ts`）：`light` / `dark` / `system`，persist 到
+  localStorage；`system` 模式实时跟随 `prefers-color-scheme`。
+- 实现：`ThemeManager` 把解析后的主题写到 `<html data-theme>`，`base.css`
+  以 `:root`（dark）+ `:root[data-theme='light']` 两套 CSS 变量切换整个设计
+  系统（surface / text / accent / code 等 tokens）。
+- 新主题 = 增加一个 `data-theme` 取值对应的变量覆盖块；组件只引用变量，
+  不写死颜色（Pixi 画布等自绘制场景在 `QueueView` 内按主题映射调色板）。
+- 切换入口：设置弹层（活动栏 ⚙）的 Appearance 段。

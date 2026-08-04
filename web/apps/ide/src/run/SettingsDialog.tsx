@@ -3,6 +3,7 @@
 // header control.
 
 import { useConnectionStore } from '../state/connectionStore';
+import { useThemeStore, type ThemeMode } from '../state/themeStore';
 import { useUiStore } from '../state/uiStore';
 
 export function SettingsDialog() {
@@ -12,6 +13,8 @@ export function SettingsDialog() {
   const connect = useConnectionStore((state) => state.connect);
   const disconnect = useConnectionStore((state) => state.disconnect);
   const closeSettings = useUiStore((state) => state.closeSettings);
+  const themeMode = useThemeStore((state) => state.mode);
+  const setThemeMode = useThemeStore((state) => state.setMode);
 
   const connected = conn === 'connected';
   const connecting = conn === 'connecting';
@@ -52,6 +55,20 @@ export function SettingsDialog() {
             </button>
           )}
           <span className={`conn-badge conn-${conn}`}>{conn}</span>
+        </div>
+        <div className="dialog-section">
+          <span className="dialog-label">Appearance</span>
+          <div className="theme-options">
+            {(['light', 'dark', 'system'] as ThemeMode[]).map((mode) => (
+              <button
+                key={mode}
+                className={`theme-option${themeMode === mode ? ' active' : ''}`}
+                onClick={() => setThemeMode(mode)}
+              >
+                {mode === 'light' ? 'Light' : mode === 'dark' ? 'Dark' : 'System'}
+              </button>
+            ))}
+          </div>
         </div>
         <p className="dialog-hint">
           The simulation gateway streams telemetry frames over WebSocket (wire.fbs contract F2).

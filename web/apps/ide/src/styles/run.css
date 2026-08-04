@@ -70,6 +70,34 @@
   line-height: 1.6;
 }
 
+.dialog-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.theme-options {
+  display: flex;
+  gap: 6px;
+}
+
+.theme-option {
+  flex: 1;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.theme-option.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
 /* --- run toolbar -------------------------------------------------------- */
 
 .run-toolbar {
@@ -144,19 +172,19 @@
 }
 
 .dot-serving {
-  background: #3fb950;
+  background: var(--ok);
 }
 
 .dot-waiting {
-  background: #58a6ff;
+  background: var(--accent);
 }
 
 .dot-server {
-  background: #ffb020;
+  background: var(--warn);
 }
 
 .dot-down {
-  background: #f85149;
+  background: var(--error);
 }
 
 .status-bar {
@@ -167,7 +195,7 @@
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--muted);
   flex-wrap: wrap;
@@ -235,7 +263,7 @@
 }
 
 .chart-title {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   margin-bottom: 2px;
 }
@@ -280,13 +308,13 @@
 .results table {
   width: 100%;
   border-collapse: collapse;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
 .results td {
   padding: 2px 4px;
-  border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  border-bottom: 1px solid var(--row-border);
 }
 
 .results td.num {

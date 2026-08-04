@@ -9,18 +9,22 @@ import { RunToolbar } from './run/RunToolbar';
 import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
 import { useUiStore } from './state/uiStore';
+import { ThemeManager } from './theme/ThemeManager';
 
 export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   return (
-    <div className="app">
-      <RunToolbar />
-      <div className="app-body">
-        <ActivityBar />
-        <Workspace />
+    <>
+      <ThemeManager />
+      <div className="app">
+        <RunToolbar />
+        <div className="app-body">
+          <ActivityBar />
+          <Workspace />
+        </div>
+        <StatusBar />
+        {settingsOpen && <SettingsDialog />}
       </div>
-      <StatusBar />
-      {settingsOpen && <SettingsDialog />}
-    </div>
+    </>
   );
 }

@@ -13,6 +13,7 @@
   --surface-3: #1d2733;
   --border: #222c39;
   --border-strong: #314050;
+  --bg-strong: #0b1018;
 
   /* text */
   --text: #d7e0ea;
@@ -23,13 +24,19 @@
   /* accents */
   --accent: #4cc2ff;
   --accent-dim: rgba(76, 194, 255, 0.14);
+  --accent-text: #79c0ff;
+  --accent-hover: #63ccff;
   --ok: #3fb950;
   --ok-dim: rgba(63, 185, 80, 0.14);
+  --ok-text: #7ee787;
   --warn: #e3b341;
   --warn-dim: rgba(227, 179, 65, 0.14);
   --error: #f85149;
   --error-dim: rgba(248, 81, 73, 0.14);
+  --on-accent: #06121c;
   --panel: #10151d; /* legacy alias */
+  --canvas-bg: #0b1018;
+  --row-border: rgba(49, 64, 80, 0.5);
 
   /* geometry */
   --r-sm: 6px;
@@ -37,6 +44,42 @@
   --r-lg: 14px;
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
   --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+}
+
+/* Light theme: the whole design system switches via the CSS variables
+   (themeStore writes <html data-theme="light">). Custom themes can be added
+   as further attribute values that override these tokens. */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --surface-1: #f3f4f6;
+  --surface-2: #ffffff;
+  --surface-3: #e8eaed;
+  --border: #d4d7dd;
+  --border-strong: #b6bcc6;
+  --bg-strong: #f6f8fa;
+
+  --text: #1f2328;
+  --text-secondary: #59636e;
+  --text-muted: #8b949e;
+  --muted: #8b949e;
+
+  --accent: #0969da;
+  --accent-dim: rgba(9, 105, 218, 0.12);
+  --accent-text: #0969da;
+  --accent-hover: #0550ae;
+  --ok: #1a7f37;
+  --ok-dim: rgba(26, 127, 55, 0.12);
+  --ok-text: #1a7f37;
+  --warn: #9a6700;
+  --warn-dim: rgba(154, 103, 0, 0.12);
+  --error: #cf222e;
+  --error-dim: rgba(207, 34, 46, 0.12);
+  --on-accent: #ffffff;
+  --panel: #f3f4f6;
+  --canvas-bg: #ffffff;
+  --row-border: rgba(0, 0, 0, 0.08);
 }
 
 * {
@@ -51,8 +94,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(1200px 600px at 70% -10%, rgba(76, 194, 255, 0.05), transparent 60%), var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family:
     'Segoe UI',
@@ -154,13 +196,13 @@ button:disabled {
 button.btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #06121c;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
 button.btn-primary:hover:not(:disabled) {
-  background: #63ccff;
-  border-color: #63ccff;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 button.btn-ghost {

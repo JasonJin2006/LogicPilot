@@ -57,6 +57,16 @@ try {
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.waitForSelector('.conn-connected', { timeout: 10_000 });
   log('connected to ws://127.0.0.1:8089/sim');
+
+  // Theme switching (light / dark) lives in the same dialog.
+  await page.getByRole('button', { name: 'Light' }).click();
+  const lightTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (lightTheme !== 'light') throw new Error(`expected light theme, got ${lightTheme}`);
+  await page.getByRole('button', { name: 'Dark' }).click();
+  const darkTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (darkTheme !== 'dark') throw new Error(`expected dark theme, got ${darkTheme}`);
+  log('theme switching: light <-> dark');
+
   await page.getByRole('button', { name: '✕' }).click();
 
   // Small run so the browser session finishes quickly.
