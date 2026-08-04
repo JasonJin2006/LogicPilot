@@ -16,6 +16,9 @@ const MAX_SCALE = 16;
 // units is the smallest "nice" value that lands near this spacing.
 const GRID_TARGET_PX = 40;
 const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
+// Default view margin: the origin sits this far in from the canvas edges so
+// the axes, arrowheads and tick labels are fully visible on first load.
+const VIEW_MARGIN = 48;
 
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
@@ -59,7 +62,7 @@ export function ModelCanvas() {
   const select = useModelStore((state) => state.select);
 
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<View>({ scale: 1, panX: 0, panY: 0 });
+  const [view, setView] = useState<View>({ scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   const drag = useRef<{
@@ -163,13 +166,18 @@ export function ModelCanvas() {
   const y0 = Math.floor(-panY / step);
   const y1 = Math.ceil((size.height - panY) / step);
   const xTicksOn = panY >= 0 && panY <= size.height - 18;
-  const yTicksOn = panX >= 6 && panX <= size.width - 34;
+  const yTicksOn = panX >= 6 && panX <= size.width - 36;
+  // Snap lines to the pixel grid (+0.5 centers a 1px stroke on one pixel
+  // row/column) so the grid stays crisp at any pan/zoom instead of rendering
+  // as blurry 2px soft lines.
+  const axisX = Math.round(panX) + 0.5;
+  const axisY = Math.round(panY) + 0.5;
   const verticals = [];
   const horizontals = [];
   const xTicks = [];
   const yTicks = [];
   for (let k = x0; k <= x1; k++) {
-    const sx = k * step * scale + panX;
+    const sx = Math.round(k * step * scale + panX) + 0.5;
     const major = k % MAJOR_EVERY === 0;
     verticals.push(
       <line
@@ -181,16 +189,16 @@ export function ModelCanvas() {
         style={{ stroke: major ? 'var(--border-strong)' : 'var(--border)' }}
       />,
     );
-    if (major && k !== 0 && xTicksOn) {
+    if (major && k !== 0 && xTicksOn && sx >= 20 && sx <= size.width - 20) {
       xTicks.push(
-        <text key={`xt${k}`} x={sx} y={panY + 14} textAnchor="middle">
+        <text key={`xt${k}`} x={Math.round(sx)} y={Math.round(axisY) + 14} textAnchor="middle">
           {formatTick(k * step, decimals)}
         </text>,
       );
     }
   }
   for (let k = y0; k <= y1; k++) {
-    const sy = k * step * scale + panY;
+    const sy = Math.round(k * step * scale + panY) + 0.5;
     const major = k % MAJOR_EVERY === 0;
     horizontals.push(
       <line
@@ -202,9 +210,9 @@ export function ModelCanvas() {
         style={{ stroke: major ? 'var(--border-strong)' : 'var(--border)' }}
       />,
     );
-    if (major && yTicksOn) {
+    if (major && yTicksOn && sy >= 10 && sy <= size.height - 12) {
       yTicks.push(
-        <text key={`yt${k}`} x={panX - 6} y={sy + 3} textAnchor="end">
+        <text key={`yt${k}`} x={Math.round(axisX) - 6} y={Math.round(sy) + 3} textAnchor="end">
           {formatTick(k * step, decimals)}
         </text>,
       );
@@ -229,24 +237,28 @@ export function ModelCanvas() {
         {horizontals}
         {xAxisVisible && (
           <g className="model-axis">
-            <line x1={0} y1={panY} x2={size.width} y2={panY} />
+            <line x1={0} y1={axisY} x2={size.width} y2={axisY} />
             <path
-              d={`M ${size.width} ${panY} L ${size.width - 9} ${panY - 4} L ${size.width - 9} ${panY + 4} Z`}
+              d={`M ${size.width} ${axisY} L ${size.width - 9} ${axisY - 4} L ${size.width - 9} ${axisY + 4} Z`}
             />
-            <text x={size.width - 16} y={panY - 8} textAnchor="end">
-              x
-            </text>
+            {axisY >= 12 && (
+              <text x={size.width - 16} y={Math.round(axisY) - 8} textAnchor="end">
+                x
+              </text>
+            )}
           </g>
         )}
         {yAxisVisible && (
           <g className="model-axis">
-            <line x1={panX} y1={0} x2={panX} y2={size.height} />
+            <line x1={axisX} y1={0} x2={axisX} y2={size.height} />
             <path
-              d={`M ${panX} ${size.height} L ${panX - 4} ${size.height - 9} L ${panX + 4} ${size.height - 9} Z`}
+              d={`M ${axisX} ${size.height} L ${axisX - 4} ${size.height - 9} L ${axisX + 4} ${size.height - 9} Z`}
             />
-            <text x={panX + 8} y={size.height - 14}>
-              y
-            </text>
+            {axisX <= size.width - 20 && (
+              <text x={Math.round(axisX) + 8} y={size.height - 14}>
+                y
+              </text>
+            )}
           </g>
         )}
         {xTicks}
