@@ -83,7 +83,7 @@ try {
     { timeout: 30_000 },
   );
   log('start acked by gateway');
-  await page.getByRole('button', { name: '✕' }).click();
+  await page.getByRole('button', { name: 'Close' }).click();
 
   // Live telemetry: switch to the Run side panel and read seq progression.
   await page.locator('.activity-bar').getByRole('button', { name: 'Run' }).click();

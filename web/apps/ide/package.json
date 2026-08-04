@@ -16,6 +16,7 @@
   "dependencies": {
     "@logicpilot/protocol": "workspace:*",
     "@logicpilot/renderer2d": "workspace:*",
+    "lucide-react": "^1.28.0",
     "pixi.js": "^8.6.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

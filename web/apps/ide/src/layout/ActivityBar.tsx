@@ -4,6 +4,7 @@
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { ACTIVITY_VIEWS } from './panels';
+import { Settings } from 'lucide-react';
 
 export function ActivityBar() {
   const left = useLayoutStore((s) => s.areas.left);
@@ -14,6 +15,7 @@ export function ActivityBar() {
     <nav className="activity-bar">
       {ACTIVITY_VIEWS.map((view) => {
         const active = left.activePanel === view.panel && !left.collapsed;
+        const Icon = view.icon;
         return (
           <button
             key={view.id}
@@ -31,7 +33,9 @@ export function ActivityBar() {
               }
             }}
           >
-            <span className="activity-glyph">{view.glyph}</span>
+            <span className="activity-glyph">
+              <Icon size={17} />
+            </span>
           </button>
         );
       })}
@@ -42,7 +46,9 @@ export function ActivityBar() {
         title="Settings"
         onClick={openSettings}
       >
-        <span className="activity-glyph">⚙</span>
+        <span className="activity-glyph">
+          <Settings size={17} />
+        </span>
       </button>
     </nav>
   );

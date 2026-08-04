@@ -3,6 +3,7 @@
 // configuration surfaces, not pinned header/toolbar controls.
 
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import type { StartOptions } from '../client/simClient';
 import { useConnectionStore } from '../state/connectionStore';
 import { useThemeStore, type ThemeMode } from '../state/themeStore';
@@ -76,8 +77,8 @@ export function SettingsDialog() {
       >
         <div className="dialog-header">
           <h2>Settings</h2>
-          <button className="btn-ghost" onClick={closeSettings}>
-            ✕
+          <button className="btn-ghost" aria-label="Close" onClick={closeSettings}>
+            <X size={16} />
           </button>
         </div>
 

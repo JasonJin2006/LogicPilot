@@ -44,6 +44,12 @@
   border-color: var(--border);
 }
 
+.activity-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .workspace {
   flex: 1;
   min-width: 0;

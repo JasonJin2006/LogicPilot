@@ -4,6 +4,7 @@
 // touches the layout system. See docs/specs/ide-layout.md.
 
 import type { ComponentType } from 'react';
+import { Boxes, Palette, Play } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
 import { QueueView } from '../run/QueueView';
 import { ConsolePanel } from './ConsolePanel';
@@ -38,12 +39,12 @@ export const PANELS: Record<PanelId, PanelDef> = {
 export const ACTIVITY_VIEWS: Array<{
   id: string;
   label: string;
-  glyph: string;
+  icon: ComponentType<{ size?: number }>;
   panel: PanelId;
 }> = [
-  { id: 'model', label: 'Model', glyph: '▤', panel: 'modelInfo' },
-  { id: 'palette', label: 'Palette', glyph: '▦', panel: 'palette' },
-  { id: 'run', label: 'Run', glyph: '▶', panel: 'runInfo' },
+  { id: 'model', label: 'Model', icon: Boxes, panel: 'modelInfo' },
+  { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
+  { id: 'run', label: 'Run', icon: Play, panel: 'runInfo' },
 ];
 
 /** Default per-area layout: which panels live where, and the active tab. */
