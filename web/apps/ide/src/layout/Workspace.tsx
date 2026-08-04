@@ -21,18 +21,27 @@ function Splitter({
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const start = vertical ? event.clientX : event.clientY;
-    const startSize = useLayoutStore.getState().areas[area].size;
+    const initial = useLayoutStore.getState().areas[area];
+    // While collapsed the panel sits at width 0, so resizing starts from 0;
+    // after a re-open the base follows the clamped size.
+    let currentSize = initial.collapsed ? 0 : initial.size;
+    let lastDelta = 0;
     let closed = false;
     const move = (moveEvent: PointerEvent) => {
+      if (closed) {
+        return;
+      }
       const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
+      const step = delta - lastDelta;
+      lastDelta = delta;
       const layout = useLayoutStore.getState();
       if (layout.areas[area].collapsed) {
         // Dragging outward from the closed edge re-opens the panel; the
-        // target is measured from zero (the panel sits at width 0).
-        const target = invert ? -delta : delta;
-        if (target >= REOPEN_THRESHOLD) {
-          layout.reopenArea(area, target);
-          closed = true; // this gesture opened it; resize is a new drag
+        // gesture keeps going so the same drag can size it further.
+        currentSize += invert ? -step : step;
+        if (currentSize >= REOPEN_THRESHOLD) {
+          layout.reopenArea(area, currentSize);
+          currentSize = layout.areas[area].size; // align to the clamped size
         }
         return;
       }
@@ -40,12 +49,9 @@ function Splitter({
       // boundary sits between it and a flex area (right, bottom), moving
       // the boundary toward the flex area shrinks the fixed area, so the
       // delta is inverted.
-      if (closed) {
-        return;
-      }
-      const target = startSize + (invert ? -delta : delta);
-      layout.setSizeOrClose(area, target);
-      if (target < SIZE_RANGE[area].min - CLOSE_OFFSET) {
+      currentSize += invert ? -step : step;
+      layout.setSizeOrClose(area, currentSize);
+      if (currentSize < SIZE_RANGE[area].min - CLOSE_OFFSET) {
         closed = true; // panel closed; ignore the rest of this drag
       }
     };
