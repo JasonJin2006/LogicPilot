@@ -24,16 +24,18 @@ async function windowAction(action: 'minimize' | 'toggleMaximize' | 'close'): Pr
     } else {
       await window.close();
     }
-  } catch {
-    // not running inside Tauri
+  } catch (error) {
+    console.error('window action failed', error);
   }
 }
 
 export function TopBar() {
   const isTauri = useTauri();
   return (
-    <div className="top-bar" data-tauri-drag-region={isTauri ? '' : undefined}>
-      <img className="top-logo" src="/logo.svg" alt="LogicPilot" />
+    <div className="top-bar">
+      <div className="top-bar-drag" data-tauri-drag-region={isTauri ? '' : undefined}>
+        <img className="top-logo" src="/logo.svg" alt="LogicPilot" />
+      </div>
       <input
         className="search-box"
         type="search"

@@ -16,7 +16,8 @@
   display: flex;
   align-items: stretch;
   height: 100%;
-  margin-left: auto;
+  /* Flush against the window edge: undo the top bar's right padding. */
+  margin-right: -14px;
 }
 
 .window-control {
@@ -44,6 +45,16 @@
 .top-logo {
   width: 20px;
   height: 20px;
+}
+
+/* Drag region: the empty top-bar area (logo + filler). The window controls
+   and the search box stay outside it so they keep receiving clicks. */
+.top-bar-drag {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  flex: 1;
+  min-width: 0;
 }
 
 .search-box {
