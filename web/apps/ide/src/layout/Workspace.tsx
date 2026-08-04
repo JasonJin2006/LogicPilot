@@ -4,7 +4,7 @@
 // writing size values into the store. See docs/specs/ide-layout.md.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { CLOSE_OFFSET, SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
+import { CLOSE_OFFSET, REOPEN_THRESHOLD, SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
@@ -25,6 +25,17 @@ function Splitter({
     let closed = false;
     const move = (moveEvent: PointerEvent) => {
       const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
+      const layout = useLayoutStore.getState();
+      if (layout.areas[area].collapsed) {
+        // Dragging outward from the closed edge re-opens the panel; the
+        // target is measured from zero (the panel sits at width 0).
+        const target = invert ? -delta : delta;
+        if (target >= REOPEN_THRESHOLD) {
+          layout.reopenArea(area, target);
+          closed = true; // this gesture opened it; resize is a new drag
+        }
+        return;
+      }
       // Splitters must follow the cursor. For a fixed-size area whose
       // boundary sits between it and a flex area (right, bottom), moving
       // the boundary toward the flex area shrinks the fixed area, so the
@@ -33,7 +44,7 @@ function Splitter({
         return;
       }
       const target = startSize + (invert ? -delta : delta);
-      useLayoutStore.getState().setSizeOrClose(area, target);
+      layout.setSizeOrClose(area, target);
       if (target < SIZE_RANGE[area].min - CLOSE_OFFSET) {
         closed = true; // panel closed; ignore the rest of this drag
       }

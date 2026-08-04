@@ -20,6 +20,7 @@ export interface LayoutState {
   areas: Areas;
   setSize: (area: AreaId, size: number) => void;
   setSizeOrClose: (area: AreaId, size: number) => void;
+  reopenArea: (area: AreaId, size: number) => void;
   toggleCollapse: (area: AreaId) => void;
   setActive: (area: AreaId, panel: PanelId) => void;
   resetLayout: () => void;
@@ -35,6 +36,10 @@ export const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
 // Hysteresis: closing requires dragging this many px past the minimum, so a
 // stray nudge at the edge does not snap the panel shut.
 export const CLOSE_OFFSET = 24;
+
+// Dragging outward from a closed panel re-opens it once the pointer has
+// moved this far (avoids accidental re-open on a tiny nudge).
+export const REOPEN_THRESHOLD = 40;
 
 const DEFAULT_SIZE: Record<AreaId, number> = {
   left: 280,
@@ -97,6 +102,18 @@ export const useLayoutStore = create<LayoutState>()(
           }
           const clamped = Math.min(range.max, Math.max(range.min, size));
           return { areas: { ...state.areas, [area]: { ...current, size: clamped } } };
+        }),
+      // Re-open a collapsed panel, expanding it to (at least) the minimum.
+      reopenArea: (area, size) =>
+        set((state) => {
+          const range = SIZE_RANGE[area];
+          const clamped = Math.min(range.max, Math.max(range.min, size));
+          return {
+            areas: {
+              ...state.areas,
+              [area]: { ...state.areas[area], collapsed: false, size: clamped },
+            },
+          };
         }),
       toggleCollapse: (area) =>
         set((state) => ({

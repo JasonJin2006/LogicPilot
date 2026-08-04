@@ -38,6 +38,17 @@ describe('layoutStore', () => {
     expect(useLayoutStore.getState().areas.right.collapsed).toBe(true);
   });
 
+  it('reopenArea expands a collapsed panel to at least the minimum', () => {
+    const store = useLayoutStore.getState();
+    store.setSizeOrClose('left', 0); // collapse via the close path
+    expect(useLayoutStore.getState().areas.left.collapsed).toBe(true);
+    store.reopenArea('left', 60);
+    expect(useLayoutStore.getState().areas.left.collapsed).toBe(false);
+    expect(useLayoutStore.getState().areas.left.size).toBe(120); // clamped
+    store.reopenArea('left', 300);
+    expect(useLayoutStore.getState().areas.left.size).toBe(300);
+  });
+
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['queue']);
