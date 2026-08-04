@@ -41,6 +41,7 @@
 }
 
 .dsl-editor {
+  position: relative;
   display: flex;
   flex: none;
   flex-direction: column;
@@ -88,15 +89,10 @@
   white-space: pre;
 }
 
-/* The edge tab: always at the top-right corner of the model area, at the
-   DSL title-bar height. Collapsed it is the pull-out handle on the model /
-   right-sidebar boundary; open it is the DSL header's right end - same
-   position in both states. */
+/* The edge tab is a drawer handle attached to the DSL area's leading (left)
+   edge at title-bar height. Collapsed it sits on the model / right-sidebar
+   boundary; open it rides the DSL editor's left edge over the splitter. */
 .dsl-edge-tab {
-  position: absolute;
-  z-index: 2;
-  right: 0;
-  top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -105,14 +101,34 @@
   padding: 0;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-right: none;
-  border-radius: var(--r-sm) 0 0 var(--r-sm);
   color: var(--text-muted);
+  cursor: pointer;
 }
 
 .dsl-edge-tab:hover {
   background: var(--surface-2);
   color: var(--text);
+}
+
+/* Collapsed: the pull-out handle flush against the model area's right edge. */
+.model-workspace > .dsl-edge-tab {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  top: 0;
+  border-right: none;
+  border-radius: var(--r-sm) 0 0 var(--r-sm);
+}
+
+/* Open: attached to the DSL editor's left edge, sticking out over the
+   splitter so it stays visible as the leading-edge handle. */
+.dsl-editor .dsl-edge-tab {
+  position: absolute;
+  z-index: 2;
+  left: -13px;
+  top: 0;
+  border-left: none;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 
 .model-canvas.panning {
