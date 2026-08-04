@@ -106,6 +106,21 @@ set_tests_properties(lpcli_run_ir_v2 PROPERTIES
   DEPENDS lpcli_compile_ir_v2
   PASS_REGULAR_EXPRESSION "summary: 2 replications")
 
+# IR v2 for the DEVS atomic contract: emit v2 and run through the converter.
+add_test(NAME lpcli_compile_ir_v2_atomic
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/pulse_chain.lp"
+          --ir-version 2 -o "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.v2.lpir")
+set_tests_properties(lpcli_compile_ir_v2_atomic PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_ir_v2_atomic
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.v2.lpir"
+          --seed=42 --reps=1 --arrivals=5 --warmup=0)
+set_tests_properties(lpcli_run_ir_v2_atomic PROPERTIES
+  DEPENDS lpcli_compile_ir_v2_atomic
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
 # AI model build loop (rule-based provider, offline): NL -> DSL -> compile ->
 # diagnostics repair -> run. Requires node (available in the kernel CI job).
 add_test(NAME ai_build_smoke

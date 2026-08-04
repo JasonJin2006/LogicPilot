@@ -79,11 +79,20 @@ table Action {
   emit_port: string;
 }
 
+// Generic behavior binding (agent-style): trigger + kernel handler reference
+// + typed params. Carries v1 AgentModel behaviors.
+table BehaviorBinding {
+  trigger: string;
+  handler_ref: string;
+  params: [Var];
+}
+
 table Transition {
   from: string;
   to: string;
   trigger: TriggerKind;
   timeout_value: double;
+  timeout_distribution: Distribution;  // distribution ta (e.g. exponential)
   rate: double;
   message_port: string;
   condition_text: string;
@@ -113,6 +122,7 @@ table Node {
   children: [Node];
   couplings: [Coupling];
   behavior: Statechart;
+  behaviors: [BehaviorBinding];
   continuous: [Equation];
 }
 

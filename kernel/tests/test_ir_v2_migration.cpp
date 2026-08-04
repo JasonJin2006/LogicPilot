@@ -86,3 +86,13 @@ TEST_CASE("v2 round trip preserves the two-server flow bit-exactly",
           "[ir-v2][migration]") {
   check_round_trip(LOGICPILOT_EXAMPLES_DIR "/two_servers.lp", 4000, 400);
 }
+
+TEST_CASE("v2 round trip preserves the DEVS atomic model bit-exactly",
+          "[ir-v2][migration]") {
+  check_round_trip(LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp", 5, 0);
+}
+
+TEST_CASE("v2 round trip preserves the agent model bit-exactly",
+          "[ir-v2][migration]") {
+  check_round_trip(LOGICPILOT_EXAMPLES_DIR "/agents.lp", 5, 0);
+}
