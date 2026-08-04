@@ -276,6 +276,22 @@
   color: var(--error);
 }
 
+.tab-close {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+}
+
+.tab-close:hover:not(:disabled) {
+  background: var(--error-dim);
+  color: var(--error);
+}
+
 /* --- pane content ------------------------------------------------------- */
 
 .panel-area-body {
