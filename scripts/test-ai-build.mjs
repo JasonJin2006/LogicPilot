@@ -24,7 +24,7 @@ const base = { lpcli: lpcli || undefined };
     maxIterations: 2,
   });
   assert.equal(result.ok, true, 'clean prompt must compile');
-  assert.match(result.dsl, /poisson\(0\.8\)/);
+  assert.match(result.dsl, /rate\(0\.8\)/);
   assert.match(result.dsl, /exponential\(1\.0\)/);
 }
 
@@ -50,7 +50,7 @@ const base = { lpcli: lpcli || undefined };
       'arrival 1.5, service 2.0');
   assert.match(dsl, /capacity = 2/);
   assert.match(dsl, /failure_rate = 0\.1/);
-  assert.match(dsl, /poisson\(1\.5\)/);
+  assert.match(dsl, /rate\(1\.5\)/);
   assert.match(dsl, /exponential\(2\.0\)/);
   assert.match(dsl, /capacity = 50/);
 }

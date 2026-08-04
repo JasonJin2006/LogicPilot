@@ -3,7 +3,6 @@ Empty model declaration
 ==================
 
 model Empty {}
-
 ---
 
 (source_file
@@ -19,18 +18,57 @@ model Tiny {
   resource R1 { capacity = 1 }
   process P1 {}
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))))
-      (process_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body)))))
+        body: (declaration_body)))))
+
+==================
+Model with a use declaration and a model-level param
+==================
+
+model MM1 {
+  use process
+  param arrival_rate: float = 0.8
+  resource Server { capacity = 1 }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (use_declaration
+        library: (identifier))
+      (variable_declaration
+        name: (identifier)
+        type: (type_name
+          (identifier))
+        value: (value
+          (value_literal
+            (float))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer)))))))))
+

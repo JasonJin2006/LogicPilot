@@ -1,46 +1,53 @@
-# LogicPilot DSL Specification — v0 Draft
+# LogicPilot DSL Specification — v2 Draft
 
-Status: **Draft v0.2** · Phase 1–2 implemented (2026-08-04) · Supersedes: —
+Status: **Draft v2 (thin core grammar + library registry)** · Phase 2
+implemented (2026-08-04) · Supersedes: v0
 
-This is the normative DSL subset (tree-sitter grammar + compiler lowering).
-§1–6 cover the v0 process-flow core; §7–10 add atomic (DEVS), agent (ABM),
-continuous (ODE) and experiment blocks. `lpcli compile` lowers the model to
-the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`). Expression grammar
-is the remaining open item (see §5).
+This is the normative DSL reference (tree-sitter grammar + compiler
+lowering), aligned with `docs/specs/dsl-v2.md`. The grammar is a **thin
+generic skeleton**: `kind` is any identifier, resolved by the compiler
+against the core kinds and the process library registry (block shapes),
+so adding a library block never changes the grammar. `lpcli compile` lowers
+the model to the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`).
+Expression grammar is the remaining open item (see §5).
 
-## 1. Grammar Rules (v0 subset, 15 rules)
+## 1. Grammar Rules (v2 generic skeleton)
 
 | # | Rule | Description |
 |---|------|-------------|
 | R1 | `model_declaration` | `model <Identifier> { block }` — exactly one model per file; top-level container. |
-| R2 | `resource_declaration` | `resource <Identifier> { resource_body }` — declares a reusable resource type. |
-| R3 | `resource_field_capacity` | `capacity = <Integer>` — max concurrent usage, required, ≥ 1. |
-| R4 | `resource_field_failure_rate` | `failure_rate = <Float>` — failure probability per time unit, optional, [0.0, 1.0], default 0.0. |
-| R5 | `process_declaration` | `process <Identifier> { block }` — declares an entity flow; contains source/queue/service stages. |
-| R6 | `source_declaration` | `source <Identifier> { source_body }` — entity arrival generator inside a process. |
-| R7 | `source_field_arrival` | `arrival = <arrival_expr>` — arrival distribution expression, required. |
-| R8 | `arrival_expr_poisson` | `poisson(<Numeric>)` — Poisson arrival with given rate parameter. |
-| R9 | `queue_declaration` | `queue <Identifier> { queue_body }` — buffering stage inside a process. |
-| R10 | `queue_field_capacity` | `capacity = <Integer>` — buffer size, required, ≥ 0 (0 = no buffering). |
-| R11 | `service_declaration` | `service <Identifier> { service_body }` — processing stage bound to a resource. |
-| R12 | `service_field_time` | `time = <service_time_expr>` — service time distribution, required. |
-| R13 | `service_time_expr_normal` | `normal(<Numeric>, <Numeric>)` — normal distribution (mean, std-dev). |
-| R14 | `service_time_expr_exponential` | `exponential(<Numeric>)` — exponential distribution with given rate/mean parameter. |
-| R15 | `literal_and_identifier` | Numeric literals (integer / float), identifiers `[A-Za-z_][A-Za-z0-9_]*`; `//` line comments. |
+| R2 | `declaration` | `kind <Identifier> { block }` — generic declaration; `kind` is resolved semantically (core kinds: `agent`/`atomic`/`process`/`continuous`/`experiment`; process library: `resource`/`source`/`queue`/`service`/`sink`). Unknown/misplaced kinds → `LP2004`. |
+| R3 | `field` | `name = <value>` — one field per occurrence; required/optional sets come from the block shape (unknown fields → `LP2005`). |
+| R4 | `variable_declaration` | `state <name> = <value>` / `param <name> = <value>` with optional `: type` annotation (`int`/`float`/`bool`/`string`/`distribution`/`ref`). |
+| R5 | `value` | literal (`bool`/`int`/`float`/`string`), bare identifier, or numeric call `name(<Numeric>, ...)`. |
+| R6 | `behavior` | `on_<trigger> [port] { effect; ... }` — unified behavior block; triggers `timeout`/`input`/`tick`/...; effects are `name = <value>`, `emit <port>` or `call [arg]`. |
+| R7 | `equation` | `d <var>/dt = <rhs>` — structured ODE; raw RHS text until expressions land (Phase D). |
+| R8 | `port_declaration` | `in [name]: <type>` / `out [name]: <type>` / `inout [name]: <type>` — typed ports (unnamed → `entity`). |
+| R9 | `couple_declaration` | `couple <from>.<port> -> <to>.<port>` — explicit port wiring. |
+| R10 | `use_declaration` | `use <library>` — optional in stage 1 (the process library is implicitly available). |
+| R11 | `range_field` | `range = <min>..<max>` — experiment search range. |
+| R12 | `experiment` | `experiment <Name> { objective/metric/variable/range/budget }` — core config block, travels in `ModelFile.experiments`. |
+| R13 | `distribution_call` | `poisson(<Numeric>)` / `rate(<Numeric>)` (equivalent Poisson arrivals), `exponential(<Numeric>)`, `normal(<Numeric>, <Numeric>)`, `constant(<Numeric>)`. |
+| R14 | `literal_and_identifier` | Numeric literals (integer / float), identifiers `[A-Za-z_][A-Za-z0-9_]*`; `//` line and `/* ... */` block comments. |
 
-## 2. Semantics (v0)
+## 2. Semantics (v2)
 
-- A `model` consists of zero or more `resource` declarations followed by zero
-  or more `process` declarations.
+- A `model` is a root container: model-level `param` declarations, core
+  kinds (`resource`/`process`/`atomic`/`agent`/`continuous`/`experiment`) and
+  `couple` wiring.
 - A `process` executes its stages in declaration order: entities arrive at the
-  `source`, pass through `queue`(s), and are served by `service`(s).
+  `source`, pass through `queue`(s), are served by `service`(s), and (v2)
+  exit via `sink`.
 - A `service` whose identifier matches a declared `resource` consumes one unit
-  of that resource's capacity; if unavailable, the entity waits in the
-  preceding queue.
-- Distribution parameters are deterministic literals in v0 (no expressions,
-  no variables, no function calls beyond the built-in distributions listed).
+  of that resource's capacity (v2 stage 1 keeps the identifier binding;
+  explicit `resource = R` references land in Phase C); if unavailable, the
+  entity waits in the preceding queue.
+- Distribution parameters are deterministic literals in v2 stage 1 (no
+  expressions, no variables; `rate` and `poisson` are equivalent Poisson
+  arrivals — `poisson` is deprecated from Phase D on).
 - Errors (compile-time): unknown resource reference, negative capacities,
-  out-of-range `failure_rate`, duplicate declarations.
+  out-of-range `failure_rate`, duplicate declarations, unknown/misplaced
+  kinds (`LP2004`), unknown fields (`LP2005`).
 
 ## 3. Example
 
@@ -125,11 +132,11 @@ state effects** (no expressions in v0.1). Example:
 model PulseChain {
   atomic Pulser {
     time_advance = constant(1.0)     // or exponential(rate) / infinite
-    on_timeout: emit pulse
+    on_timeout { emit pulse }
   }
   atomic Sink {
     state seen = false               // bool / int / float literals
-    on_input pulse: seen = true
+    on_input pulse { seen = true }
   }
   couple Pulser.pulse -> Sink.pulse  // explicit port wiring
 }
@@ -159,8 +166,8 @@ model Swarm {
   agent Drone {
     count = 3
     state active = true
-    on_tick flip active
-    on_tick bounce
+    on_tick { flip active }
+    on_tick { bounce }
   }
 }
 ```
@@ -224,5 +231,6 @@ experiment Optimization {
 
 - `lpcli compile --experiments-json <path>` exports the declared experiments
   as JSON; `scripts/ai-optimize.mjs` reads it to drive grid/GA search.
-- Semantic validation (`LP9001`-family) rejects missing objective/metric/
-  variable or malformed ranges (see `tests/bad_sources/bad_experiment.lp`).
+- Semantic validation (`LP2001`/`LP7001`-family) rejects missing
+  objective/metric/variable or malformed ranges
+  (see `tests/bad_sources/bad_experiment.lp`).

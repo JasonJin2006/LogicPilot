@@ -72,8 +72,16 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    范围：泛化文法（kind=identifier，块名全部进库注册表）+ `service { resource = R }`
    显式引用 + 类型化参数 + 表达式（常量折叠→参数引用）+ 行为统一 +
    `library`/`block` 库元层，按 `docs/specs/dsl-v2.md` §7 分 Phase B–E 落地。
+   **Phase B（泛化文法）✅ 已完成**（`7d80371` 之后落地）：`grammar.js` 重写为
+   通用骨架（`kind`=任意 identifier），tree-sitter 0.26.11 重生成 parser；AST/
+   parser/semantic/lowering 全部泛化；process 库块形状进编译器内建注册表
+   （`LP2004` 未知/错位 kind、`LP2005` 未知字段）；corpus 40 用例、示例、
+   AI provider、文档同步。行为语法统一为 `on_<trigger> { }`（`poisson` 保留为
+   `rate` 的等价别名，Phase D 弃用）。
+   剩余：Phase C 显式引用（`service { resource = R }`）、Phase D 表达式、
+   Phase E 行为统一+实验限定路径+`library`/`block` 库元层文件。
    验收：`service { resource = R }` 显式绑定、`arrival = rate(arrival_rate)` 可编译、
-   process 库块形状走注册表、全部示例/测试/AI provider 同步，136 ctest 不回归。
+   全部示例/测试/AI provider 同步，139 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
 

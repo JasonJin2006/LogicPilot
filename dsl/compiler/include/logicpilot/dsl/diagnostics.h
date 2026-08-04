@@ -10,6 +10,8 @@
 //   LP2001  missing required field
 //   LP2002  process lacks a required stage kind (source / service)
 //   LP2003  stage multiplicity violation (v0: at most one source/queue/service)
+//   LP2004  unknown or misplaced declaration kind (core kinds + registry)
+//   LP2005  unknown field for the declaration's kind (library block shapes)
 //   LP3001  numeric value out of range
 //   LP4001  unresolved resource reference
 //   LP5001  effect references an undeclared state variable

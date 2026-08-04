@@ -11,24 +11,92 @@ model Opt {
     budget = 20
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (experiment_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (experiment_body
-          (objective_field
-            value: (identifier))
-          (metric_field
-            value: (identifier))
-          (variable_field
-            value: (identifier))
-          (range_field
-            min: (integer)
-            max: (integer))
-          (budget_field
-            value: (integer)))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            (range_field
+              min: (integer)
+              max: (integer)))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer)))))))))
+
+==================
+Experiment with seed and replications
+==================
+
+model Opt {
+  experiment Tune {
+    objective = maximize
+    metric = throughput
+    variable = arrival_rate
+    range = 2..8
+    budget = 50
+    seed = 42
+    replications = 5
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            (range_field
+              min: (integer)
+              max: (integer)))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer)))))))))
+

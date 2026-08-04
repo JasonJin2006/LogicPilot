@@ -42,6 +42,15 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 6. **1:1 映射 IR v2**：每个 DSL 元素映射 `Node + SemanticsRef`；不引入
    IR v2 表达不了的概念（如资源引用以编译期校验的 `ref` 类型落地）。
 
+### 2.1 已定决策（Phase B 起生效）
+
+| 决策点 | 结论 | 说明 |
+|---|---|---|
+| `use` 库声明 | **可选语法，Phase B 标准库隐式可用** | 目前只有 process 一个库，`use process` 可写可不写；Phase E 多库落地后 `use` 成为必填校验 |
+| `resource` 块名 | **保留友好名**（`ResourcePool` 的别名） | 与 v0 示例/测试一致；库注册表记录 `resource → ResourcePool` 别名 |
+| `poisson(λ)` | **Phase B 保留，与 `rate(λ)` 等价** | 两者都映射"到达率 λ 的泊松过程"（IR Distribution kind=Poisson）；Phase D 表达式落地时正式弃用 `poisson` |
+| `interarrival(dist)` | **Phase D 引入** | 与 AnyLogic 的 Interarrival time 对应，需要表达式支持后落地 |
+
 ## 3. AnyLogic 官方分层对照
 
 | AnyLogic 官方做法 | 出处 | DSL v2 对应 |
@@ -285,12 +294,15 @@ model Decay {
 
 ## 7. 迁移路径（分阶段，沿用 IR v2 的纪律）
 
-- **Phase A（本轮）**: 本草案评审；分层设计确认（薄核心文法 + 库注册表）。
-- **Phase B（泛化文法）**: 重写 `grammar.js` 为通用骨架（`kind = identifier`、
-  统一 field/behavior/port/couple/expr），tree-sitter CLI 0.26.11 重生成
-  `parser.c`/`grammar.json`；`parser.cpp` 适配新节点；process 库块形状迁入
-  编译器内建注册表（C++ 侧数据结构）；semantic 增加 kind 解析 + 基础形状校验；
-  全部示例/测试/`scripts/ai-provider.mjs` 同步为 v2 写法。修复 D1/D2/D8。
+- **Phase A（本轮）**: ✅ 本草案评审；分层设计确认（薄核心文法 + 库注册表）。
+- **Phase B（泛化文法）**: ✅ 已完成（2026-08-04）：`grammar.js` 重写为通用骨架
+  （`kind = identifier`、统一 field/behavior/port/couple/expr），tree-sitter CLI
+  0.26.11 重生成 `parser.c`/`grammar.json`/`node-types.json`；`parser.cpp`/AST
+  改为泛化 Node；process 库块形状迁入编译器内建注册表（C++ 侧形状表，新增
+  `LP2004` 未知/错位 kind、`LP2005` 未知字段）；semantic 增加 kind 解析 + 形状
+  校验；corpus 重写为 40 用例；示例/测试/`scripts/ai-provider.mjs` 同步为 v2
+  写法（`on_<trigger> { }` 行为；`poisson` 保留为 `rate` 等价别名）。
+  修复 D1/D2/D8。
 - **Phase C（显式引用）**: `service { resource = R }` + `ref` 校验
   （`LP2001` 族）；修复 D3。
 - **Phase D（表达式）**: 表达式文法 + 常量折叠 → 参数引用；模型级 `param`；

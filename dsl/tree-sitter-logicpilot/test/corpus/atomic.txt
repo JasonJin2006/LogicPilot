@@ -5,44 +5,56 @@ Atomic blocks: state, time advance, transitions, couplings
 model PulseChain {
   atomic Pulser {
     time_advance = constant(1.0)
-    on_timeout: emit pulse
+    on_timeout { emit pulse }
   }
   atomic Sink {
     state seen = false
-    on_input pulse: seen = true
+    on_input pulse { seen = true }
   }
   couple Pulser.pulse -> Sink.pulse
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (atomic_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (atomic_body
-          (time_advance_field
-            value: (time_advance_expr
-              (constant_call
-                value: (float))))
-          (on_timeout_field
-            port: (identifier))))
-      (atomic_declaration
-        name: (identifier)
-        body: (atomic_body
-          (state_field
+        body: (declaration_body
+          (field
             name: (identifier)
-            value: (value_literal
-              (boolean_literal)))
-          (on_input_field
+            value: (value
+              (call
+                name: (identifier)
+                args: (argument_list
+                  (float)))))
+          (behavior
+            trigger: (trigger)
+            effects: (effect_list
+              (effect
+                (emit_effect
+                  port: (identifier)))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (variable_declaration
+            name: (identifier)
+            value: (value
+              (value_literal
+                (boolean_literal))))
+          (behavior
+            trigger: (trigger)
             port: (identifier)
             effects: (effect_list
               (effect
-                name: (identifier)
-                value: (value_literal
-                  (boolean_literal)))))))
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (boolean_literal)))))))))
       (couple_declaration
         from_model: (identifier)
         from_port: (identifier)
@@ -58,47 +70,132 @@ model Machine {
     state busy = false
     state load = 0
     time_advance = exponential(2.0)
-    on_input job_in: busy = true, load = 1
-    on_timeout: busy = false emit done
+    on_input job_in { busy = true, load = 1 }
+    on_timeout { busy = false emit done }
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (atomic_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (atomic_body
-          (state_field
+        body: (declaration_body
+          (variable_declaration
             name: (identifier)
-            value: (value_literal
-              (boolean_literal)))
-          (state_field
+            value: (value
+              (value_literal
+                (boolean_literal))))
+          (variable_declaration
             name: (identifier)
-            value: (value_literal
-              (integer)))
-          (time_advance_field
-            value: (time_advance_expr
-              (exponential_call
-                rate: (float))))
-          (on_input_field
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (call
+                name: (identifier)
+                args: (argument_list
+                  (float)))))
+          (behavior
+            trigger: (trigger)
             port: (identifier)
             effects: (effect_list
               (effect
-                name: (identifier)
-                value: (value_literal
-                  (boolean_literal)))
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (boolean_literal)))))
               (effect
-                name: (identifier)
-                value: (value_literal
-                  (integer)))))
-          (on_timeout_field
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (integer)))))))
+          (behavior
+            trigger: (trigger)
             effects: (effect_list
               (effect
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (boolean_literal)))))
+              (effect
+                (emit_effect
+                  port: (identifier))))))))))
+
+==================
+Atomic: typed ports and semicolon-separated effects
+==================
+
+model Cell {
+  atomic Core {
+    state phase: int = 0
+    time_advance = constant(1.0)
+    in job_in: Signal
+    out done: Signal
+    on_input job_in { phase = 1 }
+    on_timeout { phase = 0; emit done }
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (variable_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (call
                 name: (identifier)
-                value: (value_literal
-                  (boolean_literal))))
-            port: (identifier)))))))
+                args: (argument_list
+                  (float)))))
+          (port_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier)))
+          (port_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier)))
+          (behavior
+            trigger: (trigger)
+            port: (identifier)
+            effects: (effect_list
+              (effect
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (integer)))))))
+          (behavior
+            trigger: (trigger)
+            effects: (effect_list
+              (effect
+                (assignment_effect
+                  name: (identifier)
+                  value: (value
+                    (value_literal
+                      (integer)))))
+              (effect
+                (emit_effect
+                  port: (identifier))))))))))
+

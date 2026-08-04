@@ -9,7 +9,7 @@ model Swarm {
   agent Drone {
     count = 3
     state active = true
-    on_tick flip active
-    on_tick bounce
+    on_tick { flip active }
+    on_tick { bounce }
   }
 }

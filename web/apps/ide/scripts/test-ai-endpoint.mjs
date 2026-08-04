@@ -42,7 +42,7 @@ try {
   const data = await response.json();
   assert.equal(data.ok, true);
   assert.ok(data.iterations >= 1);
-  assert.match(data.dsl, /poisson\(0\.8\)/);
+  assert.match(data.dsl, /rate\(0\.8\)/);
   assert.match(data.dsl, /exponential\(1\.0\)/);
   assert.match(data.runSummary ?? '', /summary:/);
 

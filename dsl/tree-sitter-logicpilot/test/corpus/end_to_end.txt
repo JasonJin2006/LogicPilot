@@ -2,7 +2,7 @@
 End-to-end Factory model from dsl-spec
 ==================
 
-// Factory example — v0 DSL
+// Factory example - v0 DSL
 model Factory {
   resource Machine {
     capacity = 3
@@ -21,7 +21,6 @@ model Factory {
     }
   }
 }
-
 ---
 
 (source_file
@@ -29,36 +28,56 @@ model Factory {
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float))))
-      (process_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))))
-          (queue_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body
-              (capacity_field
-                value: (integer))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (normal_call
-                    mean: (integer)
-                    stddev: (integer)))))))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)
+                      (integer))))))))))))
 
 ==================
 End-to-end M/M/1 queue model
@@ -82,7 +101,6 @@ model MM1 {
     }
   }
 }
-
 ---
 
 (source_file
@@ -90,35 +108,55 @@ model MM1 {
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float))))
-      (process_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))))
-          (queue_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body
-              (capacity_field
-                value: (integer))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (exponential_call
-                    rate: (integer)))))))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer))))))))))))
 
 ==================
 End-to-end QueueDemo with exponential service
@@ -132,37 +170,54 @@ model QueueDemo {
     service Server { time = exponential(3) }
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))))
-      (process_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))))
-          (queue_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body
-              (capacity_field
-                value: (integer))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (exponential_call
-                    rate: (integer)))))))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer))))))))))))
+

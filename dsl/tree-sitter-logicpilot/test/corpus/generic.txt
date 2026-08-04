@@ -1,0 +1,101 @@
+==================
+Generic declaration kinds parse as identifiers
+==================
+
+model M {
+  resource R { capacity = 1 }
+  process P {
+    sink Done { }
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
+            name: (identifier)
+            body: (declaration_body)))))))
+
+==================
+Port declarations with custom types
+==================
+
+model M {
+  atomic A {
+    in: Job
+    out done: Signal
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (port_declaration
+            type: (type_name
+              (identifier)))
+          (port_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))))))))
+
+==================
+Bare identifier values and call values
+==================
+
+model M {
+  experiment E {
+    objective = minimize
+    metric = Wq
+    variable = servers
+    range = 1..4
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            name: (identifier)
+            value: (value
+              (identifier)))
+          (field
+            (range_field
+              min: (integer)
+              max: (integer))))))))
+

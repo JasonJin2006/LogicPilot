@@ -1,8 +1,11 @@
-// Typed AST extracted from the tree-sitter parse tree (dsl-spec.md v0).
+// Typed AST extracted from the tree-sitter parse tree (dsl-v2 generic
+// skeleton, docs/specs/dsl-v2.md).
 //
-// The tree-sitter layer stays error-tolerant (bodies are `repeat(field)`),
-// so the AST records presence/counts of fields; the semantic analyzer turns
-// absence/duplication into diagnostics.
+// The grammar is deliberately thin: `kind` is any identifier and bodies are
+// error-tolerant repeats, so this AST is generic too - one `Node` per
+// declaration, with kind resolution and shape validation left to the
+// semantic analyzer (core kinds + library registry). Presence/counts are
+// recorded per field so the analyzer can emit duplicate/missing diagnostics.
 #pragma once
 
 #include <cstdint>
@@ -19,166 +22,120 @@ enum class DistKind { kPoisson, kExponential, kNormal, kConstant };
 
 struct Distribution {
   DistKind kind{DistKind::kConstant};
-  // Positional parameters (poisson: [rate], exponential: [rate],
+  // Positional parameters (poisson/rate: [rate], exponential: [rate],
   // normal: [mean, stddev], constant: [value]).
   std::vector<double> params;
   Span span;
 };
 
-// One stage inside a process body. Which members are meaningful depends on
-// `kind` (source: arrival; queue: capacity; service: service_time).
-struct StageDecl {
-  enum class Kind { kSource, kQueue, kService };
+// A field/effect value in v2 stage 1 (literals, bare identifiers, and
+// numeric calls such as distribution constructors; expressions land in
+// Phase D).
+enum class ValueKind { kBool, kInt, kFloat, kString, kIdentifier, kCall };
 
-  Kind kind{Kind::kSource};
-  std::string name;
-  Span name_span;
-  Span span;
-
-  // source: `arrival = poisson(rate)`.
-  bool has_arrival{false};
-  int arrival_count{0};
-  Distribution arrival;
-  Span arrival_field_span;
-
-  // queue: `capacity = <integer>`.
-  bool has_capacity{false};
-  int capacity_count{0};
-  std::int64_t capacity{0};
-  Span capacity_field_span;
-
-  // service: `time = normal(...) | exponential(...) | constant(...)`.
-  bool has_time{false};
-  int time_count{0};
-  Distribution service_time;
-  Span time_field_span;
-};
-
-struct ResourceDecl {
-  std::string name;
-  Span name_span;
-  Span span;
-
-  bool has_capacity{false};
-  int capacity_count{0};
-  std::int64_t capacity{0};
-  Span capacity_field_span;
-
-  bool has_failure_rate{false};
-  int failure_rate_count{0};
-  double failure_rate{0.0};
-  Span failure_rate_field_span;
-};
-
-// Value kinds for atomic state variables and transition effects (v1:
-// literals only - no expressions).
-enum class AtomicValueKind { kBool, kInt, kFloat };
-
-struct AtomicValue {
-  AtomicValueKind kind{AtomicValueKind::kBool};
+struct Value {
+  ValueKind kind{ValueKind::kInt};
   bool bool_value{false};
   std::int64_t int_value{0};
   double float_value{0.0};
+  std::string string_value;   // kString / kIdentifier
+  std::string call_name;      // kCall: distribution constructor, ...
+  std::vector<double> call_args;  // kCall numeric arguments
   Span span;
 };
 
-// One transition effect: `state = literal`.
+// One `name = <value>` field (each occurrence is one Field; the analyzer
+// flags duplicates by name).
+struct Field {
+  std::string name;
+  Span name_span;
+  Span span;
+  Value value;
+};
+
+// `state x = <value>` / `param k = <value>` with an optional type
+// annotation.
+struct VarDecl {
+  std::string keyword;  // "state" | "param"
+  std::string name;
+  Span name_span;
+  std::string type;     // "" unless annotated
+  Value value;
+  Span span;
+};
+
+// `in [name]: type` / `out [name]: type` / `inout [name]: type` (unnamed
+// ports default to `entity` in the library layer).
+struct PortDecl {
+  std::string direction;  // "in" | "out" | "inout"
+  std::string name;       // "" => "entity"
+  std::string type;
+  Span span;
+};
+
+// One effect inside `on_<trigger> { ... }`.
 struct Effect {
-  std::string name;
+  enum class Kind { kAssign, kEmit, kCall };
+
+  Kind kind{Kind::kAssign};
+  std::string name;   // kAssign: state variable; kEmit: port; kCall: handler
   Span name_span;
-  AtomicValue value;
-};
-
-// `time_advance = <value | constant(...) | exponential(...) | infinite>`.
-enum class TaKind { kConstant, kExponential, kInfinite };
-
-struct TimeAdvanceDecl {
-  bool has{false};
-  int count{0};
-  Span span;
-  TaKind kind{TaKind::kConstant};
-  double value{0.0};  // seconds (constant value or exponential rate)
-};
-
-// One state-variable declaration (each occurrence is one StateVarDecl; the
-// analyzer flags duplicates by name).
-struct StateVarDecl {
-  std::string name;
-  Span name_span;
-  AtomicValue value;
-};
-
-// `on_input <port>: effects` or `on_timeout: effects [emit <port>]`.
-struct TransitionDecl {
-  bool has{false};
-  int count{0};
-  Span span;
-  std::string port;  // on_input trigger port; "" for on_timeout
-  Span port_span;
-  std::vector<Effect> effects;
-  bool emit{false};
-  std::string emit_port;  // on_timeout output port
-  Span emit_span;
-};
-
-struct AtomicDecl {
-  std::string name;
-  Span name_span;
-  Span span;
-  std::vector<StateVarDecl> state;
-  TimeAdvanceDecl ta;
-  std::vector<TransitionDecl> on_input;
-  TransitionDecl on_timeout;
-};
-
-// One `on_tick <handler> [arg]` agent behavior.
-struct TickBehavior {
-  bool has{false};
-  int count{0};
-  Span span;
-  std::string handler;
-  Span handler_span;
-  bool has_arg{false};
-  std::string arg;
+  Value value;        // kAssign value
+  std::string arg;    // kCall optional argument ("" if none)
   Span arg_span;
 };
 
-struct AgentDecl {
+// `on_<trigger> [port] { effect; ... }` (trigger without the `on_` prefix).
+struct Behavior {
+  std::string trigger;  // "timeout" | "tick" | "input" | ...
+  Span span;
+  std::string port;     // message-trigger channel (on_input <port>)
+  Span port_span;
+  std::vector<Effect> effects;
+};
+
+// `d <var>/dt = <rhs>` (raw RHS text until expressions land).
+struct Equation {
+  std::string var;
+  std::string rhs_text;
+  Span span;
+};
+
+// `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
+struct CoupleDecl {
+  std::string from_model;
+  std::string from_port;
+  std::string to_model;
+  std::string to_port;
+  Span span;
+};
+
+// `range = <min>..<max>` (experiment blocks).
+struct RangeField {
+  std::int64_t min{1};
+  std::int64_t max{1};
+  Span span;
+};
+
+// One declaration: `kind name { ... }`. `kind` is resolved by the semantic
+// analyzer (core kinds or a registered library block).
+struct Node {
+  std::string kind;
   std::string name;
   Span name_span;
   Span span;
-  // `count = <n>` population size.
-  bool has_count{false};
-  int count_count{0};
-  std::int64_t count{1};
-  Span count_field_span;
-  std::vector<StateVarDecl> state;
-  std::vector<TickBehavior> behaviors;
+  std::vector<Field> fields;
+  std::vector<VarDecl> vars;
+  std::vector<PortDecl> ports;
+  std::vector<Behavior> behaviors;
+  std::vector<Equation> equations;
+  std::vector<RangeField> ranges;
+  std::vector<CoupleDecl> couplings;
+  std::vector<Node> children;
 };
 
-// `continuous` block: structured ODEs (Phase D2).
-struct EquationDecl {
-  std::string name;
-  Span name_span;
-  Span span;
-  std::vector<StateVarDecl> state;  // `state <name> = <initial>`
-  struct ParamDecl {
-    std::string name;
-    Span name_span;
-    double value{0.0};
-    Span span;
-  };
-  std::vector<ParamDecl> params;  // `param <name> = <value>`
-  struct Equation {
-    std::string var;
-    std::string rhs_text;
-    Span span;
-  };
-  std::vector<Equation> equations;  // `d <var>/dt = <rhs>`
-};
-
-// `experiment` block: the model declares its own run/optimization setup
-// (IR v2 direction; v1 carries it as a compile sidecar, not in F1).
+// `experiment` block (core config kind; kept typed for lowering and the
+// sidecar serializer).
 struct ExperimentDecl {
   std::string name;
   Span name_span;
@@ -206,33 +163,28 @@ struct ExperimentDecl {
   Span budget_span;
 };
 
-// `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
-struct CoupleDecl {
-  std::string from_model;
-  std::string from_port;
-  std::string to_model;
-  std::string to_port;
-  Span span;
-};
-
-struct ProcessDecl {
-  std::string name;
-  Span name_span;
-  Span span;
-  std::vector<StageDecl> stages;  // declaration order is semantic order
-};
-
+// Whole model file: model-level params, top-level declarations in source
+// order, couplings and typed experiment blocks.
 struct ModelAst {
   std::string name;
   Span name_span;
   Span span;
-  std::vector<ResourceDecl> resources;
-  std::vector<ProcessDecl> processes;
-  std::vector<AtomicDecl> atomics;
-  std::vector<AgentDecl> agents;
-  std::vector<EquationDecl> continuous;
-  std::vector<ExperimentDecl> experiments;
+  std::vector<std::string> used_libraries;
+  std::vector<VarDecl> params;  // model-level `param` declarations
+  std::vector<Node> members;    // top-level declarations (source order)
   std::vector<CoupleDecl> couplings;
+  std::vector<ExperimentDecl> experiments;
 };
+
+// Field lookup helpers for semantic/lowering (nullptr when absent).
+[[nodiscard]] const Field* find_field(const Node& node, const char* name);
+[[nodiscard]] const VarDecl* find_var(const Node& node, const char* keyword,
+                                      const std::string& name);
+
+// value -> distribution (v2 stage 1 constructors: poisson/rate,
+// exponential, normal, constant). Returns false when the value is not a
+// recognized distribution call.
+[[nodiscard]] bool distribution_from_value(const Value& value,
+                                           Distribution& out);
 
 }  // namespace logicpilot::dsl

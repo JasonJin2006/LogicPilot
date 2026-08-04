@@ -8,12 +8,12 @@
 model PulseChain {
   atomic Pulser {
     time_advance = constant(1.0)
-    on_timeout: emit pulse
+    on_timeout { emit pulse }
   }
 
   atomic Sink {
     state seen = false
-    on_input pulse: seen = true
+    on_input pulse { seen = true }
   }
 
   couple Pulser.pulse -> Sink.pulse

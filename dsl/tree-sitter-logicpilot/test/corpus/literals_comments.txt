@@ -7,7 +7,6 @@ model M {
   // resource comment
   resource R { capacity = 1 }
 } // trailing comment
-
 ---
 
 (source_file
@@ -16,11 +15,15 @@ model M {
     name: (identifier)
     body: (model_body
       (comment)
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))))
   (comment))
 
 ==================
@@ -34,19 +37,22 @@ model M {
     /* per-unit failure probability */
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
+        body: (declaration_body
           (comment)
-          (capacity_field
-            value: (integer))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
           (comment))))))
 
 ==================
@@ -55,7 +61,6 @@ Block comment containing stars and slashes
 
 /* ** stars ** and / slashes / inside */
 model M {}
-
 ---
 
 (source_file
@@ -75,23 +80,62 @@ model M {
     }
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (process_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (service_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (normal_call
-                    mean: (integer)
-                    (comment)
-                    stddev: (integer)
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)
+                      (comment)
+                      (integer))
                     (comment)))))))))))
+
+==================
+String literal field value
+==================
+
+model M {
+  process P {
+    queue Q { capacity = 5 ordering = "fifo" }
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
+            name: (identifier)
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (string_literal)))))))))))
+

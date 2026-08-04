@@ -1,4 +1,9 @@
 // IR lowering implementation (see lowering.h for the mapping contract).
+//
+// Generic kind dispatch: every DSL Node lowers 1:1 to an IR v2 Node with a
+// SemanticsRef{library, block}; process library blocks become
+// {process, <block>} nodes with typed params, method containers become
+// {devs,atomic} / {agent,agent} / {sd,equation} / {process,flow}.
 #include "logicpilot/dsl/lowering.h"
 
 #include <flatbuffers/flatbuffers.h>
@@ -84,26 +89,53 @@ flatbuffers::Offset<v2::Var> v2_var_distribution(
 
 flatbuffers::Offset<v2::Var> v2_var_from_value(
     flatbuffers::FlatBufferBuilder& builder, const std::string& name,
-    const AtomicValue& value) {
+    const Value& value) {
   switch (value.kind) {
-    case AtomicValueKind::kBool:
+    case ValueKind::kBool:
       return v2_var_bool(builder, name.c_str(), value.bool_value);
-    case AtomicValueKind::kInt:
+    case ValueKind::kInt:
       return v2_var_int(builder, name.c_str(), value.int_value);
-    case AtomicValueKind::kFloat:
+    case ValueKind::kFloat:
       return v2_var_float(builder, name.c_str(), value.float_value);
+    case ValueKind::kString:
+    case ValueKind::kIdentifier:
+      return v2_var_string(builder, name.c_str(), value.string_value);
+    case ValueKind::kCall:
+      break;  // call values are not state variable initializers
   }
-  return 0;
+  return v2_var_float(builder, name.c_str(), 0.0);
 }
+
+const Field* field_of(const Node& node, const char* name) {
+  for (const Field& field : node.fields) {
+    if (field.name == name) {
+      return &field;
+    }
+  }
+  return nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Process library blocks
+// ---------------------------------------------------------------------------
 
 // resource -> process/resource block Node (typed capacity/failure_rate).
 flatbuffers::Offset<v2::Node> v2_resource(
-    flatbuffers::FlatBufferBuilder& builder, const ResourceDecl& resource,
+    flatbuffers::FlatBufferBuilder& builder, const Node& resource,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  params.push_back(v2_var_int(builder, "capacity", resource.capacity));
-  params.push_back(
-      v2_var_float(builder, "failure_rate", resource.failure_rate));
+  const Field* capacity = field_of(resource, "capacity");
+  params.push_back(v2_var_int(
+      builder, "capacity",
+      capacity && capacity->value.kind == ValueKind::kInt
+          ? capacity->value.int_value
+          : 0));
+  const Field* failure_rate = field_of(resource, "failure_rate");
+  params.push_back(v2_var_float(
+      builder, "failure_rate",
+      failure_rate && failure_rate->value.kind == ValueKind::kFloat
+          ? failure_rate->value.float_value
+          : 0.0));
   return v2::CreateNode(
       builder, v2_metadata(builder, resource.name, source_file),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
@@ -111,59 +143,66 @@ flatbuffers::Offset<v2::Node> v2_resource(
       v2_semantics(builder, "process", "resource"), 0, 0, 0, 0, 0);
 }
 
-// process stage -> process source/queue/service block Node.
-flatbuffers::Offset<v2::Node> v2_stage(
-    flatbuffers::FlatBufferBuilder& builder, const StageDecl& stage,
-    const std::unordered_map<std::string, const ResourceDecl*>& resources,
+// process stage -> process source/queue/service/sink block Node.
+flatbuffers::Offset<v2::Node> v2_process_block(
+    flatbuffers::FlatBufferBuilder& builder, const Node& stage,
+    const std::unordered_map<std::string, const Node*>& resources,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  const char* block = "block";
-  switch (stage.kind) {
-    case StageDecl::Kind::kSource:
-      block = "source";
-      params.push_back(v2_var_distribution(builder, "arrival",
-                                           stage.arrival));
-      break;
-    case StageDecl::Kind::kQueue:
-      block = "queue";
-      params.push_back(v2_var_int(builder, "capacity", stage.capacity));
-      break;
-    case StageDecl::Kind::kService: {
-      block = "service";
-      params.push_back(v2_var_distribution(builder, "rate",
-                                           stage.service_time));
-      params.push_back(v2_var_string(builder, "resource", stage.name));
-      std::int64_t servers = 1;
-      const auto it = resources.find(stage.name);
-      if (it != resources.end()) {
-        servers = it->second->capacity;
-      }
-      params.push_back(v2_var_int(builder, "servers", servers));
-      break;
+  if (stage.kind == "source") {
+    Distribution arrival;
+    const Field* field = field_of(stage, "arrival");
+    if (field != nullptr) {
+      (void)distribution_from_value(field->value, arrival);
     }
+    params.push_back(v2_var_distribution(builder, "arrival", arrival));
+  } else if (stage.kind == "queue") {
+    const Field* field = field_of(stage, "capacity");
+    params.push_back(v2_var_int(
+        builder, "capacity",
+        field && field->value.kind == ValueKind::kInt ? field->value.int_value
+                                                      : 0));
+  } else if (stage.kind == "service") {
+    Distribution service_time;
+    const Field* field = field_of(stage, "time");
+    if (field != nullptr) {
+      (void)distribution_from_value(field->value, service_time);
+    }
+    params.push_back(v2_var_distribution(builder, "rate", service_time));
+    params.push_back(v2_var_string(builder, "resource", stage.name));
+    std::int64_t servers = 1;
+    const auto it = resources.find(stage.name);
+    if (it != resources.end()) {
+      const Field* capacity = field_of(*it->second, "capacity");
+      if (capacity && capacity->value.kind == ValueKind::kInt) {
+        servers = capacity->value.int_value;
+      }
+    }
+    params.push_back(v2_var_int(builder, "servers", servers));
   }
   return v2::CreateNode(
       builder, v2_metadata(builder, stage.name, source_file),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(params), 0, v2_semantics(builder, "process", block),
-      0, 0, 0, 0, 0);
+      builder.CreateVector(params), 0,
+      v2_semantics(builder, "process", stage.kind.c_str()), 0, 0, 0, 0, 0);
 }
 
 // process -> process/flow Node (block children + chain couplings).
 flatbuffers::Offset<v2::Node> v2_process(
-    flatbuffers::FlatBufferBuilder& builder, const ProcessDecl& process,
-    const std::unordered_map<std::string, const ResourceDecl*>& resources,
+    flatbuffers::FlatBufferBuilder& builder, const Node& process,
+    const std::unordered_map<std::string, const Node*>& resources,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Node>> children;
-  for (const StageDecl& stage : process.stages) {
-    children.push_back(v2_stage(builder, stage, resources, source_file));
+  for (const Node& stage : process.children) {
+    children.push_back(
+        v2_process_block(builder, stage, resources, source_file));
   }
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
-  for (std::size_t i = 0; i + 1 < process.stages.size(); ++i) {
+  for (std::size_t i = 0; i + 1 < process.children.size(); ++i) {
     couplings.push_back(v2::CreateCoupling(
-        builder, builder.CreateString(process.stages[i].name),
+        builder, builder.CreateString(process.children[i].name),
         builder.CreateString("out"),
-        builder.CreateString(process.stages[i + 1].name),
+        builder.CreateString(process.children[i + 1].name),
         builder.CreateString("in")));
   }
   return v2::CreateNode(
@@ -175,24 +214,54 @@ flatbuffers::Offset<v2::Node> v2_process(
       0);
 }
 
+// ---------------------------------------------------------------------------
+// Method containers
+// ---------------------------------------------------------------------------
+
 // atomic -> devs/atomic Node with a one-state Statechart.
 flatbuffers::Offset<v2::Node> v2_atomic(
-    flatbuffers::FlatBufferBuilder& builder, const AtomicDecl& atomic,
+    flatbuffers::FlatBufferBuilder& builder, const Node& atomic,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
-  for (const StateVarDecl& var : atomic.state) {
-    state.push_back(v2_var_from_value(builder, var.name, var.value));
+  for (const VarDecl& var : atomic.vars) {
+    if (var.keyword == "state") {
+      state.push_back(v2_var_from_value(builder, var.name, var.value));
+    }
   }
   std::vector<flatbuffers::Offset<v2::Port>> ports;
-  if (!atomic.on_input.empty()) {
+  for (const PortDecl& port : atomic.ports) {
+    const auto direction = port.direction == "in"
+                               ? v2::PortDirection_Input
+                               : (port.direction == "out"
+                                      ? v2::PortDirection_Output
+                                      : v2::PortDirection_InOut);
     ports.push_back(v2::CreatePort(
-        builder, builder.CreateString(atomic.on_input.front().port),
+        builder, builder.CreateString(port.name.empty() ? "entity"
+                                                        : port.name),
+        direction, 0));
+  }
+  const Behavior* on_input = nullptr;
+  const Behavior* on_timeout = nullptr;
+  for (const Behavior& behavior : atomic.behaviors) {
+    if (behavior.trigger == "input" && on_input == nullptr) {
+      on_input = &behavior;
+    } else if (behavior.trigger == "timeout" && on_timeout == nullptr) {
+      on_timeout = &behavior;
+    }
+  }
+  if (on_input != nullptr) {
+    ports.push_back(v2::CreatePort(
+        builder, builder.CreateString(on_input->port),
         v2::PortDirection_Input, 0));
   }
-  if (atomic.on_timeout.emit) {
-    ports.push_back(v2::CreatePort(
-        builder, builder.CreateString(atomic.on_timeout.emit_port),
-        v2::PortDirection_Output, 0));
+  if (on_timeout != nullptr) {
+    for (const Effect& effect : on_timeout->effects) {
+      if (effect.kind == Effect::Kind::kEmit) {
+        ports.push_back(v2::CreatePort(
+            builder, builder.CreateString(effect.name),
+            v2::PortDirection_Output, 0));
+      }
+    }
   }
   const auto active = builder.CreateString("active");
   std::vector<flatbuffers::Offset<v2::State>> states;
@@ -203,36 +272,47 @@ flatbuffers::Offset<v2::Node> v2_atomic(
       -> std::vector<flatbuffers::Offset<v2::Action>> {
     std::vector<flatbuffers::Offset<v2::Action>> actions;
     for (const Effect& effect : effects) {
-      actions.push_back(v2::CreateAction(
-          builder, 0,
-          v2_var_from_value(builder, effect.name, effect.value), 0));
+      if (effect.kind == Effect::Kind::kAssign) {
+        actions.push_back(v2::CreateAction(
+            builder, 0, v2_var_from_value(builder, effect.name, effect.value),
+            0));
+      } else if (effect.kind == Effect::Kind::kEmit) {
+        actions.push_back(
+            v2::CreateAction(builder, 0, 0,
+                             builder.CreateString(effect.name)));
+      }
     }
     return actions;
   };
-  if (!atomic.on_input.empty()) {
-    const TransitionDecl& t = atomic.on_input.front();
+  if (on_input != nullptr) {
     transitions.push_back(v2::CreateTransition(
         builder, active, active, v2::TriggerKind_Message, 0.0, 0, 0.0,
-        builder.CreateString(t.port), 0,
-        builder.CreateVector(effects_to_actions(t.effects))));
+        builder.CreateString(on_input->port), 0,
+        builder.CreateVector(effects_to_actions(on_input->effects))));
   }
-  if (atomic.on_timeout.has) {
+  if (on_timeout != nullptr) {
     std::vector<flatbuffers::Offset<v2::Action>> actions =
-        effects_to_actions(atomic.on_timeout.effects);
-    if (atomic.on_timeout.emit) {
-      actions.push_back(v2::CreateAction(
-          builder, 0, 0, builder.CreateString(atomic.on_timeout.emit_port)));
-    }
+        effects_to_actions(on_timeout->effects);
     double timeout_value = 0.0;
     flatbuffers::Offset<v2::Distribution> timeout_distribution = 0;
-    if (atomic.ta.has) {
-      if (atomic.ta.kind == TaKind::kConstant) {
-        timeout_value = atomic.ta.value;
-      } else if (atomic.ta.kind == TaKind::kExponential) {
-        const std::vector<double> params{atomic.ta.value};
+    const Field* ta = field_of(atomic, "time_advance");
+    if (ta != nullptr) {
+      const Value& value = ta->value;
+      if (value.kind == ValueKind::kCall &&
+          value.call_name == "exponential" && value.call_args.size() == 1) {
+        const std::vector<double> params{value.call_args[0]};
         timeout_distribution = v2::CreateDistribution(
             builder, 3, builder.CreateVector(params));
+      } else if (value.kind == ValueKind::kInt) {
+        timeout_value = static_cast<double>(value.int_value);
+      } else if (value.kind == ValueKind::kFloat) {
+        timeout_value = value.float_value;
+      } else if (value.kind == ValueKind::kCall &&
+                 value.call_name == "constant" &&
+                 value.call_args.size() == 1) {
+        timeout_value = value.call_args[0];
       }
+      // identifier `infinite` keeps the default 0.0 (kernel: no timeout).
     }
     transitions.push_back(v2::CreateTransition(
         builder, active, active, v2::TriggerKind_Timeout, timeout_value,
@@ -252,25 +332,39 @@ flatbuffers::Offset<v2::Node> v2_atomic(
 
 // agent -> agent Node (typed state, count param, behavior bindings).
 flatbuffers::Offset<v2::Node> v2_agent(
-    flatbuffers::FlatBufferBuilder& builder, const AgentDecl& agent,
+    flatbuffers::FlatBufferBuilder& builder, const Node& agent,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
-  for (const StateVarDecl& var : agent.state) {
-    state.push_back(v2_var_from_value(builder, var.name, var.value));
+  for (const VarDecl& var : agent.vars) {
+    if (var.keyword == "state") {
+      state.push_back(v2_var_from_value(builder, var.name, var.value));
+    }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  params.push_back(v2_var_int(builder, "count", agent.count));
+  const Field* count = field_of(agent, "count");
+  params.push_back(v2_var_int(
+      builder, "count",
+      count && count->value.kind == ValueKind::kInt ? count->value.int_value
+                                                    : 1));
   std::vector<flatbuffers::Offset<v2::BehaviorBinding>> behaviors;
-  for (const TickBehavior& behavior : agent.behaviors) {
-    std::vector<flatbuffers::Offset<v2::Var>> behavior_params;
-    if (behavior.has_arg) {
-      behavior_params.push_back(v2_var_bool(builder, behavior.arg.c_str(),
-                                            true));
+  for (const Behavior& behavior : agent.behaviors) {
+    if (behavior.trigger != "tick") {
+      continue;
     }
-    behaviors.push_back(v2::CreateBehaviorBinding(
-        builder, builder.CreateString("on_tick"),
-        builder.CreateString(behavior.handler),
-        builder.CreateVector(behavior_params)));
+    for (const Effect& effect : behavior.effects) {
+      if (effect.kind != Effect::Kind::kCall) {
+        continue;
+      }
+      std::vector<flatbuffers::Offset<v2::Var>> behavior_params;
+      if (!effect.arg.empty()) {
+        behavior_params.push_back(v2_var_bool(builder, effect.arg.c_str(),
+                                              true));
+      }
+      behaviors.push_back(v2::CreateBehaviorBinding(
+          builder, builder.CreateString("on_tick"),
+          builder.CreateString(effect.name),
+          builder.CreateVector(behavior_params)));
+    }
   }
   return v2::CreateNode(
       builder, v2_metadata(builder, agent.name, source_file),
@@ -282,36 +376,41 @@ flatbuffers::Offset<v2::Node> v2_agent(
 // continuous -> {sd, equation} Node: typed state (initial), params, and
 // structured continuous equations.
 flatbuffers::Offset<v2::Node> v2_continuous(
-    flatbuffers::FlatBufferBuilder& builder, const EquationDecl& continuous,
+    flatbuffers::FlatBufferBuilder& builder, const Node& continuous,
     const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
-  const auto initial_value = [](const AtomicValue& value) {
-    if (value.kind == AtomicValueKind::kFloat) {
+  const auto initial_value = [](const Value& value) {
+    if (value.kind == ValueKind::kFloat) {
       return value.float_value;
     }
-    if (value.kind == AtomicValueKind::kInt) {
+    if (value.kind == ValueKind::kInt) {
       return static_cast<double>(value.int_value);
     }
     return 0.0;
   };
-  for (const StateVarDecl& var : continuous.state) {
-    state.push_back(v2_var_float(builder, var.name.c_str(),
-                                 initial_value(var.value)));
+  for (const VarDecl& var : continuous.vars) {
+    if (var.keyword == "state") {
+      state.push_back(
+          v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
+    }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  for (const EquationDecl::ParamDecl& param : continuous.params) {
-    params.push_back(v2_var_float(builder, param.name.c_str(), param.value));
+  for (const VarDecl& var : continuous.vars) {
+    if (var.keyword == "param") {
+      params.push_back(
+          v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
+    }
   }
   std::vector<flatbuffers::Offset<v2::Equation>> equations;
   const auto state_initial = [&](const std::string& name) {
-    for (const StateVarDecl& var : continuous.state) {
-      if (var.name == name) {
+    for (const VarDecl& var : continuous.vars) {
+      if (var.keyword == "state" && var.name == name) {
         return initial_value(var.value);
       }
     }
     return 0.0;
   };
-  for (const EquationDecl::Equation& equation : continuous.equations) {
+  for (const Equation& equation : continuous.equations) {
     equations.push_back(v2::CreateEquation(
         builder, builder.CreateString(equation.var),
         builder.CreateString(equation.rhs_text),
@@ -336,33 +435,55 @@ flatbuffers::Offset<v2::Experiment> v2_experiment(
       0);
 }
 
+// One generic DSL Node -> IR v2 Node by kind (process blocks / containers).
+flatbuffers::Offset<v2::Node> v2_node(
+    flatbuffers::FlatBufferBuilder& builder, const Node& node,
+    const std::unordered_map<std::string, const Node*>& resources,
+    const std::string& source_file) {
+  if (node.kind == "resource") {
+    return v2_resource(builder, node, source_file);
+  }
+  if (node.kind == "process") {
+    return v2_process(builder, node, resources, source_file);
+  }
+  if (node.kind == "atomic") {
+    return v2_atomic(builder, node, source_file);
+  }
+  if (node.kind == "agent") {
+    return v2_agent(builder, node, source_file);
+  }
+  if (node.kind == "continuous") {
+    return v2_continuous(builder, node, source_file);
+  }
+  // Process blocks declared outside a process (e.g. top-level resource
+  // instances) lower as standalone {process, <block>} nodes; experiment
+  // members are handled via ModelFile.experiments, not the node tree.
+  if (node.kind == "source" || node.kind == "queue" ||
+      node.kind == "service" || node.kind == "sink") {
+    return v2_process_block(builder, node, resources, source_file);
+  }
+  return 0;
+}
+
 }  // namespace
 
 LoweredIr lower_to_ir_v2(const ModelAst& model,
                          const std::string& source_file) {
   flatbuffers::FlatBufferBuilder builder;
 
-  std::unordered_map<std::string, const ResourceDecl*> resources;
-  for (const ResourceDecl& resource : model.resources) {
-    resources.emplace(resource.name, &resource);
+  std::unordered_map<std::string, const Node*> resources;
+  for (const Node& member : model.members) {
+    if (member.kind == "resource") {
+      resources.emplace(member.name, &member);
+    }
   }
 
   std::vector<flatbuffers::Offset<v2::Node>> children;
-  for (const ResourceDecl& resource : model.resources) {
-    children.push_back(v2_resource(builder, resource, source_file));
-  }
-  for (const ProcessDecl& process : model.processes) {
-    children.push_back(
-        v2_process(builder, process, resources, source_file));
-  }
-  for (const AtomicDecl& atomic : model.atomics) {
-    children.push_back(v2_atomic(builder, atomic, source_file));
-  }
-  for (const AgentDecl& agent : model.agents) {
-    children.push_back(v2_agent(builder, agent, source_file));
-  }
-  for (const EquationDecl& continuous : model.continuous) {
-    children.push_back(v2_continuous(builder, continuous, source_file));
+  for (const Node& member : model.members) {
+    if (member.kind == "experiment") {
+      continue;  // experiments live in ModelFile.experiments
+    }
+    children.push_back(v2_node(builder, member, resources, source_file));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
@@ -374,12 +495,18 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
         builder.CreateString(couple.to_port)));
   }
 
+  std::vector<flatbuffers::Offset<v2::Var>> root_params;
+  for (const VarDecl& param : model.params) {
+    root_params.push_back(v2_var_from_value(builder, param.name,
+                                            param.value));
+  }
+
   const auto root_metadata =
       v2_metadata(builder, model.name, source_file);
   const auto root = v2::CreateNode(
       builder, root_metadata,
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+      builder.CreateVector(root_params), 0,
       v2_semantics(builder, "core", "model"), builder.CreateVector(children),
       builder.CreateVector(couplings), 0, 0, 0);
 

@@ -10,28 +10,32 @@ model Empty {
     service V {}
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body))
-      (process_declaration
+        body: (declaration_body))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body))
-          (queue_declaration
+            body: (declaration_body))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body))
-          (service_declaration
+            body: (declaration_body))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body)))))))
+            body: (declaration_body)))))))
 
 ==================
 Multiple resources then multiple processes
@@ -51,70 +55,106 @@ model Shop {
     service Crane { time = constant(10) }
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))))
-      (resource_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float))))
-      (resource_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))))
-      (process_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (normal_call
-                    mean: (integer)
-                    stddev: (integer))))))))
-      (process_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)
+                      (integer)))))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))))
-          (queue_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body
-              (capacity_field
-                value: (integer))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (constant_call
-                    value: (integer)))))))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer))))))))))))
 
 ==================
 Comments interleaved everywhere
@@ -137,7 +177,6 @@ model Commented { // model line comment
   }
 }
 /* footer block comment */
-
 ---
 
 (source_file
@@ -147,39 +186,60 @@ model Commented { // model line comment
     body: (model_body
       (comment)
       (comment)
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (comment)
-          (comment)
-          (failure_rate_field
-            value: (float))))
-      (comment)
-      (process_declaration
-        name: (identifier)
-        body: (process_body
-          (source_declaration
+        body: (declaration_body
+          (field
             name: (identifier)
-            body: (source_body
-              (arrival_field
-                value: (arrival_expr
-                  (poisson_call
-                    rate: (integer))))
+            value: (value
+              (value_literal
+                (integer))))
+          (comment)
+          (comment)
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float))))))
+      (comment)
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (declaration
+            kind: (identifier)
+            name: (identifier)
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))
               (comment)))
           (comment)
-          (queue_declaration
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (queue_body
-              (capacity_field
-                value: (integer))))
-          (service_declaration
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (value_literal
+                    (integer))))))
+          (declaration
+            kind: (identifier)
             name: (identifier)
-            body: (service_body
-              (time_field
-                value: (service_time_expr
-                  (exponential_call
-                    rate: (integer))))))
+            body: (declaration_body
+              (field
+                name: (identifier)
+                value: (value
+                  (call
+                    name: (identifier)
+                    args: (argument_list
+                      (integer)))))))
           (comment)))))
   (comment))
+

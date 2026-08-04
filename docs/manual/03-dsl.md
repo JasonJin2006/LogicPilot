@@ -1,6 +1,6 @@
 # DSL 语言速查
 
-LogicPilot DSL 是**人与 AI 共用**的模型描述语言：人可以手写，AI 可以生成并依据结构化诊断修复。语法由 tree-sitter 文法定义，编译为 FlatBuffers IR。
+LogicPilot DSL 是**人与 AI 共用**的模型描述语言：人可以手写，AI 可以生成并依据结构化诊断修复。语法由 tree-sitter 的 **v2 通用骨架**定义（`kind name { ... }`，`kind` 由编译器解析为核心种类或库块），编译为 FlatBuffers IR。
 
 ## 结构总览
 
@@ -8,14 +8,18 @@ LogicPilot DSL 是**人与 AI 共用**的模型描述语言：人可以手写，
 
 ```text
 model <Name> {
-  resource ...     // 资源池（容量/故障）
-  process ...      // 离散事件流程（source → queue → service）
+  use process      // 可选：声明使用 process 库（阶段 1 隐式可用）
+  param <p> = <值> // 模型级参数（可带 : float 类型注解）
+  resource ...     // process 库块：资源池（容量/故障）
+  process ...      // 流程容器（source → queue → service → sink）
   atomic ...       // DEVS 原子 + couple 布线
   agent ...        // Agent 群体（tick 行为）
   continuous ...   // 连续 ODE 系统
   experiment ...   // 模型声明的实验（优化搜索规格）
 }
 ```
+
+`resource/source/queue/service/sink` 是 **process 库注册表条目**（块形状由编译器校验：未知字段 `LP2005`），不是语法关键字——加一种新库块不需要改文法。
 
 ## process：离散事件流程
 
@@ -28,7 +32,7 @@ model MM1Failure {
 
   process Flow {
     source Arrivals {
-      arrival = poisson(0.8)  // 到达分布：poisson(λ) 或 exponential(λ)
+      arrival = rate(0.8)     // 到达分布：rate(λ)（= poisson(λ)，指数到达）
     }
     queue WaitLine {
       capacity = 1000000      // 0 = 无缓冲
@@ -48,19 +52,19 @@ model MM1Failure {
 model PulseChain {
   atomic Pulser {
     time_advance = constant(1.0)   // 或 exponential(rate) / infinite（缺省）
-    on_timeout: emit pulse
+    on_timeout { emit pulse }     // 行为统一为 on_<trigger> { ... }
   }
 
   atomic Sink {
     state seen = false             // 类型化状态变量
-    on_input pulse: seen = true    // 效果：状态赋值
+    on_input pulse { seen = true } // 消息触发 + 端口 + 效果
   }
 
   couple Pulser.pulse -> Sink.pulse  // 显式端口布线
 }
 ```
 
-约束（v0.1）：每个原子最多一个 `on_input`、一个 `on_timeout`；`time_advance` 缺省为 infinite（被动）。
+约束：每个原子最多一个 `on_input`、一个 `on_timeout`；`time_advance` 缺省为 infinite（被动）。
 
 ## agent：Agent 群体
 
@@ -69,8 +73,8 @@ model Swarm {
   agent Drone {
     count = 3
     state active = true
-    on_tick flip active   // 内置行为：翻转布尔状态
-    on_tick bounce        // 内置行为：在 [0,1]² 内反弹
+    on_tick { flip active }   // 内置行为：翻转布尔状态
+    on_tick { bounce }        // 内置行为：在 [0,1]² 内反弹
   }
 }
 ```

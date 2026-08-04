@@ -1,5 +1,10 @@
 // Parser front end implementation: tree-sitter parse + cursor-based AST
 // extraction (see include/logicpilot/dsl/parser.h).
+//
+// The grammar is the thin v2 skeleton (docs/specs/dsl-v2.md): every
+// declaration is `kind name { ... }` with a generic body, so the extractor
+// walks one generic `Node` tree and lets the semantic analyzer resolve
+// kinds against the core kinds + library registry.
 #include "logicpilot/dsl/parser.h"
 
 #include <algorithm>
@@ -103,8 +108,8 @@ class Extractor {
       : source_(source), diagnostics_(diagnostics) {}
 
   bool extract_model(const TSNode& root, ModelAst& out) {
-    // source_file = a single model_declaration (grammar R1). Comments are
-    // named extras, so the first *non-comment* named child is the model.
+    // source_file = a single model_declaration. Comments are named extras,
+    // so the first *non-comment* named child is the model.
     TSNode model = root;
     if (node_is(root, "source_file")) {
       model = TSNode{};
@@ -129,20 +134,18 @@ class Extractor {
 
     const TSNode body = field(model, "body");
     each_named_child(body, [&](const TSNode& member) {
-      if (node_is(member, "resource_declaration")) {
-        out.resources.push_back(extract_resource(member));
-      } else if (node_is(member, "process_declaration")) {
-        out.processes.push_back(extract_process(member));
-      } else if (node_is(member, "atomic_declaration")) {
-        out.atomics.push_back(extract_atomic(member));
-      } else if (node_is(member, "agent_declaration")) {
-        out.agents.push_back(extract_agent(member));
-      } else if (node_is(member, "continuous_declaration")) {
-        out.continuous.push_back(extract_continuous(member));
-      } else if (node_is(member, "experiment_declaration")) {
-        out.experiments.push_back(extract_experiment(member));
+      if (node_is(member, "use_declaration")) {
+        out.used_libraries.push_back(text_of(field(member, "library")));
+      } else if (node_is(member, "variable_declaration")) {
+        out.params.push_back(extract_var_decl(member));
       } else if (node_is(member, "couple_declaration")) {
         out.couplings.push_back(extract_couple(member));
+      } else if (node_is(member, "declaration")) {
+        Node node = extract_node(member);
+        if (node.kind == "experiment") {
+          out.experiments.push_back(extract_experiment(node));
+        }
+        out.members.push_back(std::move(node));
       }
     });
     return true;
@@ -192,405 +195,271 @@ class Extractor {
     return true;
   }
 
-  bool param_of(const TSNode& call, const char* field_name, double& out) {
-    const TSNode value = field(call, field_name);
-    return !ts_node_is_null(value) && double_of(value, out);
+  // First word of a node's source text (keyword tokens are anonymous, e.g.
+  // the `state`/`param`/`in`/`out` prefixes of variable/port declarations).
+  std::string first_word_of(const TSNode& node) const {
+    const std::string text = text_of(node);
+    std::size_t end = 0;
+    while (end < text.size() &&
+           (std::isalnum(static_cast<unsigned char>(text[end])) ||
+            text[end] == '_')) {
+      ++end;
+    }
+    return text.substr(0, end);
   }
 
-  // value_literal -> AtomicValue (bool / int / float literal).
-  AtomicValue extract_value(const TSNode& literal) {
-    AtomicValue value;
-    value.span = span_of(literal);
-    const TSNode token = ts_node_named_child(literal, 0);
-    if (node_is(token, "boolean_literal")) {
-      value.kind = AtomicValueKind::kBool;
-      value.bool_value = text_of(token) == "true";
-    } else if (node_is(token, "integer")) {
-      value.kind = AtomicValueKind::kInt;
-      integer_of(token, value.int_value);
-    } else if (node_is(token, "float")) {
-      value.kind = AtomicValueKind::kFloat;
-      double_of(token, value.float_value);
+  // value -> Value (literal / identifier / numeric call).
+  Value extract_value(const TSNode& node) {
+    Value value;
+    value.span = span_of(node);
+    const TSNode child = ts_node_named_child(node, 0);
+    if (node_is(child, "value_literal")) {
+      const TSNode token = ts_node_named_child(child, 0);
+      if (node_is(token, "boolean_literal")) {
+        value.kind = ValueKind::kBool;
+        value.bool_value = text_of(token) == "true";
+      } else if (node_is(token, "integer")) {
+        value.kind = ValueKind::kInt;
+        integer_of(token, value.int_value);
+      } else if (node_is(token, "float")) {
+        value.kind = ValueKind::kFloat;
+        double_of(token, value.float_value);
+      } else if (node_is(token, "string_literal")) {
+        value.kind = ValueKind::kString;
+        std::string text = text_of(token);
+        if (text.size() >= 2) {
+          text = text.substr(1, text.size() - 2);  // strip quotes
+        }
+        value.string_value = text;
+      }
+    } else if (node_is(child, "identifier")) {
+      value.kind = ValueKind::kIdentifier;
+      value.string_value = text_of(child);
+    } else if (node_is(child, "call")) {
+      value.kind = ValueKind::kCall;
+      value.call_name = text_of(field(child, "name"));
+      const TSNode args = field(child, "args");
+      each_named_child(args, [&](const TSNode& arg_node) {
+        double arg = 0.0;
+        if (double_of(arg_node, arg)) {
+          value.call_args.push_back(arg);
+        }
+      });
     }
     return value;
   }
 
-  void extract_effects(const TSNode& effects_node, TransitionDecl& out) {
-    each_named_child(effects_node, [&](const TSNode& effect_node) {
-      if (!node_is(effect_node, "effect")) {
+  Field extract_field(const TSNode& node) {
+    Field out;
+    out.span = span_of(node);
+    out.name = text_of(field(node, "name"));
+    out.name_span = span_of(field(node, "name"));
+    out.value = extract_value(field(node, "value"));
+    return out;
+  }
+
+  RangeField extract_range(const TSNode& node) {
+    RangeField range;
+    range.span = span_of(node);
+    std::int64_t value = 0;
+    if (integer_of(field(node, "min"), value)) {
+      range.min = value;
+    }
+    if (integer_of(field(node, "max"), value)) {
+      range.max = value;
+    }
+    return range;
+  }
+
+  VarDecl extract_var_decl(const TSNode& node) {
+    VarDecl var;
+    var.span = span_of(node);
+    var.keyword = first_word_of(node);
+    var.name = text_of(field(node, "name"));
+    var.name_span = span_of(field(node, "name"));
+    const TSNode type = field(node, "type");
+    if (!ts_node_is_null(type)) {
+      var.type = text_of(type);
+    }
+    var.value = extract_value(field(node, "value"));
+    return var;
+  }
+
+  PortDecl extract_port(const TSNode& node) {
+    PortDecl port;
+    port.span = span_of(node);
+    port.direction = first_word_of(node);
+    const TSNode name = field(node, "name");
+    if (!ts_node_is_null(name)) {
+      port.name = text_of(name);
+    }
+    port.type = text_of(field(node, "type"));
+    return port;
+  }
+
+  Effect extract_effect(const TSNode& node) {
+    Effect effect;
+    const TSNode child = ts_node_named_child(node, 0);
+    if (node_is(child, "assignment_effect")) {
+      effect.kind = Effect::Kind::kAssign;
+      effect.name = text_of(field(child, "name"));
+      effect.name_span = span_of(field(child, "name"));
+      effect.value = extract_value(field(child, "value"));
+    } else if (node_is(child, "emit_effect")) {
+      effect.kind = Effect::Kind::kEmit;
+      effect.name = text_of(field(child, "port"));
+      effect.name_span = span_of(field(child, "port"));
+    } else if (node_is(child, "call_effect")) {
+      effect.kind = Effect::Kind::kCall;
+      effect.name = text_of(field(child, "handler"));
+      effect.name_span = span_of(field(child, "handler"));
+      const TSNode arg = field(child, "arg");
+      if (!ts_node_is_null(arg)) {
+        effect.arg = text_of(arg);
+        effect.arg_span = span_of(arg);
+      }
+    }
+    return effect;
+  }
+
+  Behavior extract_behavior(const TSNode& node) {
+    Behavior behavior;
+    behavior.span = span_of(node);
+    std::string trigger = text_of(field(node, "trigger"));
+    // Strip the `on_` prefix (on_timeout -> timeout).
+    if (trigger.rfind("on_", 0) == 0) {
+      trigger = trigger.substr(3);
+    }
+    behavior.trigger = trigger;
+    const TSNode port = field(node, "port");
+    if (!ts_node_is_null(port)) {
+      behavior.port = text_of(port);
+      behavior.port_span = span_of(port);
+    }
+    const TSNode effects = field(node, "effects");
+    each_named_child(effects, [&](const TSNode& effect_node) {
+      if (node_is(effect_node, "effect")) {
+        behavior.effects.push_back(extract_effect(effect_node));
+      }
+    });
+    return behavior;
+  }
+
+  Equation extract_equation(const TSNode& node) {
+    Equation equation;
+    equation.span = span_of(node);
+    equation.var = text_of(field(node, "name"));
+    std::string rhs_text = text_of(field(node, "rhs"));
+    // Trim the surrounding whitespace captured by the raw token.
+    const auto trim = [](std::string& text) {
+      const auto not_space = [](unsigned char c) {
+        return !std::isspace(c);
+      };
+      const auto first = std::find_if(text.begin(), text.end(), not_space);
+      if (first == text.end()) {
+        text.clear();
         return;
       }
-      Effect effect;
-      const TSNode name = field(effect_node, "name");
-      effect.name = text_of(name);
-      effect.name_span = span_of(name);
-      effect.value = extract_value(field(effect_node, "value"));
-      out.effects.push_back(std::move(effect));
-    });
+      const auto last = std::find_if(text.rbegin(), text.rend(), not_space);
+      text = std::string(first, last.base());
+    };
+    trim(rhs_text);
+    equation.rhs_text = rhs_text;
+    return equation;
   }
 
-  AtomicDecl extract_atomic(const TSNode& decl) {
-    AtomicDecl atomic;
-    atomic.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    atomic.name = text_of(name);
-    atomic.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& field_node) {
-      if (node_is(field_node, "state_field")) {
-        StateVarDecl var;
-        const TSNode var_name = field(field_node, "name");
-        var.name = text_of(var_name);
-        var.name_span = span_of(var_name);
-        var.value = extract_value(field(field_node, "value"));
-        atomic.state.push_back(std::move(var));
-      } else if (node_is(field_node, "time_advance_field")) {
-        atomic.ta.has = true;
-        atomic.ta.count += 1;
-        atomic.ta.span = span_of(field_node);
-        const TSNode expr = field(field_node, "value");
-        const TSNode call = ts_node_named_child(expr, 0);
-        if (node_is(call, "constant_call")) {
-          atomic.ta.kind = TaKind::kConstant;
-          param_of(call, "value", atomic.ta.value);
-        } else if (node_is(call, "exponential_call")) {
-          atomic.ta.kind = TaKind::kExponential;
-          param_of(call, "rate", atomic.ta.value);
-        } else if (node_is(call, "infinite_literal")) {
-          atomic.ta.kind = TaKind::kInfinite;
-        } else {
-          // Bare number literal.
-          atomic.ta.kind = TaKind::kConstant;
-          double_of(call, atomic.ta.value);
-        }
-      } else if (node_is(field_node, "on_input_field")) {
-        TransitionDecl transition;
-        transition.has = true;
-        transition.count += 1;
-        transition.span = span_of(field_node);
-        const TSNode port = field(field_node, "port");
-        transition.port = text_of(port);
-        transition.port_span = span_of(port);
-        extract_effects(field(field_node, "effects"), transition);
-        atomic.on_input.push_back(std::move(transition));
-      } else if (node_is(field_node, "on_timeout_field")) {
-        atomic.on_timeout.has = true;
-        atomic.on_timeout.count += 1;
-        atomic.on_timeout.span = span_of(field_node);
-        const TSNode effects = field(field_node, "effects");
-        if (!ts_node_is_null(effects)) {
-          extract_effects(effects, atomic.on_timeout);
-        }
-        const TSNode emit_port = field(field_node, "port");
-        if (!ts_node_is_null(emit_port)) {
-          atomic.on_timeout.emit = true;
-          atomic.on_timeout.emit_port = text_of(emit_port);
-          atomic.on_timeout.emit_span = span_of(emit_port);
-        }
-      }
-    });
-    return atomic;
-  }
-
-  CoupleDecl extract_couple(const TSNode& decl) {
+  CoupleDecl extract_couple(const TSNode& node) {
     CoupleDecl couple;
-    couple.span = span_of(decl);
-    couple.from_model = text_of(field(decl, "from_model"));
-    couple.from_port = text_of(field(decl, "from_port"));
-    couple.to_model = text_of(field(decl, "to_model"));
-    couple.to_port = text_of(field(decl, "to_port"));
+    couple.span = span_of(node);
+    couple.from_model = text_of(field(node, "from_model"));
+    couple.from_port = text_of(field(node, "from_port"));
+    couple.to_model = text_of(field(node, "to_model"));
+    couple.to_port = text_of(field(node, "to_port"));
     return couple;
   }
 
-  AgentDecl extract_agent(const TSNode& decl) {
-    AgentDecl agent;
-    agent.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    agent.name = text_of(name);
-    agent.name_span = span_of(name);
+  Node extract_node(const TSNode& decl) {
+    Node node;
+    node.span = span_of(decl);
+    node.kind = text_of(field(decl, "kind"));
+    node.name = text_of(field(decl, "name"));
+    node.name_span = span_of(field(decl, "name"));
     const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& field_node) {
-      if (node_is(field_node, "count_field")) {
-        agent.has_count = true;
-        agent.count_count += 1;
-        agent.count_field_span = span_of(field_node);
-        std::int64_t value = 0;
-        if (integer_of(field(field_node, "value"), value)) {
-          agent.count = value;
+    each_named_child(body, [&](const TSNode& member) {
+      if (node_is(member, "field")) {
+        // `range = min..max` parses as a field node wrapping a range_field
+        // (the grammar choice inlines it); extract it as a range.
+        const TSNode inner = ts_node_named_child(member, 0);
+        if (node_is(inner, "range_field")) {
+          node.ranges.push_back(extract_range(inner));
+        } else {
+          node.fields.push_back(extract_field(member));
         }
-      } else if (node_is(field_node, "state_field")) {
-        StateVarDecl var;
-        const TSNode var_name = field(field_node, "name");
-        var.name = text_of(var_name);
-        var.name_span = span_of(var_name);
-        var.value = extract_value(field(field_node, "value"));
-        agent.state.push_back(std::move(var));
-      } else if (node_is(field_node, "on_tick_field")) {
-        TickBehavior behavior;
-        behavior.has = true;
-        behavior.count += 1;
-        behavior.span = span_of(field_node);
-        const TSNode handler = field(field_node, "handler");
-        behavior.handler = text_of(handler);
-        behavior.handler_span = span_of(handler);
-        const TSNode arg = field(field_node, "arg");
-        if (!ts_node_is_null(arg)) {
-          behavior.has_arg = true;
-          behavior.arg = text_of(arg);
-          behavior.arg_span = span_of(arg);
-        }
-        agent.behaviors.push_back(std::move(behavior));
+      } else if (node_is(member, "range_field")) {
+        node.ranges.push_back(extract_range(member));
+      } else if (node_is(member, "variable_declaration")) {
+        node.vars.push_back(extract_var_decl(member));
+      } else if (node_is(member, "port_declaration")) {
+        node.ports.push_back(extract_port(member));
+      } else if (node_is(member, "behavior")) {
+        node.behaviors.push_back(extract_behavior(member));
+      } else if (node_is(member, "equation")) {
+        node.equations.push_back(extract_equation(member));
+      } else if (node_is(member, "couple_declaration")) {
+        node.couplings.push_back(extract_couple(member));
+      } else if (node_is(member, "declaration")) {
+        node.children.push_back(extract_node(member));
       }
     });
-    return agent;
+    return node;
   }
 
-  ExperimentDecl extract_experiment(const TSNode& decl) {
+  // experiment Node -> typed ExperimentDecl (fields are bare-identifier or
+  // integer values; range carries min/max).
+  ExperimentDecl extract_experiment(const Node& node) {
     ExperimentDecl experiment;
-    experiment.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    experiment.name = text_of(name);
-    experiment.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& field_node) {
-      const auto string_field = [&](const char* f) {
-        return text_of(field(field_node, f));
-      };
-      if (node_is(field_node, "objective_field")) {
-        experiment.has_objective = true;
+    experiment.span = node.span;
+    experiment.name = node.name;
+    experiment.name_span = node.name_span;
+    for (const Field& field : node.fields) {
+      if (field.name == "objective") {
         experiment.objective_count += 1;
-        experiment.objective = string_field("value");
-        experiment.objective_span = span_of(field(field_node, "value"));
-      } else if (node_is(field_node, "metric_field")) {
-        experiment.has_metric = true;
+        experiment.objective_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_objective = true;
+          experiment.objective = field.value.string_value;
+        }
+      } else if (field.name == "metric") {
         experiment.metric_count += 1;
-        experiment.metric = string_field("value");
-        experiment.metric_span = span_of(field(field_node, "value"));
-      } else if (node_is(field_node, "variable_field")) {
-        experiment.has_variable = true;
+        experiment.metric_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_metric = true;
+          experiment.metric = field.value.string_value;
+        }
+      } else if (field.name == "variable") {
         experiment.variable_count += 1;
-        experiment.variable = string_field("value");
-        experiment.variable_span = span_of(field(field_node, "value"));
-      } else if (node_is(field_node, "range_field")) {
-        experiment.has_range = true;
-        experiment.range_count += 1;
-        experiment.range_span = span_of(field_node);
-        std::int64_t min = 0;
-        std::int64_t max = 0;
-        if (integer_of(field(field_node, "min"), min)) {
-          experiment.range_min = min;
+        experiment.variable_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_variable = true;
+          experiment.variable = field.value.string_value;
         }
-        if (integer_of(field(field_node, "max"), max)) {
-          experiment.range_max = max;
-        }
-      } else if (node_is(field_node, "budget_field")) {
-        experiment.has_budget = true;
+      } else if (field.name == "budget") {
         experiment.budget_count += 1;
-        experiment.budget_span = span_of(field(field_node, "value"));
-        std::int64_t value = 0;
-        if (integer_of(field(field_node, "value"), value)) {
-          experiment.budget = value;
+        experiment.budget_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt) {
+          experiment.has_budget = true;
+          experiment.budget = field.value.int_value;
         }
       }
-    });
+    }
+    for (const RangeField& range : node.ranges) {
+      experiment.range_count += 1;
+      experiment.range_span = range.span;
+      experiment.has_range = true;
+      experiment.range_min = range.min;
+      experiment.range_max = range.max;
+    }
     return experiment;
-  }
-
-  EquationDecl extract_continuous(const TSNode& decl) {
-    EquationDecl continuous;
-    continuous.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    continuous.name = text_of(name);
-    continuous.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& field_node) {
-      if (node_is(field_node, "state_field")) {
-        StateVarDecl var;
-        const TSNode var_name = field(field_node, "name");
-        var.name = text_of(var_name);
-        var.name_span = span_of(var_name);
-        var.value = extract_value(field(field_node, "value"));
-        continuous.state.push_back(std::move(var));
-      } else if (node_is(field_node, "param_field")) {
-        EquationDecl::ParamDecl param;
-        const TSNode param_name = field(field_node, "name");
-        param.name = text_of(param_name);
-        param.name_span = span_of(param_name);
-        param.span = span_of(field_node);
-        double value = 0.0;
-        if (double_of(field(field_node, "value"), value)) {
-          param.value = value;
-        }
-        continuous.params.push_back(std::move(param));
-      } else if (node_is(field_node, "equation_field")) {
-        EquationDecl::Equation equation;
-        equation.span = span_of(field_node);
-        equation.var = text_of(field(field_node, "name"));
-        const TSNode rhs = field(field_node, "rhs");
-        std::string rhs_text = text_of(rhs);
-        // Trim the surrounding whitespace captured by the raw token.
-        const auto trim = [](std::string& text) {
-          const auto not_space = [](unsigned char c) {
-            return !std::isspace(c);
-          };
-          const auto first =
-              std::find_if(text.begin(), text.end(), not_space);
-          if (first == text.end()) {
-            text.clear();
-            return;
-          }
-          const auto last = std::find_if(text.rbegin(), text.rend(), not_space);
-          text = std::string(first, last.base());
-        };
-        trim(rhs_text);
-        equation.rhs_text = rhs_text;
-        continuous.equations.push_back(std::move(equation));
-      }
-    });
-    return continuous;
-  }
-
-  // arrival_expr / service_time_expr -> Distribution.
-  bool distribution_of(const TSNode& expr, Distribution& out) {
-    out.span = span_of(expr);
-    const TSNode call = ts_node_named_child(expr, 0);
-    if (ts_node_is_null(call)) {
-      error(expr, "LP0001", "syntax error: expected a distribution call");
-      return false;
-    }
-    if (node_is(call, "poisson_call")) {
-      out.kind = DistKind::kPoisson;
-      double rate = 0.0;
-      if (!param_of(call, "rate", rate)) return false;
-      out.params.push_back(rate);
-      return true;
-    }
-    if (node_is(call, "exponential_call")) {
-      out.kind = DistKind::kExponential;
-      double rate = 0.0;
-      if (!param_of(call, "rate", rate)) return false;
-      out.params.push_back(rate);
-      return true;
-    }
-    if (node_is(call, "normal_call")) {
-      out.kind = DistKind::kNormal;
-      double mean = 0.0;
-      double stddev = 0.0;
-      if (!param_of(call, "mean", mean) ||
-          !param_of(call, "stddev", stddev)) {
-        return false;
-      }
-      out.params.push_back(mean);
-      out.params.push_back(stddev);
-      return true;
-    }
-    if (node_is(call, "constant_call")) {
-      out.kind = DistKind::kConstant;
-      double value = 0.0;
-      if (!param_of(call, "value", value)) return false;
-      out.params.push_back(value);
-      return true;
-    }
-    error(call, "LP0001",
-          std::string("unknown distribution '") + ts_node_type(call) + "'");
-    return false;
-  }
-
-  ResourceDecl extract_resource(const TSNode& decl) {
-    ResourceDecl resource;
-    resource.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    resource.name = text_of(name);
-    resource.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& field_node) {
-      if (node_is(field_node, "capacity_field")) {
-        resource.capacity_count += 1;
-        resource.capacity_field_span = span_of(field_node);
-        std::int64_t value = 0;
-        if (integer_of(field(field_node, "value"), value)) {
-          resource.has_capacity = true;
-          resource.capacity = value;
-        }
-      } else if (node_is(field_node, "failure_rate_field")) {
-        resource.failure_rate_count += 1;
-        resource.failure_rate_field_span = span_of(field_node);
-        double value = 0.0;
-        if (double_of(field(field_node, "value"), value)) {
-          resource.has_failure_rate = true;
-          resource.failure_rate = value;
-        }
-      }
-    });
-    return resource;
-  }
-
-  StageDecl extract_stage(const TSNode& decl) {
-    StageDecl stage;
-    stage.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    stage.name = text_of(name);
-    stage.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-
-    if (node_is(decl, "source_declaration")) {
-      stage.kind = StageDecl::Kind::kSource;
-      each_named_child(body, [&](const TSNode& field_node) {
-        if (node_is(field_node, "arrival_field")) {
-          stage.arrival_count += 1;
-          stage.arrival_field_span = span_of(field_node);
-          Distribution arrival;
-          if (distribution_of(field(field_node, "value"), arrival)) {
-            stage.has_arrival = true;
-            stage.arrival = std::move(arrival);
-          }
-        }
-      });
-    } else if (node_is(decl, "queue_declaration")) {
-      stage.kind = StageDecl::Kind::kQueue;
-      each_named_child(body, [&](const TSNode& field_node) {
-        if (node_is(field_node, "capacity_field")) {
-          stage.capacity_count += 1;
-          stage.capacity_field_span = span_of(field_node);
-          std::int64_t value = 0;
-          if (integer_of(field(field_node, "value"), value)) {
-            stage.has_capacity = true;
-            stage.capacity = value;
-          }
-        }
-      });
-    } else if (node_is(decl, "service_declaration")) {
-      stage.kind = StageDecl::Kind::kService;
-      each_named_child(body, [&](const TSNode& field_node) {
-        if (node_is(field_node, "time_field")) {
-          stage.time_count += 1;
-          stage.time_field_span = span_of(field_node);
-          Distribution service_time;
-          if (distribution_of(field(field_node, "value"), service_time)) {
-            stage.has_time = true;
-            stage.service_time = std::move(service_time);
-          }
-        }
-      });
-    }
-    return stage;
-  }
-
-  ProcessDecl extract_process(const TSNode& decl) {
-    ProcessDecl process;
-    process.span = span_of(decl);
-    const TSNode name = field(decl, "name");
-    process.name = text_of(name);
-    process.name_span = span_of(name);
-    const TSNode body = field(decl, "body");
-    each_named_child(body, [&](const TSNode& stage_node) {
-      if (node_is(stage_node, "source_declaration") ||
-          node_is(stage_node, "queue_declaration") ||
-          node_is(stage_node, "service_declaration")) {
-        process.stages.push_back(extract_stage(stage_node));
-      }
-    });
-    return process;
   }
 
   const std::string& source_;
@@ -607,6 +476,57 @@ const char* to_string(DistKind kind) {
     case DistKind::kConstant: return "constant";
   }
   return "unknown";
+}
+
+const Field* find_field(const Node& node, const char* name) {
+  for (const Field& field : node.fields) {
+    if (field.name == name) {
+      return &field;
+    }
+  }
+  return nullptr;
+}
+
+const VarDecl* find_var(const Node& node, const char* keyword,
+                        const std::string& name) {
+  for (const VarDecl& var : node.vars) {
+    if (var.keyword == keyword && var.name == name) {
+      return &var;
+    }
+  }
+  return nullptr;
+}
+
+bool distribution_from_value(const Value& value, Distribution& out) {
+  out.span = value.span;
+  if (value.kind != ValueKind::kCall) {
+    return false;
+  }
+  if (value.call_name == "poisson" || value.call_name == "rate") {
+    if (value.call_args.size() != 1) return false;
+    out.kind = DistKind::kPoisson;
+    out.params = value.call_args;
+    return true;
+  }
+  if (value.call_name == "exponential") {
+    if (value.call_args.size() != 1) return false;
+    out.kind = DistKind::kExponential;
+    out.params = value.call_args;
+    return true;
+  }
+  if (value.call_name == "normal") {
+    if (value.call_args.size() != 2) return false;
+    out.kind = DistKind::kNormal;
+    out.params = value.call_args;
+    return true;
+  }
+  if (value.call_name == "constant") {
+    if (value.call_args.size() != 1) return false;
+    out.kind = DistKind::kConstant;
+    out.params = value.call_args;
+    return true;
+  }
+  return false;
 }
 
 ParseOutput parse_source(const std::string& source, const std::string& path) {

@@ -7,18 +7,21 @@ model M {
     capacity = 3
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer)))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer)))))))))
 
 ==================
 Resource with capacity and failure_rate
@@ -30,20 +33,26 @@ model M {
     failure_rate = 0.01
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float)))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float)))))))))
 
 ==================
 Resource failure_rate float boundary values
@@ -53,27 +62,40 @@ model M {
   resource A { capacity = 2 failure_rate = 0.0 }
   resource B { capacity = 9 failure_rate = 1.0 }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float))))
-      (resource_declaration
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float))))))
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer))
-          (failure_rate_field
-            value: (float)))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (float)))))))))
 
 ==================
 Resource identifier with underscores and digits
@@ -84,15 +106,19 @@ model M {
     capacity = 12
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (resource_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (resource_body
-          (capacity_field
-            value: (integer)))))))
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer)))))))))
+

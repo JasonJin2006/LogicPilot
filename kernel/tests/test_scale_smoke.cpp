@@ -22,7 +22,7 @@ TEST_CASE("1M-agent population builds and ticks within the smoke budget",
       "  agent Drone {\n"
       "    count = 1000000\n"
       "    state active = true\n"
-      "    on_tick flip active\n"
+      "    on_tick { flip active }\n"
       "  }\n"
       "}\n";
   const dsl::CompileResult compiled =

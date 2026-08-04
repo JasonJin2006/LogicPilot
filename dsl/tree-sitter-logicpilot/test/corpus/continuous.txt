@@ -9,23 +9,66 @@ model Decay {
     d y/dt = -k*y
   }
 }
-
 ---
 
 (source_file
   (model_declaration
     name: (identifier)
     body: (model_body
-      (continuous_declaration
+      (declaration
+        kind: (identifier)
         name: (identifier)
-        body: (continuous_body
-          (state_field
+        body: (declaration_body
+          (variable_declaration
             name: (identifier)
-            value: (value_literal
-              (float)))
-          (param_field
+            value: (value
+              (value_literal
+                (float))))
+          (variable_declaration
             name: (identifier)
-            value: (float))
-          (equation_field
+            value: (value
+              (value_literal
+                (float))))
+          (equation
             name: (identifier)
             rhs: (rhs_text)))))))
+
+==================
+Continuous with typed state and param
+==================
+
+model SIR {
+  continuous Dynamics {
+    state S: float = 0.99
+    param beta: float = 0.5
+    d S/dt = -beta*S*I
+  }
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (variable_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            value: (value
+              (value_literal
+                (float))))
+          (variable_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            value: (value
+              (value_literal
+                (float))))
+          (equation
+            name: (identifier)
+            rhs: (rhs_text)))))))
+

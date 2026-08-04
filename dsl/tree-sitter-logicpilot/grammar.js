@@ -1,14 +1,17 @@
 /**
- * Tree-sitter grammar for the LogicPilot DSL — v0 subset.
+ * Tree-sitter grammar for the LogicPilot DSL - v2 generic skeleton.
  *
- * Aligned with docs/specs/dsl-spec.md (Draft v0), rules R1–R15, with one
- * documented extension: the `constant(x)` service-time distribution
- * (R16, task-mandated; absent from the draft spec).
+ * Thin core grammar (docs/specs/dsl-v2.md): `kind` is any identifier and is
+ * resolved by semantic analysis against the core kinds
+ * (model/agent/atomic/process/continuous/experiment) and the library
+ * registry (process: resource/source/queue/service/sink). The grammar is
+ * block-name agnostic - adding a library block never touches this file
+ * (AnyLogic palette / FMI idea).
  *
- * Design rulings (see dsl/tree-sitter-logicpilot/README.md):
- *  - Field "required" constraints (e.g. `capacity` in a resource) are
- *    semantic checks in the compiler, not grammar constraints; bodies are
- *    `repeat(field)` so the parser stays error-tolerant.
+ * Design rulings:
+ *  - Bodies are `repeat(...)` and `kind` is free-form so the parser stays
+ *    error-tolerant; semantic analysis turns unknown kinds, unknown fields
+ *    and bad values into LP-coded diagnostics with spans.
  *  - Exactly one `model` per file is enforced grammatically
  *    (`source_file` = a single `model_declaration`).
  */
@@ -22,7 +25,7 @@ module.exports = grammar({
   word: $ => $.identifier,
 
   rules: {
-    // R1 — exactly one model per file; the top-level container.
+    // One model per file; the top-level container.
     source_file: $ => $.model_declaration,
 
     model_declaration: $ => seq(
@@ -38,158 +41,184 @@ module.exports = grammar({
     ),
 
     _model_member: $ => choice(
-      $.resource_declaration,
-      $.process_declaration,
+      $.use_declaration,
+      $.variable_declaration,
+      $.declaration,
+      $.couple_declaration,
     ),
 
-    // R2 — reusable resource type.
-    resource_declaration: $ => seq(
-      'resource',
+    // `use <library>` - optional in v2 stage 1 (the standard process
+    // library is implicitly available); validated once multiple libraries
+    // land (Phase E).
+    use_declaration: $ => seq(
+      'use',
+      field('library', $.identifier),
+    ),
+
+    // Generic declaration: `kind name { ... }`. `kind` is resolved
+    // semantically (core kinds or a registered library block name).
+    declaration: $ => seq(
+      field('kind', $.identifier),
       field('name', $.identifier),
-      field('body', $.resource_body),
+      field('body', $.declaration_body),
     ),
 
-    resource_body: $ => seq(
+    declaration_body: $ => seq(
       '{',
-      repeat($._resource_field),
+      repeat($._declaration_member),
       '}',
     ),
 
-    _resource_field: $ => choice(
-      $.capacity_field,
-      $.failure_rate_field,
+    _declaration_member: $ => choice(
+      $.field,
+      $.variable_declaration,
+      $.port_declaration,
+      $.behavior,
+      $.equation,
+      $.declaration,
+      $.couple_declaration,
     ),
 
-    // R3 / R10 — `capacity = <Integer>` (resource capacity and queue size).
-    capacity_field: $ => seq(
-      'capacity',
+    // `name = <value>`, plus the special `range = <min>..<max>` form used
+    // by experiment blocks.
+    field: $ => choice(
+      seq(
+        field('name', $.identifier),
+        '=',
+        field('value', $.value),
+      ),
+      $.range_field,
+    ),
+
+    range_field: $ => seq(
+      'range',
       '=',
-      field('value', $.integer),
+      field('min', $.integer),
+      '..',
+      field('max', $.integer),
     ),
 
-    // R4 — `failure_rate = <Float>`.
-    failure_rate_field: $ => seq(
-      'failure_rate',
-      '=',
-      field('value', $.float),
-    ),
-
-    // R5 — entity flow; stages execute in declaration order.
-    process_declaration: $ => seq(
-      'process',
+    // `state x = <value>` / `param k = <value>` with an optional type
+    // annotation (`state active: bool = true`).
+    variable_declaration: $ => seq(
+      choice('state', 'param'),
       field('name', $.identifier),
-      field('body', $.process_body),
+      optional(seq(':', field('type', $.type_name))),
+      '=',
+      field('value', $.value),
     ),
 
-    process_body: $ => seq(
+    // Type names are free identifiers (builtin scalars int/float/bool/string/
+    // distribution/ref are validated semantically; custom schema types such
+    // as Job/Signal are legal port types).
+    type_name: $ => $.identifier,
+
+    // `in [name]: type` / `out [name]: type` / `inout [name]: type`;
+    // unnamed ports default to `entity` (process blocks).
+    port_declaration: $ => seq(
+      choice('in', 'out', 'inout'),
+      optional(field('name', $.identifier)),
+      ':',
+      field('type', $.type_name),
+    ),
+
+    // Unified behavior: `on_<trigger> [port] { effect; ... }`. The trigger
+    // token carries the `on_` prefix (e.g. on_timeout, on_tick, on_input);
+    // `port` is the message channel for message triggers.
+    behavior: $ => seq(
+      field('trigger', $.trigger),
+      optional(field('port', $.identifier)),
+      field('effects', $.effect_list),
+    ),
+
+    trigger: $ => token(seq('on_', /[A-Za-z_][A-Za-z0-9_]*/)),
+
+    effect_list: $ => seq(
       '{',
-      repeat($._stage),
+      repeat(seq($.effect, optional(choice(';', ',')))),
       '}',
     ),
 
-    _stage: $ => choice(
-      $.source_declaration,
-      $.queue_declaration,
-      $.service_declaration,
+    effect: $ => choice(
+      $.assignment_effect,
+      $.emit_effect,
+      $.call_effect,
     ),
 
-    // R6 — entity arrival generator inside a process.
-    source_declaration: $ => seq(
-      'source',
+    assignment_effect: $ => seq(
       field('name', $.identifier),
-      field('body', $.source_body),
-    ),
-
-    source_body: $ => seq(
-      '{',
-      repeat($.arrival_field),
-      '}',
-    ),
-
-    // R7 — `arrival = <arrival_expr>`.
-    arrival_field: $ => seq(
-      'arrival',
       '=',
-      field('value', $.arrival_expr),
+      field('value', $.value),
     ),
 
-    arrival_expr: $ => $.poisson_call,
+    emit_effect: $ => seq(
+      'emit',
+      field('port', $.identifier),
+    ),
 
-    // R8 — `poisson(<Numeric>)`.
-    poisson_call: $ => seq(
-      'poisson',
+    // `prec.right` greedily binds the optional argument to the call
+    // (`flip active bounce` = `(flip active) (bounce)`).
+    call_effect: $ => prec.right(seq(
+      field('handler', $.identifier),
+      optional(field('arg', $.identifier)),
+    )),
+
+    // Structured ODE: `d <name>/dt = <rhs-text>` (raw RHS until
+    // expressions land in Phase D; trimmed by the extractor).
+    equation: $ => seq(
+      'd',
+      field('name', $.identifier),
+      '/dt',
+      '=',
+      field('rhs', $.rhs_text),
+    ),
+
+    rhs_text: $ => token(prec(1, /[^\n\r}]+/)),
+
+    // `couple <from_model>.<from_port> -> <to_model>.<to_port>`.
+    couple_declaration: $ => seq(
+      'couple',
+      field('from_model', $.identifier),
+      '.',
+      field('from_port', $.identifier),
+      '->',
+      field('to_model', $.identifier),
+      '.',
+      field('to_port', $.identifier),
+    ),
+
+    value: $ => choice(
+      $.value_literal,
+      $.identifier,
+      $.call,
+    ),
+
+    value_literal: $ => choice(
+      $.boolean_literal,
+      $.integer,
+      $.float,
+      $.string_literal,
+    ),
+
+    boolean_literal: $ => choice('true', 'false'),
+
+    string_literal: $ => token(seq('"', /[^"\n]*/, '"')),
+
+    // Generic call with numeric arguments (distribution constructors in
+    // v2 stage 1: poisson / rate / exponential / normal / constant).
+    call: $ => seq(
+      field('name', $.identifier),
       '(',
-      field('rate', $._numeric),
+      field('args', $.argument_list),
       ')',
     ),
 
-    // R9 — buffering stage inside a process.
-    queue_declaration: $ => seq(
-      'queue',
-      field('name', $.identifier),
-      field('body', $.queue_body),
+    argument_list: $ => seq(
+      $._argument,
+      repeat(seq(',', $._argument)),
     ),
 
-    queue_body: $ => seq(
-      '{',
-      repeat($.capacity_field),
-      '}',
-    ),
-
-    // R11 — processing stage bound to a resource.
-    service_declaration: $ => seq(
-      'service',
-      field('name', $.identifier),
-      field('body', $.service_body),
-    ),
-
-    service_body: $ => seq(
-      '{',
-      repeat($.time_field),
-      '}',
-    ),
-
-    // R12 — `time = <service_time_expr>`.
-    time_field: $ => seq(
-      'time',
-      '=',
-      field('value', $.service_time_expr),
-    ),
-
-    service_time_expr: $ => choice(
-      $.normal_call,
-      $.exponential_call,
-      $.constant_call,
-    ),
-
-    // R13 — `normal(<Numeric>, <Numeric>)` (mean, std-dev).
-    normal_call: $ => seq(
-      'normal',
-      '(',
-      field('mean', $._numeric),
-      ',',
-      field('stddev', $._numeric),
-      ')',
-    ),
-
-    // R14 — `exponential(<Numeric>)`.
-    exponential_call: $ => seq(
-      'exponential',
-      '(',
-      field('rate', $._numeric),
-      ')',
-    ),
-
-    // R16 (task-mandated extension) — `constant(<Numeric>)`.
-    constant_call: $ => seq(
-      'constant',
-      '(',
-      field('value', $._numeric),
-      ')',
-    ),
-
-    // R15 — literals & identifiers.
-    _numeric: $ => choice(
+    _argument: $ => choice(
       $.integer,
       $.float,
     ),

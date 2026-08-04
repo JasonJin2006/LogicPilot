@@ -11,9 +11,10 @@
 //                       extracted; bare text is used as-is.
 
 const SYSTEM_PROMPT = `You are the LogicPilot model generator. Produce ONLY a
-valid LogicPilot DSL model for the user's description. Follow the v0 DSL:
+valid LogicPilot DSL model for the user's description. Follow the v2 DSL
+(thin core grammar + process library blocks):
 model <Name> { resource <R> { capacity = <int> [failure_rate = <f>] }
-process <P> { source <S> { arrival = poisson(<rate>) } queue <Q> {
+process <P> { source <S> { arrival = rate(<rate>) } queue <Q> {
 capacity = <int> } service <R> { time = exponential(<rate>) } } }
 Do not wrap the model in prose; output the model block only.`;
 
@@ -83,7 +84,7 @@ model ${spec.model} {
 
   process Flow {
     source Arrivals {
-      arrival = poisson(${number(spec.lambda)})
+      arrival = rate(${number(spec.lambda)})
     }
     queue WaitLine {
       capacity = ${spec.queueCapacity}
