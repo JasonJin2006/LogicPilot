@@ -29,4 +29,19 @@ struct ParseOutput {
 [[nodiscard]] ParseOutput parse_source(const std::string& source,
                                        const std::string& path);
 
+// Parse one whole library file (libraries/*.lplib). `path` is used only for
+// diagnostics.
+struct ParseLibraryOutput {
+  std::vector<Diagnostic> diagnostics;
+  // Present only when the parse tree is error-free.
+  std::optional<LibraryAst> library;
+
+  [[nodiscard]] bool ok() const {
+    return diagnostics.empty() && library.has_value();
+  }
+};
+
+[[nodiscard]] ParseLibraryOutput parse_library_source(
+    const std::string& source, const std::string& path);
+
 }  // namespace logicpilot::dsl

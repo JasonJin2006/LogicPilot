@@ -11,6 +11,13 @@ so adding a library block never changes the grammar. `lpcli compile` lowers
 the model to the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`).
 Expression grammar is the remaining open item (see §5).
 
+**Library meta-layer**: block shapes are declared in DSL library files
+(`libraries/process.lplib`, embedded into the compiler binary); a parameter
+without a default is required, with a default it is optional. The compiler
+validates block instances against the registry (`LP2001` missing required,
+`LP2005` unknown field, `LP1002` duplicates, `LP3001` type/range); range and
+reference semantics stay in the compiler/runtime keyed by `{library, block}`.
+
 ## 1. Grammar Rules (v2 generic skeleton)
 
 | # | Rule | Description |

@@ -86,8 +86,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    可编译），模型级 `param` 进 IR 根节点；新 `LP2006`（未声明标识符/非常量）。
    **Phase E（部分）✅**：行为统一已在 Phase B 落地；experiment `variable`
    限定路径（引用已声明模型参数，`LP7001` 校验）已完成。
-   剩余：`library`/`block` 库元层文件（块形状落为 `libraries/process.lplib` +
-   注册表加载 + 类型化字段文法）。
+   **Phase E（库元层）✅ 已完成**：块形状声明于 `libraries/process.lplib`
+   （类型化字段、无默认值即必填），经 `scripts/gen-stdlib-header.mjs` 嵌入
+   编译器；semantic 改为注册表驱动的形状校验（必填/未知字段/重复/类型），
+   范围与引用语义保留在 C++。**P1-5 DSL v2 重设计全部完成**。
    验收：全部示例/测试/AI provider 同步，147 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。

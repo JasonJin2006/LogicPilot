@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "logicpilot/dsl/registry.h"
+
 namespace logicpilot::dsl {
 namespace {
 
@@ -42,6 +44,7 @@ double folded_double(const Value& value) {
 class Analyzer {
  public:
   std::vector<Diagnostic> run(const ModelAst& model) {
+    registry_ = &builtin_process_registry();
     declared_resources_.clear();
     for (const Node& member : model.members) {
       if (member.kind == "resource") {
@@ -202,15 +205,14 @@ class Analyzer {
       check_continuous(node, scope_with(node, parent_scope));
       return;
     }
-    if (kind == "resource") {
-      check_resource(node, parent_scope);
-      return;
-    }
     if (kind == "experiment") {
       return;  // validated via the typed ExperimentDecl list below
     }
-    if (kind == "source" || kind == "queue" || kind == "service" ||
-        kind == "sink") {
+    if (registry_ != nullptr && registry_->has_block(kind)) {
+      if (kind == "resource") {
+        check_process_block(node, parent_scope);
+        return;
+      }
       if (!top_level) {
         // Process stages are validated by check_process.
         return;
@@ -348,43 +350,116 @@ class Analyzer {
   }
 
   // ------------------------------------------------------------------
-  // Process library blocks
+  // Process library blocks (registry-driven shapes + C++ semantic rules)
   // ------------------------------------------------------------------
 
-  void check_resource(const Node& node, const ParamScope& scope) {
-    check_shape(node, {"capacity", "failure_rate"}, {});
-    const Field* capacity = field_of(node, "capacity");
-    check_missing(node, "capacity", capacity);
-    check_duplicate(node, "capacity");
-    if (capacity) {
-      Value folded;
-      if (fold_field(*capacity, scope,
-                     "resource '" + node.name + "' capacity", folded)) {
-        if (folded.kind != ValueKind::kInt) {
-          error("LP3001",
-                "resource '" + node.name + "' capacity must be an integer",
-                capacity->span);
-        } else if (folded.int_value < 1) {
+  // Validate a process library block instance against its registered shape
+  // (required params, known fields, duplicates, param types) plus the
+  // kind-specific semantic rules below.
+  void check_process_block(const Node& node, const ParamScope& scope) {
+    if (registry_ == nullptr) {
+      return;
+    }
+    for (const VarDecl& var : node.vars) {
+      error("LP2005",
+            "'" + var.keyword + "' is not allowed in " + node.kind + " '" +
+                node.name + "'",
+            var.span);
+    }
+    const BlockShape* shape = registry_->block(node.kind);
+    if (shape == nullptr) {
+      return;  // unknown kind is reported by check_decl
+    }
+    for (const BlockParamSpec& spec : shape->params) {
+      if (spec.required && field_of(node, spec.name.c_str()) == nullptr) {
+        error("LP2001",
+              "missing required field '" + spec.name + "' in " + node.kind +
+                  " '" + node.name + "'",
+              node.span);
+      }
+    }
+    std::unordered_set<std::string> duplicate_reported;
+    for (const Field& field : node.fields) {
+      const BlockParamSpec* spec = shape->param(field.name);
+      if (spec == nullptr) {
+        error("LP2005",
+              "unknown field '" + field.name + "' in " + node.kind + " '" +
+                  node.name + "'",
+              field.name_span);
+        continue;
+      }
+      if (field_count(node, field.name) > 1 &&
+          duplicate_reported.insert(field.name).second) {
+        const Field* last = nullptr;
+        for (const Field& candidate : node.fields) {
+          if (candidate.name == field.name) {
+            last = &candidate;
+          }
+        }
+        error("LP1002",
+              "duplicate field '" + field.name + "' in " + node.kind + " '" +
+                  node.name + "'",
+              last ? last->span : node.span);
+      }
+      check_param_type(node, *spec, field, scope);
+    }
+    check_block_semantics(node, scope);
+  }
+
+  void check_param_type(const Node& node, const BlockParamSpec& spec,
+                        const Field& field, const ParamScope& scope) {
+    const std::string context =
+        node.kind + " '" + node.name + "' " + spec.name;
+    switch (spec.type) {
+      case BlockParamType::kInt: {
+        Value folded;
+        if (fold_field(field, scope, context, folded) &&
+            folded.kind != ValueKind::kInt) {
+          error("LP3001", context + " must be an integer", field.span);
+        }
+        break;
+      }
+      case BlockParamType::kFloat: {
+        Value folded;
+        if (fold_field(field, scope, context, folded) &&
+            folded.kind != ValueKind::kInt &&
+            folded.kind != ValueKind::kFloat) {
+          error("LP3001", context + " must be a number", field.span);
+        }
+        break;
+      }
+      case BlockParamType::kDistribution:
+        check_distribution_field(field, scope, context);
+        break;
+      case BlockParamType::kRef:
+      case BlockParamType::kBool:
+      case BlockParamType::kString:
+      case BlockParamType::kUnknown:
+        break;  // references resolved in check_block_semantics
+    }
+  }
+
+  // Kind-specific semantic rules on top of the registered shape (range
+  // checks and the service resource reference).
+  void check_block_semantics(const Node& node, const ParamScope& scope) {
+    if (node.kind == "resource") {
+      const Field* capacity = field_of(node, "capacity");
+      if (capacity) {
+        Value folded;
+        if (fold_value(capacity->value, scope, folded) &&
+            folded.kind == ValueKind::kInt && folded.int_value < 1) {
           error("LP3001",
                 "resource '" + node.name + "' capacity must be >= 1 (got " +
                     std::to_string(folded.int_value) + ")",
                 capacity->span);
         }
       }
-    }
-    const Field* failure_rate = field_of(node, "failure_rate");
-    check_duplicate(node, "failure_rate");
-    if (failure_rate) {
-      Value folded;
-      if (fold_field(*failure_rate, scope,
-                     "resource '" + node.name + "' failure_rate", folded)) {
-        if (folded.kind != ValueKind::kInt &&
-            folded.kind != ValueKind::kFloat) {
-          error("LP3001",
-                "resource '" + node.name +
-                    "' failure_rate must be a number",
-                failure_rate->span);
-        } else {
+      const Field* failure_rate = field_of(node, "failure_rate");
+      if (failure_rate) {
+        Value folded;
+        if (fold_value(failure_rate->value, scope, folded) &&
+            (folded.kind == ValueKind::kInt ||
+             folded.kind == ValueKind::kFloat)) {
           const double value = folded_double(folded);
           if (value < 0.0 || value > 1.0) {
             error("LP3001",
@@ -395,58 +470,25 @@ class Analyzer {
           }
         }
       }
-    }
-  }
-
-  void check_stage(const Node& node, const ParamScope& scope) {
-    if (node.kind == "source") {
-      check_shape(node, {"arrival"}, {});
-      const Field* arrival = field_of(node, "arrival");
-      check_missing(node, "arrival", arrival);
-      check_duplicate(node, "arrival");
-      if (arrival) {
-        check_distribution_field(*arrival, scope,
-                                 "source '" + node.name + "' arrival");
-      }
       return;
     }
     if (node.kind == "queue") {
-      check_shape(node, {"capacity"}, {});
       const Field* capacity = field_of(node, "capacity");
-      check_missing(node, "capacity", capacity);
-      check_duplicate(node, "capacity");
       if (capacity) {
         Value folded;
-        if (fold_field(*capacity, scope,
-                       "queue '" + node.name + "' capacity", folded)) {
-          if (folded.kind != ValueKind::kInt) {
-            error("LP3001",
-                  "queue '" + node.name + "' capacity must be an integer",
-                  capacity->span);
-          } else if (folded.int_value < 0) {
-            error("LP3001",
-                  "queue '" + node.name + "' capacity must be >= 0 (got " +
-                      std::to_string(folded.int_value) + ")",
-                  capacity->span);
-          }
+        if (fold_value(capacity->value, scope, folded) &&
+            folded.kind == ValueKind::kInt && folded.int_value < 0) {
+          error("LP3001",
+                "queue '" + node.name + "' capacity must be >= 0 (got " +
+                    std::to_string(folded.int_value) + ")",
+                capacity->span);
         }
       }
       return;
     }
     if (node.kind == "service") {
-      check_shape(node, {"time", "resource"}, {});
-      const Field* time = field_of(node, "time");
-      check_missing(node, "time", time);
-      check_duplicate(node, "time");
-      if (time) {
-        check_distribution_field(*time, scope,
-                                 "service '" + node.name + "' time");
-      }
-      // Explicit `resource = R` reference (Phase C). When the field is
-      // absent the v0 identifier binding is kept as a transitional fallback.
       const Field* resource = field_of(node, "resource");
       if (resource != nullptr) {
-        check_duplicate(node, "resource");
         if (resource->value.kind == ValueKind::kIdentifier) {
           if (!resource_declared(resource->value.string_value)) {
             error("LP4001",
@@ -467,16 +509,7 @@ class Analyzer {
                   "' references undeclared resource '" + node.name + "'",
               node.name_span);
       }
-      return;
     }
-    if (node.kind == "sink") {
-      check_shape(node, {}, {});
-      return;
-    }
-    error("LP2004",
-          "block '" + node.kind + "' is not a process stage "
-              "(source/queue/service/sink)",
-          node.name_span);
   }
 
   void check_distribution_field(const Field& field, const ParamScope& scope,
@@ -523,7 +556,15 @@ class Analyzer {
       } else if (stage.kind == "service") {
         ++services;
       }
-      check_stage(stage, model_scope_);
+      if (stage.kind == "source" || stage.kind == "queue" ||
+          stage.kind == "service" || stage.kind == "sink") {
+        check_process_block(stage, model_scope_);
+      } else {
+        error("LP2004",
+              "block '" + stage.kind + "' is not a process stage "
+                  "(source/queue/service/sink)",
+              stage.name_span);
+      }
     }
     if (sources == 0) {
       error("LP2002",
@@ -1001,6 +1042,7 @@ class Analyzer {
   std::vector<Diagnostic> diagnostics_;
   std::unordered_set<std::string> declared_resources_;
   ParamScope model_scope_;
+  const LibraryRegistry* registry_{nullptr};
 };
 
 }  // namespace

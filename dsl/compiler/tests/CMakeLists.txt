@@ -5,6 +5,7 @@ include(Catch)
 
 add_executable(logicpilot_dsl_tests
   test_dsl_parser.cpp
+  test_dsl_registry.cpp
   test_dsl_semantic.cpp
   test_dsl_lowering.cpp
   test_dsl_e2e.cpp

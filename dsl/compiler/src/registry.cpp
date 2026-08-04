@@ -1,0 +1,77 @@
+// Library registry implementation: loads block shapes from DSL library
+// sources (parse_library_source -> LibraryAst -> BlockShape table).
+#include "logicpilot/dsl/registry.h"
+
+#include <utility>
+
+#include "logicpilot/dsl/parser.h"
+#include "logicpilot/dsl/stdlib_process.h"
+
+namespace logicpilot::dsl {
+
+BlockParamType block_param_type(const std::string& type_name) {
+  if (type_name == "int") return BlockParamType::kInt;
+  if (type_name == "float") return BlockParamType::kFloat;
+  if (type_name == "bool") return BlockParamType::kBool;
+  if (type_name == "string") return BlockParamType::kString;
+  if (type_name == "distribution") return BlockParamType::kDistribution;
+  if (type_name == "ref") return BlockParamType::kRef;
+  return BlockParamType::kUnknown;
+}
+
+const char* block_param_type_name(BlockParamType type) {
+  switch (type) {
+    case BlockParamType::kInt: return "int";
+    case BlockParamType::kFloat: return "float";
+    case BlockParamType::kBool: return "bool";
+    case BlockParamType::kString: return "string";
+    case BlockParamType::kDistribution: return "distribution";
+    case BlockParamType::kRef: return "ref";
+    case BlockParamType::kUnknown: return "unknown";
+  }
+  return "unknown";
+}
+
+bool LibraryRegistry::load(const std::string& source,
+                           std::vector<Diagnostic>* diagnostics) {
+  const ParseLibraryOutput parsed =
+      parse_library_source(source, "<library>");
+  if (!parsed.ok()) {
+    if (diagnostics != nullptr) {
+      *diagnostics = parsed.diagnostics;
+    }
+    return false;
+  }
+  const LibraryAst& library = *parsed.library;
+  blocks_.clear();
+  index_.clear();
+  for (const LibraryBlock& block : library.blocks) {
+    BlockShape shape;
+    shape.kind = block.kind;
+    for (const LibraryParam& param : block.params) {
+      BlockParamSpec spec;
+      spec.name = param.name;
+      spec.type = block_param_type(param.type);
+      spec.required = !param.has_default;
+      shape.params.push_back(std::move(spec));
+    }
+    index_.emplace(block.kind, blocks_.size());
+    blocks_.push_back(std::move(shape));
+  }
+  return true;
+}
+
+const LibraryRegistry& builtin_process_registry() {
+  static const LibraryRegistry registry = [] {
+    LibraryRegistry registry;
+    // The embedded standard library must always parse; a dedicated test
+    // pins the expected block set. A failure here leaves an empty registry
+    // (model blocks then fail with LP2004 unknown kind).
+    std::vector<Diagnostic> diagnostics;
+    (void)registry.load(kStdlibProcessSource, &diagnostics);
+    return registry;
+  }();
+  return registry;
+}
+
+}  // namespace logicpilot::dsl

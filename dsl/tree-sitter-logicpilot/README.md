@@ -16,6 +16,12 @@ the tree-sitter CLI.
 
 ```text
 source_file          := model_declaration                  // exactly one model per file
+                     | library_declaration                  // or one library file (.lplib)
+library_declaration  := 'library' Identifier library_body
+library_body         := '{' (field | block_declaration)* '}'
+block_declaration    := 'block' Identifier block_body
+block_body           := '{' (typed_field | port_declaration)* '}'
+typed_field          := Identifier ':' type_name ('=' value)?   // no default => required
 model_declaration    := 'model' Identifier model_body
 model_body           := '{' (use_declaration | variable_declaration | declaration | couple_declaration)* '}'
 use_declaration      := 'use' Identifier

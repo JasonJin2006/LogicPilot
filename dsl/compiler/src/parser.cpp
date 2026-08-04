@@ -151,6 +151,38 @@ class Extractor {
     return true;
   }
 
+  bool extract_library(const TSNode& root, LibraryAst& out) {
+    // source_file = a single library_declaration (comments are extras).
+    TSNode library = root;
+    if (node_is(root, "source_file")) {
+      library = TSNode{};
+      each_named_child(root, [&](const TSNode& child) {
+        if (ts_node_is_null(library)) {
+          library = child;
+        }
+      });
+    }
+    if (ts_node_is_null(library) ||
+        !node_is(library, "library_declaration")) {
+      error(root, "LP0001", "syntax error: expected a library declaration");
+      return false;
+    }
+    out.span = span_of(library);
+    out.name = text_of(field(library, "name"));
+    const TSNode body = field(library, "body");
+    each_named_child(body, [&](const TSNode& member) {
+      if (node_is(member, "field")) {
+        Field field = extract_field(member);
+        if (field.name == "version" && field.value.kind == ValueKind::kInt) {
+          out.version = field.value.int_value;
+        }
+      } else if (node_is(member, "block_declaration")) {
+        out.blocks.push_back(extract_library_block(member));
+      }
+    });
+    return true;
+  }
+
  private:
   std::string text_of(const TSNode& node) const {
     const uint32_t start = ts_node_start_byte(node);
@@ -388,6 +420,40 @@ class Extractor {
     couple.to_model = text_of(field(node, "to_model"));
     couple.to_port = text_of(field(node, "to_port"));
     return couple;
+  }
+
+  LibraryParam extract_library_param(const TSNode& node) {
+    LibraryParam param;
+    param.span = span_of(node);
+    param.name = text_of(field(node, "name"));
+    param.type = text_of(field(node, "type"));
+    const TSNode default_field = field(node, "default");
+    if (!ts_node_is_null(default_field)) {
+      param.has_default = true;
+      param.default_value = extract_value(default_field);
+    }
+    return param;
+  }
+
+  LibraryBlock extract_library_block(const TSNode& node) {
+    LibraryBlock block;
+    block.span = span_of(node);
+    block.kind = text_of(field(node, "name"));
+    const TSNode body = field(node, "body");
+    each_named_child(body, [&](const TSNode& member) {
+      if (node_is(member, "typed_field")) {
+        block.params.push_back(extract_library_param(member));
+      } else if (node_is(member, "port_declaration")) {
+        const PortDecl port = extract_port(member);
+        LibraryPort library_port;
+        library_port.direction = port.direction;
+        library_port.name = port.name;
+        library_port.type = port.type;
+        library_port.span = port.span;
+        block.ports.push_back(std::move(library_port));
+      }
+    });
+    return block;
   }
 
   Node extract_node(const TSNode& decl) {
@@ -712,6 +778,43 @@ ParseOutput parse_source(const std::string& source, const std::string& path) {
   }
   ts_tree_delete(tree);
   (void)path;  // spans are path-relative; lpcli renders them with the path
+  return output;
+}
+
+ParseLibraryOutput parse_library_source(const std::string& source,
+                                        const std::string& path) {
+  ParseLibraryOutput output;
+
+  TSParser* parser = ts_parser_new();
+  ts_parser_set_language(parser, tree_sitter_logicpilot());
+  TSTree* tree = ts_parser_parse_string(
+      parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
+  ts_parser_delete(parser);
+
+  if (tree == nullptr) {
+    Diagnostic diagnostic;
+    diagnostic.severity = Severity::kError;
+    diagnostic.code = "LP0001";
+    diagnostic.message = "syntax error: parser produced no tree";
+    output.diagnostics.push_back(std::move(diagnostic));
+    return output;
+  }
+
+  const TSNode root = ts_tree_root_node(tree);
+  collect_syntax_errors(root, source, output.diagnostics);
+  if (!output.diagnostics.empty()) {
+    ts_tree_delete(tree);
+    return output;
+  }
+
+  LibraryAst library;
+  Extractor extractor{source, output.diagnostics};
+  if (extractor.extract_library(root, library) &&
+      output.diagnostics.empty()) {
+    output.library = std::move(library);
+  }
+  ts_tree_delete(tree);
+  (void)path;
   return output;
 }
 

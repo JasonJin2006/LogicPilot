@@ -253,6 +253,44 @@ TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
   REQUIRE(capacity.operands[1].int_value == 1);
 }
 
+TEST_CASE("parser: library declarations extract block shapes", "[dsl][parser]") {
+  const ParseLibraryOutput parsed = parse_library_source(
+      "library process {\n"
+      "  version = 1\n"
+      "  block resource {\n"
+      "    capacity: int\n"
+      "    failure_rate: float = 0.0\n"
+      "  }\n"
+      "  block service {\n"
+      "    in: Job\n"
+      "    resource: ref = \"\"\n"
+      "  }\n"
+      "}\n",
+      "process.lplib");
+  REQUIRE(parsed.ok());
+  REQUIRE(parsed.library->name == "process");
+  REQUIRE(parsed.library->version == 1);
+  REQUIRE(parsed.library->blocks.size() == 2);
+
+  const LibraryBlock& resource = parsed.library->blocks[0];
+  REQUIRE(resource.kind == "resource");
+  REQUIRE(resource.params.size() == 2);
+  REQUIRE(resource.params[0].name == "capacity");
+  REQUIRE(resource.params[0].type == "int");
+  REQUIRE(!resource.params[0].has_default);
+  REQUIRE(resource.params[1].name == "failure_rate");
+  REQUIRE(resource.params[1].type == "float");
+  REQUIRE(resource.params[1].has_default);
+
+  const LibraryBlock& service = parsed.library->blocks[1];
+  REQUIRE(service.ports.size() == 1);
+  REQUIRE(service.ports[0].direction == "in");
+  REQUIRE(service.ports[0].type == "Job");
+  REQUIRE(service.params[0].name == "resource");
+  REQUIRE(service.params[0].type == "ref");
+  REQUIRE(service.params[0].has_default);
+}
+
 TEST_CASE("parser: syntax errors become LP0001 diagnostics", "[dsl][parser]") {
   SECTION("missing closing brace") {
     const ParseOutput parsed =

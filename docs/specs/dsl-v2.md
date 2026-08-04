@@ -142,9 +142,9 @@ exp_field        := 'objective' '=' ('minimize'|'maximize') metric
 
 ### 4.2 库层（块形状注册表）
 
-块形状用 DSL 元层声明（`library`/`block`），编译进注册表；块行为由 C++ 引擎
-按 `{library, block}` 查表实现。**标准库 `process` 随仓库交付**：Phase B 先以
-编译器内建形状提供，Phase E 迁移为 `libraries/process.lplib` 文件 + 注册表加载。
+块形状用 DSL 元层声明（`library`/`block`），嵌入编译进注册表；块行为由 C++ 引擎
+按 `{library, block}` 查表实现。**标准库 `process` 随仓库交付**（
+`libraries/process.lplib`，经 `scripts/gen-stdlib-header.mjs` 嵌入编译器）。
 
 ```logicpilot
 // libraries/process.lplib（草案；Phase E 落地为真实文件）
@@ -315,11 +315,14 @@ model Decay {
   （`rate(arrival_rate)` → 取模型级 `param` 值，`LP2006` 拒绝未声明标识符/
   非常量）；模型级 `param` 落入 IR 根节点 params；示例 mm1 迁移为
   `param arrival_rate` + `rate(arrival_rate)`。修复 D6；吸收 roadmap P1-5。
-- **Phase E（行为统一 + 实验 + 库元层）**: 行为统一 `on_<trigger> { }` ✅ 已在
-  Phase B 落地；experiment `variable` 限定路径 ✅ 已落地（引用已声明模型参数，
-  `LP7001` 校验，`servers` 保留兼容）；**`library`/`block` 元层**（块形状落为
-  `libraries/process.lplib` 文件 + 注册表加载 + 类型化字段文法）仍待开发；
-  修复 D4/D5/D7。
+- **Phase E（行为统一 + 实验 + 库元层）**: ✅ 全部完成（2026-08-04）——
+  行为统一 `on_<trigger> { }` 已在 Phase B 落地；experiment `variable` 限定路径
+  （引用已声明模型参数，`LP7001` 校验，`servers` 保留兼容）；**`library`/`block`
+  库元层落地**：块形状声明在 `libraries/process.lplib`（类型化字段
+  `capacity: int`、无默认值即必填），由 `scripts/gen-stdlib-header.mjs` 嵌入
+  编译器（`stdlib_process.h`），semantic 按注册表做形状校验（必填/未知字段/
+  重复/参数类型），C++ 侧只保留范围与引用等语义规则——**加一种新库块 =
+  注册一条块形状，文法与 schema 不动**。修复 D4/D5/D7。
 - 每阶段：示例、测试、`scripts/ai-provider.mjs`（规则生成器）、
   `docs/specs/dsl-spec.md` 同步更新；不破坏 136 ctest 与前端测试。
 

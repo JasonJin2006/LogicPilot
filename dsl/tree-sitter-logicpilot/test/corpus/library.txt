@@ -1,0 +1,87 @@
+==================
+Library with block shapes and typed fields
+==================
+
+library process {
+  version = 1
+  block resource {
+    capacity: int
+    failure_rate: float = 0.0
+  }
+  block sink { }
+}
+---
+
+(source_file
+  (library_declaration
+    name: (identifier)
+    body: (library_body
+      (field
+        name: (identifier)
+        value: (value
+          (value_literal
+            (integer))))
+      (block_declaration
+        name: (identifier)
+        body: (block_body
+          (typed_field
+            name: (identifier)
+            type: (type_name
+              (identifier)))
+          (typed_field
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            default: (value
+              (value_literal
+                (float))))))
+      (block_declaration
+        name: (identifier)
+        body: (block_body)))))
+
+==================
+Library block with ports and defaults
+==================
+
+library process {
+  block service {
+    in: Job
+    out: Job
+    resource: ref = ""
+    time: distribution = exponential(1.0)
+  }
+}
+---
+
+(source_file
+  (library_declaration
+    name: (identifier)
+    body: (library_body
+      (block_declaration
+        name: (identifier)
+        body: (block_body
+          (port_declaration
+            type: (type_name
+              (identifier)))
+          (port_declaration
+            type: (type_name
+              (identifier)))
+          (typed_field
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            default: (value
+              (value_literal
+                (string_literal))))
+          (typed_field
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            default: (value
+              (call
+                name: (identifier)
+                args: (argument_list
+                  (value
+                    (value_literal
+                      (float))))))))))))
+

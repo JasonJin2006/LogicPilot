@@ -209,6 +209,43 @@ struct ExperimentDecl {
   Span budget_span;
 };
 
+// ---------------------------------------------------------------------------
+// Library meta-layer (Phase E): block shapes are declared in DSL files
+// (libraries/*.lplib) and loaded into the compiler's block registry.
+// ---------------------------------------------------------------------------
+
+// `name: type [= default]` — one typed block parameter. A parameter without
+// a default is required; with a default it is optional.
+struct LibraryParam {
+  std::string name;
+  std::string type;  // "int" | "float" | "bool" | "string" |
+                     // "distribution" | "ref"
+  bool has_default{false};
+  Value default_value;
+  Span span;
+};
+
+struct LibraryPort {
+  std::string direction;  // "in" | "out" | "inout"
+  std::string name;       // "" => "entity"
+  std::string type;
+  Span span;
+};
+
+struct LibraryBlock {
+  std::string kind;
+  Span span;
+  std::vector<LibraryParam> params;
+  std::vector<LibraryPort> ports;
+};
+
+struct LibraryAst {
+  std::string name;
+  std::int64_t version{1};
+  Span span;
+  std::vector<LibraryBlock> blocks;
+};
+
 // Whole model file: model-level params, top-level declarations in source
 // order, couplings and typed experiment blocks.
 struct ModelAst {

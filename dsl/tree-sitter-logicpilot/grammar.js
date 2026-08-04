@@ -25,8 +25,58 @@ module.exports = grammar({
   word: $ => $.identifier,
 
   rules: {
-    // One model per file; the top-level container.
-    source_file: $ => $.model_declaration,
+    // One model per file (or one library definition file, .lplib).
+    source_file: $ => choice(
+      $.model_declaration,
+      $.library_declaration,
+    ),
+
+    // ------------------------------------------------------------------
+    // Library meta-layer: block shapes are declared in DSL (Phase E).
+    // ------------------------------------------------------------------
+
+    library_declaration: $ => seq(
+      'library',
+      field('name', $.identifier),
+      field('body', $.library_body),
+    ),
+
+    library_body: $ => seq(
+      '{',
+      repeat($._library_member),
+      '}',
+    ),
+
+    _library_member: $ => choice(
+      $.field,               // `version = <int>`
+      $.block_declaration,
+    ),
+
+    block_declaration: $ => seq(
+      'block',
+      field('name', $.identifier),
+      field('body', $.block_body),
+    ),
+
+    block_body: $ => seq(
+      '{',
+      repeat($._block_member),
+      '}',
+    ),
+
+    _block_member: $ => choice(
+      $.typed_field,
+      $.port_declaration,
+    ),
+
+    // `name: type [= default]` — a typed block parameter. A parameter
+    // without a default is required; with a default it is optional.
+    typed_field: $ => seq(
+      field('name', $.identifier),
+      ':',
+      field('type', $.type_name),
+      optional(seq('=', field('default', $.value))),
+    ),
 
     model_declaration: $ => seq(
       'model',

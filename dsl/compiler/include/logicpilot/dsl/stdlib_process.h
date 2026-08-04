@@ -1,0 +1,55 @@
+// Generated from libraries/process.lplib by
+// scripts/gen-stdlib-header.mjs - DO NOT EDIT BY HAND.
+// Regenerate after editing the library file: node scripts/gen-stdlib-header.mjs
+#pragma once
+
+namespace logicpilot::dsl {
+
+// Embedded standard process library source (block shapes). The compiler
+// loads it into the block registry at analyze time.
+inline const char* kStdlibProcessSource = R"lp(
+// LogicPilot standard process library (AnyLogic PML analog).
+//
+// Block shapes are declared in DSL and embedded into the compiler binary
+// (scripts/gen-stdlib-header.mjs -> stdlib_process.h); model blocks are
+// validated against this registry. A parameter without a default is
+// required; with a default it is optional. Block *semantics* (range rules,
+// resource references, flow structure) are implemented in the compiler and
+// kernel keyed by {library, block} - this file declares the shape only.
+//
+// Regenerate the embedded header after editing:
+//   node scripts/gen-stdlib-header.mjs
+library process {
+  version = 1
+
+  // Resource pool (friendly name for AnyLogic's ResourcePool).
+  block resource {
+    capacity: int
+    failure_rate: float = 0.0
+  }
+
+  // Entity arrival generator (rate = Poisson/exponential interarrivals).
+  block source {
+    arrival: distribution
+  }
+
+  // FIFO buffer; capacity 0 = no buffering.
+  block queue {
+    capacity: int
+  }
+
+  // Seize + delay + release on a referenced resource (Phase C explicit
+  // `resource = R`; the field is optional with the v0 identifier binding as
+  // the transitional fallback).
+  block service {
+    resource: ref = ""
+    time: distribution
+  }
+
+  // Terminal stage.
+  block sink {
+  }
+}
+)lp";
+
+}  // namespace logicpilot::dsl

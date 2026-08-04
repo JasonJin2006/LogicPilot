@@ -43,6 +43,7 @@ add_library(logicpilot_dsl STATIC
   src/experiments_json.cpp
   src/json_diagnostics.cpp
   src/parser.cpp
+  src/registry.cpp
   src/semantic.cpp
   src/lowering.cpp
   src/compile.cpp

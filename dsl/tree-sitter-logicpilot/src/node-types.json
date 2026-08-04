@@ -118,6 +118,51 @@
     "fields": {}
   },
   {
+    "type": "block_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "port_declaration",
+          "named": true
+        },
+        {
+          "type": "typed_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "block_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "boolean_literal",
     "named": true,
     "fields": {}
@@ -422,6 +467,51 @@
     "fields": {}
   },
   {
+    "type": "library_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "block_declaration",
+          "named": true
+        },
+        {
+          "type": "field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "library_declaration",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "library_body",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "model_body",
     "named": true,
     "fields": {},
@@ -552,6 +642,10 @@
       "required": true,
       "types": [
         {
+          "type": "library_declaration",
+          "named": true
+        },
+        {
           "type": "model_declaration",
           "named": true
         }
@@ -571,6 +665,42 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "typed_field",
+    "named": true,
+    "fields": {
+      "default": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "value",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_name",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -775,6 +905,10 @@
     "named": false
   },
   {
+    "type": "block",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true,
     "extra": true
@@ -805,6 +939,10 @@
   },
   {
     "type": "inout",
+    "named": false
+  },
+  {
+    "type": "library",
     "named": false
   },
   {
