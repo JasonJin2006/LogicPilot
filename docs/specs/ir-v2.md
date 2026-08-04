@@ -61,6 +61,14 @@ Node（容器契约，故意薄）
   引擎直接运行 v2 文件；`lpcli compile --ir-version 2` 支持 lowering 双写。
   迁移黄金用例：mm1_failure / two_servers 的 v1→v2→加载→运行 **bit-exact 对拍**
   （118/118 ctest）。
+- **Phase B 第二部分（已实现）**: devs/agent 块接入转换器（`AtomicModel` ↔
+  devs/atomic 节点 + 单状态 Statechart；`AgentModel` ↔ agent 节点 + 行为绑定）；
+  CoupledModel 容器根统一为 `core/model`（子节点各自携带方法语义）。pulse_chain /
+  agents 对拍 bit-exact，`--ir-version 2` 覆盖全部可执行模型（122/122 ctest）。
+- **Phase C 第一步（已实现）**: `IrAtomicModelV2` 直接解释 v2 Statechart
+  （Message 转移 = delta_ext、Timeout 转移 = delta_int + ta），`build_replication_model`
+  对 v2 devs 树走**原生执行**（不再先转 v1）；转换层对 process/agent 仍是兼容路径。
+  原生执行与 v1 基线 bit-exact（123/123 ctest）。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
   纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
   SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器

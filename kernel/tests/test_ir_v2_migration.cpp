@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/devs/ir_atomic.h"
 #include "logicpilot/devs/ir_v2_convert.h"
 #include "logicpilot/dsl/compile.h"
 
@@ -95,4 +96,49 @@ TEST_CASE("v2 round trip preserves the DEVS atomic model bit-exactly",
 TEST_CASE("v2 round trip preserves the agent model bit-exactly",
           "[ir-v2][migration]") {
   check_round_trip(LOGICPILOT_EXAMPLES_DIR "/agents.lp", 5, 0);
+}
+
+TEST_CASE("v2 DEVS trees execute natively from the v2 Statechart",
+          "[ir-v2][migration][devs]") {
+  const dsl::CompileResult compiled =
+      dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp");
+  REQUIRE(compiled.ok);
+  std::string error;
+  const std::vector<std::uint8_t> v2 = convert_v1_to_v2(
+      compiled.ir_bytes.data(), compiled.ir_bytes.size(), &error);
+  REQUIRE_FALSE(v2.empty());
+
+  IrLoadResult loaded = load_model_buffer(v2.data(), v2.size());
+  REQUIRE(loaded.ok());
+  // The loader keeps the v2 contract so the DEVS path runs without a round
+  // trip through the v1 views.
+  REQUIRE(loaded.file.v2_root != nullptr);
+
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 5;
+  config.warmup_arrivals = 0;
+  const ReplicationMetrics native = model->run(config, nullptr);
+  const ReplicationMetrics baseline =
+      run_model(load_v1(compiled), 7, 5, 0);
+
+  REQUIRE(native.arrivals == baseline.arrivals);
+  REQUIRE(native.horizon_seconds == baseline.horizon_seconds);
+
+  // The v2-native interpreter applies the Statechart: Sink.seen flipped.
+  const auto* devs = dynamic_cast<const DevsReplicationModel*>(model.get());
+  REQUIRE(devs != nullptr);
+  const CoupledModel* tree = devs->last_tree();
+  REQUIRE(tree != nullptr);
+  const CoupledModel::Child* sink = tree->find_child("Sink");
+  REQUIRE(sink != nullptr);
+  const auto* atom =
+      dynamic_cast<const IrAtomicModelV2*>(sink->atomic.get());
+  REQUIRE(atom != nullptr);
+  const auto seen = atom->state("seen");
+  REQUIRE(seen.has_value());
+  REQUIRE(std::get<bool>(*seen));
 }

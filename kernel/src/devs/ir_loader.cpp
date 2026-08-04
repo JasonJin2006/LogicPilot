@@ -54,6 +54,8 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size) {
     }
     bytes.assign(data, data + size);
   } else if (flatbuffers::BufferHasIdentifier(data, "LP2R")) {
+    result.file.v2_bytes.assign(data, data + size);
+    result.file.v2_root = ir::v2::GetModelFile(result.file.v2_bytes.data());
     std::string convert_error;
     bytes = convert_v2_to_v1(data, size, &convert_error);
     if (bytes.empty()) {
@@ -404,6 +406,31 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     return nullptr;
   }
   const ir::Model* root = file.root->root();
+  // Phase C: a v2 DEVS atomic tree executes natively from the v2 contract
+  // (no v1 round trip); process/agent v2 files keep the compatibility path.
+  if (file.v2_root != nullptr && file.v2_root->root() != nullptr) {
+    const ir::v2::Node* v2_root = file.v2_root->root();
+    if (v2_root->semantics() != nullptr &&
+        v2_root->semantics()->block() != nullptr) {
+      const std::string block = v2_root->semantics()->block()->str();
+      bool atomic_only = block == "atomic";
+      if (block == "model" && v2_root->children() != nullptr) {
+        atomic_only = v2_root->children()->size() > 0;
+        for (const ir::v2::Node* child : *v2_root->children()) {
+          if (child->semantics() == nullptr ||
+              child->semantics()->block() == nullptr ||
+              child->semantics()->block()->str() != "atomic") {
+            atomic_only = false;
+            break;
+          }
+        }
+      }
+      if (atomic_only) {
+        return std::make_unique<DevsReplicationModel>(file.v2_bytes,
+                                                      v2_root);
+      }
+    }
+  }
   if (root->kind_type() == ir::ModelKind_ProcessModel) {
     const std::unordered_map<std::string, const ir::AtomicModel*> no_resources;
     return build_process_model(*root->kind_as_ProcessModel(), no_resources,
