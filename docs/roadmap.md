@@ -67,11 +67,13 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 5. **DSL v2 重设计（含表达式）**
    现状：DSL 语法与绑定混乱（grammar.js 与 parser.c 脱节、同名魔法绑定、行为三套
-   写法、无表达式），详见 `docs/specs/dsl-v2.md`（草案待评审）。
-   范围：统一声明语法 + 显式引用 + 类型化参数 + 表达式（常量折叠→参数引用）+
-   行为统一，并按 `docs/specs/dsl-v2.md` §5 分 Phase B–E 落地。
-   验收：`service { resource = R }` 显式绑定、`arrival = poisson(rate * 2)` 可编译、
-   全部示例/测试/AI provider 同步，136 ctest 不回归。
+   写法、无表达式）；已按 AnyLogic 官方分层（核心原语 + 块库）重设计为
+   **"薄核心文法 + 厚库注册表"**，见 `docs/specs/dsl-v2.md`（草案待评审）。
+   范围：泛化文法（kind=identifier，块名全部进库注册表）+ `service { resource = R }`
+   显式引用 + 类型化参数 + 表达式（常量折叠→参数引用）+ 行为统一 +
+   `library`/`block` 库元层，按 `docs/specs/dsl-v2.md` §7 分 Phase B–E 落地。
+   验收：`service { resource = R }` 显式绑定、`arrival = rate(arrival_rate)` 可编译、
+   process 库块形状走注册表、全部示例/测试/AI provider 同步，136 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
 

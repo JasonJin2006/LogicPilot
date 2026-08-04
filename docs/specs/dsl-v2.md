@@ -1,7 +1,17 @@
-# DSL v2 重设计草案（DSL 2.0）
+# DSL v2 重设计草案（DSL 2.0）——分层设计
 
 状态: **草案，待评审**（2026-08-04）· 目标: 消除 v0 的语法与绑定混乱，
-与 IR v2（Node/SemanticsRef 薄契约 + 引擎注册表）对齐。
+对齐 IR v2（Node/SemanticsRef 薄契约 + 引擎注册表），并按 AnyLogic 官方的
+分层（核心原语 + 块库 + 模型文件）重构 DSL 的语法分层。
+
+## 0. 一句话结论
+
+DSL v2 采用 **"薄核心文法 + 厚库注册表"**：`grammar.js` 只描述通用骨架
+（`kind name { field = expr; on_<trigger> { }; couple; ... }`），
+`source/queue/service` 等**全部是库注册表条目**——块形状（端口/参数/类型）
+用 DSL 元层（`library`/`block`）声明，块行为由 C++ 引擎注册表按
+`{library, block}` 实现。这与 IR v2 的 `SemanticsRef` 一一对应：
+**加一种新块 = 注册一条库条目，语法与 schema 都不动。**
 
 ## 1. 现状诊断（v0 的混乱来源）
 
@@ -18,158 +28,283 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 | D7 | **与 IR v2 概念错位**：IR 已是"Node + SemanticsRef 库注册表"，DSL 仍是五类平铺，享受不到 v2 的统一性 | `ir_v2.fbs` vs grammar |
 | D8 | **文档失真**：`dsl-spec` 规则表 R1–R15、tree-sitter README 的"v0 subset"都与真实文法不符 | 各文档 |
 
-## 2. 设计目标
+## 2. 设计原则
 
-1. **一种声明语法**：`kind name { field = value; ... }`，赋值统一 `=`；行为统一为
-   `on_<trigger> { effect; ... }` 块。
-2. **显式引用**：一切绑定（resource、端口、实验变量）用**限定引用**，禁止同名魔法。
-3. **类型 + 表达式**：`param`/`var` 类型化；数值位置接受算术表达式（先常量折叠，
-   后参数引用）；分布构造器统一为"返回 distribution 的表达式"。
-4. **对齐 IR v2**：每个 DSL 块 1:1 映射 `Node + SemanticsRef`；DSL 成为 v2 契约的
-   薄语法层，"加一种库块"不改 DSL 文法。
-5. **行为统一**：atomic statechart、agent on_tick、process 阶段统一为
-   "状态 + 触发器 + 效果"，由内核引擎注册表解释。
+1. **薄核心**：文法只保留通用骨架，不出现任何业务块名；`kind` 是任意
+   identifier，由语义分析解析为"核心种类 / 库块 / 报错"。
+2. **厚库**：块 = 库注册表条目。块形状（端口/参数/类型/默认值）用 DSL 元层
+   声明，块行为由 C++ 引擎注册表实现——AnyLogic palette + FMI FMU 接口的思路。
+3. **一种声明语法**：`kind name { field = value; ... }`，赋值统一 `=`；
+   行为统一为 `on_<trigger> { effect; ... }`。
+4. **显式引用**：资源、端口、实验变量全部用限定引用，禁止同名魔法。
+5. **类型 + 表达式**：`param`/`state`/库块字段类型化；数值位置接受表达式
+   （先常量折叠，后参数引用，分阶段落地）。
+6. **1:1 映射 IR v2**：每个 DSL 元素映射 `Node + SemanticsRef`；不引入
+   IR v2 表达不了的概念（如资源引用以编译期校验的 `ref` 类型落地）。
 
-## 2.5 AnyLogic 官方设计对照（依据 anylogic.help 文档）
-
-DSL v2 的形态不是凭空设计，而是对齐 AnyLogic 官方建模模型。逐条对照：
+## 3. AnyLogic 官方分层对照
 
 | AnyLogic 官方做法 | 出处 | DSL v2 对应 |
 |---|---|---|
-| Agent 是唯一建模单元：可定义 variables / events / statecharts / SD 图 / 内嵌 agent / process 流程图 | `agent.html` | 统一 `Node` 容器（state/ports/behavior/continuous/children） |
-| Statechart 转移触发器 = Timeout / Rate / Message / Condition | 官方 tutorial + statechart 文档 | v2 `TriggerKind` 已含四类；DSL 统一 `on_<trigger> { }` |
-| Source 的到达模式：Rate（= 指数到达，1/rate）或 Interarrival time | `source.html` | `arrival = rate(λ)` 与 `arrival = interarrival(exp(μ))` 显式区分（当前 poisson 隐含指数到达，不透明） |
-| Queue 有 discipline：FIFO / LIFO / priority / comparison，容量可无限 | `queue.html` | `queue { capacity = N; ordering = fifo\|lifo }`（新增 ordering 字段） |
-| Service = Seize + Delay + Release 组合，容量由 ResourcePool 决定 | `service.html` | `service { resource = R; time = ... }` 显式引用资源（语义即 seize-delay-release） |
-| 模型文件 = 元素树（ALP 单文件 / ALPX 分目录，元素含 Parameters/Variables/Events/Statecharts/嵌入 agent） | `model-formats.html` | IR v2 已是 `core/model` Node 树；DSL 只是它的薄语法层 |
-| 实验 = Simulation / Monte Carlo（固定输入变 seed）/ Parameter Variation / Optimization（参数 + objective + constraints，OptQuest） | `about-experiments.html`、`optimization.html` | `experiment { variable = 参数路径; range = 上下界; objective/metric/budget }` 已对齐；后续可加 constraints |
-| 参数是"root agent"的属性，优化通过注入参数值驱动 | `optimization.html` | 模型级 `param` + `variable = <限定路径>` |
-| 引擎只维护事件队列 + 默认 RNG | `engine.html` | 与我们的内核一致（二叉堆 + xoshiro256++） |
+| Agent 是唯一建模单元：variables / events / statecharts / SD 图 / 内嵌 agent / process 流程图 | `agent.html` | 统一 Node 容器；核心容器 `agent/atomic/process/continuous` + `model` 根 |
+| Statechart 转移触发器 = Timeout / Rate / Message / Condition | 官方 tutorial + statechart 文档 | 核心 `on_<trigger> { }` 行为（对应 `TriggerKind` 四类） |
+| Source/Queue/Service 是 **PML 库块**（预建 Java 类），**不是语言关键字** | `process-modeling-library.html` | `source/queue/service/...` 是 process 库注册表条目，非语法关键字 |
+| ResourcePool 块 + Service 引用资源（seize-delay-release） | `service.html` | `resource`（ResourcePool 友好名）+ `service { resource = R }` 显式引用 |
+| Queue 有 discipline：FIFO / LIFO / priority / comparison，容量可无限 | `queue.html` | 块形状字段 `ordering: string = "fifo"`、`capacity: int = -1` |
+| Source 到达 = Rate（指数到达，1/rate）或 Interarrival time | `source.html` | `arrival = rate(λ)` / `interarrival(exp(μ))` 显式区分（v0 的 `poisson` 隐含指数到达，不透明，弃用） |
+| 模型文件 = 元素树（ALP 单文件 / ALPX 分目录） | `model-formats.html` | DSL 文件 → IR v2 `core/model` Node 树；DSL 只是薄语法层 |
+| 实验 = Simulation / Monte Carlo / Parameter Variation / Optimization（参数 + objective + constraints，OptQuest） | `about-experiments.html`、`optimization.html` | `experiment` 核心块（variable/range/objective/metric/budget）；后续可加 constraints |
+| 引擎只维护事件队列 + 默认 RNG | `engine.html` | 与内核一致（二叉堆 + xoshiro256++） |
 
-结论：AnyLogic 的"块 = 库组件 + 属性面板（type/expression 化的属性）"是 DSL v2 的属性
-设计蓝本——**块名保持友好，属性名与官方对齐，引用显式化**。
+关键结论：AnyLogic 的"语言"不是关键字，而是 **Agent 基座（核心）+ 块库（库层）+
+模型文件（XML + 生成代码）**。我们保留这个分层形状，把"XML + 任意 Java"换成
+**"DSL（类型化、带 span、AI 可生成）+ IR v2（版本化、冻结、可验证）"**——
+这正是我们比 AnyLogic 强的工程纪律所在。
 
-## 3. 目标语法（草案）
+## 4. 分层结构
 
-### 3.1 统一声明
+```
+┌────────────────────────────────────────────────┐
+│ 核心语法层（grammar.js，固定且薄）               │
+│  model / param / state / experiment             │
+│  容器: agent | atomic | process | continuous    │
+│  行为: on_<trigger>{ }   耦合: couple            │
+│  元层: library / block / 类型注解                │
+└───────────────┬────────────────────────────────┘
+                │ kind 解析（核心种类 or 库注册表）
+┌───────────────▼────────────────────────────────┐
+│ 库层（注册表：形状 DSL 声明，行为 C++ 实现）      │
+│  process: Source/Queue/Service/Sink/ResourcePool│
+│  （未来）manufacturing / logistics / pedestrian │
+└───────────────┬────────────────────────────────┘
+                │ 形状校验 + 类型检查 + 引用校验
+┌───────────────▼────────────────────────────────┐
+│ 模型层（用户 .lp 文件）                          │
+│  model MM1 { use process; resource ...;         │
+│              process Flow { source ... } }      │
+└───────────────┬────────────────────────────────┘
+                │ lowering（1:1）
+                ▼
+        IR v2（Node + SemanticsRef，冻结契约）
+```
+
+### 4.1 核心语法层
+
+`kind` 规则 = 任意 identifier，由语义分析解析。文法不做块名枚举——
+这从根上消灭 D1（grammar 与 parser 脱节）与 D4（块语义平铺）。
+
+```text
+source_file      := model_declaration
+model_declaration:= 'model' identifier '{' member* '}'
+member           := 'use' library_name | param | declaration | experiment
+param            := 'param' identifier (':' type)? '=' expr
+declaration      := kind identifier '{' declaration_body '}'
+kind             := identifier                  // 核心种类或已注册库块名
+declaration_body := (field | state | port | behavior | declaration | couple)*
+field            := identifier '=' expr
+state            := 'state' identifier (':' type)? '=' expr
+port             := ('in'|'out'|'inout') identifier? ':' type
+behavior         := 'on_' identifier '{' effect* '}'
+effect           := assignment | 'emit' port_ref | call
+couple           := 'couple' port_ref '->' port_ref
+experiment       := 'experiment' identifier '{' exp_field* '}'
+exp_field        := 'objective' '=' ('minimize'|'maximize') metric
+                  | 'variable' '=' ref
+                  | 'range' '=' expr '..' expr
+                  | 'budget' '=' expr
+                  | 'replications' '=' expr
+                  | 'seed' '=' expr
+```
+
+**核心种类**（grammar 保留，映射固定语义）：
+
+| 种类 | IR semantics | 说明 |
+|---|---|---|
+| `model` | 根 Node | 根容器：param、容器、库块实例、experiment |
+| `agent` | `{agent, agent}` | ABM 容器：`count`、`state`、`on_tick`、内嵌 agent |
+| `atomic` | `{devs, atomic}` | DEVS 容器：`state`、`time_advance`、`on_timeout/on_input`、端口 |
+| `process` | `{process, flow}` | 流程容器：库块实例按声明序自动连接 |
+| `continuous` | `{sd, equation}` | 连续容器：`state`、`param`、`d x/dt = ...` |
+| `experiment` | `ModelFile.experiments[]` | 实验（核心配置块） |
+
+行为是**核心概念**（对应 AnyLogic 的 Statechart 为内建能力）：任何容器都可写
+`on_<trigger> { }`，触发器四类（timeout/rate/message/condition），由引擎注册表
+解释——这统一了 D5 的三套行为写法。
+
+### 4.2 库层（块形状注册表）
+
+块形状用 DSL 元层声明（`library`/`block`），编译进注册表；块行为由 C++ 引擎
+按 `{library, block}` 查表实现。**标准库 `process` 随仓库交付**：Phase B 先以
+编译器内建形状提供，Phase E 迁移为 `libraries/process.lplib` 文件 + 注册表加载。
 
 ```logicpilot
-model MM1 {
-  param arrival_rate = 0.8        // 模型级参数（新增）
-  param service_rate = 1.0
+// libraries/process.lplib（草案；Phase E 落地为真实文件）
+library process {
+  version = 1
 
-  resource Server {
+  block ResourcePool {              // 友好名 `resource`
+    capacity: int = 1
+    failure_rate: float = 0.0
+  }
+
+  block Source {
+    out: Job                        // 方向 + 类型；端口名默认 entity
+    arrival: distribution = rate(1.0)   // rate(λ) | interarrival(dist)
+  }
+
+  block Queue {
+    in: Job
+    out: Job
+    capacity: int = -1              // -1 = 无限
+    ordering: string = "fifo"       // fifo | lifo | priority
+  }
+
+  block Service {
+    in: Job
+    out: Job
+    resource: ref = ""              // 引用同容器/模型内的 ResourcePool
+    time: distribution = exponential(1.0)
+  }
+
+  block Sink {
+    in: Job
+  }
+}
+```
+
+块形状 = 端口（方向 + 名称 + 类型）+ 类型化参数（类型 + 默认值）。编译器据此做：
+- **字段校验**：实例字段名必须在块形状中（未知字段 → `LP2001`，带 span）。
+- **类型检查**：`capacity = 1000000` 必须 `int`；`arrival = rate(0.8)` 必须
+  `distribution`。
+- **引用校验**：`service.resource` 必须指向已声明的 `ResourcePool` 实例。
+
+### 4.3 模型层（示例重写）
+
+```logicpilot
+// M/M/1：λ=0.8，μ=1.0，ρ=0.8，Wq=4.0（与 examples/mm1.expect.json 一致）
+model MM1 {
+  use process
+
+  param arrival_rate: float = 0.8
+  param service_rate: float = 1.0
+
+  resource Server {                 // process 库 ResourcePool 块的友好名
     capacity = 1
   }
 
   process Flow {
-    source Arrivals {
-      arrival = poisson(arrival_rate)   // 表达式 + 参数引用
-    }
-    queue WaitLine {
-      capacity = 0
-    }
-    service Handle {                    // 服务块自带名字
-      resource = Server                 // 显式引用，不再靠同名
-      time = exponential(service_rate)
-    }
+    source Arrivals { arrival = rate(arrival_rate) }
+    queue WaitLine { capacity = 1000000 }
+    service Handle { resource = Server; time = exponential(service_rate) }
+    sink Done { }
+  }
+
+  experiment TuneArrival {
+    objective = minimize Wq
+    variable = arrival_rate
+    range = 0.5..1.5
+    budget = 20
   }
 }
 ```
 
-### 3.2 行为统一为 `on_<trigger> { }`
+行为示例（核心语法，容器内）：
 
 ```logicpilot
-atomic Pulser {
-  state phase = 0
-  time_advance = constant(1.0)
-  on_timeout {
-    phase = phase + 1          // 表达式赋值（表达式落地后）
-    emit pulse
+model Swarm {
+  agent Drone {
+    count = 3
+    state active: bool = true
+    on_tick { flip active }
+    on_tick { bounce }
   }
 }
 
-agent Drone {
-  count = 3
-  state active = true
-  on_tick {
-    flip active                // 内置行为调用（注册表）
+model PulseChain {
+  atomic Pulser {
+    count = 3
+    state phase: int = 0
+    time_advance = constant(1.0)
+    on_timeout {
+      phase = phase + 1
+      emit pulse
+    }
+  }
+  couple Pulser.pulse -> Next.input   // 端口显式耦合（跨实例）
+}
+
+model Decay {
+  continuous Dynamics {
+    state y: float = 1.0
+    param k: float = 0.5
+    d y/dt = -k * y
   }
 }
 ```
 
-### 3.3 连续方程（保留唯一的特殊记号）
+### 4.4 编译与诊断流程
 
-```logicpilot
-continuous Dynamics {
-  state y = 1.0
-  param k = 0.5
-  d y/dt = -k * y
-}
-```
+1. 解析（通用文法，错误容忍，带 span）。
+2. kind 解析：核心种类 → 库注册表 → 否则 `LP2001`（unknown kind，带 span）。
+3. 形状校验：实例字段/端口/类型对照块形状。
+4. 引用校验：`resource` 引用、`couple` 端口、`experiment.variable` 路径。
+5. lowering → IR v2（1:1，见 §6）。
+6. 运行时：引擎注册表按 `{library, block}` 分发。
 
-### 3.4 实验引用参数（限定引用）
+## 5. 类型与表达式（分阶段）
 
-```logicpilot
-experiment TuneArrival {
-  objective = minimize Wq
-  variable = arrival_rate      // 引用 param，而非魔法字符串
-  range = 0.5..1.5
-  budget = 20
-}
-```
+| 类型 | 说明 | IR VarType |
+|---|---|---|
+| `int` / `float` / `bool` / `string` | 标量 | Int / Float / Bool / String |
+| `distribution` | `rate(λ)` / `interarrival(dist)` / `exponential(μ)` / `normal(m,s)` / `constant(c)` | Distribution |
+| `ref` | 编译期校验的块引用，lowering 为名字字符串（span 记录进 metadata） | String |
 
-### 3.5 文法骨架（v2）
+表达式分阶段（Phase D）：先常量折叠（`rate(0.8)`），后参数引用
+（`rate(arrival_rate)`）。v0 的 `poisson(λ)` 到达构造器弃用，改为语义明确的
+`rate(λ)`（指数到达，泊松过程的正确对应）或 `interarrival(dist)`。
 
-```text
-source_file     := model_declaration
-model_body      := '{' (param | declaration | experiment)* '}'
-declaration     := kind identifier '{' field* '}'
-kind            := 'resource' | 'process' | 'atomic' | 'agent' | 'continuous'
-field           := identifier '=' expr
-behavior        := 'on_' identifier '{' effect* '}'
-effect          := assignment | 'emit' port_ref | call
-couple          := 'couple' port_ref '->' port_ref
-expr            := literal | identifier | unary | binary | call
-port_ref        := identifier '.' identifier          // model.port
-ref             := identifier ('.' identifier)*       // 限定引用
-```
-
-表达式文法先做常量折叠（v2 阶段 1），再放开参数引用（阶段 2）。
-
-## 4. DSL v2 → IR v2 映射
+## 6. DSL v2 → IR v2 映射
 
 | DSL v2 | IR v2（`ir_v2.fbs`） |
 |---|---|
-| `param p = <expr>` | 模型级 `SemanticsRef.params` / 节点 `Var` |
-| `resource R { capacity=.., failure_rate=.. }` | `Node{ semantics={process,resource}, params=[Var] }` |
-| `process P { source/queue/service }` | `Node{ semantics={process,flow}, children=[...], couplings }` |
-| `service S { resource=R, time=.. }` | `Node{ semantics={process,service}, params 含 resource 引用 }` |
-| `atomic A { statechart }` | `Node{ semantics={devs,atomic}, behavior=Statechart }` |
+| `model M { ... }` | `ModelFile{ root = Node }`（schema_version=2） |
+| `param p: float = 0.8` | 根/容器 `Node.params = [Var]` |
+| `resource Server { capacity = 1 }` | `Node{ semantics={process,ResourcePool}, params=[Var{capacity,Int,1}] }` |
+| `source A { arrival = rate(0.8) }` | `Node{ semantics={process,Source}, params=[Var{arrival,Distribution}] }` |
+| `queue Q { capacity = N }` | `Node{ semantics={process,Queue}, params=[Var{capacity,Int}] }` |
+| `service S { resource=R; time=... }` | `Node{ semantics={process,Service}, params=[Var{resource,String,R}, Var{time,Distribution}] }` |
+| `sink K { }` | `Node{ semantics={process,Sink}, params=[] }` |
 | `agent A { count, on_tick }` | `Node{ semantics={agent,agent}, behaviors=[BehaviorBinding] }` |
+| `atomic A { statechart }` | `Node{ semantics={devs,atomic}, behavior=Statechart }` |
 | `continuous C { d x/dt }` | `Node{ semantics={sd,equation}, continuous=[Equation] }` |
+| `couple a.p -> b.p` | `Node.couplings = [Coupling]` |
 | `experiment E { variable=param }` | `ModelFile.experiments[].variable = 限定路径` |
 
-映射是 1:1 的，DSL 块种类可以收窄为"库注册表里的友好别名"。
+映射是 1:1 的，**不引入 IR v2 表达不了的概念**；`resource` 引用以 `String` 参数
+落地，但编译期已做 `ref` 校验（禁止裸字符串魔法）。
 
-## 5. 迁移路径（分阶段，沿用 IR v2 的纪律）
+## 7. 迁移路径（分阶段，沿用 IR v2 的纪律）
 
-- **Phase A（本轮）**: 本草案评审；与现状差异表确认。
-- **Phase B（统一文法）**: 重写 `grammar.js`（全部块进文法源）+ 用 tree-sitter CLI
-  0.26.11 重生成 `parser.c`/`grammar.json`；`parser.cpp` 适配新节点；**语义保持等价**
-  （先不引入表达式/显式引用），全部示例/测试过一遍。修复 D1/D2/D8。
-- **Phase C（显式引用）**: `service { resource = R }` 替代同名匹配；semantic 增强
-  （`LP2001` 族补引用校验）；修复 D3。
-- **Phase D（表达式）**: 表达式文法 + 常量折叠 → 参数引用；`param` 提升到模型级；
+- **Phase A（本轮）**: 本草案评审；分层设计确认（薄核心文法 + 库注册表）。
+- **Phase B（泛化文法）**: 重写 `grammar.js` 为通用骨架（`kind = identifier`、
+  统一 field/behavior/port/couple/expr），tree-sitter CLI 0.26.11 重生成
+  `parser.c`/`grammar.json`；`parser.cpp` 适配新节点；process 库块形状迁入
+  编译器内建注册表（C++ 侧数据结构）；semantic 增加 kind 解析 + 基础形状校验；
+  全部示例/测试/`scripts/ai-provider.mjs` 同步为 v2 写法。修复 D1/D2/D8。
+- **Phase C（显式引用）**: `service { resource = R }` + `ref` 校验
+  （`LP2001` 族）；修复 D3。
+- **Phase D（表达式）**: 表达式文法 + 常量折叠 → 参数引用；模型级 `param`；
   修复 D6；吸收 roadmap P1-5。
-- **Phase E（行为统一 + 实验引用）**: `on_<trigger> { }` 统一；experiment `variable`
-  改为限定路径；修复 D4/D5/D7。
-- 每阶段：示例、测试、`scripts/ai-provider.mjs`（规则生成器）、`docs/specs/dsl-spec.md`
-  同步更新；不破坏 136 ctest 与前端测试。
+- **Phase E（行为统一 + 实验 + 库元层）**: `on_<trigger> { }` 统一；experiment
+  `variable` 改为限定路径；`library`/`block` 元层落地为 `libraries/process.lplib`
+  文件 + 注册表加载；修复 D4/D5/D7。
+- 每阶段：示例、测试、`scripts/ai-provider.mjs`（规则生成器）、
+  `docs/specs/dsl-spec.md` 同步更新；不破坏 136 ctest 与前端测试。
 
-## 6. 与现有文档的关系
+## 8. 与现有文档的关系
 
-- 定稿后：`dsl-spec` 的规则表重写为 v2；tree-sitter README 同步；用户手册 DSL 章更新。
-- `roadmap.md` P1-5（DSL 表达式）并入本设计的 Phase D。
-- 兼容策略：v0 DSL 文件（示例/黄金测试）在 Phase B/C 提供过渡支持，不设长期兼容承诺
-  （DSL 非冻结契约，IR 才是）。
+- 定稿后：`dsl-spec` 的规则表重写为 v2 分层；tree-sitter README 的"v0 subset"
+  描述重写为通用骨架描述；用户手册 DSL 章更新。
+- `roadmap.md` P1-5（DSL 表达式）并入本设计的 Phase D；P1-5 范围更新为分层重设计。
+- 兼容策略：v0 DSL 文件（示例/黄金测试）在 Phase B/C 提供过渡支持，不设长期兼容
+  承诺（DSL 非冻结契约，IR 才是）。
