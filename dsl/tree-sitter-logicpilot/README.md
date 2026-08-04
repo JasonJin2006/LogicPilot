@@ -1,15 +1,16 @@
 # tree-sitter-logicpilot
 
-Tree-sitter grammar for the **LogicPilot DSL (v0 subset)**, aligned with
-[`docs/specs/dsl-spec.md`](../../docs/specs/dsl-spec.md) (Draft v0, rules
-R1–R15) plus one documented extension: the `constant(x)` service-time
-distribution (task-mandated; absent from the draft spec).
+Tree-sitter grammar for the **LogicPilot DSL**, aligned with
+[`docs/specs/dsl-spec.md`](../../docs/specs/dsl-spec.md). The grammar covers
+the v0 process-flow core (rules R1–R15) plus `atomic`, `agent`,
+`continuous`, `experiment` and the `constant(x)` distribution; the corpus
+tests in `test/corpus/` are the executable rule reference.
 
 Per [ADR-0005](../../docs/adr/0005-tree-sitter-parser-checked-in.md), the
 generated `src/parser.c` (and friends) are **checked in**; builds never invoke
 the tree-sitter CLI.
 
-## Grammar summary (v0)
+## Grammar summary (v0 core)
 
 ```text
 source_file        := model_declaration                       // exactly one model per file

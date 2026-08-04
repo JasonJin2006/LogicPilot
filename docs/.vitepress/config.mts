@@ -41,6 +41,10 @@ export default defineConfig({
     'AI 原生、Web 化、高性能的多方法仿真平台（离散事件 / DEVS / Agent / 连续）',
   lastUpdated: true,
   appearance: 'dark',
+  head: [
+    // Tab favicon: same logo as the homepage/navbar (docs/public/logo.svg).
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+  ],
   markdown: {
     languages: [logicpilotLanguage],
   },

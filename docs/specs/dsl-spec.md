@@ -1,10 +1,13 @@
 # LogicPilot DSL Specification — v0 Draft
 
-Status: **Draft v0** · Phase 0 · Supersedes: —
+Status: **Draft v0.2** · Phase 1–2 implemented (2026-08-04) · Supersedes: —
 
-This is the minimal DSL subset targeted by Phase 1–2 (tree-sitter grammar +
-compiler lowering to `schemas/ir.fbs`, ADR-0004/0005). Anything not listed
-here is out of scope for v0.
+This is the normative DSL subset (tree-sitter grammar + compiler lowering).
+§1–6 cover the v0 process-flow core; §7–10 add atomic (DEVS), agent (ABM),
+continuous (ODE) and experiment blocks. `lpcli compile` lowers the model to
+the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`); `--ir-version 1`
+still emits the legacy v1 contract. Expression grammar is the remaining
+open item (see §5).
 
 ## 1. Grammar Rules (v0 subset, 15 rules)
 
@@ -79,9 +82,10 @@ model QueueDemo {
 
 ## 4. Lowering (non-normative preview)
 
-`model → ir.fbs::Model`; `resource → ir.fbs::Resource`;
-`process/source/queue/service → ir.fbs::Process` stage tables.
-Exact field mapping is defined when `schemas/ir.fbs` lands.
+`model → ir_v2.fbs::ModelFile` (root Node + SemanticsRef children);
+`resource/process/atomic/agent/continuous → v2 Node` blocks. The v1
+mapping (`ir.fbs::Model`) remains available via `--ir-version 1` and the
+v1→v2 converters (migration tooling). See `docs/specs/ir-v2.md`.
 
 ## 5. Explicitly Out of Scope for v0
 
@@ -204,3 +208,23 @@ model SIR {
   rejects equations whose lhs is not a declared state variable.
 - `lpcli run --arrivals N` = N integration steps of dt = 0.01; the summary's
   `final_value` is the first variable's end state. Deterministic (no RNG).
+
+## 10. Experiment blocks (v0.1)
+
+`experiment` blocks declare the model's own run/optimization setup; they are
+part of the model and travel inside the v2 IR (`ModelFile.experiments`):
+
+```logicpilot
+experiment Optimization {
+  objective = minimize   // maximize | minimize
+  metric = Wq            // throughput | W | Wq | Lq | ...
+  variable = servers     // block parameter to search over
+  range = 1..8           // inclusive integer range
+  budget = 20            // search budget (optional, default 20)
+}
+```
+
+- `lpcli compile --experiments-json <path>` exports the declared experiments
+  as JSON; `scripts/ai-optimize.mjs` reads it to drive grid/GA search.
+- Semantic validation (`LP9001`-family) rejects missing objective/metric/
+  variable or malformed ranges (see `tests/bad_sources/bad_experiment.lp`).

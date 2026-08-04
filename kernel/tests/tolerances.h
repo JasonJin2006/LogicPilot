@@ -23,12 +23,4 @@ inline constexpr double kVarianceRelativeTolerance = 0.08;  // 8 %
 inline constexpr double kUniformHardMin = 0.0;
 inline constexpr double kUniformHardMax = 1.0;
 
-// Integrator accuracy (dy/dt = y over [0, 1], dt = 0.01) ----------------------
-// Euler global error ~ dt/2 * e; RK4 global error ~ dt^4 * C.
-inline constexpr double kEulerMaxAbsError = 5e-2;
-inline constexpr double kRk4MaxAbsError = 1e-8;
-
-// Harmonic oscillator energy drift after one full period (RK4, dt = 0.01).
-inline constexpr double kOscillatorEnergyDrift = 1e-5;
-
 }  // namespace logicpilot::test

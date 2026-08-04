@@ -18,9 +18,10 @@ and make builds non-reproducible across toolchains.
   repository** alongside `grammar.js`.
 - Build steps compile the checked-in C sources directly; **no `tree-sitter`
   CLI invocation happens during normal builds** (CMake or Rust builds).
-- Regeneration is an explicit, manual step (`pnpm codegen` / documented
-  command) performed when `grammar.js` changes, with the regenerated output
-  committed in the same change.
+- Regeneration is an explicit, manual step (`tree-sitter generate` inside
+  `dsl/tree-sitter-logicpilot/`, or `pnpm --dir dsl/tree-sitter-logicpilot
+  generate`) performed when `grammar.js` changes, with the regenerated
+  output committed in the same change.
 
 ## Consequences
 

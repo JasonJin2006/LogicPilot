@@ -1,18 +1,13 @@
 // Time subsystem tests: SimTime literals/arithmetic, SimulationClock
-// monotonic next-event advancement, Euler/RK4 integrator accuracy.
+// monotonic next-event advancement. (The ODE integrator lives in
+// kernel/src/devs/continuous.cpp and is covered by test_continuous.cpp.)
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include <cmath>
-#include <vector>
-
 #include "logicpilot/core/time/clock.h"
-#include "logicpilot/core/time/integrator.h"
 #include "logicpilot/core/time/sim_time.h"
-#include "tolerances.h"
 
 using namespace logicpilot;
-using Catch::Matchers::WithinAbs;
 
 TEST_CASE("SimTime literals express exact nanosecond counts", "[time]") {
   CHECK((45_ns).as_ns() == 45);
@@ -53,76 +48,4 @@ TEST_CASE("SimulationClock advances monotonically", "[time]") {
 
   clock.reset();
   CHECK(clock.now() == SimTime::zero());
-}
-
-namespace {
-
-// dy/dt = y, y(0) = 1  ->  y(t) = e^t
-DerivativeFn exponential_growth() {
-  return [](double, std::span<const double> y, std::span<double> dy) {
-    dy[0] = y[0];
-  };
-}
-
-// Harmonic oscillator: x' = v, v' = -x. Energy x^2 + v^2 is conserved.
-DerivativeFn harmonic_oscillator() {
-  return [](double, std::span<const double> y, std::span<double> dy) {
-    dy[0] = y[1];
-    dy[1] = -y[0];
-  };
-}
-
-constexpr double kPi = 3.14159265358979323846;
-
-}  // namespace
-
-TEST_CASE("Euler and RK4 are deterministic fixed-step integrators", "[time]") {
-  auto run = [](IIntegrator& integrator) {
-    std::vector<double> y{1.0};
-    integrator.integrate(0.0, 1.0, 100, std::span<double>{y},
-                         exponential_growth());
-    return y[0];
-  };
-
-  EulerIntegrator euler;
-  RungeKutta4Integrator rk4;
-
-  const double euler_a = run(euler);
-  const double euler_b = run(euler);
-  const double rk4_a = run(rk4);
-  const double rk4_b = run(rk4);
-
-  // Same inputs -> bit-identical outputs.
-  CHECK(euler_a == euler_b);
-  CHECK(rk4_a == rk4_b);
-}
-
-TEST_CASE("Integrator accuracy against the analytic solution", "[time]") {
-  const double exact = std::exp(1.0);
-
-  EulerIntegrator euler;
-  std::vector<double> ye{1.0};
-  euler.integrate(0.0, 1.0, 100, std::span<double>{ye}, exponential_growth());
-  CHECK_THAT(ye[0], WithinAbs(exact, test::kEulerMaxAbsError));
-
-  RungeKutta4Integrator rk4;
-  std::vector<double> yr{1.0};
-  rk4.integrate(0.0, 1.0, 100, std::span<double>{yr}, exponential_growth());
-  CHECK_THAT(yr[0], WithinAbs(exact, test::kRk4MaxAbsError));
-
-  // RK4 must be orders of magnitude better than Euler at the same step size.
-  CHECK(std::abs(yr[0] - exact) < std::abs(ye[0] - exact) / 1000.0);
-}
-
-TEST_CASE("RK4 conserves harmonic oscillator energy", "[time]") {
-  RungeKutta4Integrator rk4;
-  std::vector<double> y{1.0, 0.0};  // x = 1, v = 0
-  const double period = 2.0 * kPi;
-  rk4.integrate(0.0, period, 1000, std::span<double>{y}, harmonic_oscillator());
-
-  // After one full period the state returns to (1, 0) and energy to 1.
-  CHECK_THAT(y[0], WithinAbs(1.0, test::kOscillatorEnergyDrift));
-  CHECK_THAT(y[1], WithinAbs(0.0, test::kOscillatorEnergyDrift));
-  const double energy = y[0] * y[0] + y[1] * y[1];
-  CHECK_THAT(energy, WithinAbs(1.0, test::kOscillatorEnergyDrift));
 }

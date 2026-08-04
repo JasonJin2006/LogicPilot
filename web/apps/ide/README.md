@@ -14,7 +14,7 @@ uPlot 绘制实时计数折线。
 
 ```powershell
 # 1. 启动网关（仓库根目录；首次构建参考 scripts/build-hello-kernel.ps1）
-.\build\local-mingw\kernel\apps\lpcli\lpcli.exe serve examples/mm1.lp --port 8089 --seed 42
+.\build\integration-dev\kernel\apps\lpcli\lpcli.exe serve examples/mm1.lp --port 8089 --seed 42
 
 # 2. 安装 workspace 依赖（仓库根目录，pnpm 经 corepack 提供）
 pnpm install

@@ -90,7 +90,7 @@ ws.onmessage = (ev) => {
 ## 测试
 
 ```powershell
-ctest --test-dir build/local-mingw -R server   # 5 个集成/确定性用例
+ctest --test-dir build/integration-dev -R server   # 5 个集成/确定性用例
 ```
 
 `kernel/tests/test_lp_server_integration.cpp`：内嵌 Beast 客户端走
