@@ -1,14 +1,15 @@
-// Streaming M/M/1 replication driver - implementation.
+// Streaming flow replication driver - implementation.
 //
 // The arrive/depart handlers below are a line-for-line replay of
 // QueueingFlowSim::run() (kernel/src/devs/mm1.cpp). Only bookkeeping that the
 // gateway needs and that never touches the RNG / scheduler differs:
-//   * in_service_id_ / has_in_service_   (scene synthesis)
+//   * server_state_ / server_customer_   (scene synthesis)
 //   * cumulative wait_sum_/wait_count_   (instead of wait_times_ vector)
 // Determinism follows because RNG draw order, event scheduling and handler
 // dispatch order are identical to the kernel.
 #include "sim_runner.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -20,6 +21,8 @@ namespace {
 
 constexpr EventType kArriveEvent = 10;  // must match kernel mm1.cpp
 constexpr EventType kDepartEvent = 11;
+constexpr EventType kFailEvent = 12;
+constexpr EventType kRepairEvent = 13;
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
@@ -45,17 +48,30 @@ void SimRunner::reset(const StreamRunConfig& config) {
     Exponential<Xoshiro256PlusPlus> dist{mu};
     return dist(engine);
   };
+  spec_.servers = config.servers < 1 ? 1 : config.servers;
+  if (config.failure_rate > 0.0) {
+    const double failure_rate = config.failure_rate;
+    spec_.failure = [failure_rate](Xoshiro256PlusPlus& engine) {
+      Exponential<Xoshiro256PlusPlus> dist{failure_rate};
+      return dist(engine);
+    };
+    const double repair_rate = config.repair_rate;
+    spec_.repair = [repair_rate](Xoshiro256PlusPlus& engine) {
+      Exponential<Xoshiro256PlusPlus> dist{repair_rate};
+      return dist(engine);
+    };
+  }
 
   queue_.clear();
   arrival_ns_.assign(config.arrivals, 0);
+  service_start_ns_.assign(config.arrivals, 0);
+  server_state_.assign(spec_.servers, ServerState::kIdle);
+  server_customer_.assign(spec_.servers, 0);
   emitted_ = 0;
-  busy_ = false;
   in_system_ = 0;
   in_queue_ = 0;
   departures_ = 0;
   finished_ = false;
-  in_service_id_ = 0;
-  has_in_service_ = false;
   last_ns_ = 0;
   area_system_ns_ = 0;
   area_queue_ns_ = 0;
@@ -71,39 +87,60 @@ void SimRunner::reset(const StreamRunConfig& config) {
     last_ns_ = now_ns;
   };
 
-  // Registered first so it owns handler id 0 (matches kernel).
-  depart_id_ = handlers_.add([this, accumulate_area](const Event& event) {
-    const std::uint64_t id = event.payload;
+  // Starts service on `server` for `customer`: samples service time and (when
+  // failures are enabled) a failure time, exactly mirroring the kernel's
+  // start_service draw order (service first, then failure).
+  const auto start_service = [this](std::uint64_t server,
+                                    std::uint64_t customer) {
+    server_state_[server] = ServerState::kBusy;
+    server_customer_[server] = customer;
+    service_start_ns_[customer] = clock_.now().as_ns();
+    const std::int64_t service_ns = to_ns(spec_.service(engine_));
+    if (!spec_.failure) {
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+                           kDepartEvent, depart_id_, server);
+      return;
+    }
+    const std::int64_t failure_ns = to_ns(spec_.failure(engine_));
+    if (failure_ns < service_ns) {
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(failure_ns),
+                           kFailEvent, fail_id_, server);
+    } else {
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+                           kDepartEvent, depart_id_, server);
+    }
+  };
+
+  // Registered in kernel order (depart, arrive, fail, repair).
+  depart_id_ = handlers_.add([this, accumulate_area,
+                              start_service](const Event& event) {
+    const std::uint64_t server = event.payload;
     const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
+    const std::uint64_t id = server_customer_[server];
     --in_system_;
     ++departures_;
     if (id >= config_.warmup_arrivals) {
+      wait_sum_ += static_cast<double>(service_start_ns_[id] -
+                                       arrival_ns_[id]) *
+                   1e-9;
+      ++wait_count_;
       sojourn_sum_ +=
           static_cast<double>(now_ns - arrival_ns_[id]) * 1e-9;
       ++sojourn_count_;
     }
 
+    server_state_[server] = ServerState::kIdle;
     if (!queue_.empty()) {
       const std::uint64_t next = queue_.front();
       queue_.pop_front();
       --in_queue_;
-      const double wait =
-          static_cast<double>(now_ns - arrival_ns_[next]) * 1e-9;
-      if (next >= config_.warmup_arrivals) {
-        wait_sum_ += wait;
-        ++wait_count_;
-      }
-      in_service_id_ = next;
-      has_in_service_ = true;
-      schedule_depart(next);
-    } else {
-      busy_ = false;
-      has_in_service_ = false;
+      start_service(server, next);
     }
   });
 
-  arrive_id_ = handlers_.add([this, accumulate_area](const Event& event) {
+  arrive_id_ = handlers_.add([this, accumulate_area,
+                              start_service](const Event& event) {
     const std::uint64_t id = event.payload;
     const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
@@ -117,21 +154,45 @@ void SimRunner::reset(const StreamRunConfig& config) {
       ++emitted_;
     }
 
-    if (!busy_) {
-      busy_ = true;
+    const auto idle = std::find_if(server_state_.begin(),
+                                   server_state_.end(),
+                                   [](ServerState state) {
+                                     return state == ServerState::kIdle;
+                                   });
+    if (idle != server_state_.end()) {
       ++in_system_;
-      if (id >= config_.warmup_arrivals) {
-        wait_sum_ += 0.0;  // straight into service, zero wait
-        ++wait_count_;
-      }
-      in_service_id_ = id;
-      has_in_service_ = true;
-      schedule_depart(id);
+      start_service(static_cast<std::uint64_t>(idle - server_state_.begin()),
+                    id);
     } else {
-      // M/M/1 has an unbounded FIFO (queue_capacity < 0), so no drops.
       ++in_system_;
       ++in_queue_;
       queue_.push_back(id);
+    }
+  });
+  fail_id_ = handlers_.add([this, accumulate_area](const Event& event) {
+    const std::uint64_t server = event.payload;
+    const std::int64_t now_ns = clock_.now().as_ns();
+    accumulate_area(now_ns);
+    const std::uint64_t id = server_customer_[server];
+    server_state_[server] = ServerState::kDown;
+    // Preemptive-repeat: the customer in service returns to the queue head.
+    queue_.push_front(id);
+    ++in_queue_;
+    const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
+    scheduler_->schedule(clock_.now() + SimTime::from_ns(repair_ns),
+                         kRepairEvent, repair_id_, server);
+  });
+  repair_id_ = handlers_.add([this, accumulate_area,
+                              start_service](const Event& event) {
+    const std::uint64_t server = event.payload;
+    const std::int64_t now_ns = clock_.now().as_ns();
+    accumulate_area(now_ns);
+    server_state_[server] = ServerState::kIdle;
+    if (!queue_.empty()) {
+      const std::uint64_t next = queue_.front();
+      queue_.pop_front();
+      --in_queue_;
+      start_service(server, next);
     }
   });
 
@@ -139,12 +200,6 @@ void SimRunner::reset(const StreamRunConfig& config) {
   emitted_ = 1;
   scheduler_->schedule(SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
                       kArriveEvent, arrive_id_, 0);
-}
-
-void SimRunner::schedule_depart(std::uint64_t customer) {
-  const double s = spec_.service(engine_);
-  scheduler_->schedule(clock_.now() + SimTime::from_ns(to_ns(s)),
-                      kDepartEvent, depart_id_, customer);
 }
 
 std::size_t SimRunner::process_until(std::int64_t boundary_ns) {
@@ -188,9 +243,12 @@ ReplicationMetrics SimRunner::metrics() const {
 void SimRunner::snapshot_agents(std::vector<TickAgent>& out,
                                 std::size_t max_agents) {
   out.clear();
-  if (has_in_service_) {
+  for (std::size_t i = 0; i < server_state_.size(); ++i) {
+    if (server_state_[i] != ServerState::kBusy || out.size() >= max_agents) {
+      continue;
+    }
     TickAgent agent;
-    agent.id = in_service_id_;
+    agent.id = server_customer_[i];
     agent.pos_x = 0.0f;
     agent.pos_y = 0.0f;
     agent.state_bits = 1;  // bit0: in service
@@ -217,7 +275,15 @@ void SimRunner::fill_counters(std::vector<CounterValue>& out,
   const ReplicationMetrics m = metrics();
   out.clear();
   out.push_back({"queue_length", static_cast<double>(in_queue_)});
-  out.push_back({"busy", busy_ ? 1.0 : 0.0});
+  std::int64_t busy_count = 0;
+  std::int64_t down_count = 0;
+  for (const ServerState state : server_state_) {
+    busy_count += state == ServerState::kBusy ? 1 : 0;
+    down_count += state == ServerState::kDown ? 1 : 0;
+  }
+  out.push_back({"busy", static_cast<double>(busy_count)});
+  out.push_back({"down_servers", static_cast<double>(down_count)});
+  out.push_back({"servers", static_cast<double>(server_state_.size())});
   out.push_back({"throughput", m.throughput});
   out.push_back({"mean_wait", m.mean_wait});
   out.push_back({"mean_sojourn", m.mean_sojourn});

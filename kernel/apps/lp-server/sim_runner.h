@@ -29,12 +29,20 @@
 
 namespace logicpilot::server {
 
+enum class ServerState { kIdle, kBusy, kDown };
+
 struct StreamRunConfig {
   std::uint64_t seed{42};
   std::uint64_t arrivals{4000};
   std::uint64_t warmup_arrivals{200};
   double lambda{0.8};
   double mu{1.0};
+  // Milestone 1: parallel servers + per-server failure/recovery. Mirrors
+  // QueueingFlowSpec; failure_rate == 0 disables failures entirely (the
+  // failure-free path must stay draw-identical to the kernel).
+  std::int64_t servers{1};
+  double failure_rate{0.0};
+  double repair_rate{1.0};
 };
 
 class SimRunner {
@@ -57,13 +65,15 @@ class SimRunner {
 
   // --- MM1 scene synthesis (task #7 mapping) -----------------------------
 
-  // Customers currently present: the one in service (state_bits bit0 = 1,
-  // pos 0,0) followed by the FIFO queue (waiting, pos_x = slot index).
-  // `max_agents` caps the delta list for frame-size budgets.
+  // Customers currently present: customers in service on busy servers
+  // (state_bits bit0 = 1, pos 0,0; one per busy server) followed by the
+  // FIFO queue (waiting, pos_x = slot index). `max_agents` caps the delta
+  // list for frame-size budgets.
   void snapshot_agents(std::vector<TickAgent>& out, std::size_t max_agents);
 
-  // queue_length / busy / throughput / mean_wait (cumulative, warmup
-  // excluded) / mean_sojourn / arrivals / departures / rep / reps.
+  // queue_length / busy / down_servers / servers / throughput / mean_wait
+  // (cumulative, warmup excluded) / mean_sojourn / arrivals / departures /
+  // rep / reps.
   void fill_counters(std::vector<CounterValue>& out, std::uint64_t rep_index,
                      std::uint64_t reps_total) const;
 
@@ -77,14 +87,14 @@ class SimRunner {
   // Flow state (mirrors QueueingFlowSim::run locals).
   std::deque<std::uint64_t> queue_;
   std::vector<std::int64_t> arrival_ns_;
+  std::vector<std::int64_t> service_start_ns_;  // final-wait baseline
+  std::vector<ServerState> server_state_;
+  std::vector<std::uint64_t> server_customer_;
   std::uint64_t emitted_{0};
-  bool busy_{false};
   std::uint64_t in_system_{0};
   std::uint64_t in_queue_{0};
   std::uint64_t departures_{0};
   bool finished_{false};
-  std::uint64_t in_service_id_{0};
-  bool has_in_service_{false};
 
   // Stats accumulators (cumulative sums instead of the kernel's wait_times_
   // vector - bounded memory for arbitrarily long runs).
@@ -98,10 +108,10 @@ class SimRunner {
 
   HandlerId arrive_id_{0};
   HandlerId depart_id_{0};
+  HandlerId fail_id_{0};
+  HandlerId repair_id_{0};
 
-  QueueingFlowSpec spec_;  // interarrival/service samplers from lambda/mu
-
-  void schedule_depart(std::uint64_t customer);
+  QueueingFlowSpec spec_;  // samplers derived from the StreamRunConfig
 };
 
 }  // namespace logicpilot::server

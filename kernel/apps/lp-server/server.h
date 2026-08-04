@@ -36,6 +36,11 @@ struct ServerConfig {
   std::uint64_t warmup{400};
   double lambda{0.8};
   double mu{1.0};
+  // Milestone 1: model flow parameters (from the served IR model). servers
+  // = resource capacity; failure_rate > 0 enables per-server breakdowns.
+  std::int64_t servers{1};
+  double failure_rate{0.0};
+  double repair_rate{1.0};
   double speed{1.0};  // wall-clock pacing multiplier (1.0 = realtime)
   // Fixed simulation step between Tick+Counters emissions. Default 100 ms of
   // simulated time => 10 Hz at speed 1.0 (task #7 default cadence).

@@ -17,6 +17,7 @@
 #include <map>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -28,6 +29,7 @@
 
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/mm1.h"
+#include "logicpilot/core/random/distributions.h"
 #include "logicpilot/dsl/compile.h"
 #include "server.h"
 #include "sim_runner.h"
@@ -583,6 +585,64 @@ TEST_CASE("streaming driver is bit-exact against kernel QueueingFlowSim",
   reference_config.seed = 1234;
   reference_config.arrivals = 3000;
   reference_config.warmup_arrivals = 300;
+  const logicpilot::ReplicationMetrics reference =
+      simulator.run(reference_config, nullptr);
+
+  REQUIRE(streamed.departures == reference.departures);
+  REQUIRE(streamed.horizon_seconds == reference.horizon_seconds);
+  REQUIRE(streamed.throughput == reference.throughput);
+  REQUIRE(streamed.mean_in_system == reference.mean_in_system);
+  REQUIRE(streamed.mean_in_queue == reference.mean_in_queue);
+  REQUIRE(streamed.mean_sojourn == reference.mean_sojourn);
+  REQUIRE(streamed.mean_wait == reference.mean_wait);
+}
+
+TEST_CASE("streaming driver is bit-exact under failures and multiple "
+          "servers", "[server][determinism][failure]") {
+  logicpilot::server::StreamRunConfig config;
+  config.seed = 4242;
+  config.arrivals = 4000;
+  config.warmup_arrivals = 400;
+  config.lambda = 0.8;
+  config.mu = 1.0;
+  config.servers = 2;
+  config.failure_rate = 0.2;
+  config.repair_rate = 1.5;
+
+  logicpilot::server::SimRunner runner;
+  runner.reset(config);
+  std::int64_t boundary = 0;
+  while (!runner.finished()) {
+    boundary += 100'000'000;
+    runner.process_until(boundary);
+  }
+  const logicpilot::ReplicationMetrics streamed = runner.metrics();
+
+  // Same spec the streaming driver derives from its config: build the
+  // kernel QueueingFlowSim and require bit-identical metrics.
+  logicpilot::QueueingFlowSpec spec;
+  spec.interarrival = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{0.8};
+    return dist(engine);
+  };
+  spec.service = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.0};
+    return dist(engine);
+  };
+  spec.servers = 2;
+  spec.failure = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{0.2};
+    return dist(engine);
+  };
+  spec.repair = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.5};
+    return dist(engine);
+  };
+  logicpilot::QueueingFlowSim simulator{std::move(spec)};
+  logicpilot::ReplicationConfig reference_config;
+  reference_config.seed = 4242;
+  reference_config.arrivals = 4000;
+  reference_config.warmup_arrivals = 400;
   const logicpilot::ReplicationMetrics reference =
       simulator.run(reference_config, nullptr);
 

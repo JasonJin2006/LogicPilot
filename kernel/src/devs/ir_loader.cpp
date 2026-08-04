@@ -3,6 +3,7 @@
 #include "logicpilot/devs/ir_loader.h"
 
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <utility>
@@ -391,6 +392,109 @@ std::unique_ptr<ReplicationModel> build_replication_model(
              " in Phase 1b (declarative view only)";
   }
   return nullptr;
+}
+
+bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
+                         std::string* error) {
+  const auto fail = [&](const std::string& msg) {
+    if (error != nullptr) {
+      *error = msg;
+    }
+    return false;
+  };
+  if (file.root == nullptr || file.root->root() == nullptr) {
+    return fail("no root model");
+  }
+
+  const ir::Model* root = file.root->root();
+  const ir::ProcessModel* process = nullptr;
+  std::unordered_map<std::string, const ir::AtomicModel*> resources;
+  if (root->kind_type() == ir::ModelKind_ProcessModel) {
+    process = root->kind_as_ProcessModel();
+  } else if (root->kind_type() == ir::ModelKind_CoupledModel) {
+    const ir::CoupledModel* coupled = root->kind_as_CoupledModel();
+    if (coupled->children() != nullptr) {
+      for (const ir::Model* child : *coupled->children()) {
+        if (child->kind_type() == ir::ModelKind_ProcessModel) {
+          if (process != nullptr) {
+            return fail(
+                "multiple ProcessModel children; streaming supports one");
+          }
+          process = child->kind_as_ProcessModel();
+        } else if (child->kind_type() == ir::ModelKind_AtomicModel) {
+          const ir::AtomicModel* atomic = child->kind_as_AtomicModel();
+          if (atomic->metadata() != nullptr &&
+              atomic->metadata()->name() != nullptr) {
+            resources.emplace(atomic->metadata()->name()->str(), atomic);
+          }
+        }
+      }
+    }
+  } else {
+    return fail("no process model to stream");
+  }
+  if (process == nullptr) {
+    return fail("no ProcessModel to stream");
+  }
+
+  const ir::ProcessNode* source = nullptr;
+  const ir::ProcessNode* service = nullptr;
+  for (const ir::ProcessNode* node : *process->nodes()) {
+    switch (node->kind_type()) {
+      case ir::ProcessNodeKind_SourceNode: source = node; break;
+      case ir::ProcessNodeKind_ServiceNode: service = node; break;
+      default: break;
+    }
+  }
+  if (source == nullptr || service == nullptr) {
+    return fail("ProcessModel requires a source and a service node");
+  }
+  const ir::SourceNode* source_spec = source->kind_as_SourceNode();
+  const ir::ServiceNode* service_spec = service->kind_as_ServiceNode();
+  if (source_spec == nullptr || source_spec->arrival() == nullptr ||
+      service_spec == nullptr || service_spec->service_time() == nullptr) {
+    return fail("source arrival or service time missing");
+  }
+  if (source_spec->arrival()->kind() != ir::DistributionKind_Poisson &&
+      source_spec->arrival()->kind() != ir::DistributionKind_Exponential) {
+    return fail(
+        "streaming driver requires poisson/exponential arrivals, got " +
+        std::to_string(source_spec->arrival()->kind()));
+  }
+  if (service_spec->service_time()->kind() !=
+      ir::DistributionKind_Exponential) {
+    return fail(
+        "streaming driver requires exponential service times, got " +
+        std::to_string(service_spec->service_time()->kind()));
+  }
+  const auto first_param = [](const ir::Distribution* dist,
+                              std::optional<double>& out) {
+    if (dist->params() != nullptr && dist->params()->size() > 0) {
+      out = dist->params()->Get(0);
+    }
+  };
+  std::optional<double> lambda;
+  std::optional<double> mu;
+  first_param(source_spec->arrival(), lambda);
+  first_param(service_spec->service_time(), mu);
+  if (!lambda.has_value() || *lambda <= 0.0 || !mu.has_value() ||
+      *mu <= 0.0) {
+    return fail("arrival/service rates must be positive");
+  }
+  out.lambda = *lambda;
+  out.mu = *mu;
+  out.servers = service_spec->servers() < 1 ? 1 : service_spec->servers();
+
+  const ir::AtomicModel* resource = nullptr;
+  if (service_spec->resource() != nullptr) {
+    const auto it = resources.find(service_spec->resource()->str());
+    if (it != resources.end()) {
+      resource = it->second;
+    }
+  }
+  out.failure_rate = resource_param(resource, "failure_rate", 0.0);
+  out.repair_rate = resource_param(resource, "repair_rate", 1.0);
+  return true;
 }
 
 }  // namespace logicpilot

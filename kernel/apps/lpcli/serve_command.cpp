@@ -164,6 +164,17 @@ int serve_command(std::span<const std::string> args) {
       fmt::print(stderr, "error: {}\n", build_error);
       return 1;
     }
+    logicpilot::FlowRunParams flow;
+    std::string flow_error;
+    if (!logicpilot::extract_flow_params(loaded.file, flow, &flow_error)) {
+      fmt::print(stderr, "error: {}\n", flow_error);
+      return 1;
+    }
+    config.lambda = flow.lambda;
+    config.mu = flow.mu;
+    config.servers = flow.servers;
+    config.failure_rate = flow.failure_rate;
+    config.repair_rate = flow.repair_rate;
     config.model_name = logicpilot::inspect_model(loaded.file);
   } else {
     if (input.empty()) {
@@ -196,6 +207,17 @@ int serve_command(std::span<const std::string> args) {
       fmt::print(stderr, "error: {}\n", build_error);
       return 1;
     }
+    logicpilot::FlowRunParams flow;
+    std::string flow_error;
+    if (!logicpilot::extract_flow_params(loaded.file, flow, &flow_error)) {
+      fmt::print(stderr, "error: {}\n", flow_error);
+      return 1;
+    }
+    config.lambda = flow.lambda;
+    config.mu = flow.mu;
+    config.servers = flow.servers;
+    config.failure_rate = flow.failure_rate;
+    config.repair_rate = flow.repair_rate;
     config.model_name = compiled.model_name;
   }
 

@@ -72,4 +72,21 @@ std::string inspect_model(const IrModelFile& file);
 std::unique_ptr<ReplicationModel> build_replication_model(
     const IrModelFile& file, std::string* error = nullptr);
 
+// Exponential-flow run parameters for the streaming driver (lp-server).
+struct FlowRunParams {
+  double lambda{0.0};
+  double mu{0.0};
+  std::int64_t servers{1};
+  double failure_rate{0.0};
+  double repair_rate{1.0};
+};
+
+// Extracts the exponential-flow parameters from a (coupled) ProcessModel:
+// arrival rate (poisson/exponential), service rate (exponential), server
+// count and the resource's failure/repair rates. Returns false when the
+// model is not a single-source/single-service exponential flow (a
+// limitation of the streaming driver), with `error` filled.
+bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
+                         std::string* error = nullptr);
+
 }  // namespace logicpilot

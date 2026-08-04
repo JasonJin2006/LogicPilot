@@ -414,10 +414,13 @@ struct SimServer::Impl {
       StreamRunConfig run_config;
       run_config.seed = streams.derive_state(rep)[0];
       run_config.arrivals = params.arrivals;
-      run_config.warmup_arrivals = params.warmup;
-      run_config.lambda = config.lambda;
-      run_config.mu = config.mu;
-      runner_.reset(run_config);
+  run_config.warmup_arrivals = params.warmup;
+  run_config.lambda = config.lambda;
+  run_config.mu = config.mu;
+  run_config.servers = config.servers;
+  run_config.failure_rate = config.failure_rate;
+  run_config.repair_rate = config.repair_rate;
+  runner_.reset(run_config);
       if (!stream_replication(params, rep)) {
         cancelled = true;
         break;
