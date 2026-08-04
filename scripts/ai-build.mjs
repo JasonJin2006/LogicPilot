@@ -47,6 +47,16 @@ function findLpcli() {
 }
 
 function runLpcli(lpcli, args) {
+  // MinGW-built lpcli needs its runtime DLLs (ucrt64) on PATH; make the
+  // loop independent of how the parent process was launched (e.g. the Vite
+  // dev server). No-op on non-Windows / when msys2 is absent.
+  if (process.platform === 'win32') {
+    const mingwBin = 'C:\\msys64\\ucrt64\\bin';
+    if (existsSync(mingwBin) &&
+        !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
+      process.env.PATH = `${mingwBin};${process.env.PATH ?? ''}`;
+    }
+  }
   // Capture stderr instead of inheriting it so --json reports stay clean;
   // failed compiles surface their diagnostics through --diagnostics-json.
   return execFileSync(lpcli, args, {
@@ -66,6 +76,8 @@ export async function buildModel({
   lpcli = findLpcli(),
   maxIterations = 3,
   sabotageFirst = false,
+  run = false,
+  runParams = { reps: 3, arrivals: 2000, warmup: 200 },
 }) {
   const provider = resolveProvider();
   const dir = mkdtempSync(join(tmpdir(), 'ai-build-'));
@@ -105,12 +117,32 @@ export async function buildModel({
         }
       }
     }
+    let runSummary = '';
+    if (ok && run) {
+      const runDir = mkdtempSync(join(tmpdir(), 'ai-run-'));
+      try {
+        const lp = join(runDir, 'model.lp');
+        const ir = join(runDir, 'model.ir.bin');
+        writeFileSync(lp, finalDsl, 'utf8');
+        runLpcli(lpcli, ['compile', lp, '-o', ir]);
+        runSummary = runLpcli(lpcli, [
+          'run', '--model-file', ir,
+          '--seed', '42',
+          '--reps', String(runParams.reps),
+          '--arrivals', String(runParams.arrivals),
+          '--warmup', String(runParams.warmup),
+        ]);
+      } finally {
+        rmSync(runDir, { recursive: true, force: true });
+      }
+    }
     return {
       ok,
       iterations,
       dsl: finalDsl,
       lpcli,
       lastDiagnostics: diagnostics,
+      runSummary,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -165,31 +197,12 @@ async function main() {
     sabotageFirst: options.sabotageFirst,
   });
 
-  let runSummary = '';
-  if (result.ok && options.run) {
-    const dir = mkdtempSync(join(tmpdir(), 'ai-run-'));
-    try {
-      const lp = join(dir, 'model.lp');
-      const ir = join(dir, 'model.ir.bin');
-      writeFileSync(lp, result.dsl, 'utf8');
-      runLpcli(lpcli, ['compile', lp, '-o', ir]);
-      runSummary = runLpcli(lpcli, [
-        'run', '--model-file', ir,
-        '--seed', '42',
-        '--reps', String(options.reps),
-        '--arrivals', String(options.arrivals),
-        '--warmup', String(options.warmup),
-      ]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
   if (result.ok && options.out) {
     writeFileSync(options.out, result.dsl, 'utf8');
   }
 
   if (options.json) {
-    console.log(JSON.stringify({ ...result, runSummary }, null, 2));
+    console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 1);
   }
   for (const diagnostic of result.lastDiagnostics) {
@@ -201,9 +214,9 @@ async function main() {
   if (result.ok) {
     console.log('[ai-build] --- generated DSL ---');
     console.log(result.dsl.trimEnd());
-    if (runSummary) {
+    if (result.runSummary) {
       console.log('[ai-build] --- run summary ---');
-      console.log(runSummary.trimEnd());
+      console.log(result.runSummary.trimEnd());
     }
     if (options.out) {
       console.log(`[ai-build] saved DSL -> ${options.out}`);

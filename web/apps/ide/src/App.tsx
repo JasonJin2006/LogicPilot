@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
 import { SimClient, type ConnState, type StartOptions } from './client/simClient';
 import { ChartPanel, type ChartsHandle } from './components/ChartPanel';
 import { ConnectionPanel } from './components/ConnectionPanel';
+import { AIPanel } from './components/AIPanel';
 import { QueueView } from './components/QueueView';
 import { ResultsPanel } from './components/ResultsPanel';
 import { StatusBar } from './components/StatusBar';
@@ -127,6 +128,7 @@ export default function App() {
           <ChartPanel ref={chartsRef} />
           <h2>results</h2>
           <ResultsPanel runInfo={runInfo} results={results} />
+          <AIPanel />
         </aside>
       </main>
     </div>

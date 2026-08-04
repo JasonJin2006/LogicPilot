@@ -111,6 +111,18 @@ try {
   log('RunFinished panel shows Completed + full stats table');
   await page.screenshot({ path: join(OUT, '3-finished.png') });
 
+  // AI model panel: generate a model from a natural-language prompt.
+  await page.locator('.ai-input').fill(
+      'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  await page.getByRole('button', { name: 'generate + run' }).click();
+  await page.waitForSelector('.ai-result', { timeout: 90_000 });
+  const aiText = await page.locator('.ai-result').textContent();
+  if (!aiText?.includes('compiled in')) {
+    throw new Error('AI panel did not show a compiled model');
+  }
+  log('AI panel generated and ran a model from the prompt');
+  await page.screenshot({ path: join(OUT, '4-ai-model.png') });
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);
   }

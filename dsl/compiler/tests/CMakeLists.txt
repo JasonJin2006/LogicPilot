@@ -78,6 +78,14 @@ add_test(NAME ai_build_smoke
 set_tests_properties(ai_build_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-BUILD TEST: PASS")
 
+# AI build endpoint (IDE dev server middleware): POST /api/ai-build.
+add_test(NAME ai_endpoint_smoke
+  COMMAND node
+          ${CMAKE_SOURCE_DIR}/web/apps/ide/scripts/test-ai-endpoint.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(ai_endpoint_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "AI-ENDPOINT TEST: PASS")
+
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"
