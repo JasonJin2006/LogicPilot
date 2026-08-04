@@ -12,6 +12,7 @@ import { getDraggedKind } from './paletteDnd';
 import { BLOCK_DEFAULTS, blockPorts, portAnchor } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 import { vizState } from '../state/vizState';
+import { usePaletteStore } from '../state/paletteStore';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -56,6 +57,7 @@ export function ModelCanvas() {
   const disconnectEdge = useModelStore((state) => state.disconnectEdge);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const select = useModelStore((state) => state.select);
+  const recordUse = usePaletteStore((state) => state.recordUse);
   const undo = useModelStore((state) => state.undo);
   const redo = useModelStore((state) => state.redo);
 
@@ -197,6 +199,7 @@ export function ModelCanvas() {
     const x = (event.clientX - rect.left - view.panX) / view.scale;
     const y = (event.clientY - rect.top - view.panY) / view.scale;
     addBlock({ kind, name: kind, x, y, params: BLOCK_DEFAULTS[kind] });
+    recordUse(kind);
     select(null);
   };
 

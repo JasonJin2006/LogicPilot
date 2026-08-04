@@ -105,4 +105,18 @@ describe('DSL v2 generation', () => {
     expect(source).toContain('arrival = poisson(10)');
     expect(source).not.toContain('"poisson');
   });
+
+  it('emits custom-library block kinds into the process container', () => {
+    let doc = createDocument();
+    doc = addNode(doc, {
+      kind: 'myblock' as Parameters<typeof addNode>[1]['kind'],
+      name: 'X',
+      x: 0,
+      y: 0,
+      params: { rate: 1 },
+    });
+    const source = generateDsl(doc);
+    expect(source).toContain('myblock X {');
+    expect(source).toContain('rate = 1');
+  });
 });

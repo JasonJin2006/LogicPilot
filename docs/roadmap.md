@@ -150,6 +150,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    `parseDsl`（DSL v2 子集 → 图文档，process 块按声明顺序连线，自动布局，
    18 单测含 round-trip）；AI 面板生成结果新增 "Load to canvas"，加载为可
    撤销操作；browser-verify 覆盖 AI 生成 → 画布加载。
+   **Palette 库选择栏 ✅ 已完成**（2026-08-05）：标题栏下新增库选择条
+   （All / Recent / process / 导入的自定义库 + "+" 导入按钮，鼠标滚轮横向
+   滚动）；Recent 追踪最近拖放的块（持久化）；自定义库 JSON 导入
+   （`logicpilot.palette` 持久化），自定义块可拖入画布（DSL 会照常生成，
+   编译器对未注册 kind 报 LP2004）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

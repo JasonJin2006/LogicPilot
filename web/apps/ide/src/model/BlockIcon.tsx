@@ -2,7 +2,6 @@
 // AnyLogic-style icons that replace the old text cards; flow blocks also
 // expose in/out ports around their edges (see blockDefs.ts).
 
-import type { BlockKind } from '@logicpilot/editor';
 import type { ReactNode } from 'react';
 
 function Glyph({ children }: { children: ReactNode }) {
@@ -22,7 +21,7 @@ function Glyph({ children }: { children: ReactNode }) {
   );
 }
 
-export function BlockIcon({ kind }: { kind: BlockKind }) {
+export function BlockIcon({ kind }: { kind: string }) {
   switch (kind) {
     case 'source':
       return (
@@ -70,6 +69,16 @@ export function BlockIcon({ kind }: { kind: BlockKind }) {
           >
             R
           </text>
+        </Glyph>
+      );
+    default:
+      // Custom-library blocks fall back to a generic component glyph.
+      return (
+        <Glyph>
+          <rect x="7" y="7" width="26" height="26" rx="6" />
+          <circle cx="20" cy="13" r="2" />
+          <circle cx="14" cy="24" r="2" />
+          <circle cx="26" cy="24" r="2" />
         </Glyph>
       );
   }

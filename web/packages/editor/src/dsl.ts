@@ -6,10 +6,7 @@
 // connects sequential stages by declaration order). Block field values are
 // serialized from the node params.
 
-import type { BlockKind, ModelDocument, ModelEdge, ModelNode } from './graph.js';
-
-/** Blocks that live inside the single process container. */
-const PROCESS_BLOCKS: ReadonlySet<BlockKind> = new Set(['source', 'queue', 'service', 'sink']);
+import type { ModelDocument, ModelEdge, ModelNode } from './graph.js';
 
 function paramValue(value: string | number | boolean): string {
   if (typeof value === 'number') {
@@ -81,8 +78,11 @@ function orderStages(
 export function generateDsl(document: ModelDocument): string {
   const modelName = document.name || 'Model';
   const resources = document.nodes.filter((node) => node.kind === 'resource');
+  // Every non-resource node is a stage in the single process container.
+  // Custom-library kinds emit too: the compiler reports them as unknown
+  // (LP2004) until the matching library is registered in the kernel.
   const stages = orderStages(
-    document.nodes.filter((node) => PROCESS_BLOCKS.has(node.kind)),
+    document.nodes.filter((node) => node.kind !== 'resource'),
     document.edges,
     document,
   );

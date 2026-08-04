@@ -388,6 +388,47 @@
   list-style: none;
 }
 
+/* Library selector bar above the palette grid. */
+.palette-library-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  padding: 3px 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+.palette-library-tab {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.palette-library-tab.active {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+
+.palette-library-add {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.palette-import-error {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--error);
+  font-size: 11px;
+}
+
 .palette-item {
   display: flex;
   flex-direction: column;
