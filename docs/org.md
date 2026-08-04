@@ -36,5 +36,8 @@
   Agent E2E 未开始。
 - Phase 2（DSL）: ✅ v0 + atomic 块完成；✅ 结构化诊断（AI 闭环地基）；
   experiment/表达式 未开始。
+- Phase 6（AI）: 🔶 AI 建模闭环（NL→DSL + 诊断迭代，rule-based provider 离线可用、
+  LLM provider 可选）完成第一刀（`scripts/ai-build.mjs`，见 `docs/specs/ai-loop.md`）；
+  自动优化/瓶颈归因 未开始。
 - Phase 3（Web IDE）: 🔶 2D 可视化切片完成；拖拽建模/AI 面板未开始。
 - Phase 4/5/6（2D/3D、行业库、AI）: ⬜ 未开始。

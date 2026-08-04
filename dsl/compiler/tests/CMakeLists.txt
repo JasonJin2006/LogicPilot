@@ -70,6 +70,14 @@ set_tests_properties(lpcli_run_atomic PROPERTIES
   DEPENDS lpcli_compile_atomic
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# AI model build loop (rule-based provider, offline): NL -> DSL -> compile ->
+# diagnostics repair -> run. Requires node (available in the kernel CI job).
+add_test(NAME ai_build_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-ai-build.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(ai_build_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "AI-BUILD TEST: PASS")
+
 add_test(NAME lpcli_compile_rejects_missing_capacity
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"
