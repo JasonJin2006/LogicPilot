@@ -135,6 +135,13 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    （x 序回退，修复 `poisson` 等 distribution 调用被加引号的问题）。
    验收：拖拽拼出 mm1 等价模型 → compile 通过；browser-verify E2E 覆盖
    画布→DSL→编译诊断回显。
+   **画布模型 → 运行 → 实时可视化 ✅ 已完成**（2026-08-05）：lp-server `start`
+   支持 per-run 参数覆盖（lambda/mu/servers/failure_rate/repair_rate，集成
+   测试）；`@logicpilot/editor` 新增 `modelRunParams`（画布块图 → M/M/1 驱动
+   参数或拒绝原因）；DSL 编辑区新增 Run（编译通过后自动 start）；运行中画布
+   块实时显示队列长度徽标与 service 忙/闲/宕机状态点。browser-verify 覆盖
+   完整闭环。局限：当前 streaming 驱动为 M/M/1 族，其他模型族需通用执行器
+   （后续）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

@@ -18,6 +18,7 @@ const MAX_EDITOR_W = 560;
 export function ModelWorkspace() {
   const document = useModelStore((state) => state.document);
   const compile = useConnectionStore((state) => state.compile);
+  const runCanvasModel = useConnectionStore((state) => state.runCanvasModel);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorWidth, setEditorWidth] = useState(360);
   const splitterDrag = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -65,6 +66,9 @@ export function ModelWorkspace() {
               <span className="dsl-title">DSL</span>
               <button className="dsl-compile" onClick={compile}>
                 Compile
+              </button>
+              <button className="dsl-compile dsl-run" onClick={runCanvasModel}>
+                Run
               </button>
             </div>
             <pre className="dsl-source">{generateDsl(document)}</pre>

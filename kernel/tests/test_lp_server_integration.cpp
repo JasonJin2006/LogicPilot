@@ -725,6 +725,28 @@ TEST_CASE("lp-server compiles DSL via the compile control command",
   server.stop();
 }
 
+TEST_CASE("lp-server start honors per-run model parameter overrides",
+          "[server][integration]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const RunCapture capture = capture_run(
+      client,
+      R"({"cmd":"start","servers":2,"lambda":0.5,"mu":1.5,"arrivals":300,"warmup":30,"speed":100000})");
+  REQUIRE(capture.ok);
+  REQUIRE(capture.completed);
+  // The overridden resource capacity must reach the streaming driver.
+  REQUIRE(capture.last_counters.at("servers") == 2.0);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server pause/step/resume control flow", "[server][integration]") {
   logicpilot::server::SimServer server{make_test_config()};
   std::string error;

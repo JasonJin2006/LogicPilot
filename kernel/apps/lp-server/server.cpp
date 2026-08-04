@@ -150,6 +150,12 @@ struct SimServer::Impl {
     std::uint64_t reps{1};
     std::uint64_t arrivals{4000};
     std::uint64_t warmup{400};
+    // Per-run model parameter overrides; 0 / -1 = use the served config.
+    double lambda{0.0};
+    double mu{0.0};
+    std::int64_t servers{0};
+    double failure_rate{-1.0};
+    double repair_rate{0.0};
   };
   enum class RunState { kIdle, kRunning, kPaused };
 
@@ -250,6 +256,21 @@ struct SimServer::Impl {
       }
       if (json_number_field(message, "warmup", value) && value >= 0.0) {
         params.warmup = static_cast<std::uint64_t>(value);
+      }
+      if (json_number_field(message, "lambda", value) && value > 0.0) {
+        params.lambda = value;
+      }
+      if (json_number_field(message, "mu", value) && value > 0.0) {
+        params.mu = value;
+      }
+      if (json_number_field(message, "servers", value) && value >= 1.0) {
+        params.servers = static_cast<std::int64_t>(value);
+      }
+      if (json_number_field(message, "failure_rate", value) && value >= 0.0) {
+        params.failure_rate = value;
+      }
+      if (json_number_field(message, "repair_rate", value) && value > 0.0) {
+        params.repair_rate = value;
       }
       if (params.warmup >= params.arrivals) {
         return json_error("warmup must be < arrivals");
@@ -388,11 +409,13 @@ struct SimServer::Impl {
       run_config.seed = streams.derive_state(rep)[0];
       run_config.arrivals = params.arrivals;
   run_config.warmup_arrivals = params.warmup;
-  run_config.lambda = config.lambda;
-  run_config.mu = config.mu;
-  run_config.servers = config.servers;
-  run_config.failure_rate = config.failure_rate;
-  run_config.repair_rate = config.repair_rate;
+  run_config.lambda = params.lambda > 0.0 ? params.lambda : config.lambda;
+  run_config.mu = params.mu > 0.0 ? params.mu : config.mu;
+  run_config.servers = params.servers > 0 ? params.servers : config.servers;
+  run_config.failure_rate =
+      params.failure_rate >= 0.0 ? params.failure_rate : config.failure_rate;
+  run_config.repair_rate =
+      params.repair_rate > 0.0 ? params.repair_rate : config.repair_rate;
   runner_.reset(run_config);
       if (!stream_replication(params, rep)) {
         cancelled = true;

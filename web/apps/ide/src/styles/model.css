@@ -339,6 +339,46 @@
   transform: translate(-50%, -50%) scale(1.3);
 }
 
+/* Live run feedback on the canvas blocks (10 Hz viz state). */
+.model-block-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.model-block-status {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  pointer-events: none;
+  transition: background 0.1s;
+}
+
+.model-block-status.busy {
+  background: var(--warn);
+}
+
+.model-block-status.down {
+  background: var(--error);
+}
+
 .palette-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

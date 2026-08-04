@@ -24,6 +24,12 @@ export interface StartOptions {
   arrivals?: number;
   warmup?: number;
   speed?: number;
+  // Per-run model parameter overrides (canvas model -> M/M/1 driver).
+  lambda?: number;
+  mu?: number;
+  servers?: number;
+  failureRate?: number;
+  repairRate?: number;
 }
 
 export class SimClient {
@@ -86,10 +92,21 @@ export class SimClient {
 
   start(options: StartOptions): boolean {
     const cmd: Record<string, unknown> = { cmd: 'start' };
-    for (const key of ['seed', 'reps', 'arrivals', 'warmup', 'speed'] as const) {
+    for (const key of [
+      'seed',
+      'reps',
+      'arrivals',
+      'warmup',
+      'speed',
+      'lambda',
+      'mu',
+      'servers',
+      'failureRate',
+      'repairRate',
+    ] as const) {
       const value = options[key];
       if (value !== undefined && Number.isFinite(value)) {
-        cmd[key] = value;
+        cmd[key === 'failureRate' ? 'failure_rate' : key] = value;
       }
     }
     return this.sendControl(cmd);

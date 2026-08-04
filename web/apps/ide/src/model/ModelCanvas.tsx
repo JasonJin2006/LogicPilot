@@ -11,6 +11,7 @@ import type { BlockKind, ModelNode } from '@logicpilot/editor';
 import { getDraggedKind } from './paletteDnd';
 import { BLOCK_DEFAULTS, blockPorts, portAnchor } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
+import { vizState } from '../state/vizState';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -246,6 +247,18 @@ export function ModelCanvas() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [draftWire]);
+
+  // Lightweight poll on the 10 Hz viz state so live run badges re-render
+  // without routing every frame through React.
+  const [, setLiveVersion] = useState(vizState.tickVersion);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setLiveVersion((version) => (version === vizState.tickVersion ? version : vizState.tickVersion));
+    }, 100);
+    return () => window.clearInterval(id);
+  }, []);
+  const live = vizState.tickVersion > 0;
+  const queueLength = live ? vizState.queueLength : 0;
 
   // Drag a block card to move it in world coordinates; a plain click
   // (no movement) selects it instead.
@@ -495,6 +508,15 @@ export function ModelCanvas() {
                 )}
               </span>
               <span className="model-block-name">{node.name}</span>
+              {live && node.kind === 'queue' && queueLength > 0 && (
+                <span className="model-block-badge">{queueLength}</span>
+              )}
+              {live && node.kind === 'service' && (
+                <span
+                  className={`model-block-status${vizState.busy ? ' busy' : ''}${vizState.downServers > 0 ? ' down' : ''}`}
+                  title={vizState.downServers > 0 ? 'down' : vizState.busy ? 'busy' : 'idle'}
+                />
+              )}
             </div>
           );
         })}

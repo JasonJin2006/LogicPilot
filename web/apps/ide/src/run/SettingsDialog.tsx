@@ -2,10 +2,11 @@
 // appearance (theme). Opened from the activity bar gear; these are one-time
 // configuration surfaces, not pinned header/toolbar controls.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { StartOptions } from '../client/simClient';
 import { useConnectionStore } from '../state/connectionStore';
+import { useRunStore } from '../state/runStore';
 import { useThemeStore, type ThemeMode } from '../state/themeStore';
 import { useUiStore } from '../state/uiStore';
 
@@ -47,15 +48,30 @@ export function SettingsDialog() {
   const step = useConnectionStore((state) => state.step);
   const stop = useConnectionStore((state) => state.stop);
   const setSpeed = useConnectionStore((state) => state.setSpeed);
+  const runOptions = useRunStore((state) => state.runOptions);
+  const setRunOptions = useRunStore((state) => state.setRunOptions);
   const closeSettings = useUiStore((state) => state.closeSettings);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
 
-  const [seed, setSeed] = useState('42');
-  const [reps, setReps] = useState('3');
-  const [arrivals, setArrivals] = useState('4000');
-  const [warmup, setWarmup] = useState('400');
-  const [speed, setSpeedField] = useState('10');
+  // Local string fields keep typing ergonomics; parsed values are mirrored
+  // into the run store so the canvas Run action uses the same configuration.
+  const initialRunOptions = useRef(runOptions);
+  const [seed, setSeed] = useState(String(runOptions.seed));
+  const [reps, setReps] = useState(String(runOptions.reps));
+  const [arrivals, setArrivals] = useState(String(runOptions.arrivals));
+  const [warmup, setWarmup] = useState(String(runOptions.warmup));
+  const [speed, setSpeedField] = useState(String(runOptions.speed));
+
+  useEffect(() => {
+    setRunOptions({
+      seed: parseNum(seed) ?? initialRunOptions.current.seed,
+      reps: parseNum(reps) ?? initialRunOptions.current.reps,
+      arrivals: parseNum(arrivals) ?? initialRunOptions.current.arrivals,
+      warmup: parseNum(warmup) ?? initialRunOptions.current.warmup,
+      speed: parseNum(speed) ?? initialRunOptions.current.speed,
+    });
+  }, [seed, reps, arrivals, warmup, speed, setRunOptions]);
 
   const connected = conn === 'connected';
   const connecting = conn === 'connecting';

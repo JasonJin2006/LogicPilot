@@ -143,6 +143,103 @@ try {
     throw new Error('compile diagnostics missing a diagnostic code');
   }
   log('canvas DSL compiled with diagnostics echoed to the console');
+  // Collapse the DSL editor so the canvas is full-width for the run model.
+  await page.locator('.dsl-edge-tab').click();
+
+  // Canvas model -> Run -> live block badges (P1-7 run loop): finish the
+  // mm1 shape on the canvas, run it with fast params, and assert the live
+  // queue/service badges appear while the run streams.
+  const dropBlock = async (kind, x, y) => {
+    await page.evaluate(({ kind, x, y }) => {
+      const item = [...document.querySelectorAll('.palette-item')].find(
+        (el) => el.querySelector('.palette-name')?.textContent === kind,
+      );
+      const canvas = document.querySelector('.model-canvas');
+      const rect = canvas.getBoundingClientRect();
+      const dt = new DataTransfer();
+      item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      canvas.dispatchEvent(
+        new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+          clientX: rect.left + x,
+          clientY: rect.top + y,
+        }),
+      );
+    }, { kind, x, y });
+    await page.waitForTimeout(80);
+  };
+  await dropBlock('resource', 100, 140);
+  await dropBlock('queue', 340, 260);
+  await dropBlock('service', 520, 260);
+  await dropBlock('sink', 700, 260);
+  const portBox = async (name, port) => {
+    const box = await page
+      .locator(`.model-block:has(.model-block-name:text-is("${name}")) .model-port.${port}`)
+      .boundingBox();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  const wire = async (fromName, toName) => {
+    const from = await portBox(fromName, 'port-out');
+    const to = await portBox(toName, 'port-in');
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+  };
+  await wire('source', 'queue');
+  await wire('queue', 'service');
+  await wire('service', 'sink');
+  const serviceBox = await page.locator('.model-block.kind-service').boundingBox();
+  await page.mouse.click(
+    serviceBox.x + serviceBox.width / 2,
+    serviceBox.y + serviceBox.height / 2,
+  );
+  await page.waitForTimeout(120);
+  await page.locator('.props-field').filter({ hasText: 'resource' }).locator('input').fill('resource');
+  await page.evaluate(() =>
+    document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null,
+  );
+
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
+  for (const [label, value] of [
+    ['arrivals', '100'],
+    ['warmup', '10'],
+    ['speed', '100'],
+    ['reps', '1'],
+  ]) {
+    await page.locator('label.field', { hasText: label }).locator('input').fill(value);
+  }
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+
+  await page.locator('.dsl-edge-tab').click();
+  await page.waitForSelector('.dsl-run', { timeout: 5_000 });
+  await page.getByRole('button', { name: 'Run' }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.console-log')?.textContent?.includes('run run-'),
+    undefined,
+    { timeout: 20_000 },
+  );
+  let sawLiveBadges = false;
+  for (let i = 0; i < 30; i++) {
+    sawLiveBadges = await page.evaluate(
+      () => document.querySelectorAll('.model-block-badge, .model-block-status').length > 0,
+    );
+    if (sawLiveBadges) break;
+    await page.waitForTimeout(100);
+  }
+  if (!sawLiveBadges) {
+    throw new Error('canvas did not show live run badges');
+  }
+  await page.waitForFunction(
+    () => document.querySelector('.console-log')?.textContent?.includes('finished'),
+    undefined,
+    { timeout: 60_000 },
+  );
+  log('canvas model ran with live block badges');
 
   // AI panel (right): generate / optimize / explain / trajectory.
   await page.locator('.tab-label', { hasText: 'AI' }).click();

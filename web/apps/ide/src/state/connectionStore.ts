@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { MM1_STATE_SERVING, simTimeSeconds, type WireFrame } from '@logicpilot/renderer2d';
-import { generateDsl } from '@logicpilot/editor';
+import { generateDsl, modelRunParams } from '@logicpilot/editor';
 import { SimClient, type ConnState, type StartOptions } from '../client/simClient';
 import { resetVizState, vizState, type VizAgent } from './vizState';
 import { useModelStore } from './modelStore';
@@ -42,10 +42,14 @@ interface ConnectionStore {
   stop: () => void;
   setSpeed: (speed: number) => void;
   compile: () => void;
+  runCanvasModel: () => void;
 }
 
 let client: SimClient | null = null;
 let nextEventId = 1;
+// Continuation invoked when the next compile reply arrives (Run = compile,
+// then start when the model compiles).
+let pendingRunContinuation: ((ok: boolean) => void) | null = null;
 
 const MAX_EVENTS = 200;
 
@@ -73,7 +77,7 @@ interface CompileDiagnostic {
 
 // Compile replies are a diagnostics document; render them as structured
 // console lines instead of a raw ack.
-function parseCompileReply(message: string): LogEvent[] | null {
+function parseCompileReply(message: string): { ok: boolean; events: LogEvent[] } | null {
   let parsed: { ok?: boolean; diagnostics?: CompileDiagnostic[] };
   try {
     parsed = JSON.parse(message);
@@ -98,7 +102,7 @@ function parseCompileReply(message: string): LogEvent[] | null {
       ? makeEvent('info', `compile ok: ${diagnostics.length} diagnostic(s)`)
       : makeEvent('error', `compile failed: ${diagnostics.length} error(s)`),
   );
-  return events;
+  return { ok: parsed.ok === true, events };
 }
 
 // Apply one telemetry frame to viz + run stores (single writer).
@@ -131,6 +135,7 @@ function applyFrame(frame: WireFrame): void {
       vizState.busy = (frame.payload.values['busy'] ?? 0) >= 1;
       vizState.servers = Math.max(1, Math.round(frame.payload.values['servers'] ?? 1));
       vizState.downServers = Math.max(0, Math.round(frame.payload.values['down_servers'] ?? 0));
+      vizState.queueLength = Math.max(0, Math.round(frame.payload.values['queue_length'] ?? 0));
       useRunStore.getState().pushCharts(simTimeSeconds(frame.simTimeNs), frame.payload.values);
       break;
     }
@@ -172,12 +177,16 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       onText: (message) =>
         set((state) => {
           const compileEvents = parseCompileReply(message);
-          return compileEvents
-            ? { events: [...state.events, ...compileEvents] }
-            : {
-                lastAck: message,
-                events: appendEvent(state, 'ack', message),
-              };
+          if (compileEvents) {
+            const continuation = pendingRunContinuation;
+            pendingRunContinuation = null;
+            if (continuation) continuation(compileEvents.ok);
+            return { events: [...state.events, ...compileEvents.events] };
+          }
+          return {
+            lastAck: message,
+            events: appendEvent(state, 'ack', message),
+          };
         }),
       onStateChange: (conn) => set({ conn }),
       onError: (message) =>
@@ -217,5 +226,38 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     if (!sent) {
       set((state) => ({ events: appendEvent(state, 'error', 'compile: not connected') }));
     }
+  },
+  runCanvasModel: () => {
+    const source = generateDsl(useModelStore.getState().document);
+    const sent = client?.compile(source) ?? false;
+    if (!sent) {
+      set((state) => ({ events: appendEvent(state, 'error', 'run canvas: not connected') }));
+      return;
+    }
+    pendingRunContinuation = (ok) => {
+      if (!ok) {
+        return; // diagnostics already echoed to the console
+      }
+      const params = modelRunParams(useModelStore.getState().document);
+      if (!params.ok) {
+        set((state) => ({
+          events: appendEvent(state, 'error', `run canvas: ${params.error ?? 'invalid model'}`),
+        }));
+        return;
+      }
+      const options = useRunStore.getState().runOptions;
+      client?.start({
+        seed: options.seed,
+        reps: options.reps,
+        arrivals: options.arrivals,
+        warmup: options.warmup,
+        speed: options.speed,
+        lambda: params.lambda,
+        mu: params.mu,
+        servers: params.servers,
+        failureRate: params.failureRate,
+        repairRate: params.repairRate,
+      });
+    };
   },
 }));
