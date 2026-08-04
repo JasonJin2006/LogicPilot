@@ -4,56 +4,46 @@
 // writing size values into the store. See docs/specs/ide-layout.md.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { CLOSE_OFFSET, REOPEN_THRESHOLD, SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
+import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
   area,
   vertical,
   gridArea,
-  invert = false,
 }: {
   area: AreaId;
   vertical: boolean;
   gridArea: string;
-  invert?: boolean;
 }) {
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const start = vertical ? event.clientX : event.clientY;
     const initial = useLayoutStore.getState().areas[area];
-    // While collapsed the panel sits at width 0, so resizing starts from 0;
-    // after a re-open the base follows the clamped size.
-    let currentSize = initial.collapsed ? 0 : initial.size;
-    let lastDelta = 0;
-    let closed = false;
+    // The panel's fixed outer edge (where it sits when fully collapsed).
+    // left: edge is to the left of the splitter; right/bottom: to the right.
+    const edge = initial.collapsed
+      ? start
+      : area === 'left'
+        ? start - initial.size
+        : start + initial.size;
     const move = (moveEvent: PointerEvent) => {
-      if (closed) {
-        return;
-      }
-      const delta = vertical ? moveEvent.clientX - start : moveEvent.clientY - start;
-      const step = delta - lastDelta;
-      lastDelta = delta;
+      // Width = pointer distance from the fixed outer edge. This follows the
+      // cursor exactly in every state, so re-opening lands the panel edge on
+      // the pointer and a closed-then-pulled-back gesture stays continuous.
+      const pointer = vertical ? moveEvent.clientX : moveEvent.clientY;
+      const width = area === 'left' ? pointer - edge : edge - pointer;
       const layout = useLayoutStore.getState();
-      if (layout.areas[area].collapsed) {
-        // Dragging outward from the closed edge re-opens the panel; the
-        // gesture keeps going so the same drag can size it further.
-        currentSize += invert ? -step : step;
-        if (currentSize >= REOPEN_THRESHOLD) {
-          layout.reopenArea(area, currentSize);
-          currentSize = layout.areas[area].size; // align to the clamped size
-        }
-        return;
+      const range = SIZE_RANGE[area];
+      if (width >= range.min) {
+        // Reached the critical width: open (or keep sizing) with the panel
+        // edge exactly under the pointer.
+        layout.reopenArea(area, width);
+      } else if (!layout.areas[area].collapsed) {
+        layout.setSizeOrClose(area, width);
       }
-      // Splitters must follow the cursor. For a fixed-size area whose
-      // boundary sits between it and a flex area (right, bottom), moving
-      // the boundary toward the flex area shrinks the fixed area, so the
-      // delta is inverted.
-      currentSize += invert ? -step : step;
-      layout.setSizeOrClose(area, currentSize);
-      if (currentSize < SIZE_RANGE[area].min - CLOSE_OFFSET) {
-        closed = true; // panel closed; ignore the rest of this drag
-      }
+      // While collapsed and width < min the panel stays closed; the pointer
+      // distance is preserved so pulling back out re-opens it seamlessly.
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -131,9 +121,9 @@ export function Workspace() {
       <PanelArea area="left" />
       <Splitter area="left" vertical gridArea="sl" />
       <PanelArea area="center" />
-      <Splitter area="right" vertical gridArea="sr" invert />
+      <Splitter area="right" vertical gridArea="sr" />
       <PanelArea area="right" />
-      <Splitter area="bottom" vertical={false} gridArea="sb" invert />
+      <Splitter area="bottom" vertical={false} gridArea="sb" />
       <PanelArea area="bottom" />
     </div>
   );

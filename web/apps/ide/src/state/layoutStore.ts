@@ -37,10 +37,6 @@ export const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
 // stray nudge at the edge does not snap the panel shut.
 export const CLOSE_OFFSET = 24;
 
-// Dragging outward from a closed panel re-opens it once the pointer has
-// moved this far (avoids accidental re-open on a tiny nudge).
-export const REOPEN_THRESHOLD = 40;
-
 const DEFAULT_SIZE: Record<AreaId, number> = {
   left: 280,
   center: 0,
