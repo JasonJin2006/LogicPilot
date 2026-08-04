@@ -245,7 +245,7 @@
   margin: 0;
   cursor: pointer;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   color: var(--text-muted);
   padding: 4px 8px;
   border-radius: var(--r-sm) var(--r-sm) 0 0;
@@ -254,11 +254,15 @@
 .tab:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text-secondary);
+  border-color: var(--border);
 }
 
 .tab.active {
   background: var(--body-bg);
   color: var(--text);
+  border-color: var(--border);
+  /* Keep the blended bottom edge (the cover line logic owns that side). */
+  border-bottom-color: var(--body-bg);
 }
 
 /* The active tab blends into the pane below: its background (plus this
