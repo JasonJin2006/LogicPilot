@@ -245,7 +245,7 @@
   margin: 0;
   cursor: pointer;
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   color: var(--text-muted);
   padding: 4px 8px;
   border-radius: var(--r-sm) var(--r-sm) 0 0;
@@ -254,10 +254,18 @@
 .tab:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text-secondary);
+}
+
+/* queue (center workspace) tabs: outlined label with a blended active edge */
+.area-center .tab {
+  border: 1px solid transparent;
+}
+
+.area-center .tab:hover:not(:disabled) {
   border-color: var(--border);
 }
 
-.tab.active {
+.area-center .tab.active {
   background: var(--body-bg);
   color: var(--text);
   border-color: var(--border);
@@ -267,7 +275,7 @@
 
 /* The active tab blends into the pane below: its background (plus this
    cover line) hides the bar's bottom line under the tab. */
-.tab.active::after {
+.area-center .tab.active::after {
   content: '';
   position: absolute;
   left: 0;
@@ -275,6 +283,14 @@
   bottom: -1px;
   height: 1px;
   background: var(--body-bg);
+}
+
+/* console / ai tabs: their own simple system (accent highlight, no
+   outline, no blended cover) */
+.area-right .tab.active,
+.area-bottom .tab.active {
+  background: var(--accent-dim);
+  color: var(--accent-text);
 }
 
 .tab-label {
