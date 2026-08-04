@@ -1,18 +1,29 @@
-// Side panel (Model view): the currently loaded model + active run, read
-// from the run store. Placeholder content until the model tree lands.
+// Side panel (Project view): the canvas model summary + active run, plus the
+// "New model" action (the document auto-persists to localStorage).
 
+import { useModelStore } from '../state/modelStore';
 import { useRunStore } from '../state/runStore';
 
 export function ModelInfoPanel() {
+  const document = useModelStore((state) => state.document);
+  const reset = useModelStore((state) => state.reset);
   const runInfo = useRunStore((state) => state.runInfo);
   return (
     <div className="side-panel-body">
-      {runInfo ? (
+      <div className="side-kv">
+        <span className="k">model</span>
+        <span className="v">{document.name}</span>
+      </div>
+      <div className="side-kv">
+        <span className="k">blocks</span>
+        <span className="v">{document.nodes.length}</span>
+      </div>
+      <div className="side-kv">
+        <span className="k">couplings</span>
+        <span className="v">{document.edges.length}</span>
+      </div>
+      {runInfo && (
         <>
-          <div className="side-kv">
-            <span className="k">model</span>
-            <span className="v">{runInfo.modelName}</span>
-          </div>
           <div className="side-kv">
             <span className="k">run</span>
             <span className="v">{runInfo.runId}</span>
@@ -22,12 +33,10 @@ export function ModelInfoPanel() {
             <span className="v">{runInfo.seed.toString()}</span>
           </div>
         </>
-      ) : (
-        <p className="side-hint">
-          Model tree arrives with drag-and-drop modeling (P1-6). Run a model to see its identity
-          here.
-        </p>
       )}
+      <button className="side-action" onClick={reset}>
+        New model
+      </button>
     </div>
   );
 }

@@ -269,6 +269,34 @@
   letter-spacing: 0.03em;
 }
 
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.tab-action {
+  display: flex;
+  align-items: center;
+  padding: 3px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.tab-action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tab-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .tab-x {
   display: flex;
   align-items: center;
@@ -357,6 +385,12 @@
 .side-kv .v {
   color: var(--text-secondary);
   font-family: var(--font-mono);
+}
+
+.side-action {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 12px;
 }
 
 .side-kv .v.warn {

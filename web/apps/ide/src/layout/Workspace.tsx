@@ -5,7 +5,7 @@
 
 import { useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { X } from 'lucide-react';
+import { Redo2, Undo2, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { useModelStore } from '../state/modelStore';
 import { PANELS, type AreaId } from './panels';
@@ -82,6 +82,10 @@ function TabBar({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
+  const canUndo = useModelStore((s) => s.canUndo);
+  const canRedo = useModelStore((s) => s.canRedo);
+  const undo = useModelStore((s) => s.undo);
+  const redo = useModelStore((s) => s.redo);
   // Right/bottom panels can be collapsed; the model workspace stays open.
   const closable = area !== 'center';
   const perTabClose = area === 'center';
@@ -118,6 +122,28 @@ function TabBar({ area }: { area: AreaId }) {
         >
           <X size={13} />
         </button>
+      )}
+      {area === 'center' && (
+        <div className="tab-actions">
+          <button
+            className="tab-action"
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            disabled={!canUndo}
+            onClick={undo}
+          >
+            <Undo2 size={12} />
+          </button>
+          <button
+            className="tab-action"
+            title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            disabled={!canRedo}
+            onClick={redo}
+          >
+            <Redo2 size={12} />
+          </button>
+        </div>
       )}
     </div>
   );

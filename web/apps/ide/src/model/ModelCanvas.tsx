@@ -56,6 +56,8 @@ export function ModelCanvas() {
   const disconnectEdge = useModelStore((state) => state.disconnectEdge);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const select = useModelStore((state) => state.select);
+  const undo = useModelStore((state) => state.undo);
+  const redo = useModelStore((state) => state.redo);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN });
@@ -80,6 +82,29 @@ export function ModelCanvas() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, removeBlock]);
+
+  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z / Ctrl+Y redo.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (!mod) return;
+      if (key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
   const drag = useRef<{
     startX: number;
     startY: number;

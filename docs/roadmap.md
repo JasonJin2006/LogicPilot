@@ -142,6 +142,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    块实时显示队列长度徽标与 service 忙/闲/宕机状态点。browser-verify 覆盖
    完整闭环。局限：当前 streaming 驱动为 M/M/1 族，其他模型族需通用执行器
    （后续）。
+   **编辑器补强 ✅ 已完成**（2026-08-05）：撤销/重做（600ms 合并窗口，
+   Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；模型
+   localStorage 持久化（`logicpilot.model`，只存 document 不存历史）；
+   Project 面板显示模型摘要 + "New model"。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 
