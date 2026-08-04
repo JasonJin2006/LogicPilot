@@ -11,10 +11,12 @@
 #include <flatbuffers/flatbuffers.h>
 
 #include "ir_generated.h"
+#include "ir_v2_generated.h"
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/ir_atomic.h"
+#include "logicpilot/devs/ir_v2_convert.h"
 
 namespace logicpilot {
 
@@ -38,13 +40,35 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size) {
     result.message = "empty buffer";
     return result;
   }
-  flatbuffers::Verifier verifier(data, size);
-  if (!ir::VerifyModelFileBuffer(verifier)) {
+  // Contract auto-detection via the file identifier (v1 "LPIR" / v2 "LP2R"),
+  // because a v2 buffer can survive the v1 verifier leniently. A v2
+  // ModelFile (IR v2 migration) is converted back to the v1 views every
+  // engine consumes, so v2 files execute unchanged.
+  std::vector<std::uint8_t> bytes;
+  if (flatbuffers::BufferHasIdentifier(data, "LPIR")) {
+    flatbuffers::Verifier verifier(data, size);
+    if (!ir::VerifyModelFileBuffer(verifier)) {
+      result.status = IrStatus::kCorruptBuffer;
+      result.message = "FlatBuffers verifier rejected the buffer";
+      return result;
+    }
+    bytes.assign(data, data + size);
+  } else if (flatbuffers::BufferHasIdentifier(data, "LP2R")) {
+    std::string convert_error;
+    bytes = convert_v2_to_v1(data, size, &convert_error);
+    if (bytes.empty()) {
+      result.status = IrStatus::kCorruptBuffer;
+      result.message = convert_error.empty()
+                           ? "FlatBuffers verifier rejected the buffer"
+                           : convert_error;
+      return result;
+    }
+  } else {
     result.status = IrStatus::kCorruptBuffer;
-    result.message = "FlatBuffers verifier rejected the buffer";
+    result.message = "not a LogicPilot IR file (missing LPIR/LP2R identifier)";
     return result;
   }
-  result.file.bytes.assign(data, data + size);
+  result.file.bytes = std::move(bytes);
   result.file.root = ir::GetModelFile(result.file.bytes.data());
   if (result.file.root->schema_version() != 1) {
     result.status = IrStatus::kBadSchemaVersion;

@@ -27,7 +27,11 @@ function findFlatc() {
 
 const flatc = findFlatc();
 const outDir = join(root, 'web', 'packages', 'protocol', 'src', 'generated');
-const schemas = [join(root, 'schemas', 'ir.fbs'), join(root, 'schemas', 'wire.fbs')];
+const schemas = [
+  join(root, 'schemas', 'ir.fbs'),
+  join(root, 'schemas', 'ir_v2.fbs'),
+  join(root, 'schemas', 'wire.fbs'),
+];
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });

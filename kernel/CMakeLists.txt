@@ -54,6 +54,7 @@ add_library(logicpilot_phase1b STATIC
   src/devs/executor.cpp
   src/devs/ir_atomic.cpp
   src/devs/ir_agent.cpp
+  src/devs/ir_v2_convert.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp
@@ -94,6 +95,7 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   target_sources(logicpilot_phase1b_tests PRIVATE
     tests/test_ir_atomic.cpp
     tests/test_ir_agent.cpp
+    tests/test_ir_v2_migration.cpp
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)
 endif()

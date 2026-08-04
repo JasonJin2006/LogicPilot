@@ -19,7 +19,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$schemas = @('ir.fbs', 'wire.fbs')
+        $schemas = @('ir.fbs', 'ir_v2.fbs', 'wire.fbs')
 
 # --- locate flatc (env > .deps download > PATH) -----------------------------
 function Get-Flatc {

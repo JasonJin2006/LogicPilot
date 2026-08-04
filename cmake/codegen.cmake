@@ -33,6 +33,7 @@ if(NOT DEFINED LOGICPILOT_SOURCE_ROOT)
 endif()
 set(LOGICPILOT_SCHEMA_DIR "${LOGICPILOT_SOURCE_ROOT}/schemas")
 set(LOGICPILOT_IR_SCHEMA "${LOGICPILOT_SCHEMA_DIR}/ir.fbs")
+set(LOGICPILOT_V2_SCHEMA "${LOGICPILOT_SCHEMA_DIR}/ir_v2.fbs")
 set(LOGICPILOT_WIRE_SCHEMA "${LOGICPILOT_SCHEMA_DIR}/wire.fbs")
 
 if(NOT DEFINED LOGICPILOT_GENERATED_DIR)
@@ -132,22 +133,27 @@ message(STATUS "flatc version: ${_flatc_version}")
 # C++ codegen -> ${LOGICPILOT_GENERATED_DIR}
 # ---------------------------------------------------------------------------
 set(LOGICPILOT_IR_GENERATED "${LOGICPILOT_GENERATED_DIR}/ir_generated.h")
+set(LOGICPILOT_V2_GENERATED "${LOGICPILOT_GENERATED_DIR}/ir_v2_generated.h")
 set(LOGICPILOT_WIRE_GENERATED "${LOGICPILOT_GENERATED_DIR}/wire_generated.h")
 
 file(MAKE_DIRECTORY "${LOGICPILOT_GENERATED_DIR}")
 
 add_custom_command(
-  OUTPUT "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_WIRE_GENERATED}"
+  OUTPUT "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_V2_GENERATED}"
+         "${LOGICPILOT_WIRE_GENERATED}"
   COMMAND "${FLATC_EXECUTABLE}" --cpp
           -o "${LOGICPILOT_GENERATED_DIR}"
-          "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_WIRE_SCHEMA}"
-  DEPENDS "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_WIRE_SCHEMA}"
-  COMMENT "flatc: generating C++ headers for ir.fbs + wire.fbs (F1/F2)"
+          "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_V2_SCHEMA}"
+          "${LOGICPILOT_WIRE_SCHEMA}"
+  DEPENDS "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_V2_SCHEMA}"
+          "${LOGICPILOT_WIRE_SCHEMA}"
+  COMMENT "flatc: generating C++ headers for ir.fbs (F1) + ir_v2.fbs (F3) + wire.fbs (F2)"
   VERBATIM
 )
 
 add_custom_target(logicpilot_codegen DEPENDS
-  "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_WIRE_GENERATED}")
+  "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_V2_GENERATED}"
+  "${LOGICPILOT_WIRE_GENERATED}")
 
 # INTERFACE library consumed by kernel/tool targets:
 #   target_link_libraries(<tgt> PRIVATE logicpilot_schemas)
@@ -177,8 +183,10 @@ add_custom_target(logicpilot_codegen_ts
   COMMAND "${CMAKE_COMMAND}" -E remove_directory "${LOGICPILOT_TS_OUTPUT_DIR}"
   COMMAND "${FLATC_EXECUTABLE}" --ts
           -o "${LOGICPILOT_TS_OUTPUT_DIR}"
-          "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_WIRE_SCHEMA}"
-  DEPENDS "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_WIRE_SCHEMA}"
-  COMMENT "flatc: generating TypeScript bindings for ir.fbs + wire.fbs (F1/F2)"
+          "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_V2_SCHEMA}"
+          "${LOGICPILOT_WIRE_SCHEMA}"
+  DEPENDS "${LOGICPILOT_IR_SCHEMA}" "${LOGICPILOT_V2_SCHEMA}"
+          "${LOGICPILOT_WIRE_SCHEMA}"
+  COMMENT "flatc: generating TypeScript bindings for ir.fbs + ir_v2.fbs + wire.fbs (F1/F3/F2)"
   VERBATIM
 )

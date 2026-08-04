@@ -1,6 +1,6 @@
 # IR v2 迁移设计：薄契约 + 引擎注册表
 
-状态: 设计定稿（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
+状态: 设计定稿，Phase B 第一部分已实现（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
 工程纪律（类型化/版本化/冻结/确定性/span/诊断）。配套草案见 `schemas/ir_v2.fbs`
 （尚未接入构建，仅作为迁移参照物）。
 
@@ -54,6 +54,13 @@ Node（容器契约，故意薄）
 - **Phase A（本轮）**: 本设计文档 + `schemas/ir_v2.fbs` 草案（flatc 可编译）+ DSL
   `experiment` 块（sidecar JSON，不碰冻结的 F1）+ `ai-optimize` 改为读模型声明的
   实验。运行时可执行路径行为不变。
+- **Phase B 第一部分（已实现）**: `ir_v2.fbs` 接入 C++/TS codegen（F3 冻结门禁，
+  file_identifier `LP2R` 与 v1 的 `LPIR` 区分）；`ir_v2_convert.cpp` 提供
+  **v1↔v2 双向转换器**（process 路径：source/queue/service 块 + resource 块 +
+  couplings）；`load_model_buffer` 按标识符自动识别 v2 并转回 v1 视图，所有现有
+  引擎直接运行 v2 文件；`lpcli compile --ir-version 2` 支持 lowering 双写。
+  迁移黄金用例：mm1_failure / two_servers 的 v1→v2→加载→运行 **bit-exact 对拍**
+  （118/118 ctest）。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
   纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
   SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器

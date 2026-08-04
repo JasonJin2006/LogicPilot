@@ -1,6 +1,7 @@
 // lpcli `compile` subcommand implementation (Phase 2b, task #6).
 //
-// usage: lpcli compile <input.lp> [-o <output>] [--diagnostics-json <path>]
+// usage: lpcli compile <input.lp> [-o <output>] [--ir-version 1|2]
+//                        [--diagnostics-json <path>]
 //                        [--experiments-json <path>]
 // Default output: the input path with `.lp` replaced by `.ir.bin`
 // (or `.ir.bin` appended). Diagnostics go to stderr; a failing compile
@@ -17,6 +18,7 @@
 #include "logicpilot/dsl/diagnostics.h"
 #include "logicpilot/dsl/experiments_json.h"
 #include "logicpilot/dsl/json_diagnostics.h"
+#include "logicpilot/devs/ir_v2_convert.h"
 
 namespace logicpilot::cli {
 namespace {
@@ -24,10 +26,13 @@ namespace {
 void print_usage() {
   fmt::print(
       "usage: lpcli compile <input.lp> [-o <output>]\n"
+      "                        [--ir-version 1|2]\n"
       "                        [--diagnostics-json <path>]\n"
       "                        [--experiments-json <path>]\n"
       "  compiles a LogicPilot DSL source to FlatBuffers IR (LPIR)\n"
       "  -o, --output <path>  output file (default <input>.ir.bin)\n"
+      "  --ir-version <n>     emit the frozen v1 contract (1, default) or the\n"
+      "                       v2 Node/SemanticsRef contract (2)\n"
       "  --diagnostics-json <path>  write machine-readable diagnostics JSON\n"
       "  --experiments-json <path>  write the model's declared experiments\n");
 }
@@ -49,6 +54,7 @@ int compile_command(std::span<const std::string> args) {
   std::string output;
   std::string diagnostics_json;
   std::string experiments_json;
+  int ir_version = 1;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];
@@ -73,6 +79,21 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       experiments_json = args[++i];
+    } else if (arg == "--ir-version") {
+      if (i + 1 >= args.size()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      try {
+        ir_version = std::stoi(args[++i]);
+      } catch (...) {
+        fmt::print(stderr, "error: invalid --ir-version\n");
+        return 2;
+      }
+      if (ir_version != 1 && ir_version != 2) {
+        fmt::print(stderr, "error: --ir-version must be 1 or 2\n");
+        return 2;
+      }
     } else if (arg.starts_with("-")) {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -137,13 +158,25 @@ int compile_command(std::span<const std::string> args) {
     }
   }
 
+  std::vector<std::uint8_t> output_bytes = compiled.ir_bytes;
+  if (ir_version == 2) {
+    std::string convert_error;
+    output_bytes = logicpilot::convert_v1_to_v2(
+        compiled.ir_bytes.data(), compiled.ir_bytes.size(), &convert_error);
+    if (output_bytes.empty()) {
+      fmt::print(stderr, "error: v1 -> v2 conversion failed: {}\n",
+                 convert_error);
+      return 1;
+    }
+  }
+
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
   if (!out) {
     fmt::print(stderr, "error: cannot write '{}'\n", output);
     return 1;
   }
-  out.write(reinterpret_cast<const char*>(compiled.ir_bytes.data()),
-            static_cast<std::streamsize>(compiled.ir_bytes.size()));
+  out.write(reinterpret_cast<const char*>(output_bytes.data()),
+            static_cast<std::streamsize>(output_bytes.size()));
   out.close();
   if (!out) {
     fmt::print(stderr, "error: failed writing '{}'\n", output);
@@ -151,7 +184,7 @@ int compile_command(std::span<const std::string> args) {
   }
 
   fmt::print("compiled '{}' -> '{}' (model '{}', {} bytes)\n", input, output,
-             compiled.model_name, compiled.ir_bytes.size());
+             compiled.model_name, output_bytes.size());
   return write_diagnostics_json(true);
 }
 
