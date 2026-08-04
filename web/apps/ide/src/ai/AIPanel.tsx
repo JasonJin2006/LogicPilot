@@ -4,9 +4,11 @@
 // charts in charts.tsx.
 
 import { useState } from 'react';
+import { parseDsl } from '@logicpilot/editor';
 import { aiBuild, aiExplain, aiOptimize } from './api';
 import type { AiResult, ExplainResult, OptimizeResult } from './api';
 import { OptimizeChart, TrajectoryChart } from './charts';
+import { useModelStore } from '../state/modelStore';
 
 const EXAMPLE_PROMPT = 'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
 
@@ -17,6 +19,18 @@ export function AIPanel() {
   const [optimized, setOptimized] = useState<OptimizeResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [error, setError] = useState('');
+  const loadDocument = useModelStore((state) => state.loadDocument);
+
+  const loadToCanvas = () => {
+    if (result === null) return;
+    const parsed = parseDsl(result.dsl);
+    if (!parsed.ok) {
+      setError(`load to canvas: ${parsed.error ?? 'invalid DSL'}`);
+      return;
+    }
+    setError('');
+    loadDocument(parsed.document);
+  };
 
   const run = async (kind: 'build' | 'optimize' | 'explain') => {
     setBusy(true);
@@ -67,6 +81,9 @@ export function AIPanel() {
           {result.ok ? (
             <>
               <p className="ai-meta">compiled in {result.iterations} iteration(s)</p>
+              <button className="ai-load" onClick={loadToCanvas}>
+                Load to canvas
+              </button>
               <pre className="ai-dsl">{result.dsl}</pre>
               {result.runSummary !== '' && <pre className="ai-run">{result.runSummary}</pre>}
               {result.trajectory != null && result.trajectory.points.length > 0 && (

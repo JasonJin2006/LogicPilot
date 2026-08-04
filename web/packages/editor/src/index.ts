@@ -19,5 +19,7 @@ export type {
   ModelNode,
 } from './graph.js';
 export { generateDsl } from './dsl.js';
+export { parseDsl } from './parseDsl.js';
+export type { ParseResult } from './parseDsl.js';
 export { modelRunParams } from './runParams.js';
 export type { ModelRunParams } from './runParams.js';

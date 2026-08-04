@@ -39,6 +39,7 @@ interface ModelState {
   select: (id: string | null) => void;
   renameBlock: (id: string, name: string) => void;
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
+  loadDocument: (document: ModelDocument) => void;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -87,6 +88,7 @@ export const useModelStore = create<ModelState>()(
         set((state) => commit(state, renameNode(state.document, id, name))),
       setBlockParam: (id, key, value) =>
         set((state) => commit(state, setParam(state.document, id, key, value))),
+      loadDocument: (document) => set((state) => commit(state, document)),
       undo: () =>
         set((state) => {
           if (state.past.length === 0) return {};

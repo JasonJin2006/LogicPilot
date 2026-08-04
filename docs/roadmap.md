@@ -146,6 +146,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；模型
    localStorage 持久化（`logicpilot.model`，只存 document 不存历史）；
    Project 面板显示模型摘要 + "New model"。
+   **AI → 画布闭环 ✅ 已完成**（2026-08-05）：`@logicpilot/editor` 新增
+   `parseDsl`（DSL v2 子集 → 图文档，process 块按声明顺序连线，自动布局，
+   18 单测含 round-trip）；AI 面板生成结果新增 "Load to canvas"，加载为可
+   撤销操作；browser-verify 覆盖 AI 生成 → 画布加载。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

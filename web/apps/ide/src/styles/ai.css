@@ -29,6 +29,13 @@
   font-size: 12px;
 }
 
+.ai-load {
+  align-self: flex-start;
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 .ai-dsl,
 .ai-run {
   background: var(--bg-strong);

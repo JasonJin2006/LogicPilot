@@ -254,6 +254,13 @@ try {
   }
   log('AI panel generated and ran a model from the prompt');
   await page.screenshot({ path: join(OUT, '3-ai-model.png') });
+  await page.getByRole('button', { name: 'Load to canvas' }).click();
+  await page.waitForTimeout(300);
+  const canvasBlocks = await page.locator('.model-block').count();
+  if (canvasBlocks < 2) {
+    throw new Error('AI model did not load into the modeling canvas');
+  }
+  log('AI model loaded into the modeling canvas');
 
   await page
     .locator('.ai-input')
