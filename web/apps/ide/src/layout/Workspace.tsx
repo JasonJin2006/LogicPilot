@@ -82,6 +82,8 @@ function TabBar({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
+  // Right/bottom panels can be collapsed; the model workspace stays open.
+  const closable = area !== 'center';
   const perTabClose = area === 'center';
   return (
     <div className="tab-bar">
@@ -107,7 +109,7 @@ function TabBar({ area }: { area: AreaId }) {
           )}
         </div>
       ))}
-      {!perTabClose && state.panels.length > 0 && (
+      {closable && state.panels.length > 0 && (
         <button
           className="tab-close"
           aria-label={`Close ${area} panel`}
