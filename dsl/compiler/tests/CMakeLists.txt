@@ -85,6 +85,13 @@ set_tests_properties(lpcli_run_agents PROPERTIES
   DEPENDS lpcli_compile_agents
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# Multi-server example (M/M/2) must survive the DSL -> IR -> runtime chain.
+add_test(NAME lpcli_compile_two_servers
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/two_servers.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/two_servers.ir.bin")
+set_tests_properties(lpcli_compile_two_servers PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
 # AI model build loop (rule-based provider, offline): NL -> DSL -> compile ->
 # diagnostics repair -> run. Requires node (available in the kernel CI job).
 add_test(NAME ai_build_smoke

@@ -66,6 +66,14 @@ export default function App() {
           }
           case 'counters': {
             viz.busy = (frame.payload.values['busy'] ?? 0) >= 1;
+            viz.servers = Math.max(
+                1,
+                Math.round(frame.payload.values['servers'] ?? 1),
+            );
+            viz.downServers = Math.max(
+                0,
+                Math.round(frame.payload.values['down_servers'] ?? 0),
+            );
             chartsRef.current?.push(simTimeSeconds(frame.simTimeNs), frame.payload.values);
             break;
           }

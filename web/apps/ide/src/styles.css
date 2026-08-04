@@ -168,6 +168,9 @@ button:disabled {
 .dot-server {
   background: #ffb020;
 }
+.dot-down {
+  background: #f85149;
+}
 
 .status-bar {
   display: flex;

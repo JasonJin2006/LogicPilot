@@ -16,16 +16,22 @@ export interface VizState {
   agents: Map<string, VizAgent>;
   /** Latest Counters.busy value (drives server highlight). */
   busy: boolean;
+  /** Latest Counters.servers (service-cell count). */
+  servers: number;
+  /** Latest Counters.down_servers (cells tinted red while down). */
+  downServers: number;
   /** Bumped on every applied Tick so the renderer can detect new data. */
   tickVersion: number;
 }
 
 export function createVizState(): VizState {
-  return { agents: new Map(), busy: false, tickVersion: 0 };
+  return { agents: new Map(), busy: false, servers: 1, downServers: 0, tickVersion: 0 };
 }
 
 export function resetVizState(viz: VizState): void {
   viz.agents = new Map();
   viz.busy = false;
+  viz.servers = 1;
+  viz.downServers = 0;
   viz.tickVersion += 1;
 }

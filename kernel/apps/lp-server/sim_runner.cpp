@@ -269,12 +269,14 @@ void SimRunner::snapshot_agents(std::vector<TickAgent>& out,
     }
     TickAgent agent;
     agent.id = server_customer_[i];
-    agent.pos_x = 0.0f;
+    // Multi-server scene: in-service customers sit on their server cell
+    // (pos_x = server index); the web renders one cell per server.
+    agent.pos_x = static_cast<float>(i);
     agent.pos_y = 0.0f;
     agent.state_bits = 1;  // bit0: in service
     out.push_back(agent);
   }
-  std::size_t slot = 1;
+  std::size_t slot = server_state_.size();
   for (const std::uint64_t id : queue_) {
     if (out.size() >= max_agents) {
       break;

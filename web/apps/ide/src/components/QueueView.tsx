@@ -1,7 +1,8 @@
-// PixiJS 8 view of the M/M/1 queue: server station at the origin, waiting
-// customers laid out by Tick.deltas pos_x. Targets arrive at 10 Hz; display
-// positions lerp toward them inside the rAF-driven ticker, so motion stays
-// smooth at display refresh rate.
+// PixiJS 8 view of the queueing scene: one service cell per server (from the
+// `servers` counter; the last `down_servers` cells are tinted red), in-service
+// customers on their cell, waiting customers laid out by Tick.deltas pos_x.
+// Targets arrive at 10 Hz; display positions lerp toward them inside the
+// rAF-driven ticker, so motion stays smooth at display refresh rate.
 
 import { Application, Graphics } from 'pixi.js';
 import { useEffect, useRef } from 'react';
@@ -22,6 +23,7 @@ const COLORS = {
   background: 0x0d1117,
   serverIdle: 0x30363d,
   serverBusy: 0xffb020,
+  serverDown: 0xf85149,
   serving: 0x3fb950,
   waiting: 0x58a6ff,
   label: 0x8b949e,
@@ -51,24 +53,36 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
       const { width, height } = app.screen;
       const originX = 110;
       const originY = height * 0.55;
+      const servers = Math.max(1, Math.round(state.servers));
+      const cellW = 56;
 
       // Drop agents that left the system (not present in the latest Tick).
       for (const id of [...display.keys()]) {
         if (!state.agents.has(id)) display.delete(id);
       }
 
-      // World -> screen scale: compress spacing for long queues.
-      let maxSlot = 8;
+      // Queue spacing: compress for long queues. Queue world slots start at
+      // `servers` (SimRunner positions them after the service cells).
+      let maxQueue = 8;
       for (const agent of state.agents.values()) {
-        maxSlot = Math.max(maxSlot, Math.ceil(agent.x));
+        if (agent.x >= servers) {
+          maxQueue = Math.max(maxQueue, Math.ceil(agent.x) - servers + 1);
+        }
       }
-      const spacing = Math.min(34, Math.max(12, (width - originX - 60) / maxSlot));
+      const queueStartX = originX + servers * cellW;
+      const spacing = Math.min(
+          34,
+          Math.max(12, (width - queueStartX - 60) / maxQueue),
+      );
 
       // Interpolate toward the latest Tick targets (exponential smoothing,
       // ~100 ms convergence to match the 10 Hz telemetry cadence).
       const alpha = 1 - Math.exp(-Math.min(dtSeconds, 0.1) * 12);
       for (const [id, target] of state.agents) {
-        const tx = originX + target.x * spacing;
+        const inService = target.x < servers;
+        const tx = inService
+          ? originX + target.x * cellW + cellW / 2
+          : queueStartX + (target.x - servers) * spacing;
         const ty = originY + target.y * spacing;
         const current = display.get(id);
         if (!current) {
@@ -88,12 +102,28 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
         .lineTo(width - 20, originY)
         .stroke({ width: 1, color: COLORS.label, alpha: 0.25 });
 
-      // Server station at the origin; highlighted while busy.
-      const serverColor = state.busy ? COLORS.serverBusy : COLORS.serverIdle;
-      layer
-        .roundRect(originX - 44, originY - 42, 52, 84, 8)
-        .fill({ color: serverColor, alpha: state.busy ? 0.9 : 0.5 })
-        .stroke({ width: 2, color: state.busy ? COLORS.serverBusy : COLORS.label });
+      // Service cells: one per server; the last `downServers` cells are down.
+      const downServers = Math.max(0, Math.min(state.downServers, servers));
+      for (let i = 0; i < servers; ++i) {
+        const down = i >= servers - downServers;
+        const color = down
+          ? COLORS.serverDown
+          : state.busy
+            ? COLORS.serverBusy
+            : COLORS.serverIdle;
+        const cx = originX + i * cellW;
+        layer
+          .roundRect(cx + 2, originY - 42, cellW - 14, 84, 8)
+          .fill({ color, alpha: down || state.busy ? 0.9 : 0.5 })
+          .stroke({
+            width: 2,
+            color: down
+              ? COLORS.serverDown
+              : state.busy
+                ? COLORS.serverBusy
+                : COLORS.label,
+          });
+      }
 
       // Customers.
       for (const agent of display.values()) {
@@ -141,6 +171,7 @@ export function QueueView({ viz, onFps }: QueueViewProps) {
         <span className="dot dot-serving" /> in service
         <span className="dot dot-waiting" /> waiting
         <span className="dot dot-server" /> server (busy)
+        <span className="dot dot-down" /> server down
       </div>
     </div>
   );
