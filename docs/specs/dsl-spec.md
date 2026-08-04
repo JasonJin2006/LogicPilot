@@ -5,9 +5,8 @@ Status: **Draft v0.2** · Phase 1–2 implemented (2026-08-04) · Supersedes: �
 This is the normative DSL subset (tree-sitter grammar + compiler lowering).
 §1–6 cover the v0 process-flow core; §7–10 add atomic (DEVS), agent (ABM),
 continuous (ODE) and experiment blocks. `lpcli compile` lowers the model to
-the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`); `--ir-version 1`
-still emits the legacy v1 contract. Expression grammar is the remaining
-open item (see §5).
+the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`). Expression grammar
+is the remaining open item (see §5).
 
 ## 1. Grammar Rules (v0 subset, 15 rules)
 
@@ -83,9 +82,8 @@ model QueueDemo {
 ## 4. Lowering (non-normative preview)
 
 `model → ir_v2.fbs::ModelFile` (root Node + SemanticsRef children);
-`resource/process/atomic/agent/continuous → v2 Node` blocks. The v1
-mapping (`ir.fbs::Model`) remains available via `--ir-version 1` and the
-v1→v2 converters (migration tooling). See `docs/specs/ir-v2.md`.
+`resource/process/atomic/agent/continuous → v2 Node` blocks.
+See `docs/specs/ir-v2.md`.
 
 ## 5. Explicitly Out of Scope for v0
 

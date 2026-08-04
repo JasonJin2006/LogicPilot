@@ -1,42 +1,43 @@
-// IR lowering tests: DSL -> ModelFile buffer -> ir_loader acceptance, plus
-// a structural-dump golden (FlatBuffers bytes are order-sensitive, so the
-// golden compares the deterministic text rendering).
+// IR lowering tests: DSL -> v2 ModelFile buffer -> ir_loader acceptance,
+// plus structural-dump goldens (FlatBuffers bytes are order-sensitive, so
+// the golden compares the deterministic text rendering).
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "expect_json.h"  // read_text_file
 #include "golden.h"
-#include "ir_generated.h"  // flatc-generated IR view (F1)
+#include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/ir_dump.h"
-#include "expect_json.h"  // read_text_file
 
 using namespace logicpilot;
 using namespace logicpilot::dsl;
+namespace v2 = logicpilot::ir::v2;
 
 namespace {
 
 constexpr const char* kGoldenDir = LOGICPILOT_DSL_GOLDEN_DIR;
 constexpr const char* kMm1Path = LOGICPILOT_EXAMPLES_DIR "/mm1.lp";
 
-// Note: return the whole IrLoadResult - IrModelFile.root is a zero-copy
-// pointer into IrModelFile.bytes, so moving the struct alone would dangle.
+// Note: return the whole IrLoadResult - IrModelFile.v2_root is a zero-copy
+// pointer into IrModelFile.v2_bytes, so moving the struct alone would dangle.
 IrLoadResult compile_and_load(const std::string& source,
                               const std::string& path) {
   const CompileResult result = compile_source(source, path);
   REQUIRE(result.ok);
   IrLoadResult loaded =
-      load_model_buffer(result.ir_bytes.data(), result.ir_bytes.size());
+      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
 
 }  // namespace
 
-TEST_CASE("lowering: mm1.lp produces a valid ModelFile", "[dsl][lowering]") {
+TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
   const std::string source = logicpilot::testing::read_text_file(kMm1Path);
   REQUIRE(!source.empty());
 
@@ -45,22 +46,19 @@ TEST_CASE("lowering: mm1.lp produces a valid ModelFile", "[dsl][lowering]") {
   REQUIRE(result.model_name == "MM1");
 
   IrLoadResult loaded =
-      load_model_buffer(result.ir_bytes.data(), result.ir_bytes.size());
+      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
-  REQUIRE(loaded.file.root->schema_version() == 1);
-  REQUIRE(loaded.file.root->root() != nullptr);
-  REQUIRE(loaded.file.root->root()->kind_type() ==
-          ir::ModelKind_CoupledModel);
-
-  const ir::CoupledModel* coupled =
-      loaded.file.root->root()->kind_as_CoupledModel();
-  REQUIRE(coupled->metadata()->name()->str() == "MM1");
-  // One resource (AtomicModel) + one process (ProcessModel).
-  REQUIRE(coupled->children()->size() == 2);
-  REQUIRE(coupled->children()->Get(0)->kind_type() ==
-          ir::ModelKind_AtomicModel);
-  REQUIRE(coupled->children()->Get(1)->kind_type() ==
-          ir::ModelKind_ProcessModel);
+  REQUIRE(loaded.file.v2_root != nullptr);
+  REQUIRE(loaded.file.v2_root->schema_version() == 2);
+  const v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root != nullptr);
+  REQUIRE(root->metadata()->name()->str() == "MM1");
+  // One resource block + one process flow block.
+  REQUIRE(root->children() != nullptr);
+  REQUIRE(root->children()->size() == 2);
+  REQUIRE(root->children()->Get(0)->semantics()->block()->str() ==
+          "resource");
+  REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "flow");
 
   // Structural dump golden.
   REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/mm1_ir_dump.txt",
@@ -80,37 +78,44 @@ TEST_CASE("lowering: process nodes keep declaration order and chain",
       "}\n",
       "demo.lp");
 
-  const ir::CoupledModel* coupled =
-      loaded.file.root->root()->kind_as_CoupledModel();
-  const ir::ProcessModel* process =
-      coupled->children()->Get(1)->kind_as_ProcessModel();
-  REQUIRE(process->nodes()->size() == 3);
-  REQUIRE(process->nodes()->Get(0)->name()->str() == "In");
-  REQUIRE(process->nodes()->Get(1)->name()->str() == "Buf");
-  REQUIRE(process->nodes()->Get(2)->name()->str() == "Server");
-  REQUIRE(process->nodes()->Get(0)->kind_type() ==
-          ir::ProcessNodeKind_SourceNode);
-  REQUIRE(process->nodes()->Get(0)->kind_as_SourceNode()->arrival()->kind() ==
-          ir::DistributionKind_Poisson);
-  REQUIRE(process->nodes()->Get(1)->kind_as_QueueNode()->capacity() == 7);
-  const ir::ServiceNode* service =
-      process->nodes()->Get(2)->kind_as_ServiceNode();
-  REQUIRE(service->resource()->str() == "Server");
-  REQUIRE(service->servers() == 2);  // inherited from resource capacity
-  REQUIRE(service->service_time()->kind() == ir::DistributionKind_Normal);
+  const v2::Node* root = loaded.file.v2_root->root();
+  const v2::Node* flow = root->children()->Get(1);
+  REQUIRE(flow->children() != nullptr);
+  REQUIRE(flow->children()->size() == 3);
+  REQUIRE(flow->children()->Get(0)->metadata()->name()->str() == "In");
+  REQUIRE(flow->children()->Get(1)->metadata()->name()->str() == "Buf");
+  REQUIRE(flow->children()->Get(2)->metadata()->name()->str() == "Server");
+  REQUIRE(flow->children()->Get(0)->semantics()->block()->str() == "source");
+  REQUIRE(flow->children()->Get(1)->semantics()->block()->str() == "queue");
+  REQUIRE(flow->children()->Get(2)->semantics()->block()->str() ==
+          "service");
+
+  // Source arrival distribution (Poisson = kind 4).
+  const v2::Var* arrival = flow->children()->Get(0)->params()->Get(0);
+  REQUIRE(arrival->name()->str() == "arrival");
+  REQUIRE(arrival->distribution()->kind() == 4);
+  // Queue capacity.
+  const v2::Var* capacity = flow->children()->Get(1)->params()->Get(0);
+  REQUIRE(capacity->name()->str() == "capacity");
+  REQUIRE(capacity->int_value() == 7);
+  // Service params: rate (Normal = kind 2), resource, servers.
+  const v2::Node* service = flow->children()->Get(2);
+  REQUIRE(service->params()->size() == 3);
+  REQUIRE(service->params()->Get(0)->distribution()->kind() == 2);
+  REQUIRE(service->params()->Get(1)->string_value()->str() == "Server");
+  REQUIRE(service->params()->Get(2)->int_value() == 2);  // resource capacity
 
   // Chain couplings: In.out -> Buf.in, Buf.out -> Server.in.
-  REQUIRE(process->couplings()->size() == 2);
-  REQUIRE(process->couplings()->Get(0)->from_model()->str() == "In");
-  REQUIRE(process->couplings()->Get(0)->to_model()->str() == "Buf");
-  REQUIRE(process->couplings()->Get(1)->from_model()->str() == "Buf");
-  REQUIRE(process->couplings()->Get(1)->to_model()->str() == "Server");
+  REQUIRE(flow->couplings() != nullptr);
+  REQUIRE(flow->couplings()->size() == 2);
+  REQUIRE(flow->couplings()->Get(0)->from_model()->str() == "In");
+  REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Buf");
+  REQUIRE(flow->couplings()->Get(1)->from_model()->str() == "Buf");
+  REQUIRE(flow->couplings()->Get(1)->to_model()->str() == "Server");
 
-  // Resource lowered as a passive AtomicModel with the parameter table.
-  const ir::AtomicModel* resource =
-      coupled->children()->Get(0)->kind_as_AtomicModel();
+  // Resource block carries the typed capacity/failure_rate params.
+  const v2::Node* resource = root->children()->Get(0);
   REQUIRE(resource->metadata()->name()->str() == "Server");
-  REQUIRE(resource->ta()->kind() == ir::TimeAdvanceKind_Infinite);
   REQUIRE(resource->params()->size() == 2);
 }
 
@@ -135,7 +140,7 @@ TEST_CASE("lowering: ir_loader consumes the DSL output end to end",
   const CompileResult result = compile_source(source, "examples/mm1.lp");
   REQUIRE(result.ok);
   IrLoadResult loaded =
-      load_model_buffer(result.ir_bytes.data(), result.ir_bytes.size());
+      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
 
   std::string error;

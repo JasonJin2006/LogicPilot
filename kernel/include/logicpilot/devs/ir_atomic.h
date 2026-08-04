@@ -23,11 +23,6 @@
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
-namespace ir {
-struct AtomicModel;
-struct CoupledModel;
-struct Model;
-}  // namespace ir
 namespace ir::v2 {
 struct Node;
 }  // namespace ir::v2
@@ -35,37 +30,8 @@ struct Node;
 // Runtime value of an IR atomic state variable.
 using IrValue = std::variant<bool, std::int64_t, double>;
 
-class IrAtomicModel final : public AtomicModel {
- public:
-  explicit IrAtomicModel(const ir::AtomicModel& spec,
-                         Xoshiro256PlusPlus& engine);
-
-  SimTime time_advance() const override;
-  void external_transition(SimTime now, PortId port,
-                           std::uint64_t payload) override;
-  void internal_transition(SimTime now) override;
-
-  [[nodiscard]] std::optional<IrValue> state(const std::string& name) const;
-
- private:
-  void apply_effects(
-      const std::vector<std::pair<std::string, IrValue>>& effects);
-
-  std::unordered_map<std::string, IrValue> state_;
-  SimTime ta_{SimTime::infinity()};
-  bool has_ext_{false};
-  PortId ext_port_{0};
-  std::vector<std::pair<std::string, IrValue>> ext_effects_;
-  bool has_int_{false};
-  std::vector<std::pair<std::string, IrValue>> int_effects_;
-  bool emit_{false};
-  PortId out_port_{0};
-};
-
-// v2-native DEVS atomic (Phase C): interprets a v2 devs/atomic Node's
-// Statechart directly (Message transition = external, Timeout transition =
-// internal + ta), so the runtime no longer needs the v1 round trip for the
-// DEVS path. Semantics mirror IrAtomicModel.
+// DEVS atomic: interprets a v2 devs/atomic Node's Statechart directly
+// (Message transition = external, Timeout transition = internal + ta).
 class IrAtomicModelV2 final : public AtomicModel {
  public:
   explicit IrAtomicModelV2(const ir::v2::Node& spec,
@@ -90,15 +56,10 @@ class IrAtomicModelV2 final : public AtomicModel {
   PortId out_port_{0};
 };
 
-// Builds the executable atomic tree for DevsExecutor from an ir::CoupledModel
-// whose children are AtomicModels (v1; mixed children return nullptr). Each
-// atom samples distribution-based ta() from `engine` at construction.
-std::unique_ptr<CoupledModel> build_atomic_tree(
-    const ir::CoupledModel& spec, Xoshiro256PlusPlus& engine);
-
-// v2-native atomic tree builder: a bare devs/atomic Node or a core/model
-// container whose children are devs/atomic Nodes (mixed children return
-// nullptr).
+// Atomic tree builder for DevsExecutor: a bare devs/atomic Node or a
+// core/model container whose children are devs/atomic Nodes (mixed children
+// return nullptr). Each atom samples distribution-based ta() from `engine` at
+// construction.
 std::unique_ptr<CoupledModel> build_atomic_tree_v2(
     const ir::v2::Node& root, Xoshiro256PlusPlus& engine);
 
@@ -109,8 +70,6 @@ std::unique_ptr<CoupledModel> build_atomic_tree_v2(
 // metrics.arrivals reports the internal firings and horizon the sim time.
 class DevsReplicationModel final : public ReplicationModel {
  public:
-  DevsReplicationModel(std::vector<std::uint8_t> bytes, const ir::Model* root);
-  // v2-native mode: execute the DEVS tree directly from a v2 Node.
   DevsReplicationModel(std::vector<std::uint8_t> v2_bytes,
                        const ir::v2::Node* v2_root);
 
@@ -122,9 +81,7 @@ class DevsReplicationModel final : public ReplicationModel {
 
  private:
   std::vector<std::uint8_t> bytes_;
-  const ir::Model* root_;
   const ir::v2::Node* v2_root_{nullptr};
-  bool v2_native_{false};
   std::unique_ptr<CoupledModel> last_tree_;
 };
 

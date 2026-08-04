@@ -15,13 +15,11 @@ commands:
 
 ```text
 usage: lpcli compile <input.lp> [-o <output>]
-                        [--ir-version 1|2]
                         [--diagnostics-json <path>]
                         [--experiments-json <path>]
 ```
 
 - `-o, --output <path>`：输出 IR 文件（默认 `<input>.ir.bin`）
-- `--ir-version <n>`：发射契约版本。默认 **2**（`LP2R`，Node/SemanticsRef）；`1` 走冻结的 v1 契约（`LPIR`）
 - `--diagnostics-json <path>`：写结构化诊断 JSON（AI Copilot 的修复输入，含 span/行号/错误码）
 - `--experiments-json <path>`：导出模型声明的 `experiment` 块（优化搜索规格）
 

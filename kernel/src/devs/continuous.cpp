@@ -6,7 +6,6 @@
 #include <cstring>
 #include <utility>
 
-#include "ir_generated.h"
 #include "ir_v2_generated.h"
 
 namespace logicpilot {
@@ -258,7 +257,7 @@ double ExpressionEvaluator::eval_node(
 
 ContinuousReplicationModel::ContinuousReplicationModel(
     std::vector<std::uint8_t> v2_bytes, const v2::Node* /*v2_root*/)
-    : bytes_{std::move(v2_bytes)}, v2_native_{true} {
+    : bytes_{std::move(v2_bytes)} {
   // Re-derive from OUR copy; resolve the equation node (bare {sd, equation}
   // root or the sole child of a core/model container).
   const v2::Node* root = ir::v2::GetModelFile(bytes_.data())->root();
@@ -287,59 +286,6 @@ ContinuousReplicationModel::ContinuousReplicationModel(
       ode.rhs_text = equation->rhs_text()->str();
       ode.initial = equation->initial_value();
       odes_.push_back(std::move(ode));
-    }
-  }
-}
-
-ContinuousReplicationModel::ContinuousReplicationModel(
-    std::vector<std::uint8_t> bytes, const ir::EquationModel* /*root*/)
-    : bytes_{std::move(bytes)} {
-  // Re-derive from OUR copy; resolve the equation model (bare root or the
-  // sole EquationModel child of a CoupledModel).
-  const ir::Model* root = ir::GetModelFile(bytes_.data())->root();
-  if (root != nullptr &&
-      root->kind_type() == ir::ModelKind_EquationModel) {
-    v1_root_ = root->kind_as_EquationModel();
-  } else if (root != nullptr &&
-             root->kind_type() == ir::ModelKind_CoupledModel) {
-    const ir::CoupledModel* coupled = root->kind_as_CoupledModel();
-    if (coupled->children() != nullptr) {
-      for (const ir::Model* child : *coupled->children()) {
-        if (child->kind_type() == ir::ModelKind_EquationModel) {
-          v1_root_ = child->kind_as_EquationModel();
-          break;
-        }
-      }
-    }
-  }
-  if (v1_root_ != nullptr) {
-    if (v1_root_->params() != nullptr) {
-      for (const ir::Param* param : *v1_root_->params()) {
-        if (param->name() != nullptr &&
-            param->value_type() == ir::ParamValue_FloatValue) {
-          params_[param->name()->str()] =
-              param->value_as_FloatValue()->value();
-        }
-      }
-    }
-    if (v1_root_->variables() != nullptr) {
-      for (const ir::EquationVariable* variable : *v1_root_->variables()) {
-        if (variable->name() == nullptr) {
-          continue;
-        }
-        Ode ode;
-        ode.var = variable->name()->str();
-        ode.initial = variable->initial_value();
-        odes_.push_back(std::move(ode));
-      }
-    }
-    if (v1_root_->equations() != nullptr) {
-      for (flatbuffers::uoffset_t i = 0; i < v1_root_->equations()->size();
-           ++i) {
-        if (i < odes_.size()) {
-          odes_[i].rhs_text = v1_root_->equations()->Get(i)->str();
-        }
-      }
     }
   }
 }

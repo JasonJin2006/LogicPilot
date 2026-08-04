@@ -1,9 +1,9 @@
 # IR v2 迁移设计：薄契约 + 引擎注册表
 
-状态: 全部阶段已实现（2026-08-04）。目标形态 = AnyLogic 的"基座 + 块库"骨架 × 我们的
-工程纪律（类型化/版本化/冻结/确定性/span/诊断）。`schemas/ir_v2.fbs` 已接入 C++/TS
-codegen（file_identifier `LP2R`）并成为 `lpcli compile` 的默认发射契约；`lpcli
-compile --ir-version 1` 与 v1 读取器保留为纯兼容层。
+状态: 全部阶段已实现（2026-08-04），**v1 已全量退役**。目标形态 = AnyLogic 的
+"基座 + 块库"骨架 × 我们的工程纪律（类型化/版本化/冻结/确定性/span/诊断）。
+`schemas/ir_v2.fbs` 已接入 C++/TS codegen（file_identifier `LP2R`），是
+`lpcli compile` 发射的唯一契约。
 
 ## 1. 结论（来自架构评审）
 
@@ -88,24 +88,24 @@ Node（容器契约，故意薄）
   谐振子解析解验收）。同时修复 IR 指针生命周期缺陷：模型构造器一律从自身拷贝的
   缓冲重新派生指针（此前 lpcli 局部 `IrLoadResult` 析构会导致 use-after-free
   间歇崩溃）。139/139 ctest 连续通过。
-- **F3 互操作门禁（已实现）**: `scripts/interop` writer 同时发射 v1/v2 缓冲
-  （`model_file.bin` + `model_v2.bin` + `counters_frame.bin`），
-  `verify-interop.mjs` 逐字段双向校验（117 checks）——C++ 与 TS 的运行时
-  编解码对齐成为 CI 硬门禁，不再只靠 schema conform 防漂移。
+- **F3 互操作门禁（已实现）**: `scripts/interop` writer 发射 v2 缓冲
+  （`model_v2.bin` + `counters_frame.bin`），`verify-interop.mjs` 逐字段
+  双向校验（58 checks）——C++ 与 TS 的运行时编解码对齐成为 CI 硬门禁，
+  不再只靠 schema conform 防漂移。
 - **Web 连续模型可视化（已实现）**: `lpcli run --trajectory <path>` 输出采样轨迹
   JSON，AI 面板渲染 ODE 曲线（浏览器 E2E 覆盖）；decay 端到端测试断言轨迹逐点
   值。迁移收尾时评审遗留 Minor（IrModelFile move-only、控制消息 JSON 转义、
   Session 写队列上限）均已修复。
 
-## v1 读取器退役决策
+## v1 退役（已执行）
 
-**保留 v1 读取为纯兼容层**：旧 `.lpir` 文件与 `scripts/interop` 继续读 v1；
-新编译默认发射 v2。v1 发射（`--ir-version 1`）与 v1 读取器不设退役期限，直到
-外部工具链（interop/TS）整体切换到 v2 后另行决策。
+**v1 契约已全量移除**：`schemas/ir.fbs` 与 baseline、v1↔v2 转换器
+（`ir_v2_convert.cpp`）、`lpcli compile --ir-version 1`、interop/TS 的 v1
+绑定与校验、以及 loader 内的 v1 读取/转换路径全部删除。loader 与 process
+执行路径原生消费 v2 Node 树；`scripts/interop` 只发射 v2。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
-  纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
-  SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器
-  正确解释）。
+  纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器 + lowering 双写
+  （迁移期产物，退役时删除）。
 - **Phase C**: `Statechart` 数据替换 `TransitionSpec`；`Var` 替换 `Param` 魔法袋；
   `Experiment` 从 sidecar 并入 `ModelFile.experiments`。
 - **Phase D**: `EquationModel` 结构化方程 + ODE 引擎注册；interop/TS 生成随 schema

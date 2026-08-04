@@ -11,7 +11,6 @@
 
 #include <flatbuffers/flatbuffers.h>
 
-#include "ir_generated.h"
 #include "ir_v2_generated.h"
 
 #include "logicpilot/devs/continuous.h"
@@ -24,7 +23,6 @@ using Catch::Approx;
 namespace {
 
 namespace v2 = logicpilot::ir::v2;
-namespace v1 = logicpilot::ir;
 
 double evaluate(const std::string& text,
                 const std::unordered_map<std::string, double>& vars) {
@@ -56,25 +54,6 @@ std::vector<std::uint8_t> make_v2_equation(const char* rhs, double k,
       builder, builder.CreateString("decay"), 0, 0, 0);
   const auto file = v2::CreateModelFile(builder, 2, node, 0, metadata);
   builder.Finish(file, "LP2R");
-  return std::vector<std::uint8_t>(
-      builder.GetBufferPointer(),
-      builder.GetBufferPointer() + builder.GetSize());
-}
-
-std::vector<std::uint8_t> make_v1_equation(const char* rhs, double y0) {
-  flatbuffers::FlatBufferBuilder builder;
-  const auto variable = v1::CreateEquationVariable(
-      builder, builder.CreateString("y"), y0, 0);
-  std::vector<flatbuffers::Offset<v1::EquationVariable>> variables{variable};
-  std::vector<flatbuffers::Offset<flatbuffers::String>> equations{
-      builder.CreateString(rhs)};
-  const auto model = v1::CreateEquationModel(
-      builder, 0, builder.CreateVector(variables),
-      builder.CreateVector(equations), 0);
-  const auto root = v1::CreateModel(builder, v1::ModelKind_EquationModel,
-                                    model.Union());
-  const auto file = v1::CreateModelFile(builder, 1, root, 0, 0);
-  builder.Finish(file, "LPIR");
   return std::vector<std::uint8_t>(
       builder.GetBufferPointer(),
       builder.GetBufferPointer() + builder.GetSize());
@@ -134,22 +113,6 @@ TEST_CASE("v2-native RK4 matches the logistic solution analytically",
   REQUIRE(metrics.final_value == Approx(expected).margin(1e-3));
 }
 
-TEST_CASE("v1 EquationModel executes through the compatibility path",
-          "[continuous]") {
-  const std::vector<std::uint8_t> bytes = make_v1_equation("-0.5*y", 1.0);
-  IrLoadResult loaded = load_model_buffer(bytes.data(), bytes.size());
-  REQUIRE(loaded.ok());
-  std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
-  REQUIRE(model != nullptr);
-  ReplicationConfig config;
-  config.seed = 1;
-  config.arrivals = 1000;
-  const ReplicationMetrics metrics = model->run(config, nullptr);
-  REQUIRE(metrics.final_value == Approx(std::exp(-5.0)).margin(1e-6));
-}
-
 TEST_CASE("continuous engine is deterministic", "[continuous][determinism]") {
   const std::vector<std::uint8_t> v2 = make_v2_equation("-k*y", 0.5, 1.0);
   IrLoadResult loaded = load_model_buffer(v2.data(), v2.size());
@@ -194,16 +157,6 @@ TEST_CASE("DSL continuous block runs end-to-end (decay example)",
   REQUIRE(trajectory.front().values[0] < 1.0);  // decayed after step 1
   REQUIRE(trajectory.back().values[0] ==
           Approx(std::exp(-5.0)).margin(1e-6));
-
-  // v1 compatibility path runs identically.
-  const IrLoadResult v1_loaded = load_model_buffer(
-      compiled.ir_bytes.data(), compiled.ir_bytes.size());
-  REQUIRE(v1_loaded.ok());
-  std::unique_ptr<ReplicationModel> v1_model =
-      build_replication_model(v1_loaded.file, &error);
-  REQUIRE(v1_model != nullptr);
-  const ReplicationMetrics v1_metrics = v1_model->run(config, nullptr);
-  REQUIRE(v1_metrics.final_value == metrics.final_value);
 }
 
 TEST_CASE("coupled ODE system matches the harmonic oscillator analytic "

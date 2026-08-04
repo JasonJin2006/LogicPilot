@@ -1,5 +1,5 @@
-// IR AtomicModel execution tests (milestone 1b): DSL atomic blocks -> F1 IR
-// -> IrAtomicModel interpreter -> DevsExecutor, plus the
+// IR AtomicModel execution tests (milestone 1b): DSL atomic blocks -> v2 IR
+// -> IrAtomicModelV2 interpreter -> DevsExecutor, plus the
 // DevsReplicationModel adapter (internal-transition budget) and
 // determinism.
 #include <cmath>
@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "ir_v2_generated.h"
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/executor.h"
@@ -15,9 +16,8 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 
-#include "ir_generated.h"
-
 using namespace logicpilot;
+namespace v2 = logicpilot::ir::v2;
 
 namespace {
 
@@ -27,7 +27,7 @@ IrLoadResult load_pulse_chain() {
   const dsl::CompileResult compiled = dsl::compile_file(kPulseChain);
   REQUIRE(compiled.ok);
   IrLoadResult loaded =
-      load_model_buffer(compiled.ir_bytes.data(), compiled.ir_bytes.size());
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
@@ -36,16 +36,18 @@ IrLoadResult load_pulse_chain() {
 
 TEST_CASE("atomic DSL lowers to an executable DEVS tree", "[atomic][devs]") {
   const IrLoadResult loaded = load_pulse_chain();
-  REQUIRE(loaded.file.root != nullptr);
-  REQUIRE(loaded.file.root->root()->kind_type() == ir::ModelKind_CoupledModel);
-  const ir::CoupledModel* coupled = loaded.file.root->root()->kind_as_CoupledModel();
-  REQUIRE(coupled->children() != nullptr);
-  REQUIRE(coupled->children()->size() == 2);
-  REQUIRE(coupled->couplings() != nullptr);
-  REQUIRE(coupled->couplings()->size() == 1);
+  REQUIRE(loaded.file.v2_root != nullptr);
+  const v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root != nullptr);
+  REQUIRE(root->semantics() != nullptr);
+  REQUIRE(root->semantics()->block()->str() == "model");
+  REQUIRE(root->children() != nullptr);
+  REQUIRE(root->children()->size() == 2);
+  REQUIRE(root->couplings() != nullptr);
+  REQUIRE(root->couplings()->size() == 1);
 
   Xoshiro256PlusPlus engine{42};
-  std::unique_ptr<CoupledModel> tree = build_atomic_tree(*coupled, engine);
+  std::unique_ptr<CoupledModel> tree = build_atomic_tree_v2(*root, engine);
   REQUIRE(tree != nullptr);
   REQUIRE(tree->children().size() == 2);
   REQUIRE(tree->couplings().size() == 1);
@@ -57,9 +59,9 @@ TEST_CASE("atomic tree runs on the DEVS executor under an internal budget",
           "[atomic][devs]") {
   const IrLoadResult loaded = load_pulse_chain();
   Xoshiro256PlusPlus engine{42};
-  std::unique_ptr<CoupledModel> tree =
-      build_atomic_tree(*loaded.file.root->root()->kind_as_CoupledModel(),
-                        engine);
+  const v2::Node* root = loaded.file.v2_root->root();
+  std::unique_ptr<CoupledModel> tree = build_atomic_tree_v2(*root, engine);
+  REQUIRE(tree != nullptr);
 
   BinaryHeapScheduler scheduler{64};
   SimulationClock clock;
@@ -76,7 +78,7 @@ TEST_CASE("atomic tree runs on the DEVS executor under an internal budget",
   const CoupledModel::Child* sink = tree->find_child("Sink");
   REQUIRE(sink != nullptr);
   REQUIRE(sink->is_atomic());
-  const auto* atom = dynamic_cast<const IrAtomicModel*>(sink->atomic.get());
+  const auto* atom = dynamic_cast<const IrAtomicModelV2*>(sink->atomic.get());
   REQUIRE(atom != nullptr);
   const auto seen = atom->state("seen");
   REQUIRE(seen.has_value());
@@ -109,7 +111,7 @@ TEST_CASE("DevsReplicationModel is deterministic under an internal budget",
   REQUIRE(tree != nullptr);
   const CoupledModel::Child* sink = tree->find_child("Sink");
   REQUIRE(sink != nullptr);
-  const auto* atom = dynamic_cast<const IrAtomicModel*>(sink->atomic.get());
+  const auto* atom = dynamic_cast<const IrAtomicModelV2*>(sink->atomic.get());
   REQUIRE(atom != nullptr);
   const auto seen = atom->state("seen");
   REQUIRE(seen.has_value());

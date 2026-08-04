@@ -14,7 +14,7 @@ single-node conservative kernel is proven against the performance budget.
 ## Decision
 
 - **Defer** GPU, distributed execution and Time Warp to **Phase 6 and later**.
-- Before Phase 6, the IR (`schemas/ir.fbs`) and wire schema may carry minimal
+ - Before Phase 6, the IR (`schemas/ir_v2.fbs`) and wire schema may carry minimal
   **reserved/placeholder fields** (e.g. partition id, logical clock) but no
   executable semantics.
 - The scheduler is designed so that an optimistic/rollback engine can be added

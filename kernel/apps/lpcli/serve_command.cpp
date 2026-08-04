@@ -150,7 +150,7 @@ int serve_command(std::span<const std::string> args) {
   }
 
   // Resolve the model IR: --model-file wins, else compile the .lp source.
-  std::vector<std::uint8_t> ir_bytes;
+ std::vector<std::uint8_t> model_bytes;
   if (!model_file.empty()) {
     logicpilot::IrLoadResult loaded = logicpilot::load_model_file(model_file);
     if (!loaded.ok()) {
@@ -194,10 +194,10 @@ int serve_command(std::span<const std::string> args) {
                  compiled.diagnostics.size());
       return 1;
     }
-    ir_bytes = compiled.v2_bytes;
+    model_bytes = compiled.v2_bytes;
     // Validate + name the model from the freshly compiled IR.
     logicpilot::IrLoadResult loaded =
-        logicpilot::load_model_buffer(ir_bytes.data(), ir_bytes.size());
+        logicpilot::load_model_buffer(model_bytes.data(), model_bytes.size());
     if (!loaded.ok()) {
       fmt::print(stderr, "error: compiled IR rejected: {}\n", loaded.message);
       return 1;

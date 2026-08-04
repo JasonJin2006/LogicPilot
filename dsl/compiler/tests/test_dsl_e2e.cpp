@@ -14,7 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "expect_json.h"
-#include "ir_generated.h"  // flatc-generated IR view (F1)
+#include "ir_v2_generated.h"
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
@@ -52,9 +52,10 @@ TEST_CASE("E2E: DSL compile -> IR load -> replication stats match "
 
   // 2. The IR must load through the kernel's verifier.
   IrLoadResult loaded =
-      load_model_buffer(compiled.ir_bytes.data(), compiled.ir_bytes.size());
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
-  REQUIRE(loaded.file.root->schema_version() == 1);
+  REQUIRE(loaded.file.v2_root != nullptr);
+  REQUIRE(loaded.file.v2_root->schema_version() == 2);
 
   // 3. The IR must lower to an executable replication model.
   std::string build_error;

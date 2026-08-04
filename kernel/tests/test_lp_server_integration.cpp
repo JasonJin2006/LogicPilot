@@ -362,7 +362,7 @@ TEST_CASE("lp-server streams a full mm1 run over WebSocket",
       logicpilot::dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/mm1.lp");
   REQUIRE(compiled.ok);
   logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
-      compiled.ir_bytes.data(), compiled.ir_bytes.size());
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   std::string build_error;
   REQUIRE(logicpilot::build_replication_model(loaded.file, &build_error) !=

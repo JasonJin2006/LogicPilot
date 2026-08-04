@@ -1,16 +1,24 @@
 // Structural IR dump implementation (deterministic text rendering used by
 // golden regression tests; raw FlatBuffers bytes are order-sensitive).
+// Dumps the v2 Node/SemanticsRef tree (schemas/ir_v2.fbs).
 #include "logicpilot/dsl/ir_dump.h"
 
 #include <sstream>
 #include <string>
 
-#include "ir_generated.h"
+#include "ir_v2_generated.h"
 
 namespace logicpilot::dsl {
 namespace {
 
-using logicpilot::ir::Model;
+using logicpilot::ir::v2::Distribution;
+using logicpilot::ir::v2::Node;
+using logicpilot::ir::v2::Var;
+using logicpilot::ir::v2::VarType_Bool;
+using logicpilot::ir::v2::VarType_Int;
+using logicpilot::ir::v2::VarType_Float;
+using logicpilot::ir::v2::VarType_String;
+using logicpilot::ir::v2::VarType_Distribution;
 
 std::string format_double(double value) {
   std::ostringstream out;
@@ -19,26 +27,41 @@ std::string format_double(double value) {
   return out.str();
 }
 
-std::string meta_name(const logicpilot::ir::Metadata* meta) {
-  if (meta != nullptr && meta->name() != nullptr) {
-    return meta->name()->str();
+const char* node_name(const Node* node) {
+  if (node != nullptr && node->metadata() != nullptr &&
+      node->metadata()->name() != nullptr) {
+    return node->metadata()->name()->c_str();
   }
   return "<unnamed>";
 }
 
-std::string distribution_text(const logicpilot::ir::Distribution* dist) {
+const char* node_library(const Node* node) {
+  if (node != nullptr && node->semantics() != nullptr &&
+      node->semantics()->library() != nullptr) {
+    return node->semantics()->library()->c_str();
+  }
+  return "";
+}
+
+const char* node_block(const Node* node) {
+  if (node != nullptr && node->semantics() != nullptr &&
+      node->semantics()->block() != nullptr) {
+    return node->semantics()->block()->c_str();
+  }
+  return "";
+}
+
+std::string distribution_text(const Distribution* dist) {
   if (dist == nullptr) {
     return "<none>";
   }
   const char* kind = "Unknown";
   switch (dist->kind()) {
-    case logicpilot::ir::DistributionKind_Constant: kind = "Constant"; break;
-    case logicpilot::ir::DistributionKind_Uniform: kind = "Uniform"; break;
-    case logicpilot::ir::DistributionKind_Normal: kind = "Normal"; break;
-    case logicpilot::ir::DistributionKind_Exponential:
-      kind = "Exponential";
-      break;
-    case logicpilot::ir::DistributionKind_Poisson: kind = "Poisson"; break;
+    case 0: kind = "Constant"; break;
+    case 1: kind = "Uniform"; break;
+    case 2: kind = "Normal"; break;
+    case 3: kind = "Exponential"; break;
+    case 4: kind = "Poisson"; break;
   }
   std::string text = kind;
   text += " params=[";
@@ -54,31 +77,32 @@ std::string distribution_text(const logicpilot::ir::Distribution* dist) {
   return text;
 }
 
-void dump_param(std::ostringstream& out, const std::string& indent,
-                const logicpilot::ir::Param* param) {
-  out << indent << "param "
-      << (param->name() != nullptr ? param->name()->c_str() : "<unnamed>")
+void dump_var(std::ostringstream& out, const Var* var) {
+  if (var == nullptr) {
+    out << "<none>\n";
+    return;
+  }
+  out << (var->name() != nullptr ? var->name()->c_str() : "<unnamed>")
       << " = ";
-  switch (param->value_type()) {
-    case logicpilot::ir::ParamValue_IntValue:
-      out << "int(" << param->value_as_IntValue()->value() << ')';
+  switch (var->type()) {
+    case VarType_Bool:
+      out << "bool(" << (var->bool_value() ? "true" : "false") << ')';
       break;
-    case logicpilot::ir::ParamValue_FloatValue:
-      out << "float("
-          << format_double(param->value_as_FloatValue()->value()) << ')';
+    case VarType_Int:
+      out << "int(" << var->int_value() << ')';
       break;
-    case logicpilot::ir::ParamValue_BoolValue:
-      out << "bool("
-          << (param->value_as_BoolValue()->value() ? "true" : "false")
-          << ')';
+    case VarType_Float:
+      out << "float(" << format_double(var->float_value()) << ')';
       break;
-    case logicpilot::ir::ParamValue_StringValue:
-      out << "string('" << param->value_as_StringValue()->value()->c_str()
+    case VarType_String:
+      out << "string('"
+          << (var->string_value() != nullptr ? var->string_value()->c_str()
+                                             : "")
           << "')";
       break;
-    case logicpilot::ir::ParamValue_Distribution:
-      out << "distribution("
-          << distribution_text(param->value_as_Distribution()) << ')';
+    case VarType_Distribution:
+      out << "distribution(" << distribution_text(var->distribution())
+          << ')';
       break;
     default:
       out << "<none>";
@@ -87,164 +111,89 @@ void dump_param(std::ostringstream& out, const std::string& indent,
   out << '\n';
 }
 
-void dump_params(std::ostringstream& out, const std::string& indent,
-                 const flatbuffers::Vector<
-                     flatbuffers::Offset<logicpilot::ir::Param>>* params) {
-  if (params == nullptr) {
+void dump_vars(std::ostringstream& out, const std::string& indent,
+               const char* label,
+               const flatbuffers::Vector<flatbuffers::Offset<Var>>* vars) {
+  if (vars == nullptr) {
     return;
   }
-  for (const logicpilot::ir::Param* param : *params) {
-    dump_param(out, indent, param);
+  for (const Var* var : *vars) {
+    out << indent << label << ' ';
+    dump_var(out, var);
   }
 }
 
 void dump_couplings(
     std::ostringstream& out, const std::string& indent,
     const flatbuffers::Vector<
-        flatbuffers::Offset<logicpilot::ir::Coupling>>* couplings) {
+        flatbuffers::Offset<logicpilot::ir::v2::Coupling>>* couplings) {
   if (couplings == nullptr) {
     return;
   }
-  for (const logicpilot::ir::Coupling* coupling : *couplings) {
+  for (const auto* coupling : *couplings) {
     out << indent << "coupling '"
-        << (coupling->from_model() ? coupling->from_model()->c_str() : "")
-        << "'." << (coupling->from_port() ? coupling->from_port()->c_str()
-                                           : "")
+        << (coupling->from_model() != nullptr
+                ? coupling->from_model()->c_str()
+                : "")
+        << "'." << (coupling->from_port() != nullptr
+                        ? coupling->from_port()->c_str()
+                        : "")
         << " -> '"
-        << (coupling->to_model() ? coupling->to_model()->c_str() : "") << "'."
-        << (coupling->to_port() ? coupling->to_port()->c_str() : "") << '\n';
+        << (coupling->to_model() != nullptr ? coupling->to_model()->c_str()
+                                            : "")
+        << "'." << (coupling->to_port() != nullptr
+                        ? coupling->to_port()->c_str()
+                        : "")
+        << '\n';
   }
 }
 
-void dump_process_node(std::ostringstream& out, const std::string& indent,
-                       const logicpilot::ir::ProcessNode* node) {
-  out << indent << "node '"
-      << (node->name() != nullptr ? node->name()->c_str() : "<unnamed>")
-      << "' kind=";
-  switch (node->kind_type()) {
-    case logicpilot::ir::ProcessNodeKind_SourceNode: {
-      out << "SourceNode\n";
-      const auto* spec = node->kind_as_SourceNode();
-      out << indent << "  arrival " << distribution_text(spec->arrival())
+void dump_node(std::ostringstream& out, const std::string& indent,
+               const Node* node) {
+  if (node == nullptr) {
+    out << indent << "node <null>\n";
+    return;
+  }
+  out << indent << "node '" << node_name(node) << "' library='"
+      << node_library(node) << "' block='" << node_block(node) << "'\n";
+  dump_vars(out, indent + "  ", "state", node->state());
+  dump_vars(out, indent + "  ", "param", node->params());
+  if (node->ports() != nullptr) {
+    for (const auto* port : *node->ports()) {
+      out << indent << "  port '"
+          << (port->name() != nullptr ? port->name()->c_str() : "") << "' dir="
+          << (port->direction() == logicpilot::ir::v2::PortDirection_Input
+                  ? "input"
+                  : "output")
           << '\n';
-      out << indent << "  max_arrivals " << spec->max_arrivals() << '\n';
-      break;
-    }
-    case logicpilot::ir::ProcessNodeKind_QueueNode: {
-      out << "QueueNode\n";
-      const auto* spec = node->kind_as_QueueNode();
-      out << indent << "  capacity " << spec->capacity() << '\n';
-      out << indent << "  discipline "
-          << (spec->discipline() == logicpilot::ir::QueueDiscipline_Fifo
-                  ? "Fifo"
-                  : spec->discipline() == logicpilot::ir::QueueDiscipline_Lifo
-                        ? "Lifo"
-                        : "Priority")
-          << '\n';
-      break;
-    }
-    case logicpilot::ir::ProcessNodeKind_ServiceNode: {
-      out << "ServiceNode\n";
-      const auto* spec = node->kind_as_ServiceNode();
-      out << indent << "  service_time "
-          << distribution_text(spec->service_time()) << '\n';
-      out << indent << "  resource '"
-          << (spec->resource() != nullptr ? spec->resource()->c_str() : "")
-          << "'\n";
-      out << indent << "  servers " << spec->servers() << '\n';
-      break;
-    }
-    case logicpilot::ir::ProcessNodeKind_SinkNode:
-      out << "SinkNode\n";
-      break;
-    case logicpilot::ir::ProcessNodeKind_DelayNode: {
-      out << "DelayNode\n";
-      const auto* spec = node->kind_as_DelayNode();
-      out << indent << "  delay " << distribution_text(spec->delay())
-          << '\n';
-      break;
-    }
-    default:
-      out << "Unknown\n";
-      break;
-  }
-}
-
-void dump_atomic(std::ostringstream& out, const std::string& indent,
-                 const logicpilot::ir::AtomicModel* atomic) {
-  out << indent << "AtomicModel name='" << meta_name(atomic->metadata())
-      << "'\n";
-  if (atomic->ta() != nullptr) {
-    out << indent << "  ta kind=";
-    switch (atomic->ta()->kind()) {
-      case logicpilot::ir::TimeAdvanceKind_Constant:
-        out << "Constant value=" << format_double(atomic->ta()->value());
-        break;
-      case logicpilot::ir::TimeAdvanceKind_Distribution:
-        out << "Distribution " << distribution_text(atomic->ta()->distribution());
-        break;
-      case logicpilot::ir::TimeAdvanceKind_Expression:
-        out << "Expression";
-        break;
-      case logicpilot::ir::TimeAdvanceKind_Infinite:
-        out << "Infinite";
-        break;
-    }
-    out << '\n';
-  }
-  dump_params(out, indent + "  ", atomic->params());
-}
-
-void dump_process(std::ostringstream& out, const std::string& indent,
-                  const logicpilot::ir::ProcessModel* process) {
-  out << indent << "ProcessModel name='" << meta_name(process->metadata())
-      << "'\n";
-  if (process->nodes() != nullptr) {
-    for (const logicpilot::ir::ProcessNode* node : *process->nodes()) {
-      dump_process_node(out, indent + "  ", node);
     }
   }
-  dump_couplings(out, indent + "  ", process->couplings());
-  dump_params(out, indent + "  ", process->params());
-}
-
-void dump_model(std::ostringstream& out, const std::string& indent,
-                const Model* model) {
-  switch (model->kind_type()) {
-    case logicpilot::ir::ModelKind_AtomicModel:
-      dump_atomic(out, indent, model->kind_as_AtomicModel());
-      break;
-    case logicpilot::ir::ModelKind_CoupledModel: {
-      const auto* coupled = model->kind_as_CoupledModel();
-      out << indent << "CoupledModel name='"
-          << meta_name(coupled->metadata()) << "'\n";
-      if (coupled->children() != nullptr) {
-        for (const Model* child : *coupled->children()) {
-          dump_model(out, indent + "  ", child);
-        }
-      }
-      dump_couplings(out, indent + "  ", coupled->couplings());
-      dump_params(out, indent + "  ", coupled->params());
-      break;
+  if (node->children() != nullptr) {
+    for (const Node* child : *node->children()) {
+      dump_node(out, indent + "  ", child);
     }
-    case logicpilot::ir::ModelKind_AgentModel: {
-      const auto* agent = model->kind_as_AgentModel();
-      out << indent << "AgentModel name='" << meta_name(agent->metadata())
-          << "'\n";
-      break;
+  }
+  dump_couplings(out, indent + "  ", node->couplings());
+  if (node->continuous() != nullptr) {
+    for (const auto* equation : *node->continuous()) {
+      out << indent << "  equation "
+          << (equation->lhs() != nullptr ? equation->lhs()->c_str() : "")
+          << " = "
+          << (equation->rhs_text() != nullptr
+                  ? equation->rhs_text()->c_str()
+                  : "")
+          << " (initial " << format_double(equation->initial_value()) << ")\n";
     }
-    case logicpilot::ir::ModelKind_ProcessModel:
-      dump_process(out, indent, model->kind_as_ProcessModel());
-      break;
-    case logicpilot::ir::ModelKind_EquationModel: {
-      const auto* equation = model->kind_as_EquationModel();
-      out << indent << "EquationModel name='"
-          << meta_name(equation->metadata()) << "'\n";
-      break;
+  }
+  if (node->behavior() != nullptr &&
+      node->behavior()->transitions() != nullptr) {
+    for (const auto* transition : *node->behavior()->transitions()) {
+      out << indent << "  transition "
+          << (transition->from() != nullptr ? transition->from()->c_str() : "")
+          << " -> "
+          << (transition->to() != nullptr ? transition->to()->c_str() : "")
+          << " trigger=" << static_cast<int>(transition->trigger()) << '\n';
     }
-    default:
-      out << indent << "UnknownModel\n";
-      break;
   }
 }
 
@@ -252,14 +201,40 @@ void dump_model(std::ostringstream& out, const std::string& indent,
 
 std::string dump_ir(const IrModelFile& file) {
   std::ostringstream out;
-  if (file.root == nullptr || file.root->root() == nullptr) {
+  if (file.v2_root == nullptr) {
     return "ModelFile <empty>\n";
   }
-  out << "ModelFile schema_version=" << file.root->schema_version() << '\n';
-  if (file.root->metadata() != nullptr) {
-    out << "metadata name='" << meta_name(file.root->metadata()) << "'\n";
+  out << "ModelFile schema_version=" << file.v2_root->schema_version() << '\n';
+  if (file.v2_root->metadata() != nullptr) {
+    out << "metadata name='"
+        << (file.v2_root->metadata()->name() != nullptr
+                ? file.v2_root->metadata()->name()->c_str()
+                : "")
+        << "'\n";
   }
-  dump_model(out, "root ", file.root->root());
+  if (file.v2_root->root() != nullptr) {
+    dump_node(out, "root ", file.v2_root->root());
+  }
+  if (file.v2_root->experiments() != nullptr) {
+    for (const auto* experiment : *file.v2_root->experiments()) {
+      out << "experiment '"
+          << (experiment->name() != nullptr ? experiment->name()->c_str() : "")
+          << "' objective='"
+          << (experiment->objective() != nullptr
+                  ? experiment->objective()->c_str()
+                  : "")
+          << "' metric='"
+          << (experiment->metric() != nullptr ? experiment->metric()->c_str()
+                                              : "")
+          << "' variable='"
+          << (experiment->variable() != nullptr
+                  ? experiment->variable()->c_str()
+                  : "")
+          << "' range=" << experiment->range_min() << ".."
+          << experiment->range_max() << " budget=" << experiment->budget()
+          << '\n';
+    }
+  }
   return out.str();
 }
 

@@ -22,9 +22,6 @@
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
-namespace ir {
-struct Model;
-}  // namespace ir
 namespace ir::v2 {
 struct Node;
 }  // namespace ir::v2
@@ -36,10 +33,6 @@ struct ModelAgentState {
 
 class AgentReplicationModel final : public ReplicationModel {
  public:
-  AgentReplicationModel(std::vector<std::uint8_t> bytes,
-                        const ir::Model* root);
-  // v2-native mode (Phase C2): execute the agent population directly from a
-  // v2 agent Node (typed state + count param + behavior bindings).
   AgentReplicationModel(std::vector<std::uint8_t> v2_bytes,
                         const ir::v2::Node* v2_root);
 
@@ -59,9 +52,7 @@ class AgentReplicationModel final : public ReplicationModel {
 
  private:
   std::vector<std::uint8_t> bytes_;
-  const ir::Model* root_;
   const ir::v2::Node* v2_root_{nullptr};
-  bool v2_native_{false};
   std::vector<Position> last_positions_;
   std::vector<ModelAgentState> last_agents_state_;
 };

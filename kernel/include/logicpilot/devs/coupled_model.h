@@ -15,7 +15,7 @@
 namespace logicpilot {
 
 // One directed coupling. "." as a model name denotes the enclosing model
-// itself (parent-port pass-through), mirroring schemas/ir.fbs Coupling.
+// itself (parent-port pass-through), mirroring schemas/ir_v2.fbs Coupling.
 struct CouplingSpec {
   std::string from_model;
   std::string from_port;

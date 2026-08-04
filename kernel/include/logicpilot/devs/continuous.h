@@ -80,9 +80,6 @@ class ContinuousReplicationModel final : public ReplicationModel {
   // v2-native: semantics {sd, equation} node.
   ContinuousReplicationModel(std::vector<std::uint8_t> v2_bytes,
                              const ir::v2::Node* v2_root);
-  // v1 compatibility: EquationModel.
-  ContinuousReplicationModel(std::vector<std::uint8_t> bytes,
-                             const ir::EquationModel* root);
 
   ReplicationMetrics run(const ReplicationConfig& config,
                          TraceRecorder* trace) override;
@@ -113,8 +110,6 @@ class ContinuousReplicationModel final : public ReplicationModel {
 
   std::vector<std::uint8_t> bytes_;
   const ir::v2::Node* v2_root_{nullptr};
-  const ir::EquationModel* v1_root_{nullptr};
-  bool v2_native_{false};
   std::vector<Ode> odes_;
   std::unordered_map<std::string, double> params_;
   std::unordered_map<std::string, double> last_state_;

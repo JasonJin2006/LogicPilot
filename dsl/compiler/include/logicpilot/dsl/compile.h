@@ -13,11 +13,9 @@ namespace logicpilot::dsl {
 struct CompileResult {
   bool ok{false};
   std::vector<Diagnostic> diagnostics;
-  std::vector<std::uint8_t> ir_bytes;  // empty unless ok()
-  // v2 contract ("LP2R") produced natively by the lowering (primary output).
-  std::vector<std::uint8_t> v2_bytes;
+  std::vector<std::uint8_t> v2_bytes;  // v2 contract ("LP2R"), empty unless ok
   std::string model_name;              // lowered model identifier
-  // Declared experiment blocks (sidecar for the AI optimizer; not in F1).
+  // Declared experiment blocks (carried in ModelFile.experiments).
   std::vector<ExperimentDecl> experiments;
 };
 

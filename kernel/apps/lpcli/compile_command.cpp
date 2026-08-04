@@ -1,6 +1,6 @@
 // lpcli `compile` subcommand implementation (Phase 2b, task #6).
 //
-// usage: lpcli compile <input.lp> [-o <output>] [--ir-version 1|2]
+// usage: lpcli compile <input.lp> [-o <output>]
 //                        [--diagnostics-json <path>]
 //                        [--experiments-json <path>]
 // Default output: the input path with `.lp` replaced by `.ir.bin`
@@ -25,13 +25,10 @@ namespace {
 void print_usage() {
   fmt::print(
       "usage: lpcli compile <input.lp> [-o <output>]\n"
-      "                        [--ir-version 1|2]\n"
       "                        [--diagnostics-json <path>]\n"
       "                        [--experiments-json <path>]\n"
-      "  compiles a LogicPilot DSL source to FlatBuffers IR (LPIR)\n"
+      "  compiles a LogicPilot DSL source to FlatBuffers IR (LP2R)\n"
       "  -o, --output <path>  output file (default <input>.ir.bin)\n"
-      "  --ir-version <n>     emit the v2 Node/SemanticsRef contract (2,\n"
-      "                       default) or the frozen v1 contract (1)\n"
       "  --diagnostics-json <path>  write machine-readable diagnostics JSON\n"
       "  --experiments-json <path>  write the model's declared experiments\n");
 }
@@ -53,7 +50,6 @@ int compile_command(std::span<const std::string> args) {
   std::string output;
   std::string diagnostics_json;
   std::string experiments_json;
-  int ir_version = 2;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];
@@ -78,21 +74,6 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       experiments_json = args[++i];
-    } else if (arg == "--ir-version") {
-      if (i + 1 >= args.size()) {
-        fmt::print(stderr, "error: {} needs a value\n", arg);
-        return 2;
-      }
-      try {
-        ir_version = std::stoi(args[++i]);
-      } catch (...) {
-        fmt::print(stderr, "error: invalid --ir-version\n");
-        return 2;
-      }
-      if (ir_version != 1 && ir_version != 2) {
-        fmt::print(stderr, "error: --ir-version must be 1 or 2\n");
-        return 2;
-      }
     } else if (arg.starts_with("-")) {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -157,8 +138,7 @@ int compile_command(std::span<const std::string> args) {
     }
   }
 
-  const std::vector<std::uint8_t>& output_bytes =
-      ir_version == 2 ? compiled.v2_bytes : compiled.ir_bytes;
+  const std::vector<std::uint8_t>& output_bytes = compiled.v2_bytes;
 
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
   if (!out) {

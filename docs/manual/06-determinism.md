@@ -18,17 +18,17 @@ lpcli run --model-file build/mm1.ir.bin --seed 42   # 两次运行输出逐位�
 
 | 契约 | 内容 | 冻结 |
 |---|---|---|
-| F1 | `schemas/ir.fbs` 模型 IR（v1 `LPIR` / v2 `LP2R`） | ✅ 双门禁 |
+| F1 | `schemas/ir_v2.fbs` 模型 IR（`LP2R`，Node/SemanticsRef） | ✅ 双门禁 |
 | F2 | `schemas/wire.fbs` 遥测帧 | ✅ 双门禁 |
 | F3 | C++ ↔ TS 运行时互操作 | ✅ CI 逐字段校验 |
 
 变更纪律（ADR-0004）：`flatc --conform` + `.bfbs` SHA256 双门禁，schema 变更与 `schemas/baseline/` 更新必须在同一 commit。
 
-## IR v1 / v2
+## IR 契约（v2）
 
-- `lpcli compile` 默认发射 **v2**（Node/SemanticsRef 薄契约 + 引擎注册表，`LP2R`）
-- v1（`LPIR`）保留为纯兼容读取层；`--ir-version 1` 仍可发射 v1
-- 迁移设计见 [IR v2 迁移设计](/specs/ir-v2)，v2 读取器必须能读 v1（固定种子逐位对拍测试）
+- `lpcli compile` 发射 **v2**（Node/SemanticsRef 薄契约 + 引擎注册表，`LP2R`）；
+  v1（`LPIR`）已随全量迁移移除
+- 迁移设计见 [IR v2 迁移设计](/specs/ir-v2)
 
 ## 理论验收
 

@@ -1,4 +1,4 @@
-// IR AgentModel execution tests (milestone 1c): DSL agent blocks -> F1 IR ->
+// IR AgentModel execution tests (milestone 1c): DSL agent blocks -> v2 IR ->
 // AgentReplicationModel tick loop (built-in behaviors) + determinism.
 #include <cmath>
 #include <memory>
@@ -6,13 +6,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 
-#include "ir_generated.h"
-
 using namespace logicpilot;
+namespace v2 = logicpilot::ir::v2;
 
 namespace {
 
@@ -22,26 +22,26 @@ IrLoadResult load_agents() {
   const dsl::CompileResult compiled = dsl::compile_file(kAgents);
   REQUIRE(compiled.ok);
   IrLoadResult loaded =
-      load_model_buffer(compiled.ir_bytes.data(), compiled.ir_bytes.size());
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
 
 }  // namespace
 
-TEST_CASE("agent DSL lowers to an AgentModel with count/state/behaviors",
+TEST_CASE("agent DSL lowers to a v2 agent node with count/state/behaviors",
           "[agent][ir]") {
   const IrLoadResult loaded = load_agents();
-  REQUIRE(loaded.file.root != nullptr);
-  REQUIRE(loaded.file.root->root()->kind_type() == ir::ModelKind_CoupledModel);
-  const ir::CoupledModel* coupled =
-      loaded.file.root->root()->kind_as_CoupledModel();
-  REQUIRE(coupled->children() != nullptr);
-  REQUIRE(coupled->children()->size() == 1);
-  REQUIRE(coupled->children()->Get(0)->kind_type() ==
-          ir::ModelKind_AgentModel);
-  const ir::AgentModel* agent =
-      coupled->children()->Get(0)->kind_as_AgentModel();
+  REQUIRE(loaded.file.v2_root != nullptr);
+  const v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root != nullptr);
+  REQUIRE(root->semantics() != nullptr);
+  REQUIRE(root->semantics()->block()->str() == "model");
+  REQUIRE(root->children() != nullptr);
+  REQUIRE(root->children()->size() == 1);
+  const v2::Node* agent = root->children()->Get(0);
+  REQUIRE(agent->semantics() != nullptr);
+  REQUIRE(agent->semantics()->block()->str() == "agent");
   REQUIRE(agent->behaviors() != nullptr);
   REQUIRE(agent->behaviors()->size() == 2);
   REQUIRE(agent->behaviors()->Get(0)->handler_ref()->str() == "flip");

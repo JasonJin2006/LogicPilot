@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenerates the TypeScript bindings for schemas/ir.fbs + schemas/wire.fbs
+// Regenerates the TypeScript bindings for schemas/ir_v2.fbs + schemas/wire.fbs
 // into web/packages/protocol/src/generated (flatc --ts).
 //
 // Invoked by `pnpm codegen` at the repo root. flatc is located via:
@@ -28,7 +28,6 @@ function findFlatc() {
 const flatc = findFlatc();
 const outDir = join(root, 'web', 'packages', 'protocol', 'src', 'generated');
 const schemas = [
-  join(root, 'schemas', 'ir.fbs'),
   join(root, 'schemas', 'ir_v2.fbs'),
   join(root, 'schemas', 'wire.fbs'),
 ];

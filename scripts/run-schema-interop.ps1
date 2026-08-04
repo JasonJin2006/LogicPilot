@@ -1,4 +1,4 @@
-# One-click C++/TS schema interop test for contracts F1 (ir.fbs) + F2
+# One-click C++/TS schema interop test for contracts F1 (ir_v2.fbs) + F2
 # (wire.fbs). Callable from CI.
 #
 # Pipeline:
@@ -7,8 +7,8 @@
 #   3. pnpm install + build the @logicpilot/protocol package (tsc)
 #   4. configure + build the standalone C++ writer (scripts/interop), which
 #      pulls ONLY the flatbuffers vcpkg port
-#   5. run the writer to produce model_file.bin + counters_frame.bin
-#   6. verify both buffers with the TypeScript runtime (70 field checks)
+#   5. run the writer to produce model_v2.bin + counters_frame.bin
+#   6. verify both buffers with the TypeScript runtime (117 field checks)
 #
 # Usage:
 #   pwsh scripts/run-schema-interop.ps1

@@ -53,7 +53,7 @@ target_include_directories(logicpilot_dsl PUBLIC
 )
 target_link_libraries(logicpilot_dsl PUBLIC
   tree_sitter_runtime
-  logicpilot_schemas      # ir_generated.h + FlatBuffers runtime (F1)
+  logicpilot_schemas      # ir_v2_generated.h + FlatBuffers runtime (F1)
   logicpilot_phase1b      # IrModelFile view used by ir_dump / e2e tests
 )
 # The grammar artifact is generated code: silence its warnings.

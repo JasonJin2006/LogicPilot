@@ -1,16 +1,14 @@
-ModelFile schema_version=1
+ModelFile schema_version=2
 metadata name='C'
-root CoupledModel name='C'
-root   AtomicModel name='R'
-root     ta kind=Infinite
+root node 'C' library='core' block='model'
+root   node 'R' library='process' block='resource'
 root     param capacity = int(1)
 root     param failure_rate = float(0)
-root   ProcessModel name='P'
-root     node 'A' kind=SourceNode
-root       arrival Poisson params=[2]
-root       max_arrivals -1
-root     node 'R' kind=ServiceNode
-root       service_time Constant params=[1.25]
-root       resource 'R'
-root       servers 1
+root   node 'P' library='process' block='flow'
+root     node 'A' library='process' block='source'
+root       param arrival = distribution(Poisson params=[2])
+root     node 'R' library='process' block='service'
+root       param rate = distribution(Constant params=[1.25])
+root       param resource = string('R')
+root       param servers = int(1)
 root     coupling 'A'.out -> 'R'.in

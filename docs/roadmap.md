@@ -32,7 +32,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 | 契约 | 状态 |
 |---|---|
-| F1 `ir.fbs`（v1 兼容）/ `ir_v2.fbs`（v2 默认） | ✅ 冻结（flatc conform + baseline SHA256 双门禁） |
+| F1 `ir_v2.fbs`（Node/SemanticsRef） | ✅ 冻结（flatc conform + baseline SHA256 双门禁） |
 | F2 `wire.fbs` 遥测帧 | ✅ 冻结 |
 | F3 C++ ↔ TS 运行时互操作 | ✅ CI 逐字段校验（117 checks） |
 | `performance-budget.md` 性能预算 | ⚠️ 契约已写，**benchmark 门禁未进 CI**（见 P0-1） |
@@ -90,10 +90,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    注意：F2 为冻结契约，指标扩展需走冻结流程。
    入口：`kernel/src/devs/`、`kernel/apps/lp-server/wire_frames.cpp`、`scripts/ai-explain.mjs`。
 
-8. **v1 读取器/发射退役决策**
-   现状：`--ir-version 1` 与 v1 读取器保留为兼容层；interop 已同时校验 v1/v2。
-   决策点：外部工具链（interop/TS）整体切到 v2 后，评估移除 v1 发射与读取器。
-   入口：`kernel/src/devs/ir_loader.cpp`、`scripts/interop/writer.cpp`、`web/packages/protocol/`。
+8. ~~**v1 读取器/发射退役**~~ ✅ 已完成
+   v1（`LPIR`）已全量移除：`schemas/ir.fbs`、v1↔v2 转换器、`--ir-version 1`、
+   interop/TS 的 v1 绑定全部删除；loader/process 路径原生吃 v2。
 
 ### P2 — 扩展（远期）
 

@@ -54,7 +54,6 @@ add_library(logicpilot_phase1b STATIC
   src/devs/executor.cpp
   src/devs/ir_atomic.cpp
   src/devs/ir_agent.cpp
-  src/devs/ir_v2_convert.cpp
   src/devs/continuous.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
@@ -62,7 +61,7 @@ add_library(logicpilot_phase1b STATIC
 )
 target_link_libraries(logicpilot_phase1b PUBLIC
   logicpilot_kernel
-  logicpilot_schemas   # ir_generated.h + flatbuffers runtime
+  logicpilot_schemas   # ir_v2_generated.h + flatbuffers runtime
   EnTT::EnTT
 )
 
@@ -97,7 +96,6 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   target_sources(logicpilot_phase1b_tests PRIVATE
     tests/test_ir_atomic.cpp
     tests/test_ir_agent.cpp
-    tests/test_ir_v2_migration.cpp
     tests/test_scale_smoke.cpp
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)

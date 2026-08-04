@@ -95,7 +95,7 @@ set_tests_properties(lpcli_compile_two_servers PROPERTIES
 # IR v2 migration: emit the v2 contract and run it through the auto-converter.
 add_test(NAME lpcli_compile_ir_v2
   COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/mm1.lp"
-          --ir-version 2 -o "${CMAKE_CURRENT_BINARY_DIR}/mm1.v2.lpir")
+          -o "${CMAKE_CURRENT_BINARY_DIR}/mm1.v2.lpir")
 set_tests_properties(lpcli_compile_ir_v2 PROPERTIES
   PASS_REGULAR_EXPRESSION "compiled")
 
@@ -109,7 +109,7 @@ set_tests_properties(lpcli_run_ir_v2 PROPERTIES
 # IR v2 for the DEVS atomic contract: emit v2 and run through the converter.
 add_test(NAME lpcli_compile_ir_v2_atomic
   COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/pulse_chain.lp"
-          --ir-version 2 -o "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.v2.lpir")
+          -o "${CMAKE_CURRENT_BINARY_DIR}/pulse_chain.v2.lpir")
 set_tests_properties(lpcli_compile_ir_v2_atomic PROPERTIES
   PASS_REGULAR_EXPRESSION "compiled")
 

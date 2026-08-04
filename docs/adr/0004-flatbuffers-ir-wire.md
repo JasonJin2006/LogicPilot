@@ -18,7 +18,7 @@ that require full parse/copy on the hot path.
 
 Use **FlatBuffers** for both:
 
-1. **IR** (`schemas/ir.fbs`): the lowered form of the DSL model consumed by the
+ 1. **IR** (`schemas/ir_v2.fbs`): the lowered form of the DSL model consumed by the
    kernel.
 2. **Wire protocol** (`schemas/wire.fbs`): streaming frames and control
    messages between kernel and web clients.

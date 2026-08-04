@@ -1,4 +1,4 @@
-# Schema conformance gate for the frozen contracts F1 (schemas/ir.fbs) and
+# Schema conformance gate for the frozen contracts F1 (schemas/ir_v2.fbs) and
 # F2 (schemas/wire.fbs), see ADR-0004.
 #
 # Two gates per schema:
@@ -19,7 +19,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-        $schemas = @('ir.fbs', 'ir_v2.fbs', 'wire.fbs')
+        $schemas = @('ir_v2.fbs', 'wire.fbs')
 
 # --- locate flatc (env > .deps download > PATH) -----------------------------
 function Get-Flatc {
