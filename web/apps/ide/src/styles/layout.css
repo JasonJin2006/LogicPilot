@@ -242,6 +242,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
   cursor: pointer;
   background: transparent;
   border: none;
