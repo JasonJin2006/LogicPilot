@@ -12,7 +12,7 @@ describe('layoutStore', () => {
     store.setSize('right', 10_000);
     expect(useLayoutStore.getState().areas.right.size).toBe(560);
     store.setSize('right', 10);
-    expect(useLayoutStore.getState().areas.right.size).toBe(240);
+    expect(useLayoutStore.getState().areas.right.size).toBe(120);
   });
 
   it('toggles collapse and switches active panels', () => {
@@ -29,7 +29,12 @@ describe('layoutStore', () => {
     store.setSizeOrClose('right', 300);
     expect(useLayoutStore.getState().areas.right.size).toBe(300);
     expect(useLayoutStore.getState().areas.right.collapsed).toBe(false);
-    store.setSizeOrClose('right', 10);
+    // Within the close hysteresis: clamped to the minimum, not closed.
+    store.setSizeOrClose('right', 100);
+    expect(useLayoutStore.getState().areas.right.size).toBe(120);
+    expect(useLayoutStore.getState().areas.right.collapsed).toBe(false);
+    // Past min - CLOSE_OFFSET (120 - 24 = 96): the panel closes.
+    store.setSizeOrClose('right', 95);
     expect(useLayoutStore.getState().areas.right.collapsed).toBe(true);
   });
 

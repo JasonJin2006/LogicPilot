@@ -26,11 +26,15 @@ export interface LayoutState {
 }
 
 export const SIZE_RANGE: Record<AreaId, { min: number; max: number }> = {
-  left: { min: 220, max: 560 },
+  left: { min: 120, max: 560 },
   center: { min: 0, max: 0 },
-  right: { min: 240, max: 560 },
-  bottom: { min: 100, max: 480 },
+  right: { min: 120, max: 560 },
+  bottom: { min: 60, max: 480 },
 };
+
+// Hysteresis: closing requires dragging this many px past the minimum, so a
+// stray nudge at the edge does not snap the panel shut.
+export const CLOSE_OFFSET = 24;
 
 const DEFAULT_SIZE: Record<AreaId, number> = {
   left: 280,
@@ -88,7 +92,7 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => {
           const range = SIZE_RANGE[area];
           const current = state.areas[area];
-          if (size < range.min) {
+          if (size < range.min - CLOSE_OFFSET) {
             return { areas: { ...state.areas, [area]: { ...current, collapsed: true } } };
           }
           const clamped = Math.min(range.max, Math.max(range.min, size));

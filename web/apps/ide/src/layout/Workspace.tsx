@@ -4,7 +4,7 @@
 // writing size values into the store. See docs/specs/ide-layout.md.
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
+import { CLOSE_OFFSET, SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
@@ -34,7 +34,7 @@ function Splitter({
       }
       const target = startSize + (invert ? -delta : delta);
       useLayoutStore.getState().setSizeOrClose(area, target);
-      if (target < SIZE_RANGE[area].min) {
+      if (target < SIZE_RANGE[area].min - CLOSE_OFFSET) {
         closed = true; // panel closed; ignore the rest of this drag
       }
     };
