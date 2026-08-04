@@ -70,7 +70,7 @@ function PanelArea({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
-      <TabBar area={area} />
+      {area !== 'left' && <TabBar area={area} />}
       {!state.collapsed && (
         <div className="panel-area-body">
           {state.panels.map((panel) => {
@@ -97,9 +97,9 @@ function PanelArea({ area }: { area: AreaId }) {
 export function Workspace() {
   const areas = useLayoutStore((s) => s.areas);
   const style = {
-    '--left-w': `${areas.left.size}px`,
-    '--right-w': `${areas.right.size}px`,
-    '--bottom-h': `${areas.bottom.size}px`,
+    '--left-w': `${areas.left.collapsed ? 0 : areas.left.size}px`,
+    '--right-w': `${areas.right.collapsed ? 0 : areas.right.size}px`,
+    '--bottom-h': `${areas.bottom.collapsed ? 0 : areas.bottom.size}px`,
   } as CSSProperties;
   return (
     <div className="workspace" style={style}>

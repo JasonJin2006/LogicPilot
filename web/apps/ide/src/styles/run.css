@@ -111,8 +111,6 @@
   position: relative;
   flex: 1;
   min-height: 260px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
   overflow: hidden;
 }
 
