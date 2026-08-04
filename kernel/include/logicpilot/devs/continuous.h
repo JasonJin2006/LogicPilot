@@ -92,6 +92,18 @@ class ContinuousReplicationModel final : public ReplicationModel {
     return last_state_;
   }
 
+  // Sampled trajectory (one point per integration step) for visualization.
+  struct TrajectoryPoint {
+    double t{0.0};
+    std::vector<double> values;  // aligned with variables()
+  };
+  [[nodiscard]] const std::vector<std::string>& variables() const {
+    return variables_;
+  }
+  [[nodiscard]] const std::vector<TrajectoryPoint>& trajectory() const {
+    return trajectory_;
+  }
+
  private:
   struct Ode {
     std::string var;
@@ -106,6 +118,8 @@ class ContinuousReplicationModel final : public ReplicationModel {
   std::vector<Ode> odes_;
   std::unordered_map<std::string, double> params_;
   std::unordered_map<std::string, double> last_state_;
+  std::vector<std::string> variables_;
+  std::vector<TrajectoryPoint> trajectory_;
 };
 
 }  // namespace logicpilot

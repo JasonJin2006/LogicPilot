@@ -282,6 +282,14 @@ button:disabled {
   font-size: 12px;
   padding-left: 18px;
 }
+.ai-trajectory {
+  display: block;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  margin-top: 6px;
+  max-width: 100%;
+}
 .ai-scores {
   width: 100%;
   border-collapse: collapse;

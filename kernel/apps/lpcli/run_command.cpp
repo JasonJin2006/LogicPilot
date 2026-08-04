@@ -2,6 +2,7 @@
 #include "run_command.h"
 
 #include <charconv>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "builtin_registry.h"
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/replication.h"
 
@@ -45,7 +47,8 @@ void print_usage() {
       "  --warmup <n>               warmup arrivals excluded from stats\n"
       "  --lambda <x>               arrival rate for built-in:mm1 (default 0.8)\n"
       "  --mu <x>                   service rate for built-in:mm1 (default 1.0)\n"
-      "  --confidence <x>           CI confidence level (default 0.95)\n");
+      "  --confidence <x>           CI confidence level (default 0.95)\n"
+      "  --trajectory <path>        write continuous-model trajectory JSON\n");
 }
 
 std::uint64_t replication_seed(std::uint64_t run_seed, std::uint64_t rep) {
@@ -137,6 +140,12 @@ int run_command(std::span<const std::string> args) {
         fmt::print(stderr, "error: invalid --confidence\n");
         return 2;
       }
+    } else if (arg == "--trajectory") {
+      if (!need_value()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      options.trajectory = value;
     } else {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -262,6 +271,42 @@ int run_command(std::span<const std::string> args) {
   print_row("utilization", summary.utilization, theory.rho, is_builtin_mm1);
   print_row("availability", summary.availability, 0.0, false);
   print_row("final_value", summary.final_value, 0.0, false);
+
+  // Continuous models: write the sampled trajectory as JSON for the web
+  // visualization (variables + one point per integration step).
+  if (!options.trajectory.empty()) {
+    const auto* continuous =
+        dynamic_cast<const ContinuousReplicationModel*>(model.get());
+    if (continuous != nullptr) {
+      std::ofstream out(options.trajectory, std::ios::trunc);
+      if (!out) {
+        fmt::print(stderr, "error: cannot write '{}'\n", options.trajectory);
+        return 1;
+      }
+      out << "{\"variables\":[";
+      const auto& variables = continuous->variables();
+      for (std::size_t i = 0; i < variables.size(); ++i) {
+        out << (i > 0 ? "," : "") << "\"" << variables[i] << "\"";
+      }
+      out << "],\"points\":[";
+      const auto& trajectory = continuous->trajectory();
+      for (std::size_t i = 0; i < trajectory.size(); ++i) {
+        const auto& point = trajectory[i];
+        out << (i > 0 ? "," : "") << "{\"t\":" << point.t << ",\"values\":[";
+        for (std::size_t j = 0; j < point.values.size(); ++j) {
+          out << (j > 0 ? "," : "") << point.values[j];
+        }
+        out << "]}";
+      }
+      out << "]}\n";
+      out.close();
+      if (!out) {
+        fmt::print(stderr, "error: failed writing '{}'\n",
+                   options.trajectory);
+        return 1;
+      }
+    }
+  }
 
   if (is_builtin_mm1 && !summary.mean_wait.covers(theory.wq)) {
     fmt::print(stderr, "warning: Wq CI does not cover theory\n");

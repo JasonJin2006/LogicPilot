@@ -148,6 +148,14 @@ try {
   log('AI panel explained the model bottleneck from the prompt');
   await page.screenshot({ path: join(OUT, '6-ai-explain.png') });
 
+  // AI panel: continuous-model trajectory chart.
+  await page.locator('.ai-input').fill(
+      'build an exponential decay model with rate 0.5');
+  await page.getByRole('button', { name: 'generate + run' }).click();
+  await page.waitForSelector('.ai-trajectory', { timeout: 90_000 });
+  log('AI panel charted a continuous-model trajectory');
+  await page.screenshot({ path: join(OUT, '7-ai-trajectory.png') });
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);
   }

@@ -63,4 +63,27 @@ const base = { lpcli: lpcli || undefined };
   assert.match(dsl, /capacity = 2/);
 }
 
+// 5. Continuous-model generation from an ODE prompt.
+{
+  const dsl = ruleBasedProvider(
+      'build an exponential decay model with rate 0.5');
+  assert.match(dsl, /continuous/);
+  assert.match(dsl, /d y\/dt = -k\*y/);
+  assert.match(dsl, /param k = 0\.5/);
+}
+
+// 6. ai-build with a decay prompt returns the sampled trajectory.
+{
+  const result = await buildModel({
+    ...base,
+    prompt: 'build an exponential decay model with rate 0.5',
+    maxIterations: 2,
+    run: true,
+  });
+  assert.equal(result.ok, true);
+  assert.ok(result.trajectory !== null &&
+      Array.isArray(result.trajectory.points) &&
+      result.trajectory.points.length > 0);
+}
+
 console.log('AI-BUILD TEST: PASS');

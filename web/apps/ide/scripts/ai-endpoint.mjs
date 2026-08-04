@@ -74,6 +74,7 @@ export async function handleAiBuild(req, res) {
       dsl: result.dsl,
       diagnostics: result.lastDiagnostics,
       runSummary: result.runSummary,
+      trajectory: result.trajectory,
     });
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });

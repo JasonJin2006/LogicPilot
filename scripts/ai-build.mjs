@@ -87,6 +87,7 @@ export async function buildModel({
     let finalDsl = '';
     let ok = false;
     let iterations = 0;
+    let runTrajectory = null;
     for (let attempt = 0; attempt < maxIterations; ++attempt) {
       iterations = attempt + 1;
       finalDsl = await provider(prompt, diagnostics, previousDsl);
@@ -123,6 +124,7 @@ export async function buildModel({
       try {
         const lp = join(runDir, 'model.lp');
         const ir = join(runDir, 'model.ir.bin');
+        const trajectoryPath = join(runDir, 'trajectory.json');
         writeFileSync(lp, finalDsl, 'utf8');
         runLpcli(lpcli, ['compile', lp, '-o', ir]);
         runSummary = runLpcli(lpcli, [
@@ -131,7 +133,11 @@ export async function buildModel({
           '--reps', String(runParams.reps),
           '--arrivals', String(runParams.arrivals),
           '--warmup', String(runParams.warmup),
+          '--trajectory', trajectoryPath,
         ]);
+        if (existsSync(trajectoryPath)) {
+          runTrajectory = JSON.parse(readFileSync(trajectoryPath, 'utf8'));
+        }
       } finally {
         rmSync(runDir, { recursive: true, force: true });
       }
@@ -143,6 +149,7 @@ export async function buildModel({
       lpcli,
       lastDiagnostics: diagnostics,
       runSummary,
+      trajectory: runTrajectory,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -195,6 +202,12 @@ async function main() {
     lpcli,
     maxIterations: options.maxIterations,
     sabotageFirst: options.sabotageFirst,
+    run: options.run,
+    runParams: {
+      reps: options.reps,
+      arrivals: options.arrivals,
+      warmup: options.warmup,
+    },
   });
 
   if (result.ok && options.out) {

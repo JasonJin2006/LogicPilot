@@ -97,7 +97,53 @@ model ${spec.model} {
 }
 
 export function ruleBasedProvider(prompt, diagnostics = []) {
+  const continuous = continuousDsl(prompt);
+  if (continuous) {
+    return continuous;
+  }
   return renderDsl(repairSpec(parseSpec(prompt), diagnostics));
+}
+
+// Continuous-model generation for ODE prompts (decay / SIR).
+function continuousDsl(prompt) {
+  const text = prompt.toLowerCase();
+  const number = (re) => {
+    const match = text.match(re);
+    return match ? Number.parseFloat(match[1]) : null;
+  };
+  if (/sir|epidemic/.test(text)) {
+    const beta = number(/(?:beta|infection)[^\d]{0,12}(\d+(?:\.\d+)?)/) ?? 0.5;
+    const gamma =
+        number(/(?:gamma|recovery)[^\d]{0,12}(\d+(?:\.\d+)?)/) ?? 0.1;
+    return `model SIR {
+  continuous Dynamics {
+    state S = 0.99
+    state I = 0.01
+    state R = 0.0
+    param beta = ${beta}
+    param gamma = ${gamma}
+    d S/dt = -beta*S*I
+    d I/dt = beta*S*I - gamma*I
+    d R/dt = gamma*I
+  }
+}
+`;
+  }
+  if (/decay|continuous|exponential\s*decay/.test(text) ||
+      /\bode\b/.test(text) ||
+      /d\s*[a-z]\s*\/\s*dt/.test(text)) {
+    const k = number(/(?:k|rate|decay)[^\d]{0,12}(\d+(?:\.\d+)?)/) ?? 0.5;
+    const y0 = number(/(?:y0|initial)[^\d]{0,12}(\d+(?:\.\d+)?)/) ?? 1.0;
+    return `model Decay {
+  continuous Dynamics {
+    state y = ${y0}
+    param k = ${k}
+    d y/dt = -k*y
+  }
+}
+`;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

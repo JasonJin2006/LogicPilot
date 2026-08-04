@@ -21,6 +21,7 @@ struct RunOptions {
   double lambda{0.8};
   double mu{1.0};
   double confidence{0.95};
+  std::string trajectory;  // write continuous-model trajectory JSON here
 };
 
 // Execute the run subcommand. Returns the process exit code.

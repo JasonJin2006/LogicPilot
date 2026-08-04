@@ -15,6 +15,10 @@ interface AiResult {
   dsl: string;
   diagnostics: AiDiagnostic[];
   runSummary: string;
+  trajectory?: {
+    variables: string[];
+    points: Array<{ t: number; values: number[] }>;
+  };
 }
 
 interface OptimizeResult {
@@ -44,6 +48,62 @@ interface ExplainResult {
 
 const EXAMPLE_PROMPT =
     'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
+
+const TRAJECTORY_COLORS = ['#58a6ff', '#3fb950', '#ffb020', '#f85149'];
+
+function TrajectoryChart({
+  trajectory,
+}: {
+  trajectory: NonNullable<AiResult['trajectory']>;
+}) {
+  const { variables, points } = trajectory;
+  const width = 260;
+  const height = 120;
+  const pad = 6;
+  let tMax = 0;
+  let vMin = Infinity;
+  let vMax = -Infinity;
+  for (const point of points) {
+    tMax = Math.max(tMax, point.t);
+    for (const value of point.values) {
+      vMin = Math.min(vMin, value);
+      vMax = Math.max(vMax, value);
+    }
+  }
+  if (vMin === vMax) {
+    vMin -= 1;
+    vMax += 1;
+  }
+  const x = (t: number) => pad + (t / (tMax || 1)) * (width - 2 * pad);
+  const y = (v: number) =>
+      pad + (1 - (v - vMin) / (vMax - vMin)) * (height - 2 * pad);
+  return (
+    <svg
+      className="ai-trajectory"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
+      {variables.map((name, index) => {
+        const line = points
+          .map(
+              (point) =>
+                  `${x(point.t).toFixed(1)},${y(point.values[index] ?? 0).toFixed(1)}`,
+          )
+          .join(' ');
+        return (
+          <polyline
+            key={name}
+            points={line}
+            fill="none"
+            stroke={TRAJECTORY_COLORS[index % TRAJECTORY_COLORS.length]}
+            strokeWidth="1.5"
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export function AIPanel() {
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
@@ -127,6 +187,10 @@ export function AIPanel() {
               {result.runSummary !== '' && (
                 <pre className="ai-run">{result.runSummary}</pre>
               )}
+              {result.trajectory != null &&
+                result.trajectory.points.length > 0 && (
+                  <TrajectoryChart trajectory={result.trajectory} />
+                )}
             </>
           ) : (
             <ul className="ai-diagnostics">

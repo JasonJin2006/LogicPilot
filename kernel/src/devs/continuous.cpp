@@ -385,6 +385,12 @@ ReplicationMetrics ContinuousReplicationModel::run(
   for (std::size_t i = 0; i < count; ++i) {
     y[i] = state[odes_[i].var];
   }
+  variables_.clear();
+  trajectory_.clear();
+  trajectory_.reserve(static_cast<std::size_t>(steps));
+  for (const Ode& ode : odes_) {
+    variables_.push_back(ode.var);
+  }
   for (std::uint64_t step = 0; step < steps; ++step) {
     current_t = static_cast<double>(step) * kDt;
     std::vector<double> k1(count), k2(count), k3(count), k4(count);
@@ -418,6 +424,10 @@ ReplicationMetrics ContinuousReplicationModel::run(
     for (std::size_t i = 0; i < count; ++i) {
       y[i] += (kDt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
     }
+    TrajectoryPoint point;
+    point.t = (static_cast<double>(step) + 1.0) * kDt;
+    point.values.assign(y.begin(), y.end());
+    trajectory_.push_back(std::move(point));
   }
   for (std::size_t i = 0; i < count; ++i) {
     last_state_[odes_[i].var] = y[i];

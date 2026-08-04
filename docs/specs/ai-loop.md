@@ -32,3 +32,9 @@ node scripts/ai-build.mjs "2 machines with failure rate 0.05, arrival 1.5, servi
 
 `scripts/test-ai-build.mjs`（CI：`ai_build_smoke` ctest）覆盖：干净 prompt 端到端、
 蓄意破坏后 2 次迭代修复收敛、关键词抽取、诊断修复保持良构。
+
+## 连续模型与轨迹
+
+rule-based provider 识别 ODE prompt（decay / SIR）并生成 `continuous` 模型；
+`lpcli run --trajectory <path>` 输出采样轨迹 JSON（变量 + 每步值）。AI 面板在
+生成结果中渲染轨迹曲线（浏览器 E2E 覆盖）。
