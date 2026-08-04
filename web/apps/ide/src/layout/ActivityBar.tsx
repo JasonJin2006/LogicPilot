@@ -2,12 +2,14 @@
 // shows. Clicking the active view again collapses the sidebar.
 
 import { useLayoutStore } from '../state/layoutStore';
+import { useUiStore } from '../state/uiStore';
 import { ACTIVITY_VIEWS } from './panels';
 
 export function ActivityBar() {
   const left = useLayoutStore((s) => s.areas.left);
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
+  const openSettings = useUiStore((s) => s.openSettings);
   return (
     <nav className="activity-bar">
       {ACTIVITY_VIEWS.map((view) => {
@@ -32,6 +34,15 @@ export function ActivityBar() {
           </button>
         );
       })}
+      <div className="activity-spacer" />
+      <button
+        className="activity-item"
+        aria-label="Settings"
+        title="Settings"
+        onClick={openSettings}
+      >
+        <span className="activity-glyph">⚙</span>
+      </button>
     </nav>
   );
 }

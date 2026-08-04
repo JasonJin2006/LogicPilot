@@ -1,50 +1,75 @@
+/* ---------------------------------------------------------------------------
+   LogicPilot IDE design system: tokens, layout skeleton, primitives.
+   Domain styles live in run.css / ai.css / layout.css.
+--------------------------------------------------------------------------- */
+
 :root {
   color-scheme: dark;
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #58a6ff;
+
+  /* surfaces */
+  --bg: #0a0e14;
+  --surface-1: #10151d;
+  --surface-2: #161d27;
+  --surface-3: #1d2733;
+  --border: #222c39;
+  --border-strong: #314050;
+
+  /* text */
+  --text: #d7e0ea;
+  --text-secondary: #93a1b3;
+  --text-muted: #66768c;
+  --muted: #66768c; /* legacy alias */
+
+  /* accents */
+  --accent: #4cc2ff;
+  --accent-dim: rgba(76, 194, 255, 0.14);
   --ok: #3fb950;
-  --warn: #ffb020;
+  --ok-dim: rgba(63, 185, 80, 0.14);
+  --warn: #e3b341;
+  --warn-dim: rgba(227, 179, 65, 0.14);
   --error: #f85149;
+  --error-dim: rgba(248, 81, 73, 0.14);
+  --panel: #10151d; /* legacy alias */
+
+  /* geometry */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgba(76, 194, 255, 0.05), transparent 60%), var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family:
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
 }
 
-.app-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 10px 16px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 26px;
-  color: var(--accent);
-  white-space: nowrap;
-}
+/* --- primitives --------------------------------------------------------- */
 
 .panel-row {
   display: flex;
@@ -53,45 +78,103 @@ body {
   flex-wrap: wrap;
 }
 
-input {
-  background: var(--bg);
+input,
+textarea {
+  background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  padding: 5px 10px;
   font: inherit;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
 }
 
-input:disabled {
-  opacity: 0.55;
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+input:disabled,
+textarea:disabled {
+  opacity: 0.45;
+}
+
+input[type='number'] {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 84px;
 }
 
 .field {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  color: var(--muted);
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .field input {
-  width: 76px;
+  width: 80px;
 }
 
 button {
-  background: #21262d;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 4px;
-  padding: 4px 12px;
+  border-radius: var(--r-sm);
+  padding: 5px 14px;
   cursor: pointer;
   font: inherit;
+  font-weight: 500;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 60ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: var(--accent);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
+}
+
+button.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06121c;
+  font-weight: 600;
+}
+
+button.btn-primary:hover:not(:disabled) {
+  background: #63ccff;
+  border-color: #63ccff;
+}
+
+button.btn-ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+button.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
 }

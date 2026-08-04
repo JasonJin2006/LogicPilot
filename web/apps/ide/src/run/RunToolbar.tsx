@@ -1,6 +1,6 @@
-// Connection + run control panel: server URL, start parameters and the
-// start / pause / resume / step / stop command buttons. Reads the
-// connection store directly; the parameter fields are local form state.
+// Run control toolbar: replication parameters + playback controls. The
+// connection setup (URL / connect) lives in the settings dialog; this bar
+// is the always-available run control surface.
 
 import { useState } from 'react';
 import type { StartOptions } from '../client/simClient';
@@ -32,12 +32,8 @@ function parseNum(text: string): number | undefined {
   return text.trim() !== '' && Number.isFinite(n) ? n : undefined;
 }
 
-export function ConnectionPanel() {
-  const url = useConnectionStore((state) => state.url);
+export function RunToolbar() {
   const conn = useConnectionStore((state) => state.conn);
-  const setUrl = useConnectionStore((state) => state.setUrl);
-  const connect = useConnectionStore((state) => state.connect);
-  const disconnect = useConnectionStore((state) => state.disconnect);
   const start = useConnectionStore((state) => state.start);
   const pause = useConnectionStore((state) => state.pause);
   const resume = useConnectionStore((state) => state.resume);
@@ -52,27 +48,18 @@ export function ConnectionPanel() {
   const [speed, setSpeedField] = useState('10');
 
   const connected = conn === 'connected';
-  const connecting = conn === 'connecting';
+  const buildOptions = (): StartOptions => ({
+    seed: parseNum(seed),
+    reps: parseNum(reps),
+    arrivals: parseNum(arrivals),
+    warmup: parseNum(warmup),
+    speed: parseNum(speed),
+  });
 
   return (
-    <div className="connection-panel">
-      <div className="panel-row">
-        <input
-          className="url-input"
-          value={url}
-          spellCheck={false}
-          disabled={connected || connecting}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        {connected || connecting ? (
-          <button onClick={disconnect}>Disconnect</button>
-        ) : (
-          <button onClick={connect} disabled={connecting}>
-            Connect
-          </button>
-        )}
-      </div>
-      <div className="panel-row">
+    <div className="run-toolbar">
+      <span className="toolbar-label">Run</span>
+      <div className="params">
         <NumberField label="seed" value={seed} onChange={setSeed} disabled={!connected} />
         <NumberField label="reps" value={reps} onChange={setReps} disabled={!connected} />
         <NumberField
@@ -83,22 +70,12 @@ export function ConnectionPanel() {
         />
         <NumberField label="warmup" value={warmup} onChange={setWarmup} disabled={!connected} />
         <NumberField label="speed" value={speed} onChange={setSpeedField} disabled={!connected} />
-        <button
-          disabled={!connected}
-          onClick={() =>
-            start({
-              seed: parseNum(seed),
-              reps: parseNum(reps),
-              arrivals: parseNum(arrivals),
-              warmup: parseNum(warmup),
-              speed: parseNum(speed),
-            })
-          }
-        >
+      </div>
+      <div className="divider" />
+      <div className="controls">
+        <button className="btn-primary" disabled={!connected} onClick={() => start(buildOptions())}>
           Start
         </button>
-      </div>
-      <div className="panel-row">
         <button disabled={!connected} onClick={pause}>
           Pause
         </button>

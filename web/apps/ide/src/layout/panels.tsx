@@ -25,11 +25,12 @@ export interface PanelDef {
 }
 
 export const PANELS: Record<PanelId, PanelDef> = {
-  // center: the visualization/model workspace.
+  // center: the visualization/model workspace. Stats charts and results are
+  // view tabs here (AnyLogic-style: telemetry views are opt-in, not pinned).
   queue: { title: 'Queue', area: 'center', component: QueueView },
-  // right: live context panels.
-  counters: { title: 'Counters', area: 'right', component: ChartPanel },
-  results: { title: 'Results', area: 'right', component: ResultsPanel },
+  counters: { title: 'Counters', area: 'center', component: ChartPanel },
+  results: { title: 'Results', area: 'center', component: ResultsPanel },
+  // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
@@ -54,7 +55,7 @@ export const ACTIVITY_VIEWS: Array<{
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
   left: { panels: ['modelInfo', 'palette', 'runInfo'], active: 'modelInfo' },
-  center: { panels: ['queue'], active: 'queue' },
-  right: { panels: ['counters', 'results', 'ai'], active: 'counters' },
+  center: { panels: ['queue', 'counters', 'results'], active: 'queue' },
+  right: { panels: ['ai'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },
 };

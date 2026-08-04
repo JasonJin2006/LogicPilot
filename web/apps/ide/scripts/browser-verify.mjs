@@ -48,15 +48,16 @@ try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
   await page.waitForSelector('.queue-canvas canvas', { timeout: 20_000 });
-  await page.waitForSelector('.charts canvas', { timeout: 20_000 });
-  log('page loaded: pixi canvas + chart canvases present');
+  log('page loaded: queue canvas present');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
-  // Connect first: the parameter inputs stay disabled until the socket is
-  // open.
+  // Connection setup lives in the settings dialog (activity bar gear).
+  await page.getByRole('button', { name: 'Settings' }).click();
+  await page.getByRole('dialog', { name: 'Settings' }).waitFor();
   await page.getByRole('button', { name: 'Connect' }).click();
   await page.waitForSelector('.conn-connected', { timeout: 10_000 });
   log('connected to ws://127.0.0.1:8089/sim');
+  await page.getByRole('button', { name: '✕' }).click();
 
   // Small run so the browser session finishes quickly.
   for (const [label, value] of [
@@ -91,6 +92,9 @@ try {
   }
   log(`telemetry streaming: seq ${seqAt5} -> ${seqLater}`);
 
+  // Stats charts are a center-workspace tab (opt-in telemetry views).
+  await page.getByRole('button', { name: 'Counters' }).click();
+  await page.waitForSelector('.charts canvas', { timeout: 20_000 });
   const chartState = await page.evaluate(() => {
     const canvases = document.querySelectorAll('.charts canvas');
     return {
@@ -113,7 +117,7 @@ try {
   await page.screenshot({ path: join(OUT, '3-finished.png') });
 
   // AI model panel (AI tab): generate a model from a natural-language prompt.
-  await page.getByRole('button', { name: 'AI' }).click();
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
   await page
     .locator('.ai-input')
     .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');

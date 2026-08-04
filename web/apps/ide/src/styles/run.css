@@ -1,16 +1,113 @@
-/* Run-visualization domain: connection panel, queue view, status bar,
-   counter charts and the results table. */
+/* Run domain: run toolbar, connection settings dialog, queue view, status
+   bar, counter charts and the results table. */
 
-.connection-panel {
+.url-input {
+  min-width: 0;
+}
+
+/* --- connection settings dialog ---------------------------------------- */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgba(4, 7, 12, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.dialog-card {
+  width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dialog-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: 1;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
-.url-input {
-  min-width: 280px;
-  flex: 1;
+.dialog-field .url-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dialog-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* --- run toolbar -------------------------------------------------------- */
+
+.run-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-height: 48px;
+  padding: 8px 18px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.run-toolbar .toolbar-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.run-toolbar .params {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.run-toolbar .divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+
+.run-toolbar .controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .queue-view {
@@ -77,24 +174,38 @@
 }
 
 .conn-badge {
-  padding: 1px 8px;
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.conn-badge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .conn-connected {
-  background: rgba(63, 185, 80, 0.15);
+  background: var(--ok-dim);
   color: var(--ok);
 }
 
 .conn-connecting {
-  background: rgba(255, 176, 32, 0.15);
+  background: var(--warn-dim);
   color: var(--warn);
 }
 
 .conn-disconnected {
-  background: rgba(139, 148, 158, 0.15);
-  color: var(--muted);
+  background: rgba(139, 148, 158, 0.12);
+  color: var(--text-muted);
 }
 
 .status-bar .error {

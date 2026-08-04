@@ -25,8 +25,8 @@ describe('layoutStore', () => {
 
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
-    expect(areas.center.panels).toEqual(['queue']);
-    expect(areas.right.panels).toEqual(['counters', 'results', 'ai']);
+    expect(areas.center.panels).toEqual(['queue', 'counters', 'results']);
+    expect(areas.right.panels).toEqual(['ai']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette', 'runInfo']);
     expect(areas.bottom.panels).toEqual(['console']);
   });

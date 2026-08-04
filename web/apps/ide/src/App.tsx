@@ -1,25 +1,26 @@
-// LogicPilot IDE root layout: header (brand + connection/run control),
-// activity bar + panel workspace (VS Code + AnyLogic style), and a global
-// status bar. Panels and layout are driven by the layout store + registry
-// (see docs/specs/ide-layout.md); domain state lives in the domain stores.
+// LogicPilot IDE root layout: run toolbar, activity bar + panel workspace
+// and a global status bar. Connection setup lives in the settings dialog
+// (activity bar gear); stats charts and results are center-workspace tabs
+// (AnyLogic-style opt-in telemetry views), not pinned side panels.
 
 import { ActivityBar } from './layout/ActivityBar';
 import { Workspace } from './layout/Workspace';
-import { ConnectionPanel } from './run/ConnectionPanel';
+import { RunToolbar } from './run/RunToolbar';
+import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
+import { useUiStore } from './state/uiStore';
 
 export default function App() {
+  const settingsOpen = useUiStore((state) => state.settingsOpen);
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>LogicPilot</h1>
-        <ConnectionPanel />
-      </header>
+      <RunToolbar />
       <div className="app-body">
         <ActivityBar />
         <Workspace />
       </div>
       <StatusBar />
+      {settingsOpen && <SettingsDialog />}
     </div>
   );
 }

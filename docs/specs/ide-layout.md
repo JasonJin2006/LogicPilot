@@ -10,13 +10,13 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ header   品牌 · 连接条 · 运行控制（全局，始终可见）            │
+│ run-toolbar  运行参数 + Start/Pause/Step/Stop（常驻）          │
 ├──┬───────────┬──────────────────────────┬────────────────────┤
-│活│ 侧边栏     │ 中央工作区（tabs）        │ 右侧面板（tabs）    │
-│动│ Run 视图   │ ▸ Queue（队列可视化）     │ ▸ Counters         │
-│栏│ Model 视图 │   Model（建模画布·未来）   │   Results          │
-│  │ Palette   │                          │   AI               │
-│  │ AI 视图    │                          │   Properties（未来）│
+│活│ 侧边栏     │ 中央工作区（tabs）        │ 右侧面板            │
+│动│ Run 视图   │ ▸ Queue（队列可视化）     │ ▸ AI               │
+│栏│ Model 视图 │ ▸ Counters（统计图表）    │   Properties（未来）│
+│  │ Palette   │ ▸ Results（运行统计）     │                    │
+│  │ ⚙ 设置     │   Model（建模画布·未来）  │                    │
 ├──┴───────────┴──────────────────────────┴────────────────────┤
 │ bottom  控制台 / 输出 / 编译诊断（可折叠）                     │
 ├──────────────────────────────────────────────────────────────┤
@@ -30,35 +30,39 @@ LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 
 
 ## 1. 布局区域
 
-| 区域 | 内容 | 可调 | 可折叠 |
-|---|---|---|---|
-| `header` | 品牌、连接条、运行控制 | — | — |
-| `activity` | 活动栏（竖排图标，切换侧边栏视图） | — | — |
-| `left` | 侧边栏（跟随活动栏：Run / Model / Palette / AI 视图） | 宽 | ✅ |
-| `center` | 工作区标签页（Queue 可视化、未来建模画布/3D） | — | — |
-| `right` | 上下文面板（Counters / Results / AI / 未来 Properties） | 宽 | ✅ |
-| `bottom` | 控制台 / 输出 / 编译诊断 | 高 | ✅ |
-| `status` | 全局状态条（连接、seq、sim_time、FPS、模型） | — | — |
+| 区域          | 内容                                                      | 可调 | 可折叠 |
+| ------------- | --------------------------------------------------------- | ---- | ------ |
+| `run-toolbar` | 运行参数 + 播放控制（常驻）                               | —    | —      |
+| `activity`    | 活动栏（竖排图标，切换侧边栏视图）                        | —    | —      |
+| `left`        | 侧边栏（跟随活动栏：Run / Model / Palette / AI 视图）     | 宽   | ✅     |
+| `center`      | 工作区标签页（Queue / Counters / Results / 未来建模画布） | —    | —      |
+| `right`       | 上下文面板（AI / 未来 Properties）                        | 宽   | ✅     |
+| `bottom`      | 控制台 / 输出 / 编译诊断                                  | 高   | ✅     |
+| `status`      | 全局状态条（连接、seq、sim_time、FPS、模型）              | —    | —      |
+
+连接配置（网关 URL / Connect）在**设置弹层**（活动栏 ⚙ 打开），是一次性
+设置而非常驻控件；统计图表与运行结果是中央工作区的可选视图标签
+（AnyLogic 风格：按需切换，不固定占用面板）。
 
 ## 2. 面板注册表（内容与布局解耦）
 
 ```ts
 interface PanelDef {
   title: string;
-  area: AreaId;          // left | center | right | bottom
-  view?: ActivityView;   // 侧边栏面板跟随的活动栏视图（仅 left）
+  area: AreaId; // left | center | right | bottom
+  view?: ActivityView; // 侧边栏面板跟随的活动栏视图（仅 left）
   component: ComponentType;
 }
 ```
 
 当前注册表（`src/layout/panels.tsx`）：
 
-| PanelId | title | area | 说明 |
-|---|---|---|---|
-| `queue` | Queue | center | PixiJS 队列可视化 |
-| `counters` | Counters | right | uPlot 实时图表 |
-| `results` | Results | right | RunFinished 统计 |
-| `ai` | AI | right | AI 模型面板 |
+| PanelId    | title    | area   | 说明                         |
+| ---------- | -------- | ------ | ---------------------------- |
+| `queue`    | Queue    | center | PixiJS 队列可视化            |
+| `counters` | Counters | center | uPlot 实时图表（可选视图）   |
+| `results`  | Results  | center | RunFinished 统计（可选视图） |
+| `ai`       | AI       | right  | AI 模型面板                  |
 
 未来：`modelTree`(left/Model)、`palette`(left/Palette)、`properties`(right)、
 `console`/`diagnostics`(bottom)。加新面板 = 注册一项，布局与路由不动。
@@ -67,15 +71,15 @@ interface PanelDef {
 
 ```ts
 interface AreaState {
-  size: number;          // left/right 宽、bottom 高（px）
+  size: number; // left/right 宽、bottom 高（px）
   collapsed: boolean;
   activePanel: PanelId;
-  panels: PanelId[];     // 该区域标签顺序（阶段 2 拖拽合并修改这里）
+  panels: PanelId[]; // 该区域标签顺序（阶段 2 拖拽合并修改这里）
 }
 interface LayoutState {
-  areas: Record<AreaId, AreaState>;   // center 无 size
-  activityView: ActivityView;         // 当前活动栏视图（驱动 left 内容）
-  setSize(area, size): void;          // clamp 到 [min, max]
+  areas: Record<AreaId, AreaState>; // center 无 size
+  activityView: ActivityView; // 当前活动栏视图（驱动 left 内容）
+  setSize(area, size): void; // clamp 到 [min, max]
   toggleCollapse(area): void;
   setActive(area, panel): void;
   setActivityView(view): void;
@@ -89,14 +93,14 @@ interface LayoutState {
 
 ## 4. 组件层
 
-| 组件 | 职责 |
-|---|---|
-| `Workspace` | 读 layoutStore，渲染 CSS Grid 骨架 |
+| 组件          | 职责                                                  |
+| ------------- | ----------------------------------------------------- |
+| `Workspace`   | 读 layoutStore，渲染 CSS Grid 骨架                    |
 | `ActivityBar` | 竖排图标（Run/Model/Palette/AI），切换 `activityView` |
-| `PanelArea` | 一个区域 = `TabBar` + 内容；折叠态处理 |
-| `TabBar` | 标签条（点击切换；阶段 2 加拖拽） |
-| `Panel` | 单个面板的边框容器 |
-| `Splitter` | 拖拽分隔条（pointer events）→ `setSize`；双击折叠 |
+| `PanelArea`   | 一个区域 = `TabBar` + 内容；折叠态处理                |
+| `TabBar`      | 标签条（点击切换；阶段 2 加拖拽）                     |
+| `Panel`       | 单个面板的边框容器                                    |
+| `Splitter`    | 拖拽分隔条（pointer events）→ `setSize`；双击折叠     |
 
 面板内容**常驻挂载 + CSS 显隐**：切换标签不丢图表/AI 状态，10 Hz 遥测只重渲染
 订阅的面板（zustand selector）。
@@ -109,8 +113,8 @@ interface LayoutState {
   grid-template-columns: 48px var(--left-w) minmax(0, 1fr) var(--right-w);
   grid-template-rows: minmax(0, 1fr) var(--bottom-h);
   grid-template-areas:
-    "activity left center right"
-    "activity bottom bottom bottom";
+    'activity left center right'
+    'activity bottom bottom bottom';
 }
 ```
 
