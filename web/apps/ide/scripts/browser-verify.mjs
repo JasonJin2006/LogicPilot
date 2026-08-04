@@ -96,7 +96,7 @@ try {
   await page.screenshot({ path: join(OUT, '2-running.png') });
 
   // AI panel (right): generate / optimize / explain / trajectory.
-  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  await page.locator('.tab-label', { hasText: 'AI' }).click();
   await page
     .locator('.ai-input')
     .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');

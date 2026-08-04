@@ -71,30 +71,29 @@ function TabBar({ area }: { area: AreaId }) {
   return (
     <div className="tab-bar">
       {state.panels.map((panel) => (
-        <button
+        <div
           key={panel}
           className={`tab${panel === state.activePanel ? ' active' : ''}`}
           onClick={() => setActive(area, panel)}
         >
-          {PANELS[panel].title}
-        </button>
+          <span className="tab-label">{PANELS[panel].title}</span>
+          <button
+            className="tab-x"
+            aria-label={`Close ${panel} tab`}
+            title="Close tab"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (area === 'center') {
+                useLayoutStore.getState().removePanel(area, panel);
+              } else {
+                toggleCollapse(area);
+              }
+            }}
+          >
+            <X size={11} />
+          </button>
+        </div>
       ))}
-      {state.panels.length > 0 && (
-        <button
-          className="tab-close"
-          aria-label={`Close ${state.activePanel} tab`}
-          title="Close panel"
-          onClick={() => {
-            if (area === 'center') {
-              useLayoutStore.getState().removePanel(area, state.activePanel);
-            } else {
-              toggleCollapse(area);
-            }
-          }}
-        >
-          <X size={13} />
-        </button>
-      )}
     </div>
   );
 }
