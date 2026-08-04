@@ -71,6 +71,7 @@ export default defineConfig({
       {
         text: '开发文档',
         items: [
+          { text: '总计划与现状', link: '/roadmap' },
           { text: 'DSL 规范', link: '/specs/dsl-spec' },
           { text: 'IR v2 迁移设计', link: '/specs/ir-v2' },
           { text: 'AI 建模闭环', link: '/specs/ai-loop' },
