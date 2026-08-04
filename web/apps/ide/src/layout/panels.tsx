@@ -29,7 +29,7 @@ export const PANELS: Record<PanelId, PanelDef> = {
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
   // left: side panels switched by the activity bar (VS Code style).
-  modelInfo: { title: 'Model', area: 'left', component: ModelInfoPanel },
+  modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
 };
 
@@ -40,7 +40,7 @@ export const ACTIVITY_VIEWS: Array<{
   icon: ComponentType<{ size?: number }>;
   panel: PanelId;
 }> = [
-  { id: 'model', label: 'Model', icon: Boxes, panel: 'modelInfo' },
+  { id: 'model', label: 'Project', icon: Boxes, panel: 'modelInfo' },
   { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
 ];
 
