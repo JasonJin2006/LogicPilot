@@ -6,7 +6,7 @@
 // connects sequential stages by declaration order). Block field values are
 // serialized from the node params.
 
-import type { BlockKind, ModelDocument, ModelNode } from './graph.js';
+import type { BlockKind, ModelDocument, ModelEdge, ModelNode } from './graph.js';
 
 /** Blocks that live inside the single process container. */
 const PROCESS_BLOCKS: ReadonlySet<BlockKind> = new Set(['source', 'queue', 'service', 'sink']);
@@ -23,7 +23,7 @@ function paramValue(value: string | number | boolean): string {
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
     return value;
   }
-  if (/^(rate|interarrival|exponential|normal|constant)\(.*\)$/.test(value.trim())) {
+  if (/^(rate|interarrival|poisson|exponential|normal|constant)\(.*\)$/.test(value.trim())) {
     return value.trim();
   }
   return JSON.stringify(value);
@@ -38,14 +38,54 @@ function renderBlock(node: ModelNode, indent: string): string {
   return `${indent}${node.kind} ${node.name} {\n${body}\n${indent}}`;
 }
 
+// Order process stages by coupling edges (topological flow order, stable by
+// canvas x within each rank); disconnected stages fall back to x position.
+function orderStages(
+  stages: ModelNode[],
+  edges: ModelEdge[],
+  document: ModelDocument,
+): ModelNode[] {
+  const byId = new Map(stages.map((stage) => [stage.id, stage]));
+  const incoming = new Map(stages.map((stage) => [stage.id, 0]));
+  const outgoing = new Map<string, string[]>();
+  for (const edge of document.edges) {
+    if (!byId.has(edge.from) || !byId.has(edge.to)) continue;
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+    const next = outgoing.get(edge.from) ?? [];
+    next.push(edge.to);
+    outgoing.set(edge.from, next);
+  }
+  const remaining = new Set(stages.map((stage) => stage.id));
+  const byX = (a: ModelNode, b: ModelNode) => a.x - b.x;
+  const ready = stages.filter((stage) => (incoming.get(stage.id) ?? 0) === 0).sort(byX);
+  const ordered: ModelNode[] = [];
+  while (ready.length > 0) {
+    const stage = ready.shift()!;
+    ordered.push(stage);
+    remaining.delete(stage.id);
+    for (const id of outgoing.get(stage.id) ?? []) {
+      if (!remaining.has(id)) continue;
+      const count = (incoming.get(id) ?? 1) - 1;
+      incoming.set(id, count);
+      if (count === 0) ready.push(byId.get(id)!);
+    }
+    ready.sort(byX);
+  }
+  const leftovers = stages.filter((stage) => remaining.has(stage.id)).sort(byX);
+  return [...ordered, ...leftovers];
+}
+
 /** Generate DSL v2 source for the document. Stage ordering inside the
- *  process container follows canvas x position (left to right). */
+ *  process container follows the coupling edges when present (topological
+ *  flow order), falling back to canvas x position (left to right). */
 export function generateDsl(document: ModelDocument): string {
   const modelName = document.name || 'Model';
   const resources = document.nodes.filter((node) => node.kind === 'resource');
-  const stages = document.nodes
-    .filter((node) => PROCESS_BLOCKS.has(node.kind))
-    .sort((a, b) => a.x - b.x);
+  const stages = orderStages(
+    document.nodes.filter((node) => PROCESS_BLOCKS.has(node.kind)),
+    document.edges,
+    document,
+  );
 
   const lines: string[] = [];
   lines.push(`model ${modelName} {`);

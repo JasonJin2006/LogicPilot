@@ -352,6 +352,32 @@ std::string read_next_text(WsClient& client, int max_messages = 500) {
   return {};
 }
 
+// Minimal base64 encoder (mirror of the server-side decoder) used to build
+// `compile` control messages whose DSL source carries quotes/newlines.
+std::string base64_encode(const std::string& input) {
+  static const char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve(((input.size() + 2) / 3) * 4);
+  unsigned int buffer = 0;
+  int bits = 0;
+  for (const char c : input) {
+    buffer = (buffer << 8) | static_cast<unsigned char>(c);
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      out.push_back(kAlphabet[(buffer >> bits) & 0x3f]);
+    }
+  }
+  if (bits > 0) {
+    out.push_back(kAlphabet[(buffer << (6 - bits)) & 0x3f]);
+  }
+  while (out.size() % 4 != 0) {
+    out.push_back('=');
+  }
+  return out;
+}
+
 logicpilot::server::ServerConfig make_test_config() {
   logicpilot::server::ServerConfig config;
   config.port = 0;  // ephemeral
@@ -646,6 +672,54 @@ TEST_CASE("lp-server rejects unknown and invalid control messages",
   client.send_text(R"({"cmd":"pause"})");
   REQUIRE(client.read_one());
   REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server compiles DSL via the compile control command",
+          "[server][integration]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{30}};
+
+  // Valid source (the shape the IDE's generateDsl emits): ok + diagnostics.
+  const std::string valid = R"(model Test {
+  resource Server {
+    capacity = 1
+  }
+  process Flow {
+    source Arrivals {
+      arrival = rate(0.8)
+    }
+    queue WaitLine {
+      capacity = 100
+    }
+    service Handle {
+      resource = Server
+      time = exponential(1.0)
+    }
+    sink Done {
+    }
+  }
+}
+)";
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(valid) + "\"}");
+  const std::string ok_reply = read_next_text(client);
+  REQUIRE(ok_reply.find("\"ok\": true") != std::string::npos);
+  REQUIRE(ok_reply.find("\"diagnostics\"") != std::string::npos);
+
+  // Invalid source: the diagnostics document reports the failure.
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode("model X { nonsense }") + "\"}");
+  const std::string bad_reply = read_next_text(client);
+  REQUIRE(bad_reply.find("\"ok\": false") != std::string::npos);
+  REQUIRE(bad_reply.find("diagnostics") != std::string::npos);
 
   client.abort_from_other_thread();
   server.stop();

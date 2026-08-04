@@ -5,8 +5,10 @@
 
 import { create } from 'zustand';
 import { MM1_STATE_SERVING, simTimeSeconds, type WireFrame } from '@logicpilot/renderer2d';
+import { generateDsl } from '@logicpilot/editor';
 import { SimClient, type ConnState, type StartOptions } from '../client/simClient';
 import { resetVizState, vizState, type VizAgent } from './vizState';
+import { useModelStore } from './modelStore';
 import { useRunStore } from './runStore';
 
 const DEFAULT_URL = 'ws://127.0.0.1:8089/sim';
@@ -14,7 +16,7 @@ const DEFAULT_URL = 'ws://127.0.0.1:8089/sim';
 export interface LogEvent {
   id: number;
   time: string;
-  kind: 'ack' | 'error' | 'bad' | 'info';
+  kind: 'ack' | 'error' | 'bad' | 'info' | 'warn';
   text: string;
 }
 
@@ -39,6 +41,7 @@ interface ConnectionStore {
   step: () => void;
   stop: () => void;
   setSpeed: (speed: number) => void;
+  compile: () => void;
 }
 
 let client: SimClient | null = null;
@@ -46,15 +49,56 @@ let nextEventId = 1;
 
 const MAX_EVENTS = 200;
 
-function appendEvent(state: ConnectionStore, kind: LogEvent['kind'], text: string): LogEvent[] {
-  const event: LogEvent = {
+function makeEvent(kind: LogEvent['kind'], text: string): LogEvent {
+  return {
     id: nextEventId++,
     time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     kind,
     text,
   };
+}
+
+function appendEvent(state: ConnectionStore, kind: LogEvent['kind'], text: string): LogEvent[] {
+  const event = makeEvent(kind, text);
   const events = [...state.events, event];
   return events.length > MAX_EVENTS ? events.slice(events.length - MAX_EVENTS) : events;
+}
+
+interface CompileDiagnostic {
+  code?: string;
+  severity?: string;
+  message?: string;
+  span?: { line?: number; column?: number };
+}
+
+// Compile replies are a diagnostics document; render them as structured
+// console lines instead of a raw ack.
+function parseCompileReply(message: string): LogEvent[] | null {
+  let parsed: { ok?: boolean; diagnostics?: CompileDiagnostic[] };
+  try {
+    parsed = JSON.parse(message);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null || !('diagnostics' in parsed)) {
+    return null;
+  }
+  const diagnostics = Array.isArray(parsed.diagnostics) ? parsed.diagnostics : [];
+  const events: LogEvent[] = diagnostics.map((diagnostic) => {
+    const where = diagnostic.span
+      ? ` (${diagnostic.span.line ?? '?'}:${diagnostic.span.column ?? '?'})`
+      : '';
+    return makeEvent(
+      diagnostic.severity === 'warning' || diagnostic.severity === 'warn' ? 'warn' : 'error',
+      `${diagnostic.code ?? 'LP'}: ${diagnostic.message ?? ''}${where}`,
+    );
+  });
+  events.push(
+    parsed.ok
+      ? makeEvent('info', `compile ok: ${diagnostics.length} diagnostic(s)`)
+      : makeEvent('error', `compile failed: ${diagnostics.length} error(s)`),
+  );
+  return events;
 }
 
 // Apply one telemetry frame to viz + run stores (single writer).
@@ -126,10 +170,15 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
           events: appendEvent(state, 'bad', reason),
         })),
       onText: (message) =>
-        set((state) => ({
-          lastAck: message,
-          events: appendEvent(state, 'ack', message),
-        })),
+        set((state) => {
+          const compileEvents = parseCompileReply(message);
+          return compileEvents
+            ? { events: [...state.events, ...compileEvents] }
+            : {
+                lastAck: message,
+                events: appendEvent(state, 'ack', message),
+              };
+        }),
       onStateChange: (conn) => set({ conn }),
       onError: (message) =>
         set((state) => ({
@@ -161,5 +210,12 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   },
   setSpeed: (speed) => {
     client?.setSpeed(speed);
+  },
+  compile: () => {
+    const source = generateDsl(useModelStore.getState().document);
+    const sent = client?.compile(source) ?? false;
+    if (!sent) {
+      set((state) => ({ events: appendEvent(state, 'error', 'compile: not connected') }));
+    }
   },
 }));

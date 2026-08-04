@@ -115,6 +115,18 @@ export class SimClient {
     return this.sendControl({ cmd: 'speed', speed });
   }
 
+  /** Ask the gateway to compile DSL source; the reply carries the
+   *  diagnostics document. Source is base64-encoded so quotes/newlines
+   *  survive the flat control-plane JSON parser. */
+  compile(source: string): boolean {
+    const bytes = new TextEncoder().encode(source);
+    let binary = '';
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return this.sendControl({ cmd: 'compile', source_b64: btoa(binary) });
+  }
+
   private handleMessage(data: unknown): void {
     if (typeof data === 'string') {
       this.events.onText(data);

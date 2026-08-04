@@ -123,6 +123,12 @@ target_link_libraries(lp_server_core PUBLIC
   Boost::headers
   fmt::fmt
 )
+if(LOGICPILOT_BUILD_DSL)
+  # The `compile` control command compiles client DSL in-process; the IDE
+  # uses it for generate-DSL + diagnostics (P1-7).
+  target_link_libraries(lp_server_core PUBLIC logicpilot_dsl)
+  target_compile_definitions(lp_server_core PUBLIC LOGICPILOT_HAS_DSL=1)
+endif()
 # Boost.Asio needs the Winsock libraries on Windows/MinGW.
 if(WIN32)
   target_link_libraries(lp_server_core PUBLIC ws2_32 mswsock)

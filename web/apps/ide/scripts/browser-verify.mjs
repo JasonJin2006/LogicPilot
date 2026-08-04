@@ -102,6 +102,42 @@ try {
   log('run finished on gateway');
   await page.screenshot({ path: join(OUT, '2-running.png') });
 
+  // Modeling canvas -> generated DSL -> compile diagnostics round-trip
+  // (P1-7): dropping a lone source yields an invalid model, so the gateway
+  // must echo the compiler's diagnostics into the console.
+  await page.getByRole('button', { name: 'Palette' }).click();
+  await page.waitForSelector('.palette-item', { timeout: 5_000 });
+  await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.palette-item')].find(
+      (el) => el.querySelector('.palette-name')?.textContent === 'source',
+    );
+    const canvas = document.querySelector('.model-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const dt = new DataTransfer();
+    item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    canvas.dispatchEvent(
+      new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt,
+        clientX: rect.left + 200,
+        clientY: rect.top + 200,
+      }),
+    );
+  });
+  await page.waitForSelector('.model-block', { timeout: 5_000 });
+  await page.getByRole('button', { name: 'Compile' }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.console-log')?.textContent?.includes('compile failed'),
+    undefined,
+    { timeout: 30_000 },
+  );
+  const compileText = await page.locator('.console-log').textContent();
+  if (!/LP\d+/.test(compileText ?? '')) {
+    throw new Error('compile diagnostics missing a diagnostic code');
+  }
+  log('canvas DSL compiled with diagnostics echoed to the console');
+
   // AI panel (right): generate / optimize / explain / trajectory.
   await page.locator('.tab-label', { hasText: 'AI' }).click();
   await page

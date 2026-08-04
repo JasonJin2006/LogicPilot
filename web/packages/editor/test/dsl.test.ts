@@ -58,6 +58,26 @@ describe('DSL v2 generation', () => {
     expect(source.indexOf('source A')).toBeLessThan(source.indexOf('queue Q'));
   });
 
+  it('orders process stages by coupling edges (topological, x fallback)', () => {
+    let doc = createDocument();
+    doc = addNode(doc, { kind: 'service', name: 'S', x: 0, y: 0 });
+    const serviceId = doc.nodes[0]!.id;
+    doc = addNode(doc, { kind: 'source', name: 'A', x: 100, y: 0 });
+    const sourceId = doc.nodes[1]!.id;
+    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 200, y: 0 });
+    const queueId = doc.nodes[2]!.id;
+    doc = addNode(doc, { kind: 'sink', name: 'D', x: 300, y: 0 });
+    const sinkId = doc.nodes[3]!.id;
+    doc = connect(doc, sourceId, queueId).document;
+    doc = connect(doc, queueId, serviceId).document;
+    doc = connect(doc, serviceId, sinkId).document;
+    const source = generateDsl(doc);
+    const indexOf = (needle: string) => source.indexOf(needle);
+    expect(indexOf('source A')).toBeLessThan(indexOf('queue Q'));
+    expect(indexOf('queue Q')).toBeLessThan(indexOf('service S'));
+    expect(indexOf('service S')).toBeLessThan(indexOf('sink D'));
+  });
+
   it('serializes identifiers bare and free-form strings quoted', () => {
     let doc = createDocument();
     doc = addNode(doc, {
@@ -70,5 +90,19 @@ describe('DSL v2 generation', () => {
     const source = generateDsl(doc);
     expect(source).toContain('resource = Server');
     expect(source).toContain('label = "hello world"');
+  });
+
+  it('passes distribution calls through unquoted', () => {
+    let doc = createDocument();
+    doc = addNode(doc, {
+      kind: 'source',
+      name: 'A',
+      x: 0,
+      y: 0,
+      params: { arrival: 'poisson(10)' },
+    });
+    const source = generateDsl(doc);
+    expect(source).toContain('arrival = poisson(10)');
+    expect(source).not.toContain('"poisson');
   });
 });

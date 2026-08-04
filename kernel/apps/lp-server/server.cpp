@@ -29,6 +29,11 @@
 #include "sim_runner.h"
 #include "wire_frames.h"
 
+#ifdef LOGICPILOT_HAS_DSL
+#include "logicpilot/dsl/compile.h"
+#include "logicpilot/dsl/json_diagnostics.h"
+#endif
+
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
@@ -43,6 +48,39 @@ namespace {
 // wall-clock pacing only.
 // Frame-size budget guard for per-tick agent deltas.
 constexpr std::size_t kMaxAgentsPerTick = 1024;
+
+// Minimal base64 decoder for the compile transport: DSL source can contain
+// quotes and newlines that the flat control-plane JSON parser (json_controls)
+// cannot carry, so the client sends it base64-encoded.
+std::string base64_decode(const std::string& input) {
+  static const char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  int table[256];
+  std::fill(std::begin(table), std::end(table), -1);
+  for (int i = 0; i < 64; ++i) {
+    table[static_cast<unsigned char>(kAlphabet[i])] = i;
+  }
+  std::string out;
+  out.reserve((input.size() * 3) / 4);
+  int buffer = 0;
+  int bits = 0;
+  for (const char c : input) {
+    if (c == '=' || c == '\r' || c == '\n') {
+      continue;
+    }
+    const int value = table[static_cast<unsigned char>(c)];
+    if (value < 0) {
+      continue;
+    }
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push_back(static_cast<char>((buffer >> bits) & 0xff));
+    }
+  }
+  return out;
+}
 
 }  // namespace
 
@@ -276,6 +314,21 @@ struct SimServer::Impl {
       }
       speed_.store(clamp_speed(speed_value));
       return json_ok(cmd);
+    }
+
+    if (cmd == "compile") {
+#ifdef LOGICPILOT_HAS_DSL
+      std::string source_b64;
+      if (!json_string_field(message, "source_b64", source_b64)) {
+        return json_error("compile requires a \"source_b64\" string");
+      }
+      const dsl::CompileResult compiled =
+          dsl::compile_source(base64_decode(source_b64), "<editor>");
+      return dsl::diagnostics_to_json("<editor>", compiled.ok,
+                                      compiled.diagnostics);
+#else
+      return json_error("compile unavailable in this build");
+#endif
     }
 
     return json_error(fmt::format("unknown command '{}'", cmd));
