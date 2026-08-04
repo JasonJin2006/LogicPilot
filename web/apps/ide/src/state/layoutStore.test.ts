@@ -49,6 +49,16 @@ describe('layoutStore', () => {
     expect(useLayoutStore.getState().areas.left.size).toBe(300);
   });
 
+  it('removePanel closes a center tab and falls the active tab back', () => {
+    const store = useLayoutStore.getState();
+    store.removePanel('center', 'queue');
+    const center = useLayoutStore.getState().areas.center;
+    expect(center.panels).toEqual([]);
+    // Removing the active panel leaves the center empty; defaults come back
+    // on the next rehydrate (mergePersistedLayout).
+    expect(center.activePanel).toBe('queue');
+  });
+
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['queue']);

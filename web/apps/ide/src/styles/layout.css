@@ -115,16 +115,24 @@
 .panel-area.area-center {
   grid-area: center;
   background: var(--bg);
+  --body-bg: var(--bg);
 }
 
 .panel-area.area-right {
   grid-area: right;
   border-left: 1px solid var(--border);
+  --body-bg: var(--surface-1);
 }
 
 .panel-area.area-bottom {
   grid-area: bottom;
   position: relative;
+  --body-bg: var(--surface-1);
+}
+
+.area-center .tab-bar {
+  min-height: 26px;
+  padding: 2px 8px 0;
 }
 
 .area-right .tab-bar,
@@ -134,6 +142,7 @@
   border-bottom: none;
 }
 
+.area-center .tab,
 .area-right .tab,
 .area-bottom .tab {
   padding: 4px 10px;
@@ -212,15 +221,15 @@
 }
 
 .tab {
+  position: relative;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
   color: var(--text-muted);
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.03em;
-  border-radius: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
 }
 
 .tab:hover:not(:disabled) {
@@ -229,8 +238,20 @@
 }
 
 .tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  background: var(--body-bg);
+  color: var(--text);
+}
+
+/* Active tab blends into the pane below: its own background (plus this
+   cover line) hides the tab bar's bottom border under the tab. */
+.tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--body-bg);
 }
 
 .tab-close {

@@ -21,6 +21,7 @@ export interface LayoutState {
   setSize: (area: AreaId, size: number) => void;
   setSizeOrClose: (area: AreaId, size: number) => void;
   reopenArea: (area: AreaId, size: number) => void;
+  removePanel: (area: AreaId, panel: PanelId) => void;
   toggleCollapse: (area: AreaId) => void;
   setActive: (area: AreaId, panel: PanelId) => void;
   resetLayout: () => void;
@@ -108,6 +109,22 @@ export const useLayoutStore = create<LayoutState>()(
             areas: {
               ...state.areas,
               [area]: { ...state.areas[area], collapsed: false, size: clamped },
+            },
+          };
+        }),
+      // Close one tab inside an area (center workspace tabs).
+      removePanel: (area, panel) =>
+        set((state) => {
+          const areaState = state.areas[area];
+          const panels = areaState.panels.filter((entry) => entry !== panel);
+          const active =
+            areaState.activePanel === panel && panels.length > 0
+              ? panels[0]!
+              : areaState.activePanel;
+          return {
+            areas: {
+              ...state.areas,
+              [area]: { ...areaState, panels, activePanel: active },
             },
           };
         }),

@@ -79,12 +79,18 @@ function TabBar({ area }: { area: AreaId }) {
           {PANELS[panel].title}
         </button>
       ))}
-      {area !== 'center' && (
+      {state.panels.length > 0 && (
         <button
           className="tab-close"
-          aria-label={`Close ${area} panel`}
+          aria-label={`Close ${state.activePanel} tab`}
           title="Close panel"
-          onClick={() => toggleCollapse(area)}
+          onClick={() => {
+            if (area === 'center') {
+              useLayoutStore.getState().removePanel(area, state.activePanel);
+            } else {
+              toggleCollapse(area);
+            }
+          }}
         >
           <X size={13} />
         </button>
