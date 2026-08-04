@@ -22,11 +22,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | 内核基础（Phase 1） | ✅ | 二叉堆调度器、xoshiro256++、int64 定点时间、SlabPool/Arena |
 | 多方法执行 | ✅ | process（M/M/1、M/M/c+故障）、DEVS atomic、agent tick、continuous ODE（RK4+耦合+RHS 函数）——五类模型全部可执行 |
 | DSL（Phase 2） | 🔶 | v0 + atomic + agent + continuous + experiment 块、结构化诊断 JSON；**表达式未开始** |
-| IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；v1 保留为兼容层 |
+| IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役** |
 | AI Copilot（Phase 6 第一刀） | 🔶 | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始** |
 | Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**拖拽建模未开始** |
 | 工程与文档 | ✅ | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册 |
-| 测试基线 | ✅ | 136 ctest、renderer2d 5 vitest、interop 117 checks、浏览器 E2E |
+| 测试基线 | ✅ | 131 ctest、renderer2d 5 vitest、interop 58 checks、浏览器 E2E |
 
 ## 3. 契约与工程纪律状态
 
@@ -34,23 +34,22 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 |---|---|
 | F1 `ir_v2.fbs`（Node/SemanticsRef） | ✅ 冻结（flatc conform + baseline SHA256 双门禁） |
 | F2 `wire.fbs` 遥测帧 | ✅ 冻结 |
-| F3 C++ ↔ TS 运行时互操作 | ✅ CI 逐字段校验（117 checks） |
-| `performance-budget.md` 性能预算 | ⚠️ 契约已写，**benchmark 门禁未进 CI**（见 P0-1） |
+| F3 C++ ↔ TS 运行时互操作 | ✅ CI 逐字段校验（58 checks） |
+| `performance-budget.md` 性能预算 | ✅ 契约 + bench 门禁（`>= 1M events/s`）已进 CI |
 
 ## 4. 待开发（按优先级）
 
 ### P0 — CI 门禁与测试缺口（补交付评审缺口，短里程碑）
 
-1. **Benchmark 门禁进 CI**
-   现状：`LOGICPILOT_BUILD_BENCH` 默认 OFF，`bench/`（scheduler/rng/mm1_event）
-   不在 CI。`performance-budget.md` 承诺的预算门禁未落地。
-   验收：CI 新增 benchmark job，跑 `bench/` 三个基准并断言预算阈值（吞吐 ≥ 1M ops/s MVP）。
-   入口：`.github/workflows/ci.yml`、`bench/`、`CMakeLists.txt`。
+1. ~~**Benchmark 门禁进 CI**~~ ✅ 已完成
+   `ci.yml` 新增 `bench` job（release + `LOGICPILOT_BUILD_BENCH=ON`），跑
+   `test_perf_baseline`（`>= 1M events/s`）与 `logicpilot_bench` /
+   `mm1_event_bench` 冒烟。
 
 2. **多客户端广播 + 慢客户端测试**
-   现状：`client_count()` 在测试中零使用；广播扇出与 `sessions_mutex_` 路径只被
-   单客户端间接覆盖；写队列上限（`kMaxWriteQueue`）无专门测试。
-   验收：新增集成测试——多客户端并发连接收到同一帧序列；写队列超限丢弃最旧帧。
+   现状：多客户端广播 ✅ 已测（3 客户端并发收到同一帧序列）；**慢客户端/写队列
+   超限（`kMaxWriteQueue`）仍无专门测试**。
+   验收：新增写队列超限丢弃最旧帧的集成测试。
    入口：`kernel/tests/test_lp_server_integration.cpp`、`kernel/apps/lp-server/server.cpp`。
 
 3. **手写 JSON 控制解析器单元测试**

@@ -116,7 +116,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Schema conform gate (F1 ir.fbs / F2 wire.fbs)
+      - name: Schema conform gate (F1 ir_v2.fbs / F2 wire.fbs)
         shell: pwsh
         run: scripts/check-schema-conform.ps1
 
