@@ -4,6 +4,7 @@
 // (AnyLogic-style opt-in telemetry views), not pinned side panels.
 
 import { ActivityBar } from './layout/ActivityBar';
+import { TopBar } from './layout/TopBar';
 import { Workspace } from './layout/Workspace';
 import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
@@ -16,6 +17,7 @@ export default function App() {
     <>
       <ThemeManager />
       <div className="app">
+        <TopBar />
         <div className="app-body">
           <ActivityBar />
           <Workspace />

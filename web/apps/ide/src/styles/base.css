@@ -44,6 +44,7 @@
   --r-lg: 14px;
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
   --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
+  --status-h: 22px;
 }
 
 /* Light theme: the whole design system switches via the CSS variables

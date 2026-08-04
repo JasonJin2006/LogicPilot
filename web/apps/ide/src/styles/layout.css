@@ -1,6 +1,34 @@
 /* Panel workspace (docs/specs/ide-layout.md): activity bar + CSS Grid
    skeleton with resizable left/center/right/bottom areas. */
 
+.top-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: calc(var(--status-h) * 2);
+  padding: 0 14px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-logo {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+}
+
+.search-box {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 55%);
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
 .app-body {
   flex: 1;
   display: flex;
