@@ -349,12 +349,18 @@ std::unique_ptr<CoupledModel> build_atomic_tree(
 }
 
 DevsReplicationModel::DevsReplicationModel(std::vector<std::uint8_t> bytes,
-                                           const ir::Model* root)
-    : bytes_{std::move(bytes)}, root_{root} {}
+                                           const ir::Model* /*root*/)
+    : bytes_{std::move(bytes)} {
+  // Re-derive the pointer from OUR copy: the caller's buffer may be freed
+  // before run() (e.g. lpcli scopes IrLoadResult locally).
+  root_ = ir::GetModelFile(bytes_.data())->root();
+}
 
 DevsReplicationModel::DevsReplicationModel(std::vector<std::uint8_t> v2_bytes,
-                                           const v2::Node* v2_root)
-    : bytes_{std::move(v2_bytes)}, v2_root_{v2_root}, v2_native_{true} {}
+                                           const v2::Node* /*v2_root*/)
+    : bytes_{std::move(v2_bytes)}, v2_native_{true} {
+  v2_root_ = ir::v2::GetModelFile(bytes_.data())->root();
+}
 
 ReplicationMetrics DevsReplicationModel::run(const ReplicationConfig& config,
                                              TraceRecorder* trace) {

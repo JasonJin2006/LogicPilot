@@ -76,12 +76,16 @@ std::int64_t count_param(const ir::AgentModel* spec) {
 }  // namespace
 
 AgentReplicationModel::AgentReplicationModel(std::vector<std::uint8_t> bytes,
-                                             const ir::Model* root)
-    : bytes_{std::move(bytes)}, root_{root} {}
+                                             const ir::Model* /*root*/)
+    : bytes_{std::move(bytes)} {
+  root_ = ir::GetModelFile(bytes_.data())->root();
+}
 
 AgentReplicationModel::AgentReplicationModel(
-    std::vector<std::uint8_t> v2_bytes, const v2::Node* v2_root)
-    : bytes_{std::move(v2_bytes)}, v2_root_{v2_root}, v2_native_{true} {}
+    std::vector<std::uint8_t> v2_bytes, const v2::Node* /*v2_root*/)
+    : bytes_{std::move(v2_bytes)}, v2_native_{true} {
+  v2_root_ = ir::v2::GetModelFile(bytes_.data())->root();
+}
 
 ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
                                               TraceRecorder* trace) {

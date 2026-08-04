@@ -1,7 +1,8 @@
 // Continuous (ODE) engine - Phase D: structured equations execute via a
 // fixed-step RK4 integrator. v0 RHS grammar: numbers, identifiers (node
 // params + state variables), + - * / and parentheses, e.g. "-k*y" (exponential
-// decay) or "r*y*(1-y/K)" (logistic). Deterministic: no RNG.
+// decay) or "r*y*(1-y/K)" (logistic). Functions: exp, log, sqrt, sin, cos;
+// "t" is reserved for the current simulation time. Deterministic: no RNG.
 //
 // Consumes:
 //   * v2-native: a Node with semantics {library:"sd", block:"equation"} whose
@@ -41,10 +42,20 @@ class ExpressionEvaluator {
 
  private:
   struct Node {
-    enum class Kind { kNumber, kIdent, kAdd, kSub, kMul, kDiv, kNeg };
+    enum class Kind {
+      kNumber,
+      kIdent,
+      kFunc,
+      kAdd,
+      kSub,
+      kMul,
+      kDiv,
+      kNeg,
+    };
     Kind kind{Kind::kNumber};
     double number{0.0};
     std::string ident;
+    std::string func;
     std::unique_ptr<Node> left;
     std::unique_ptr<Node> right;
   };

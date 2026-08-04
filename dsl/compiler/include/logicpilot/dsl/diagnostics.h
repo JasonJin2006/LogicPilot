@@ -19,6 +19,7 @@
 //   LP6002  agent behavior argument mismatch
 //   LP7001  experiment field value is not supported (v0.1)
 //   LP8001  continuous equation lhs references an undeclared state variable
+//   LP8002  continuous variable name is reserved ('t' = simulation time)
 //
 // Phase 3 will extend this registry (warnings, notes, fixits); the struct
 // layout is already the wire shape used by the diagnostics protocol.

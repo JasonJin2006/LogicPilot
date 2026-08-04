@@ -174,3 +174,33 @@ model Swarm {
   the tick budget. Deterministic (no RNG): identical seed/budget => identical
   trajectories. Hot components (Position/Velocity/AgentState) live in the
   SoA store; model state rides as a cold EnTT component.
+
+## 9. Continuous models (ODEs, v0.1)
+
+`continuous` blocks declare coupled ordinary differential equations executed
+by a fixed-step RK4 integrator:
+
+```logicpilot
+model SIR {
+  continuous Dynamics {
+    state S = 0.99
+    state I = 0.01
+    state R = 0.0
+    param beta = 0.5
+    param gamma = 0.1
+    d S/dt = -beta*S*I
+    d I/dt = beta*S*I - gamma*I
+    d R/dt = gamma*I
+  }
+}
+```
+
+- `state` declares variables + initial values; `param` declares constants;
+  each `d <var>/dt = <rhs>` is one ODE. Equations are coupled: every RHS is
+  evaluated against the shared state at each RK4 stage.
+- RHS grammar: numbers, identifiers (params + state vars), `+ - * /`,
+  parentheses and the functions `exp`, `log`, `sqrt`, `sin`, `cos`; the
+  identifier `t` is reserved for simulation time (`LP8002`). `LP8001`
+  rejects equations whose lhs is not a declared state variable.
+- `lpcli run --arrivals N` = N integration steps of dt = 0.01; the summary's
+  `final_value` is the first variable's end state. Deterministic (no RNG).

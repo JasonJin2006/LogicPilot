@@ -94,7 +94,16 @@ class Analyzer {
 
   void check_continuous(const EquationDecl& continuous) {
     std::unordered_map<std::string, Span> names;
+    const auto reserved = [&](const std::string& name, const Span& span) {
+      if (name == "t") {
+        push(Severity::kError, "LP8002",
+             "'t' is reserved for simulation time in continuous '" +
+                 continuous.name + "'",
+             span);
+      }
+    };
     for (const StateVarDecl& var : continuous.state) {
+      reserved(var.name, var.name_span);
       const auto [it, inserted] = names.emplace(var.name, var.name_span);
       if (!inserted) {
         push(Severity::kError, "LP1002",
@@ -104,6 +113,7 @@ class Analyzer {
       }
     }
     for (const EquationDecl::ParamDecl& param : continuous.params) {
+      reserved(param.name, param.name_span);
       const auto [it, inserted] = names.emplace(param.name, param.name_span);
       if (!inserted) {
         push(Severity::kError, "LP1002",
