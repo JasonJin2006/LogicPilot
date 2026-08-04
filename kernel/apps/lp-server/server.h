@@ -26,6 +26,12 @@ namespace logicpilot::server {
 
 class Session;  // one WebSocket client connection (defined in server.cpp)
 
+// Slow-consumer guard default: a client that stops reading would otherwise
+// grow its per-session write queue without bound at 10 Hz telemetry. When a
+// queue exceeds the limit the oldest pending frames are dropped (the
+// in-flight frame is never dropped).
+inline constexpr std::size_t kDefaultWriteQueueLimit = 256;
+
 struct ServerConfig {
   unsigned short port{8089};
   std::string model_name{"mm1"};  // reported in RunStarted.model_name
@@ -45,6 +51,8 @@ struct ServerConfig {
   // Fixed simulation step between Tick+Counters emissions. Default 100 ms of
   // simulated time => 10 Hz at speed 1.0 (task #7 default cadence).
   std::int64_t emit_step_ns{100'000'000};
+  // Per-session pending-write bound (see kDefaultWriteQueueLimit).
+  std::size_t write_queue_limit{kDefaultWriteQueueLimit};
   bool trace{false};  // mirror every outgoing frame as JSON on stdout
 };
 
@@ -67,6 +75,10 @@ class SimServer {
   [[nodiscard]] unsigned short port() const;
   [[nodiscard]] std::size_t client_count() const;
   [[nodiscard]] bool running() const;
+  // Total frames dropped from slow-consumer queues since startup (test hook
+  // for the bounded-queue guarantee: > 0 proves the cap engaged instead of
+  // growing without bound).
+  [[nodiscard]] std::uint64_t total_dropped_frames() const;
 
   // Route one JSON control message; returns the JSON reply text.
   // Thread-safe (called from session strands / tests).

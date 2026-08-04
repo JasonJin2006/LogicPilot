@@ -151,3 +151,26 @@ jobs:
         run: |
           ./build/linux-clang-release/kernel/logicpilot_bench --benchmark_min_time=0.2s
           ./build/linux-clang-release/kernel/mm1_event_bench --benchmark_min_time=0.2s
+
+  dsl-grammar:
+    name: dsl grammar (tree-sitter corpus)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install tree-sitter CLI
+        working-directory: dsl/tree-sitter-logicpilot
+        run: npm ci --no-audit --no-fund
+
+      - name: Run corpus tests
+        # tree-sitter test exercises test/corpus/*.txt against the checked-in
+        # parser.c; a grammar regression fails CI instead of being caught only
+        # indirectly by the C++ DSL tests.
+        working-directory: dsl/tree-sitter-logicpilot
+        run: npm test

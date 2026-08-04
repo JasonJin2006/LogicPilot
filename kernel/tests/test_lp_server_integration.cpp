@@ -47,12 +47,25 @@ namespace {
 
 class WsClient {
  public:
-  bool connect(unsigned short port, int retries = 40) {
+  bool connect(unsigned short port, int retries = 40,
+               bool small_receive_buffer = false) {
     for (int attempt = 0; attempt < retries; ++attempt) {
       try {
         tcp::resolver resolver{ioc_};
         const auto results =
             resolver.resolve("127.0.0.1", std::to_string(port));
+        if (small_receive_buffer) {
+          // Tiny receive window: the socket blocks after a handful of
+          // unread frames, so a non-reading client stalls the server's
+          // writes quickly (slow-consumer tests).
+          boost::system::error_code ec;
+          ws_.next_layer().close(ec);
+          ws_.next_layer().open(tcp::v4(), ec);
+          if (!ec) {
+            ws_.next_layer().set_option(
+                asio::socket_base::receive_buffer_size(4096));
+          }
+        }
         asio::connect(ws_.next_layer(), results);
         ws_.handshake("127.0.0.1:" + std::to_string(port), "/sim");
         return true;
@@ -498,6 +511,56 @@ TEST_CASE("lp-server broadcasts identical frames to every connected client",
   a.abort_from_other_thread();
   b.abort_from_other_thread();
   c.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server bounds a slow client's write queue by dropping frames",
+          "[server][integration]") {
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.write_queue_limit = 8;  // tiny cap so drops engage quickly
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  // Client connects with a tiny receive buffer and never reads: the socket
+  // blocks after a few frames, the pending queue hits the cap, and the
+  // oldest frames are dropped instead of growing without bound.
+  WsClient slow;
+  REQUIRE(slow.connect(server.port(), 40, /*small_receive_buffer=*/true));
+  Watchdog watchdog{slow, std::chrono::seconds{60}};
+
+  slow.send_text(R"({"cmd":"start","seed":42,"reps":1,"arrivals":3000,)"
+                 R"("warmup":100,"speed":100000})");
+
+  // Wait until the run's frames have all been enqueued (the drop counter
+  // goes stable), then assert the cap actually engaged.
+  std::uint64_t previous = server.total_dropped_frames();
+  std::uint64_t stable_samples = 0;
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds{45};
+  while (std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    const std::uint64_t current = server.total_dropped_frames();
+    if (current == previous) {
+      if (++stable_samples >= 3) {
+        break;
+      }
+    } else {
+      stable_samples = 0;
+      previous = current;
+    }
+  }
+
+  INFO("dropped frames = " << server.total_dropped_frames());
+  // ~7500 frames for this run; the socket blocks after ~tens, so the cap
+  // must have dropped the overwhelming majority rather than queueing them.
+  REQUIRE(server.total_dropped_frames() > 500);
+  // A stuck consumer must not wedge the control plane (speed needs no run).
+  const std::string reply =
+      server.handle_control(R"({"cmd":"speed","speed":2})");
+  CHECK(reply.find("\"ok\":true") != std::string::npos);
+
+  slow.abort_from_other_thread();
   server.stop();
 }
 

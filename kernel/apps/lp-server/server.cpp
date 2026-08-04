@@ -25,6 +25,7 @@
 
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/replication.h"
+#include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
 
@@ -42,100 +43,6 @@ namespace {
 // wall-clock pacing only.
 // Frame-size budget guard for per-tick agent deltas.
 constexpr std::size_t kMaxAgentsPerTick = 1024;
-// Slow-consumer guard: a client that stops reading would otherwise grow the
-// per-session write queue without bound at 10 Hz telemetry. When the queue
-// exceeds this, the oldest pending frames are dropped (the in-flight frame is
-// never dropped). Chosen generously above any burst a single tick emits.
-constexpr std::size_t kMaxWriteQueue = 256;
-
-// Minimal JSON string escaping. Error replies echo caller-supplied input, so
-// quotes/backslashes/control characters must be escaped or the reply itself
-// becomes invalid JSON (breaking the client's parser).
-std::string json_escape(const std::string& text) {
-  std::string out;
-  out.reserve(text.size() + 8);
-  for (const char c : text) {
-    switch (c) {
-      case '"': out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      default: out += c; break;
-    }
-  }
-  return out;
-}
-
-std::string json_error(const std::string& message) {
-  return fmt::format(R"({{"ok":false,"error":"{}"}})", json_escape(message));
-}
-
-std::string json_ok(const std::string& cmd) {
-  return fmt::format(R"({{"ok":true,"cmd":"{}"}})", json_escape(cmd));
-}
-
-// --- minimal JSON field extraction (control messages are flat objects) ------
-
-// Find `"name"` followed by ':' and return the index just past the colon,
-// or std::string::npos.
-std::size_t field_value_start(const std::string& text, const char* name) {
-  const std::string key = fmt::format("\"{}\"", name);
-  std::size_t pos = text.find(key);
-  if (pos == std::string::npos) {
-    return std::string::npos;
-  }
-  pos = text.find(':', pos + key.size());
-  if (pos == std::string::npos) {
-    return std::string::npos;
-  }
-  return pos + 1;
-}
-
-bool json_string_field(const std::string& text, const char* name,
-                       std::string& out) {
-  const std::size_t start = field_value_start(text, name);
-  if (start == std::string::npos) {
-    return false;
-  }
-  const std::size_t open = text.find('"', start);
-  if (open == std::string::npos) {
-    return false;
-  }
-  const std::size_t close = text.find('"', open + 1);
-  if (close == std::string::npos) {
-    return false;
-  }
-  out = text.substr(open + 1, close - open - 1);
-  return true;
-}
-
-bool json_number_field(const std::string& text, const char* name, double& out) {
-  const std::size_t start = field_value_start(text, name);
-  if (start == std::string::npos) {
-    return false;
-  }
-  std::size_t i = start;
-  while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) {
-    ++i;
-  }
-  std::size_t end = i;
-  while (end < text.size()) {
-    const char c = text[end];
-    if (std::isdigit(static_cast<unsigned char>(c)) || c == '-' || c == '+' ||
-        c == '.' || c == 'e' || c == 'E') {
-      ++end;
-    } else {
-      break;
-    }
-  }
-  if (end == i) {
-    return false;
-  }
-  const auto [ptr, ec] =
-      std::from_chars(text.data() + i, text.data() + end, out);
-  return ec == std::errc{};
-}
 
 }  // namespace
 
@@ -152,6 +59,9 @@ class Session : public std::enable_shared_from_this<Session> {
   void send_binary(std::shared_ptr<const std::vector<std::uint8_t>> frame);
   void send_text(std::string text);
   void request_close();
+  [[nodiscard]] std::uint64_t dropped_frames() const {
+    return dropped_frames_;
+  }
 
  private:
   struct OutMessage {
@@ -173,6 +83,7 @@ class Session : public std::enable_shared_from_this<Session> {
   beast::flat_buffer read_buffer_;
   std::deque<OutMessage> write_queue_;
   OutMessage in_flight_;
+  std::uint64_t dropped_frames_{0};
   bool writing_{false};
   bool closing_{false};
 };
@@ -239,6 +150,15 @@ struct SimServer::Impl {
                   [&](const std::shared_ptr<Session>& s) {
                     return s.get() == session;
                   });
+  }
+
+  std::uint64_t total_dropped_frames() {
+    std::lock_guard lock{sessions_mutex_};
+    std::uint64_t total = 0;
+    for (const auto& session : sessions_) {
+      total += session->dropped_frames();
+    }
+    return total;
   }
 
   void broadcast(std::shared_ptr<const std::vector<std::uint8_t>> frame) {
@@ -641,8 +561,9 @@ void Session::enqueue(OutMessage message) {
   // Bound memory for slow/stuck clients: drop the oldest pending frames. The
   // in-flight frame lives in in_flight_ (popped by do_write), so dropping the
   // queue front can never orphan the buffer the current async_write uses.
-  while (write_queue_.size() > kMaxWriteQueue) {
+  while (write_queue_.size() > server_.config.write_queue_limit) {
     write_queue_.pop_front();
+    ++dropped_frames_;
   }
   if (!writing_) {
     do_write();
@@ -767,6 +688,10 @@ unsigned short SimServer::port() const { return impl_->actual_port_; }
 std::size_t SimServer::client_count() const {
   std::lock_guard lock{impl_->sessions_mutex_};
   return impl_->sessions_.size();
+}
+
+std::uint64_t SimServer::total_dropped_frames() const {
+  return impl_->total_dropped_frames();
 }
 
 bool SimServer::running() const { return impl_->net_thread_.joinable(); }
