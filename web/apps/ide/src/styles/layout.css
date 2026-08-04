@@ -191,16 +191,24 @@
   cursor: col-resize;
 }
 
-.splitter-v::after {
-  inset: 0 2px;
-}
-
 .splitter-h {
   cursor: row-resize;
 }
 
-.splitter-h::after {
-  inset: 2px 0;
+/* The accent bar sits on the panel boundary line, not centered in the
+   splitter cell: the left panel's border-right is at the cell's left edge,
+   the right panel's border-left at the right edge, and the console's top
+   edge line at the bottom edge. */
+.splitter-left::after {
+  inset: 0 4px 0 0;
+}
+
+.splitter-right::after {
+  inset: 0 0 0 4px;
+}
+
+.splitter-bottom::after {
+  inset: 4px 0 0 0;
 }
 
 /* --- tab bar ------------------------------------------------------------ */

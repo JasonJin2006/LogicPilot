@@ -69,7 +69,7 @@ function Splitter({
   };
   return (
     <div
-      className={`splitter ${vertical ? 'splitter-v' : 'splitter-h'}`}
+      className={`splitter ${vertical ? 'splitter-v' : 'splitter-h'} splitter-${area}`}
       style={{ gridArea }}
       onPointerDown={handlePointerDown}
       onDoubleClick={() => useLayoutStore.getState().toggleCollapse(area)}

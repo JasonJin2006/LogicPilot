@@ -37,7 +37,8 @@
 .dsl-splitter::after {
   content: '';
   position: absolute;
-  inset: 0 2px;
+  /* The DSL editor's border-left is at the splitter's right edge. */
+  inset: 0 0 0 4px;
   background: transparent;
   transition: background 120ms ease;
 }
