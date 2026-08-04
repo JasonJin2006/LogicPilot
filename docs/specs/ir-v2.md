@@ -73,6 +73,11 @@ Node（容器契约，故意薄）
   state + count 参数 + 行为绑定），v2 agent 树不再走 v1 往返；
   **`lpcli compile` 默认输出切到 v2**（`--ir-version 2`），全套 124 个测试与
   浏览器 E2E 都在 v2 契约路径上通过——v1 读取器从此是纯兼容层。
+- **Phase D 第一步（已实现）**: `ContinuousReplicationModel`（固定步长 RK4 +
+  v0 RHS 表达式求值器）执行结构化方程——v2-native（`{sd, equation}` 节点的
+  `continuous` 方程）与 v1 `EquationModel` 兼容路径；`final_value` 指标入
+  `lpcli run` 摘要；指数衰减与 logistic 的**解析解验收**（129/129 ctest）。
+  **五种模型种类至此全部可执行**。
 - **Phase B**: `schema_version=2` 冻结升级（按 `scripts/check-schema-conform.ps1`
   纪律：同 commit 更新 `schemas/baseline/`）+ v1 兼容读取器（五种类 → Node +
   SemanticsRef 映射）+ lowering 双写。一次性迁移黄金用例（v1 `.lpir` 被 v2 读取器

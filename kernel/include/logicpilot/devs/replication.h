@@ -34,6 +34,8 @@ struct ReplicationMetrics {
   // Milestone 1d: server-pool health (0 for non-flow models).
   double utilization{0.0};       // busy servers / servers, time-averaged
   double availability{0.0};      // 1 - down servers / servers, time-averaged
+  // Milestone Phase D: continuous-model final state (first equation).
+  double final_value{0.0};
 };
 
 // Deterministic FNV-1a (64-bit) streaming hash over the event trace.
@@ -94,6 +96,7 @@ struct ReplicationSummary {
   MetricSummary mean_wait;
   MetricSummary utilization;
   MetricSummary availability;
+  MetricSummary final_value;
 };
 
 // Two-sided Student-t critical value for `confidence` at `df` degrees of

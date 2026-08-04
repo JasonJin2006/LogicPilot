@@ -34,7 +34,7 @@
 - Phase 1（核心引擎）: ✅ MVP 完成；✅ 多服务器 M/M/c + 机器故障（里程碑 1）；✅
   AtomicModel DEVS 通用执行（IR 解释器 + DevsExecutor + atomic DSL，里程碑 1b）；
   ✅ AgentModel E2E（agent DSL + tick 循环 + 内置行为，里程碑 1c）——五种模型
-  种类（Atomic/Coupled/Agent/Process/Equation）中 Equation 仍为占位，其余全部可执行。
+  种类全部可执行（Phase D：Equation 结构化方程 + ODE 引擎，解析解验收）。
 - Phase 2（DSL）: ✅ v0 + atomic 块完成；✅ 结构化诊断（AI 闭环地基）；
   experiment/表达式 未开始。
 - Phase 6（AI）: 🔶 AI 建模闭环（NL→DSL + 诊断迭代，rule-based provider 离线可用、

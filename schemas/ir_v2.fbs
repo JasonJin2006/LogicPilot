@@ -105,10 +105,13 @@ table Statechart {
   initial: string;
 }
 
-// Structured continuous equations (SD / physics), NOT a string bag.
+// Structured continuous equations (SD / physics), NOT a string bag. v0 RHS
+// grammar: numbers, identifiers (params + state vars), + - * / and
+// parentheses (e.g. "-k*y", "r*y*(1-y/K)").
 table Equation {
   lhs: string;
   rhs_text: string;
+  initial_value: double;
 }
 
 // The one container: children + couplings + behavior + continuous, with the

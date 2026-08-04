@@ -55,6 +55,7 @@ add_library(logicpilot_phase1b STATIC
   src/devs/ir_atomic.cpp
   src/devs/ir_agent.cpp
   src/devs/ir_v2_convert.cpp
+  src/devs/continuous.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp
@@ -76,6 +77,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_ir_loader.cpp
     tests/test_mm1_acceptance.cpp
     tests/test_mm1_failure.cpp
+    tests/test_continuous.cpp
     tests/test_determinism.cpp
     tests/test_perf_baseline.cpp
   )

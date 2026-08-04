@@ -17,6 +17,7 @@
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/ir_atomic.h"
 #include "logicpilot/devs/ir_v2_convert.h"
+#include "logicpilot/devs/continuous.h"
 
 namespace logicpilot {
 
@@ -40,10 +41,10 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size) {
     result.message = "empty buffer";
     return result;
   }
-  // Contract auto-detection via the file identifier (v1 "LPIR" / v2 "LP2R"),
-  // because a v2 buffer can survive the v1 verifier leniently. A v2
-  // ModelFile (IR v2 migration) is converted back to the v1 views every
-  // engine consumes, so v2 files execute unchanged.
+  // Contract auto-detection via the file identifier (v1 "LPIR" / v2 "LP2R").
+  // A v2 ModelFile keeps its native views; the v1 compatibility views are
+  // produced when the process/agent converter can (equation/devs-native v2
+  // files run without them).
   std::vector<std::uint8_t> bytes;
   if (flatbuffers::BufferHasIdentifier(data, "LPIR")) {
     flatbuffers::Verifier verifier(data, size);
@@ -56,13 +57,21 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size) {
   } else if (flatbuffers::BufferHasIdentifier(data, "LP2R")) {
     result.file.v2_bytes.assign(data, data + size);
     result.file.v2_root = ir::v2::GetModelFile(result.file.v2_bytes.data());
+    flatbuffers::Verifier verifier(data, size);
+    if (!ir::v2::VerifyModelFileBuffer(verifier)) {
+      result.status = IrStatus::kCorruptBuffer;
+      result.message = "v2 FlatBuffers verifier rejected the buffer";
+      return result;
+    }
+    if (result.file.v2_root->schema_version() != 2) {
+      result.status = IrStatus::kBadSchemaVersion;
+      result.message = "unexpected v2 schema_version";
+      return result;
+    }
     std::string convert_error;
     bytes = convert_v2_to_v1(data, size, &convert_error);
     if (bytes.empty()) {
-      result.status = IrStatus::kCorruptBuffer;
-      result.message = convert_error.empty()
-                           ? "FlatBuffers verifier rejected the buffer"
-                           : convert_error;
+      // Not v1-convertible (equation/devs-native): v2-only execution.
       return result;
     }
   } else {
@@ -363,6 +372,17 @@ std::unique_ptr<ReplicationModel> build_coupled_model(
 }  // namespace
 
 std::string inspect_model(const IrModelFile& file) {
+  if (file.root == nullptr) {
+    // v2-only contract (equation / native devs): report from the v2 root.
+    if (file.v2_root != nullptr && file.v2_root->root() != nullptr &&
+        file.v2_root->root()->semantics() != nullptr &&
+        file.v2_root->root()->semantics()->block() != nullptr) {
+      return "v2 '" + std::string(
+                          file.v2_root->root()->semantics()->block()->c_str()) +
+             "'";
+    }
+    return "<empty>";
+  }
   if (file.root == nullptr || file.root->root() == nullptr) {
     return "<empty>";
   }
@@ -399,20 +419,24 @@ std::string inspect_model(const IrModelFile& file) {
 
 std::unique_ptr<ReplicationModel> build_replication_model(
     const IrModelFile& file, std::string* error) {
-  if (file.root == nullptr || file.root->root() == nullptr) {
+  if (file.root == nullptr && file.v2_root == nullptr) {
     if (error != nullptr) {
-      *error = "no root model";
+      *error = "no model to execute";
     }
     return nullptr;
   }
-  const ir::Model* root = file.root->root();
-  // Phase C: a v2 DEVS atomic tree executes natively from the v2 contract
-  // (no v1 round trip); process/agent v2 files keep the compatibility path.
+  // v2-native dispatch first (equation / devs / agent), so v2-only files
+  // (no v1 compatibility views) execute without the conversion layer.
   if (file.v2_root != nullptr && file.v2_root->root() != nullptr) {
     const ir::v2::Node* v2_root = file.v2_root->root();
     if (v2_root->semantics() != nullptr &&
         v2_root->semantics()->block() != nullptr) {
       const std::string block = v2_root->semantics()->block()->str();
+      if (block == "equation" && v2_root->continuous() != nullptr &&
+          v2_root->continuous()->size() > 0) {
+        return std::make_unique<ContinuousReplicationModel>(file.v2_bytes,
+                                                            v2_root);
+      }
       bool atomic_only = block == "atomic";
       bool agent_only = block == "agent";
       const auto children_only = [&](const char* expected) {
@@ -443,6 +467,19 @@ std::unique_ptr<ReplicationModel> build_replication_model(
       }
     }
   }
+  if (file.root == nullptr) {
+    if (error != nullptr) {
+      *error = "v2 contract has no v1 compatibility views for this kind";
+    }
+    return nullptr;
+  }
+  if (file.root == nullptr || file.root->root() == nullptr) {
+    if (error != nullptr) {
+      *error = "no root model";
+    }
+    return nullptr;
+  }
+  const ir::Model* root = file.root->root();
   if (root->kind_type() == ir::ModelKind_ProcessModel) {
     const std::unordered_map<std::string, const ir::AtomicModel*> no_resources;
     return build_process_model(*root->kind_as_ProcessModel(), no_resources,
@@ -478,6 +515,10 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   }
   if (root->kind_type() == ir::ModelKind_AgentModel) {
     return std::make_unique<AgentReplicationModel>(file.bytes, root);
+  }
+  if (root->kind_type() == ir::ModelKind_EquationModel) {
+    return std::make_unique<ContinuousReplicationModel>(
+        file.bytes, root->kind_as_EquationModel());
   }
   if (error != nullptr) {
     *error = std::string("no executable lowering for ") +

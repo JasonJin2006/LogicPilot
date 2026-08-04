@@ -135,6 +135,9 @@ ReplicationSummary summarize_replications(
   out.availability = summarize([](const ReplicationMetrics& m) {
     return m.availability;
   });
+  out.final_value = summarize([](const ReplicationMetrics& m) {
+    return m.final_value;
+  });
   return out;
 }
 
