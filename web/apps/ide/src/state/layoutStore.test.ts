@@ -53,15 +53,15 @@ describe('layoutStore', () => {
     const store = useLayoutStore.getState();
     store.removePanel('center', 'queue');
     const center = useLayoutStore.getState().areas.center;
-    expect(center.panels).toEqual([]);
+    expect(center.panels).toEqual(['model']);
     // Removing the active panel leaves the center empty; defaults come back
     // on the next rehydrate (mergePersistedLayout).
-    expect(center.activePanel).toBe('queue');
+    expect(center.activePanel).toBe('model');
   });
 
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
-    expect(areas.center.panels).toEqual(['queue']);
+    expect(areas.center.panels).toEqual(['queue', 'model']);
     expect(areas.right.panels).toEqual(['ai']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette']);
     expect(areas.bottom.panels).toEqual(['console']);

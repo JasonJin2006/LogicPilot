@@ -1,0 +1,67 @@
+/* Modeling domain (P1-6): palette + canvas + block cards. */
+
+.model-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20px 20px, var(--border) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--bg);
+}
+
+.model-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.model-block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  user-select: none;
+}
+
+.model-block:hover {
+  border-color: var(--border-strong);
+}
+
+.model-block.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.model-block-kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+}
+
+.model-block-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.palette-item {
+  cursor: grab;
+}
+
+.palette-item:active {
+  cursor: grabbing;
+}

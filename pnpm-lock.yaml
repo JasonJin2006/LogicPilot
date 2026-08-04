@@ -26,6 +26,9 @@ importers:
 
   web/apps/ide:
     dependencies:
+      '@logicpilot/editor':
+        specifier: workspace:^
+        version: link:../../packages/editor
       '@logicpilot/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
