@@ -24,7 +24,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | DSL（Phase 2） | ✅ | DSL v2 全量完成：薄核心文法 + process 库注册表（`.lplib`）、显式资源引用、表达式/参数引用、行为统一、实验限定路径；结构化诊断 JSON |
 | IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役** |
 | AI Copilot（Phase 6 第一刀） | 🔶 | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始** |
-| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 + 拖拽建模未开始** |
+| Web IDE（Phase 3 切片） | 🔶 | 连接/运行控制、PixiJS 队列动画、uPlot 实时图表、统计面板、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模进行中**（palette 宫格、画布坐标体系、块拖放/移动、端口连线、Properties 面板已落地；剩 DSL 生成 + 编译诊断回显） |
 | 工程与文档 | ✅ | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册 |
 | 测试基线 | ✅ | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E |
 
@@ -120,10 +120,17 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **前端重构 ✅ 已完成**（`f7fe9a8`）：zustand 域 store（connection/run）、
    `src/run` `src/ai` `src/state` `src/styles` 目录、`@logicpilot/editor` 包
    （图文档模型 + DSL v2 生成器，8 vitest）。
+   **拖拽建模 ✅ 已完成**（2026-08-04）：自研面板系统（多区布局/折叠/标签）、
+   palette 宫格（图标 + 端口）、画布坐标体系（网格/缩放/平移/坐标轴）、
+   块拖放与移动/选中、端口连线（out→in coupling，点击删除）、
+   Properties 属性面板（名称 + `process.lplib` 字段编辑、Delete 删除块）、
+   拖放即带默认参数。
    前置：**自研面板系统**（见上，阶段 1/2）提供左栏块库、中央建模画布、
    右栏属性编辑、底栏编译诊断的布局骨架。
    范围：块面板（source/queue/service/atomic/agent/continuous）→ 画布拖拽 →
    属性编辑 → DSL 生成 → 编译诊断回显。
+   剩余：**生成 DSL + 编译诊断回显**（`lpcli compile --diagnostics-json` →
+   Console 回显；`generateDsl` 就绪，待改按 `edges` 顺序生成）。
    验收：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过；浏览器 E2E 覆盖。
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 

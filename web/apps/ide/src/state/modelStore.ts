@@ -9,6 +9,7 @@ import {
   createDocument,
   disconnect,
   moveNode,
+  removeNode,
   renameNode,
   setParam,
   type AddNodeInput,
@@ -22,6 +23,7 @@ interface ModelState {
   moveBlock: (id: string, x: number, y: number) => void;
   connectBlocks: (from: string, to: string) => void;
   disconnectEdge: (id: string) => void;
+  removeBlock: (id: string) => void;
   select: (id: string | null) => void;
   renameBlock: (id: string, name: string) => void;
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
@@ -41,6 +43,11 @@ export const useModelStore = create<ModelState>((set) => ({
     }),
   disconnectEdge: (id) =>
     set((state) => ({ document: disconnect(state.document, id) })),
+  removeBlock: (id) =>
+    set((state) => ({
+      document: removeNode(state.document, id),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+    })),
   select: (id) => set({ selectedId: id }),
   renameBlock: (id, name) => set((state) => ({ document: renameNode(state.document, id, name) })),
   setBlockParam: (id, key, value) =>

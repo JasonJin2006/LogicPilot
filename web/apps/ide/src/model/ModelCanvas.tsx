@@ -9,7 +9,7 @@ import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 
 import { useModelStore } from '../state/modelStore';
 import type { BlockKind, ModelNode } from '@logicpilot/editor';
 import { getDraggedKind } from './paletteDnd';
-import { blockPorts, portAnchor } from './blockDefs';
+import { BLOCK_DEFAULTS, blockPorts, portAnchor } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 
 const MIN_SCALE = 0.1;
@@ -53,6 +53,7 @@ export function ModelCanvas() {
   const moveBlock = useModelStore((state) => state.moveBlock);
   const connectBlocks = useModelStore((state) => state.connectBlocks);
   const disconnectEdge = useModelStore((state) => state.disconnectEdge);
+  const removeBlock = useModelStore((state) => state.removeBlock);
   const select = useModelStore((state) => state.select);
 
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -65,6 +66,19 @@ export function ModelCanvas() {
   const [draftWire, setDraftWire] = useState<{ fromId: string; x: number; y: number } | null>(null);
   const [wireTarget, setWireTarget] = useState<string | null>(null);
   const wireStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Delete/Backspace removes the selected block (unless typing in a field).
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+      event.preventDefault();
+      removeBlock(selectedId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId, removeBlock]);
   const drag = useRef<{
     startX: number;
     startY: number;
@@ -156,7 +170,7 @@ export function ModelCanvas() {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left - view.panX) / view.scale;
     const y = (event.clientY - rect.top - view.panY) / view.scale;
-    addBlock({ kind, name: kind, x, y });
+    addBlock({ kind, name: kind, x, y, params: BLOCK_DEFAULTS[kind] });
     select(null);
   };
 

@@ -277,3 +277,54 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Properties panel (right): selected block name + library fields. */
+.properties {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.props-kind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-text);
+}
+
+.props-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.props-field input {
+  box-sizing: border-box;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.props-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.props-delete {
+  align-self: flex-start;
+  background: transparent;
+  border-color: var(--error-dim);
+  color: var(--error);
+}
+
+.props-delete:hover:not(:disabled) {
+  background: var(--error-dim);
+  border-color: var(--error);
+  color: var(--error);
+}

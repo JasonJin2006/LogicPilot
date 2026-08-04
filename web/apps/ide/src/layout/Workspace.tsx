@@ -3,9 +3,11 @@
 // visibility toggling keeps live data alive); splitters resize areas by
 // writing size values into the store. See docs/specs/ide-layout.md.
 
+import { useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
+import { useModelStore } from '../state/modelStore';
 import { PANELS, type AreaId } from './panels';
 
 function Splitter({
@@ -154,6 +156,12 @@ function PanelArea({ area }: { area: AreaId }) {
 
 export function Workspace() {
   const areas = useLayoutStore((s) => s.areas);
+  const selectedId = useModelStore((s) => s.selectedId);
+  const setActive = useLayoutStore((s) => s.setActive);
+  // Selecting a block brings the Properties tab up; deselecting returns AI.
+  useEffect(() => {
+    setActive('right', selectedId ? 'properties' : 'ai');
+  }, [selectedId, setActive]);
   const style = {
     '--left-w': `${areas.left.collapsed ? 0 : areas.left.size}px`,
     '--right-w': `${areas.right.collapsed ? 0 : areas.right.size}px`,

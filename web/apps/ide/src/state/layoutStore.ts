@@ -143,7 +143,7 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: 'logicpilot.layout',
-      version: 1,
+      version: 2,
       merge: mergePersistedLayout,
     },
   ),

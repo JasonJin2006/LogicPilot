@@ -25,6 +25,38 @@ export function blockPorts(kind: BlockKind): { in?: boolean; out?: boolean } {
   return { in: def?.in, out: def?.out };
 }
 
+export type FieldType = 'int' | 'float' | 'distribution' | 'ref';
+
+export interface BlockField {
+  key: string;
+  type: FieldType;
+}
+
+/** Library field shapes (mirrors libraries/process.lplib). */
+export const BLOCK_FIELDS: Record<BlockKind, BlockField[]> = {
+  resource: [
+    { key: 'capacity', type: 'int' },
+    { key: 'failure_rate', type: 'float' },
+  ],
+  source: [{ key: 'arrival', type: 'distribution' }],
+  queue: [{ key: 'capacity', type: 'int' }],
+  service: [
+    { key: 'resource', type: 'ref' },
+    { key: 'time', type: 'distribution' },
+  ],
+  sink: [],
+};
+
+/** Friendly defaults applied when a block is dropped. service.resource is
+ *  deliberately left empty so the user picks a resource reference. */
+export const BLOCK_DEFAULTS: Record<BlockKind, Record<string, string | number | boolean>> = {
+  resource: { capacity: 1, failure_rate: 0 },
+  source: { arrival: 'poisson(10)' },
+  queue: { capacity: 100 },
+  service: { time: 'exponential(1)' },
+  sink: {},
+};
+
 // Canvas card geometry (must match styles/model.css): the block card is a
 // centered flex column (34px icon + 4px gap + 15px name line). Port dots are
 // drawn on the icon's left/right midpoints, so their anchors are fixed world

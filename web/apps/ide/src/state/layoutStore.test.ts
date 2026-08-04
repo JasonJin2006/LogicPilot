@@ -62,7 +62,7 @@ describe('layoutStore', () => {
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['model']);
-    expect(areas.right.panels).toEqual(['ai']);
+    expect(areas.right.panels).toEqual(['ai', 'properties']);
     expect(areas.left.panels).toEqual(['modelInfo', 'palette']);
     expect(areas.bottom.panels).toEqual(['console']);
   });
@@ -95,6 +95,6 @@ describe('layoutStore', () => {
       },
     };
     const merged = mergePersistedLayout(stale, current);
-    expect(merged.areas.right.panels).toEqual(['ai']);
+    expect(merged.areas.right.panels).toEqual(['ai', 'properties']);
   });
 });

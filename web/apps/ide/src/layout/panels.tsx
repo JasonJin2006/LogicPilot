@@ -10,10 +10,11 @@ import { ModelCanvas } from '../model/ModelCanvas';
 import { ConsolePanel } from './ConsolePanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
+import { PropertiesPanel } from '../model/PropertiesPanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
-export type PanelId = 'model' | 'ai' | 'console' | 'modelInfo' | 'palette';
+export type PanelId = 'model' | 'ai' | 'console' | 'modelInfo' | 'palette' | 'properties';
 
 export interface PanelDef {
   title: string;
@@ -26,6 +27,8 @@ export const PANELS: Record<PanelId, PanelDef> = {
   model: { title: 'Model', area: 'center', component: ModelCanvas },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
+  // right: selected block properties.
+  properties: { title: 'Properties', area: 'right', component: PropertiesPanel },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
   // left: side panels switched by the activity bar (VS Code style).
@@ -48,6 +51,6 @@ export const ACTIVITY_VIEWS: Array<{
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
   left: { panels: ['modelInfo', 'palette'], active: 'modelInfo' },
   center: { panels: ['model'], active: 'model' },
-  right: { panels: ['ai'], active: 'ai' },
+  right: { panels: ['ai', 'properties'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },
 };
