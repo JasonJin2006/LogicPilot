@@ -89,6 +89,14 @@ export function TopBar() {
       <div className="top-bar-drag" onMouseDown={(event) => void startDrag(event)}>
         <img className="top-logo" src="/logo.svg" alt="LogicPilot" />
       </div>
+      <nav className="app-menu" aria-label="Application menu">
+        {['File', 'Edit', 'View', 'Help'].map((item) => (
+          <button key={item} className="app-menu-item" type="button">
+            {item}
+          </button>
+        ))}
+      </nav>
+      <div className="top-bar-fill" onMouseDown={(event) => void startDrag(event)} />
       <input
         className="search-box"
         type="search"
