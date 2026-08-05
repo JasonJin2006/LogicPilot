@@ -1,6 +1,6 @@
 // Generates the custom cursor SVGs (web/apps/ide/public/cursors) from lucide
-// icons. Each cursor is the lucide stroke rendered twice - a white outline
-// under a dark core - so it stays visible on both the dark and light themes.
+// icons. Each cursor is the lucide shape rendered as a solid white fill with
+// a thin dark outline (classic cursor look, visible on both themes).
 // Run from web/apps/ide:  node scripts/gen-cursors.mjs
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -34,11 +34,10 @@ function renderSvg(iconNode) {
     })
     .join('');
   // Render at 16px with a viewBox of 24 so the icon matches the native
-  // arrow's visual scale; the double stroke is thin (white outline under a
-  // dark core) to keep it subtle and legible on both themes.
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
-  <g stroke="#ffffff" stroke-width="2">${shapes}</g>
-  <g stroke="#10151d" stroke-width="1.2">${shapes}</g>
+  // arrow's visual scale; solid white fill with a thin dark outline keeps
+  // the cursor legible on both themes without hollow interiors.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="#ffffff" stroke="#10151d" stroke-width="1.2">${shapes}</g>
 </svg>
 `;
 }
