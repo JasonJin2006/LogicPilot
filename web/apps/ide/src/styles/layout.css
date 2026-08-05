@@ -393,7 +393,7 @@
   align-items: center;
   gap: 6px;
   margin: 0;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
   background: transparent;
   border: none;
   color: var(--text-muted);
@@ -435,7 +435,7 @@
   border: none;
   color: var(--text-muted);
   border-radius: var(--r-sm);
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 
 .tab-action:hover:not(:disabled) {
@@ -445,7 +445,7 @@
 
 .tab-action:disabled {
   opacity: 0.35;
-  cursor: default;
+  cursor: var(--cursor-arrow);
 }
 
 .tab-x {
@@ -456,7 +456,7 @@
   border: none;
   color: var(--text-muted);
   border-radius: 4px;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 
 .tab-x:hover {

@@ -11,7 +11,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, '..', 'public', 'cursors');
 
 const CURSORS = [
-  { name: 'cursor-grab', icon: 'hand' },
+  // The default arrow and the clickable pointer (pointing hand) extend the
+  // themed set to the whole app, not just the canvas.
+  { name: 'cursor-arrow', icon: 'mouse-pointer-2' },
+  { name: 'cursor-pointer', icon: 'pointer' },
+  { name: 'cursor-grab', icon: 'hand-grab' },
   { name: 'cursor-grabbing', icon: 'move' },
   { name: 'cursor-crosshair', icon: 'crosshair' },
   { name: 'cursor-resize-h', icon: 'move-horizontal' },
