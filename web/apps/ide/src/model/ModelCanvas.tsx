@@ -500,7 +500,7 @@ export function ModelCanvas() {
   return (
     <div
       ref={viewportRef}
-      className={`model-canvas${panning ? ' panning' : ''}`}
+      className={`model-canvas${panning ? ' panning' : ''}${draftWire ? ' wiring' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

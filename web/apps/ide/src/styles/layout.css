@@ -366,11 +366,11 @@
 }
 
 .splitter-v {
-  cursor: col-resize;
+  cursor: var(--cursor-resize-h);
 }
 
 .splitter-h {
-  cursor: row-resize;
+  cursor: var(--cursor-resize-v);
 }
 
 /* --- tab bar ------------------------------------------------------------ */

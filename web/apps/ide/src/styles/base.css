@@ -84,6 +84,16 @@
   --row-border: rgba(0, 0, 0, 0.08);
 }
 
+/* Custom lucide-based cursors (web/apps/ide/public/cursors). The trailing
+   keyword is the fallback for engines that cannot render the SVG image. */
+:root {
+  --cursor-grab: url('/cursors/cursor-grab.svg') 12 12, grab;
+  --cursor-grabbing: url('/cursors/cursor-grabbing.svg') 12 12, grabbing;
+  --cursor-wire: url('/cursors/cursor-crosshair.svg') 12 12, crosshair;
+  --cursor-resize-h: url('/cursors/cursor-resize-h.svg') 12 12, col-resize;
+  --cursor-resize-v: url('/cursors/cursor-resize-v.svg') 12 12, row-resize;
+}
+
 * {
   box-sizing: border-box;
 }

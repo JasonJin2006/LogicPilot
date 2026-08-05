@@ -40,7 +40,7 @@
   min-height: 0;
   overflow: hidden;
   background: var(--bg);
-  cursor: grab;
+  cursor: var(--cursor-grab);
   user-select: none;
   touch-action: none;
 }
@@ -50,7 +50,7 @@
   position: relative;
   flex: none;
   width: 1px;
-  cursor: col-resize;
+  cursor: var(--cursor-resize-h);
 }
 
 .dsl-splitter::before {
@@ -170,7 +170,21 @@
 }
 
 .model-canvas.panning {
-  cursor: grabbing;
+  cursor: var(--cursor-grabbing);
+}
+
+/* While wiring ports the crosshair stays on even over blocks/shapes. */
+.model-canvas.wiring,
+.model-canvas.wiring .model-block,
+.model-canvas.wiring .model-shape {
+  cursor: var(--cursor-wire);
+}
+
+/* While panning, blocks and shapes keep the grabbing cursor instead of
+   reverting to their own grab cursor. */
+.model-canvas.panning .model-block,
+.model-canvas.panning .model-shape {
+  cursor: var(--cursor-grabbing);
 }
 
 /* Presentation shapes: real drawing elements on the canvas. */
@@ -185,7 +199,7 @@
   stroke: var(--border-strong);
   stroke-width: 1.5;
   pointer-events: all;
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .model-shapes .model-shape.selected {
@@ -257,7 +271,7 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  cursor: grab;
+  cursor: var(--cursor-grab);
   user-select: none;
   /* Borderless: just the icon (with ports on its edges) and the name.
      The coordinate (x, y) is the block center. */
@@ -265,7 +279,7 @@
 }
 
 .model-block.dragging {
-  cursor: grabbing;
+  cursor: var(--cursor-grabbing);
 }
 
 .model-block:hover .model-block-icon {
@@ -348,7 +362,7 @@
   background: var(--surface-2);
   border: 1.5px solid var(--border-strong);
   transform: translateY(-50%);
-  cursor: crosshair;
+  cursor: var(--cursor-wire);
   transition:
     background 0.1s,
     border-color 0.1s,
@@ -490,7 +504,7 @@
   gap: 4px;
   padding: 8px 4px 6px;
   border-radius: var(--r-sm);
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .palette-item.dragging {
@@ -502,7 +516,7 @@
 }
 
 .palette-item:active {
-  cursor: grabbing;
+  cursor: var(--cursor-grabbing);
 }
 
 .palette-chip {
