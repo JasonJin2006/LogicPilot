@@ -75,6 +75,7 @@ export default defineConfig({
           { text: 'DSL 规范', link: '/specs/dsl-spec' },
           { text: 'DSL v2 重设计（草案）', link: '/specs/dsl-v2' },
           { text: 'IR v2 迁移设计', link: '/specs/ir-v2' },
+          { text: '工程格式（Project Format）', link: '/specs/project-format' },
           { text: 'AI 建模闭环', link: '/specs/ai-loop' },
           { text: '里程碑 1 故障模型', link: '/specs/milestone1-failure-model' },
           { text: '性能预算', link: '/performance-budget' },

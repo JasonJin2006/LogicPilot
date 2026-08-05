@@ -8,6 +8,12 @@ import { useModelStore } from '../state/modelStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent, loadRecent } from '../state/recentStore';
+import {
+  bundleToJson,
+  createProjectBundle,
+  parseProjectBundle,
+  projectToDocument,
+} from '../project/project';
 
 interface MenuEntry {
   label: string;
@@ -67,6 +73,21 @@ export function AppMenu() {
     event.target.value = '';
     if (!file) return;
     void file.text().then((text) => {
+      if (file.name.toLowerCase().endsWith('.lpproj')) {
+        const parsedBundle = parseProjectBundle(text);
+        if (!parsedBundle.ok) {
+          openInfo('Open failed', parsedBundle.error ?? 'invalid project');
+          return;
+        }
+        const loaded = projectToDocument(parsedBundle.bundle!);
+        if (!loaded.ok) {
+          openInfo('Open failed', loaded.error ?? 'invalid project');
+          return;
+        }
+        loadDocument(loaded.document!);
+        addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
+        return;
+      }
       if (file.name.toLowerCase().endsWith('.json')) {
         try {
           const parsed = JSON.parse(text) as unknown;
@@ -91,16 +112,16 @@ export function AppMenu() {
     });
   };
   const fileSave = () => {
-    const dsl = generateDsl(modelDoc);
     const name = modelDoc.name || 'Model';
-    const blob = new Blob([dsl], { type: 'text/plain' });
+    const bundle = bundleToJson(createProjectBundle(modelDoc));
+    const blob = new Blob([bundle], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${name}.lp`;
+    anchor.download = `${name}.lpproj`;
     anchor.click();
     URL.revokeObjectURL(url);
-    addRecent({ name, dsl, at: Date.now() });
+    addRecent({ name, bundle, at: Date.now() });
     close();
   };
   const exitApp = () => {
@@ -198,11 +219,27 @@ export function AppMenu() {
           ? recent.map((model) => ({
               label: model.name,
               action: () => {
-                const parsed = parseDsl(model.dsl);
-                if (parsed.ok) {
-                  loadDocument(parsed.document);
+                if (model.bundle) {
+                  const parsedBundle = parseProjectBundle(model.bundle);
+                  if (!parsedBundle.ok) {
+                    openInfo('Open failed', parsedBundle.error ?? 'invalid project');
+                  } else {
+                    const loaded = projectToDocument(parsedBundle.bundle!);
+                    if (loaded.ok) {
+                      loadDocument(loaded.document!);
+                    } else {
+                      openInfo('Open failed', loaded.error ?? 'invalid project');
+                    }
+                  }
+                } else if (model.dsl) {
+                  const parsed = parseDsl(model.dsl);
+                  if (parsed.ok) {
+                    loadDocument(parsed.document);
+                  } else {
+                    openInfo('Open failed', parsed.error ?? 'invalid DSL');
+                  }
                 } else {
-                  openInfo('Open failed', parsed.error ?? 'invalid DSL');
+                  openInfo('Open failed', 'recent model has no saved content');
                 }
                 close();
               },
@@ -351,7 +388,7 @@ export function AppMenu() {
           )}
         </div>
       ))}
-      <input ref={fileRef} type="file" accept=".lp,.json" hidden onChange={onFileChosen} />
+      <input ref={fileRef} type="file" accept=".lpproj,.lp,.json" hidden onChange={onFileChosen} />
     </nav>
   );
 }

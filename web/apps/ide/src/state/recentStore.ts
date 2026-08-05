@@ -1,10 +1,14 @@
 // Recently saved/opened models (File > Open Recent), persisted to
-// localStorage as { name, dsl, at } entries.
+// localStorage as { name, bundle, at } entries. `bundle` is the serialized
+// `*.lpproj` project (source + canvas); legacy entries may carry raw `dsl`.
 
 export interface RecentModel {
   name: string;
-  dsl: string;
   at: number;
+  /** Serialized `*.lpproj` project bundle. */
+  bundle?: string;
+  /** Legacy: raw DSL text saved before project bundles existed. */
+  dsl?: string;
 }
 
 const KEY = 'logicpilot.recent';
