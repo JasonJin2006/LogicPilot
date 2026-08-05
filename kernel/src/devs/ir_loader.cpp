@@ -250,6 +250,7 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   std::vector<const ir::v2::Coupling*> flow_couplings;
   const Node* flow = nullptr;
   int flow_count = 0;
+  bool agent_body_flow = false;
   for (const Node* child : *model_root->children()) {
     if (std::strcmp(node_library(child), "process") != 0) {
       continue;
@@ -264,6 +265,36 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
       // Agent-centric: a process-library block directly under the root is a
       // flow stage connected by the root's couplings.
       flow_stages.push_back(child);
+    }
+  }
+  // Agent-centric: an agent body may hold the process flow (agent Main {
+  // source ...; couple ... }). Use that agent's members + couplings.
+  if (flow == nullptr && flow_stages.empty()) {
+    for (const Node* child : *model_root->children()) {
+      if (std::strcmp(node_library(child), "agent") != 0 ||
+          child->children() == nullptr) {
+        continue;
+      }
+      for (const Node* member : *child->children()) {
+        if (std::strcmp(node_library(member), "process") != 0) {
+          continue;
+        }
+        const std::string block = node_block(member);
+        if (block == "resource") {
+          resources.emplace(node_name(member), member);
+        } else {
+          flow_stages.push_back(member);
+        }
+      }
+      if (!flow_stages.empty()) {
+        if (child->couplings() != nullptr) {
+          for (const ir::v2::Coupling* coupling : *child->couplings()) {
+            flow_couplings.push_back(coupling);
+          }
+        }
+        agent_body_flow = true;
+        break;
+      }
     }
   }
   if (flow_count > 1) {
@@ -281,7 +312,7 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
         flow_couplings.push_back(coupling);
       }
     }
-  } else {
+  } else if (flow_couplings.empty() && !agent_body_flow) {
     if (model_root->couplings() != nullptr) {
       for (const ir::v2::Coupling* coupling : *model_root->couplings()) {
         flow_couplings.push_back(coupling);
@@ -495,6 +526,16 @@ std::unique_ptr<ReplicationModel> build_replication_model(
         has_atomic = true;
       } else if (library == "agent") {
         has_agent = true;
+        // An agent whose body holds process-library blocks is a flow scope
+        // (agent-centric: agent Main { source ...; couple ... }).
+        if (child->children() != nullptr) {
+          for (const Node* member : *child->children()) {
+            if (std::strcmp(node_library(member), "process") == 0 &&
+                std::strcmp(node_block(member), "resource") != 0) {
+              has_process = true;
+            }
+          }
+        }
       } else if (library == "sd") {
         has_equation = true;
       }
@@ -530,7 +571,8 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     return fail("no root model");
   }
   const Node* root = file.v2_root->root();
-  if (node_block(root) != "model" || root->children() == nullptr) {
+  if (std::strcmp(node_block(root), "model") != 0 ||
+      root->children() == nullptr) {
     return fail("no process model to stream");
   }
 
@@ -554,9 +596,32 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     }
   }
   if (flow == nullptr) {
-    // Agent-centric flows: process-library blocks directly under the root.
+    // Agent-centric flows: process-library blocks directly under the root, or
+    // inside a root-level agent body (agent Main { source ...; couple ... }).
     if (flow_stages.empty()) {
-      return fail("no process flow to stream");
+      for (const Node* child : *root->children()) {
+        if (std::strcmp(node_library(child), "agent") != 0 ||
+            child->children() == nullptr) {
+          continue;
+        }
+        for (const Node* member : *child->children()) {
+          if (std::strcmp(node_library(member), "process") != 0) {
+            continue;
+          }
+          const std::string block = node_block(member);
+          if (block == "resource") {
+            resources.emplace(node_name(member), member);
+          } else {
+            flow_stages.push_back(member);
+          }
+        }
+        if (!flow_stages.empty()) {
+          break;
+        }
+      }
+      if (flow_stages.empty()) {
+        return fail("no process flow to stream");
+      }
     }
   } else {
     flow_stages.clear();

@@ -1,6 +1,6 @@
 # Agent-centric 模型结构迁移设计
 
-状态：实施中（2026-08-06）· 维护者：`/root`
+状态：已完成（2026-08-06）· 维护者：`/root`
 
 ## 1. 目标
 
@@ -95,3 +95,21 @@ model CallCenter {
 - agent 体内可写流程块 + `couple`，编译与内核可执行。
 - 根画布平铺显示全部成员；拖 resource 与拖流程块行为一致（都在根作用域）。
 - 旧 `process` 模型与工程仍通过现有测试与 E2E。
+
+## 6. 实施记录
+
+- 阶段 A（编译器）✅：process 库块允许作为 model/agent 成员；作用域级
+  source 与耦合校验；agent 递归校验子成员。
+- 阶段 B（内核）✅：`build_replication_model` / `extract_flow_params`
+  支持 model 根直接成员 + 根耦合（M/M/1 快路径 + ProcessFlowSim）；
+  `ProcessFlowSim` 改为接收"阶段列表 + 耦合列表"。
+- 阶段 C（工程格式）✅：`generateDsl` 平铺根级流程块 + 模型级 couple；
+  `nodePath` 去掉 `Flow/` 前缀；嵌套 agent 仍按 instance/独立文件组织。
+- 阶段 D（IDE）✅：`insertBlockAt` 不再自动建 `process Flow` 容器；
+  根画布平铺 resource 与全部流程块；旧 process 容器文档仍可下钻（兼容）。
+- 阶段 E（内核·嵌套 agent 体）✅：`build_replication_model` /
+  `extract_flow_params` 检测 agent 子节点体内的 process 库成员与其 couplings，
+  将其作为流程作用域执行（M/M/1 快路径 + ProcessFlowSim）；与根级扁平放置
+  bit-exact 对拍（同种子全指标一致，`test_ir_loader` "agent body flow"）；
+  顺带修复 `extract_flow_params` 中 `node_block(root) != "model"` 的指针比较
+  bug（此前流式驱动恒走 generic 路径）。
