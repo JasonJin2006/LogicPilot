@@ -2,13 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { generateDsl, parseDsl } from '@logicpilot/editor';
+import { parseDsl } from '@logicpilot/editor';
 import type { BlockKind, ModelDocument } from '@logicpilot/editor';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
-import { addRecent, loadRecent } from '../state/recentStore';
+import { addRecent, loadRecent, removeRecent } from '../state/recentStore';
 import { useProjectStore } from '../state/projectStore';
 import {
   DEFAULT_MODEL_PATH,
@@ -20,6 +20,7 @@ import {
   projectToDocument,
   splitModelSource,
 } from '../project/project';
+import { openProjectFromFile } from '../project/openProject';
 import { isTauri, pickProjectFolder, readProjectDir, writeProjectFiles } from '../state/tauriFs';
 
 interface MenuEntry {
@@ -28,12 +29,11 @@ interface MenuEntry {
   checked?: boolean;
   disabled?: boolean;
   action?: () => void;
+  /** Optional per-entry dismiss button (e.g. remove from Open Recent). */
+  onRemove?: () => void;
 }
 
-type MenuEntryOrBreak =
-  | MenuEntry
-  | { kind: 'separator' }
-  | { kind: 'sectionLabel'; label: string };
+type MenuEntryOrBreak = MenuEntry | { kind: 'separator' } | { kind: 'sectionLabel'; label: string };
 
 // Clipboard for Edit > Cut/Copy/Paste (a block, not canvas text).
 let clipboard: {
@@ -45,6 +45,7 @@ let clipboard: {
 
 export function AppMenu() {
   const [open, setOpen] = useState<string | null>(null);
+  const [recentTick, setRecentTick] = useState(0);
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +65,6 @@ export function AppMenu() {
   const openInfo = useUiStore((state) => state.openInfo);
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openBundle = useProjectStore((state) => state.openBundle);
-  const clearProject = useProjectStore((state) => state.clearProject);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
 
@@ -130,59 +130,7 @@ export function AppMenu() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    void file.text().then((text) => {
-      if (file.name.toLowerCase().endsWith('.lpproj')) {
-        const parsedBundle = parseProjectBundle(text);
-        if (!parsedBundle.ok) {
-          openInfo('Open failed', parsedBundle.error ?? 'invalid project');
-          return;
-        }
-        const loaded = projectToDocument(parsedBundle.bundle!);
-        if (!loaded.ok) {
-          openInfo('Open failed', loaded.error ?? 'invalid project');
-          return;
-        }
-        openBundle(parsedBundle.bundle!);
-        openDocument(loaded.document!);
-        markClean();
-        addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
-        return;
-      }
-      if (file.name.toLowerCase().endsWith('.json')) {
-        clearProject();
-        try {
-          const parsed = JSON.parse(text) as unknown;
-          const documentLike =
-            parsed !== null &&
-            typeof parsed === 'object' &&
-            Array.isArray((parsed as { nodes?: unknown }).nodes) &&
-            Array.isArray((parsed as { edges?: unknown }).edges);
-          if (!documentLike) {
-            openInfo('Open failed', 'not a LogicPilot canvas document (.json)');
-            return;
-          }
-          openDocument(parsed as never);
-          markClean();
-          const parsedName =
-            typeof (parsed as { name?: unknown }).name === 'string'
-              ? (parsed as { name: string }).name
-              : modelDoc.name || 'Model';
-          addRecent({ name: parsedName, dsl: generateDsl(parsed as never), at: Date.now() });
-        } catch (error) {
-          openInfo('Open failed', String(error));
-        }
-        return;
-      }
-      clearProject();
-      const parsed = parseDsl(text);
-      if (parsed.ok) {
-        openDocument(parsed.document);
-        markClean();
-        addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });
-      } else {
-        openInfo('Open failed', parsed.error ?? 'invalid DSL');
-      }
-    });
+    void openProjectFromFile(file);
   };
   const fileSave = async () => {
     const name = modelDoc.name || 'Model';
@@ -288,15 +236,30 @@ export function AppMenu() {
 
   const recent = loadRecent();
   const renderEntry = (entry: MenuEntry, key: string) => (
-    <button
-      key={key}
-      className={`app-menu-entry${entry.checked ? ' checked' : ''}`}
-      disabled={entry.disabled}
-      onClick={entry.action}
-    >
-      <span className="app-menu-entry-label">{entry.label}</span>
-      {entry.shortcut && <span className="app-menu-entry-shortcut">{entry.shortcut}</span>}
-    </button>
+    <div key={key} className={`app-menu-entry-row${entry.disabled ? ' disabled' : ''}`}>
+      <button
+        className={`app-menu-entry${entry.checked ? ' checked' : ''}${entry.onRemove ? ' has-remove' : ''}`}
+        disabled={entry.disabled}
+        onClick={entry.action}
+      >
+        <span className="app-menu-entry-label">{entry.label}</span>
+        {entry.shortcut && <span className="app-menu-entry-shortcut">{entry.shortcut}</span>}
+      </button>
+      {entry.onRemove && (
+        <button
+          className="app-menu-entry-remove"
+          type="button"
+          title="Remove from recent"
+          aria-label={`Remove ${entry.label} from recent`}
+          onClick={(event) => {
+            event.stopPropagation();
+            entry.onRemove?.();
+          }}
+        >
+          ✕
+        </button>
+      )}
+    </div>
   );
 
   const menus: Array<{ label: string; entries: MenuEntryOrBreak[] }> = [
@@ -346,6 +309,10 @@ export function AppMenu() {
                 }
                 close();
               },
+              onRemove: () => {
+                removeRecent(model.name);
+                setRecentTick((tick) => tick + 1);
+              },
             }))
           : [{ label: 'No recent models', disabled: true as const, action: undefined }]),
         { kind: 'separator' },
@@ -358,8 +325,24 @@ export function AppMenu() {
     {
       label: 'Edit',
       entries: [
-        { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !canUndo, action: () => { undo(); close(); } },
-        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', disabled: !canRedo, action: () => { redo(); close(); } },
+        {
+          label: 'Undo',
+          shortcut: 'Ctrl+Z',
+          disabled: !canUndo,
+          action: () => {
+            undo();
+            close();
+          },
+        },
+        {
+          label: 'Redo',
+          shortcut: 'Ctrl+Shift+Z',
+          disabled: !canRedo,
+          action: () => {
+            redo();
+            close();
+          },
+        },
         { kind: 'separator' },
         { label: 'Cut', shortcut: 'Ctrl+X', disabled: !selected, action: cutBlock },
         { label: 'Copy', shortcut: 'Ctrl+C', disabled: !selected, action: copyBlock },
@@ -498,7 +481,7 @@ export function AppMenu() {
                     </div>
                   );
                 }
-                return renderEntry(entry, `${menu.label}-${index}`);
+                return renderEntry(entry, `${menu.label}-${index}-${recentTick}`);
               })}
             </div>
           )}

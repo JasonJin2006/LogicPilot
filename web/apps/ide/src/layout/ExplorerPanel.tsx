@@ -4,19 +4,12 @@
 // deletes it - all edits update the bundle in place (the Project panel
 // re-parses the changed DSL automatically) and mark the project dirty.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
-import {
-  ChevronDown,
-  ChevronRight,
-  FileCode2,
-  FileJson2,
-  Folder,
-  FolderOpen,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, FileCode2, FileJson2, Folder, FolderOpen } from 'lucide-react';
 import { sceneContainerFromFile } from '../project/project';
+import { openProjectFromFile } from '../project/openProject';
 import { useCanvasView } from '../state/canvasView';
-import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { ContextMenu } from './ContextMenu';
@@ -156,9 +149,7 @@ function FolderRow({
         <span className="tree-glyph">
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </span>
-        <span className="tree-glyph">
-          {open ? <FolderOpen size={12} /> : <Folder size={12} />}
-        </span>
+        <span className="tree-glyph">{open ? <FolderOpen size={12} /> : <Folder size={12} />}</span>
         <span className="tree-label">{folder.name}</span>
       </div>
       {open &&
@@ -188,7 +179,6 @@ function FolderRow({
 }
 
 export function ExplorerPanel() {
-  const modelDoc = useModelStore((state) => state.document);
   const bundle = useProjectStore((state) => state.bundle);
   const dirty = useProjectStore((state) => state.dirty);
   const updateFiles = useProjectStore((state) => state.updateFiles);
@@ -196,19 +186,44 @@ export function ExplorerPanel() {
   const openDslEditor = useUiStore((state) => state.openDslEditor);
   const setCanvasView = useCanvasView((state) => state.setView);
   const activePath = useUiStore((state) => state.dslEditorFile);
-  const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(
-    null,
-  );
+  const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const toggleFolder = (path: string) =>
     setCollapsed((current) => ({ ...current, [path]: !(current[path] === true) }));
 
-  const rootName = bundle ? bundle.manifest.name : `${modelDoc.name || 'Model'} (unsaved)`;
-  const sourceFolders = treeFromPaths(
-    bundle
-      ? Object.keys(bundle.files)
-      : ['model/main.lp', 'presentation/main.canvas.json'],
-  );
+  // No project open: an empty panel with a single action instead of a tree.
+  if (!bundle) {
+    return (
+      <div className="side-panel-body explorer-panel">
+        <div className="explorer-empty">
+          <button
+            type="button"
+            className="explorer-empty-open"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Open Project...
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".lpproj,.lp,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) {
+                void openProjectFromFile(file);
+              }
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  const rootName = bundle.manifest.name;
+  const sourceFolders = treeFromPaths(Object.keys(bundle.files));
 
   const newFile = (dir: string) => {
     openPrompt({
@@ -264,8 +279,7 @@ export function ExplorerPanel() {
     if (path !== null) {
       const name = path.slice(path.lastIndexOf('/') + 1);
       const source = bundle.files[path];
-      const scene =
-        source !== undefined ? sceneContainerFromFile(path, source) : null;
+      const scene = source !== undefined ? sceneContainerFromFile(path, source) : null;
       if (scene) {
         actions.push({
           label: 'Open in DSL',
@@ -294,8 +308,7 @@ export function ExplorerPanel() {
     const path = row?.getAttribute('data-path');
     if (path !== null && path !== undefined) {
       const source = bundle.files[path];
-      const scene =
-        source !== undefined ? sceneContainerFromFile(path, source) : null;
+      const scene = source !== undefined ? sceneContainerFromFile(path, source) : null;
       if (scene) {
         // A scene file IS a container Node: clicking it opens its canvas.
         setCanvasView(scene);
@@ -340,12 +353,7 @@ export function ExplorerPanel() {
         />
       ))}
       {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          actions={menu.actions}
-          onClose={() => setMenu(null)}
-        />
+        <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />
       )}
     </div>
   );

@@ -1,10 +1,10 @@
 // Modeling store (P1-6): the editor's ModelDocument plus selection state.
 // Operations delegate to the pure @logicpilot/editor graph functions, so
 // undo/redo and diagnostics can layer on top without touching shared state.
-// The document auto-persists to localStorage; the undo history does not.
+// The document is session-only: every launch starts from a fresh blank model
+// and previous projects are reopened via Open / Open Recent.
 
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 import {
   addNode,
   connect,
@@ -42,29 +42,6 @@ function sanitizeDocument(value: unknown): ModelDocument {
   return createDocument('Model');
 }
 
-// zustand persist `merge`: keep the in-memory actions, only trust persisted
-// fields we recognize. The persisted document is validated; everything else
-// (past/future/selectedId...) is never persisted anyway and stays at defaults.
-function mergePersistedState(
-  persisted: unknown,
-  current: ModelState,
-): ModelState {
-  const stored = (persisted ?? {}) as Partial<ModelState>;
-  return {
-    ...current,
-    ...stored,
-    document: sanitizeDocument(stored.document),
-    // Never trust persisted history/selection: it can reference node ids that
-    // no longer exist after sanitize, which would break undo/redo invariants.
-    past: [],
-    future: [],
-    selectedId: null,
-    canUndo: false,
-    canRedo: false,
-    lastCommitAt: 0,
-  };
-}
-
 interface ModelState {
   document: ModelDocument;
   selectedId: string | null;
@@ -100,9 +77,62 @@ function commit(state: ModelState, next: ModelDocument): Partial<ModelState> {
   };
 }
 
-export const useModelStore = create<ModelState>()(
-  persist(
-    (set) => ({
+export const useModelStore = create<ModelState>()((set) => ({
+  document: createDocument('Model'),
+  selectedId: null,
+  past: [],
+  future: [],
+  canUndo: false,
+  canRedo: false,
+  lastCommitAt: 0,
+  addBlock: (input) => set((state) => commit(state, addNode(state.document, input))),
+  moveBlock: (id, x, y) => set((state) => commit(state, moveNode(state.document, id, x, y))),
+  connectBlocks: (from, to) =>
+    set((state) => {
+      const result = connect(state.document, from, to);
+      return result.error ? {} : commit(state, result.document);
+    }),
+  disconnectEdge: (id) => set((state) => commit(state, disconnect(state.document, id))),
+  removeBlock: (id) =>
+    set((state) => ({
+      ...commit(state, removeNode(state.document, id)),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+    })),
+  select: (id) => set({ selectedId: id }),
+  renameBlock: (id, name) => set((state) => commit(state, renameNode(state.document, id, name))),
+  setBlockParam: (id, key, value) =>
+    set((state) => commit(state, setParam(state.document, id, key, value))),
+  loadDocument: (document) => set((state) => commit(state, sanitizeDocument(document))),
+  undo: () =>
+    set((state) => {
+      if (state.past.length === 0) return {};
+      const previous = state.past[state.past.length - 1]!;
+      return {
+        document: previous,
+        past: state.past.slice(0, -1),
+        future: [state.document, ...state.future],
+        selectedId: null,
+        canUndo: state.past.length > 1,
+        canRedo: true,
+        lastCommitAt: 0, // the next edit always starts a fresh entry
+      };
+    }),
+  redo: () =>
+    set((state) => {
+      if (state.future.length === 0) return {};
+      const next = state.future[0]!;
+      return {
+        document: next,
+        past: [...state.past, state.document].slice(-MAX_HISTORY),
+        future: state.future.slice(1),
+        selectedId: null,
+        canUndo: true,
+        canRedo: state.future.length > 1,
+        lastCommitAt: 0,
+      };
+    }),
+  reset: () =>
+    set({
       document: createDocument('Model'),
       selectedId: null,
       past: [],
@@ -110,73 +140,5 @@ export const useModelStore = create<ModelState>()(
       canUndo: false,
       canRedo: false,
       lastCommitAt: 0,
-      addBlock: (input) => set((state) => commit(state, addNode(state.document, input))),
-      moveBlock: (id, x, y) =>
-        set((state) => commit(state, moveNode(state.document, id, x, y))),
-      connectBlocks: (from, to) =>
-        set((state) => {
-          const result = connect(state.document, from, to);
-          return result.error ? {} : commit(state, result.document);
-        }),
-      disconnectEdge: (id) =>
-        set((state) => commit(state, disconnect(state.document, id))),
-      removeBlock: (id) =>
-        set((state) => ({
-          ...commit(state, removeNode(state.document, id)),
-          selectedId: state.selectedId === id ? null : state.selectedId,
-        })),
-      select: (id) => set({ selectedId: id }),
-      renameBlock: (id, name) =>
-        set((state) => commit(state, renameNode(state.document, id, name))),
-      setBlockParam: (id, key, value) =>
-        set((state) => commit(state, setParam(state.document, id, key, value))),
-      loadDocument: (document) =>
-        set((state) => commit(state, sanitizeDocument(document))),
-      undo: () =>
-        set((state) => {
-          if (state.past.length === 0) return {};
-          const previous = state.past[state.past.length - 1]!;
-          return {
-            document: previous,
-            past: state.past.slice(0, -1),
-            future: [state.document, ...state.future],
-            selectedId: null,
-            canUndo: state.past.length > 1,
-            canRedo: true,
-            lastCommitAt: 0, // the next edit always starts a fresh entry
-          };
-        }),
-      redo: () =>
-        set((state) => {
-          if (state.future.length === 0) return {};
-          const next = state.future[0]!;
-          return {
-            document: next,
-            past: [...state.past, state.document].slice(-MAX_HISTORY),
-            future: state.future.slice(1),
-            selectedId: null,
-            canUndo: true,
-            canRedo: state.future.length > 1,
-            lastCommitAt: 0,
-          };
-        }),
-      reset: () =>
-        set({
-          document: createDocument('Model'),
-          selectedId: null,
-          past: [],
-          future: [],
-          canUndo: false,
-          canRedo: false,
-          lastCommitAt: 0,
-        }),
     }),
-    {
-      name: 'logicpilot.model',
-      version: 1,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ document: state.document }),
-      merge: mergePersistedState,
-    },
-  ),
-);
+}));

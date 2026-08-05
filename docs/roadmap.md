@@ -143,9 +143,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    完整闭环。局限：当前 streaming 驱动为 M/M/1 族，其他模型族需通用执行器
    （后续）。
    **编辑器补强 ✅ 已完成**（2026-08-05）：撤销/重做（600ms 合并窗口，
-   Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；模型
-   localStorage 持久化（`logicpilot.model`，只存 document 不存历史）；
+   Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；
    Project 面板显示模型摘要 + "New model"。
+   **会话态启动（2026-08-05）**：模型与工程不再跨会话恢复——客户端每次
+   启动为空状态（空白画布、无打开工程），继续之前的工程经
+   Open Recent / Open 重新打开；Open Recent 支持单项删除。
    **AI → 画布闭环 ✅ 已完成**（2026-08-05）：`@logicpilot/editor` 新增
    `parseDsl`（DSL v2 子集 → 图文档，process 块按声明顺序连线，自动布局，
    18 单测含 round-trip）；AI 面板生成结果新增 "Load to canvas"，加载为可

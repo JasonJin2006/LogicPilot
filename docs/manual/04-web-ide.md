@@ -31,8 +31,11 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 - **Properties**（右侧）：选中块后编辑名称与字段（AnyLogic 风格参数）。
 - **DSL 编辑区**：画布右侧可收起的代码区，Show DSL / Compile（诊断回显
   Console）。
-- 撤销/重做：`Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z`；模型自动持久化到
-  localStorage；Project 面板可新建模型。
+- 撤销/重做：`Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z`；Project 面板可新建模型。
+
+> 注意：模型与工程是**会话态**——客户端每次启动都从空白状态开始，不会
+> 恢复上次打开的工程；继续之前的工程请用 **File > Open Recent** 或
+> **File > Open...** 重新打开。
 
 ## 工程保存 / 打开
 
@@ -42,7 +45,6 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
   `*.lpproj`，重新打开时布局完整还原。
 - **File > Open... / Open Recent**：打开 `*.lpproj` 工程；旧 `.lp` / `.json`
   单模型文件仍可打开（无布局信息）。
-- 未保存的草稿仍自动持久化在浏览器 localStorage。
 
 ## 运行
 

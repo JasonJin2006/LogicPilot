@@ -35,3 +35,12 @@ export function addRecent(model: RecentModel): void {
     // storage unavailable
   }
 }
+
+export function removeRecent(name: string): void {
+  try {
+    const list = loadRecent().filter((entry) => entry.name !== name);
+    localStorage.setItem(KEY, JSON.stringify(list));
+  } catch {
+    // storage unavailable
+  }
+}

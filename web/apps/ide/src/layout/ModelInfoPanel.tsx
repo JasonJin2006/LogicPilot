@@ -119,7 +119,6 @@ export function ModelInfoPanel() {
   const bundle = useProjectStore((state) => state.bundle);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
-  const document = useModelStore((state) => state.document);
   const focusView = useCanvasView((state) => state.view);
   const setFocusView = useCanvasView((state) => state.setView);
   const selected = useModelStore((state) =>
@@ -199,7 +198,11 @@ export function ModelInfoPanel() {
         }
         const partParsed = parseProjectMembers(partSource);
         if (!partParsed.ok) {
-          orphans.push({ type: 'orphan', path: part, error: partParsed.error ?? 'invalid fragment' });
+          orphans.push({
+            type: 'orphan',
+            path: part,
+            error: partParsed.error ?? 'invalid fragment',
+          });
           continue;
         }
         for (const member of partParsed.members ?? []) {
@@ -218,11 +221,9 @@ export function ModelInfoPanel() {
     return [...models, ...orphans];
   }, [bundle, partPaths]);
 
-  const toggle = (key: string) =>
-    setCollapsed((current) => ({ ...current, [key]: !current[key] }));
+  const toggle = (key: string) => setCollapsed((current) => ({ ...current, [key]: !current[key] }));
   const isCollapsed = (key: string) => collapsed[key] === true;
-  const showMenu = (x: number, y: number, actions: ContextAction[]) =>
-    setMenu({ x, y, actions });
+  const showMenu = (x: number, y: number, actions: ContextAction[]) => setMenu({ x, y, actions });
 
   const commitEdit = (path: string, apply: (source: string) => string) => {
     const current = useProjectStore.getState().bundle;
@@ -283,9 +284,7 @@ export function ModelInfoPanel() {
       insertAt = container.bodyClose;
     }
     const name = `${kind}${countBlocks(siblings, kind) + 1}`;
-    commitEdit(path, (src) =>
-      insertMember(src, insertAt, '  '.repeat(depth + 1), template(name)),
-    );
+    commitEdit(path, (src) => insertMember(src, insertAt, '  '.repeat(depth + 1), template(name)));
   };
 
   const renameBlock = (
@@ -456,17 +455,7 @@ export function ModelInfoPanel() {
   };
 
   if (!bundle) {
-    return (
-      <div className="side-panel-body">
-        <div className="side-kv">
-          <span className="k">model</span>
-          <span className="v">{document.name}</span>
-        </div>
-        <div className="side-hint">
-          创建或打开工程后，这里显示模型的元素层级（File &gt; New Project...）
-        </div>
-      </div>
-    );
+    return <div className="side-panel-body" />;
   }
 
   return (
@@ -477,16 +466,9 @@ export function ModelInfoPanel() {
         </span>
         <span className="tree-label">{bundle.manifest.name}</span>
       </div>
-      {entries.map((entry) =>
-        entry.type === 'model' ? renderModel(entry) : renderFileRow(entry),
-      )}
+      {entries.map((entry) => (entry.type === 'model' ? renderModel(entry) : renderFileRow(entry)))}
       {menu && (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          actions={menu.actions}
-          onClose={() => setMenu(null)}
-        />
+        <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />
       )}
     </div>
   );
