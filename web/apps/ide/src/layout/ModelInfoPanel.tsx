@@ -34,6 +34,7 @@ import { MODEL_SCENE_DIR } from '../project/project';
 import { syncCanvasFromProject } from '../state/projectSync';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
+import { CANVAS_CONTAINER_KINDS } from '../model/blockDefs';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { ContextMenu } from './ContextMenu';
@@ -327,6 +328,12 @@ export function ModelInfoPanel() {
         onSelect: () => renameBlock(file, member.nameSpan!, member.name),
       });
     }
+    if (CANVAS_CONTAINER_KINDS.has(kind)) {
+      actions.push({
+        label: 'Open canvas',
+        onSelect: () => setFocusView({ kind, name: member.name }),
+      });
+    }
     actions.push({
       label: 'Delete',
       danger: true,
@@ -340,12 +347,12 @@ export function ModelInfoPanel() {
           title={`${kind} ${member.name} — ${isInstance ? childrenFile : file}`}
           onClick={
             hasChildren
-              ? kind === 'process'
-                ? () => {
-                    toggle(key);
+              ? () => {
+                  toggle(key);
+                  if (CANVAS_CONTAINER_KINDS.has(kind)) {
                     setFocusView({ kind, name: member.name });
                   }
-                : () => toggle(key)
+                }
               : undefined
           }
           onContextMenu={(event) => {

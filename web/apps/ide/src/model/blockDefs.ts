@@ -8,6 +8,16 @@ import { BLOCK_CATALOG } from './blockCatalog';
 
 export type LibraryId = 'process' | 'presentation' | 'statechart' | 'action';
 
+/** Container kinds whose subgraph opens as its own canvas (drill-in), like
+ *  AnyLogic agent canvases. `process` is the builtin flow container;
+ *  agent/atomic/continuous are the DSL method containers. */
+export const CANVAS_CONTAINER_KINDS: ReadonlySet<string> = new Set([
+  'process',
+  'agent',
+  'atomic',
+  'continuous',
+]);
+
 export type PortDirection = 'in' | 'out' | 'inout';
 
 export interface BlockPortDef {

@@ -366,7 +366,7 @@ export const STAGE_ADD_KINDS: Array<{ kind: string; template: (name: string) => 
   { kind: 'source', template: (n) => `source ${n} {\n  arrival = rate(1.0)\n}` },
   { kind: 'queue', template: (n) => `queue ${n} {\n  capacity = 100\n}` },
   { kind: 'service', template: (n) => `service ${n} {\n  time = exponential(1.0)\n}` },
-  { kind: 'delay', template: (n) => `delay ${n} {\n  time = exponential(1.0)\n}` },
+  { kind: 'delay', template: (n) => `delay ${n} {\n  delayTime = exponential(1.0)\n}` },
   { kind: 'split', template: (n) => `split ${n} {\n}` },
   { kind: 'batch', template: (n) => `batch ${n} {\n  size = 2\n}` },
   { kind: 'seize', template: (n) => `seize ${n} {\n  resource = R\n}` },

@@ -311,11 +311,35 @@
   background: var(--bg-strong);
 }
 
+.model-block.kind-agent,
+.model-block.kind-atomic,
+.model-block.kind-continuous {
+  padding: 5px 8px;
+  gap: 3px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-strong);
+}
+
 .model-block.kind-process .model-block-icon {
   color: var(--accent);
 }
 
+.model-block.kind-agent .model-block-icon,
+.model-block.kind-atomic .model-block-icon,
+.model-block.kind-continuous .model-block-icon {
+  color: var(--accent);
+}
+
 .model-block.kind-process .model-block-name {
+  max-width: 88px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.model-block.kind-agent .model-block-name,
+.model-block.kind-atomic .model-block-name,
+.model-block.kind-continuous .model-block-name {
   max-width: 88px;
   color: var(--text-secondary);
   font-weight: 600;

@@ -23,7 +23,7 @@ import { BlockIcon } from './BlockIcon';
 import { PresentationShape } from './PresentationShape';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
-import type { BlockPortDef } from './blockDefs';
+import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -714,7 +714,7 @@ export function ModelCanvas() {
           if (PRESENTATION_KINDS.has(node.kind)) {
             return null; // rendered as a real shape above
           }
-          if (node.kind === 'process') {
+          if (CANVAS_CONTAINER_KINDS.has(node.kind)) {
             // A container Node: shown on the root canvas as a folder card.
             // Double-click drills into its subgraph canvas.
             const childCount = document.nodes.filter(
@@ -732,7 +732,7 @@ export function ModelCanvas() {
                   elementDrag.current = null;
                   setDraggingId(null);
                 }}
-                onDoubleClick={() => setFocusView({ kind: 'process', name: node.name })}
+                onDoubleClick={() => setFocusView({ kind: node.kind, name: node.name })}
                 title={`Open ${node.name} (${childCount} blocks)`}
               >
                 <span className="model-block-icon">
