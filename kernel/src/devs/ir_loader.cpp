@@ -320,19 +320,14 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
                     : "source has no arrival distribution");
   }
   TimeSampler service_time =
-      make_sampler(node_dist_param(service, "rate"), error);
+      make_sampler(node_dist_param(service, "time"), error);
   if (!service_time) {
     return fail(error != nullptr && !error->empty()
                     ? *error
                     : "service has no service-time distribution");
   }
-  const std::int64_t servers = node_int_param(service, "servers", 1);
-  if (servers < 1) {
-    return fail("service servers must be >= 1");
-  }
   spec.interarrival = std::move(arrival);
   spec.service = std::move(service_time);
-  spec.servers = servers;
   if (queue != nullptr) {
     const std::int64_t capacity = node_int_param(queue, "capacity", 0);
     // <= 0 is treated as unbounded (M/M/1 requires an infinite buffer).
@@ -345,11 +340,20 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   // order identical to the failure-free path.
   const Node* resource = nullptr;
   const char* resource_name = node_string_param(service, "resource");
+  if (resource_name == nullptr) {
+    // v0 same-name binding fallback: service without an explicit resource
+    // references a resource block named like the service.
+    resource_name = node_name(service);
+  }
   if (resource_name != nullptr) {
     const auto it = resources.find(resource_name);
     if (it != resources.end()) {
       resource = it->second;
     }
+  }
+  spec.servers = node_int_param(resource, "capacity", 1);
+  if (spec.servers < 1) {
+    return fail("service resource capacity must be >= 1");
   }
   const double failure_rate = node_float_param(resource, "failure_rate", 0.0);
   if (failure_rate < 0.0 || failure_rate > 1.0) {
@@ -508,7 +512,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     return fail("process flow requires a source and a service stage");
   }
   const Distribution* arrival = node_dist_param(source, "arrival");
-  const Distribution* service_time = node_dist_param(service, "rate");
+  const Distribution* service_time = node_dist_param(service, "time");
   if (arrival == nullptr || service_time == nullptr) {
     return fail("source arrival or service time missing");
   }
@@ -535,16 +539,19 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
   }
   out.lambda = *lambda;
   out.mu = *mu;
-  out.servers = node_int_param(service, "servers", 1);
 
   const Node* resource = nullptr;
   const char* resource_name = node_string_param(service, "resource");
+  if (resource_name == nullptr) {
+    resource_name = node_name(service);  // v0 same-name binding fallback
+  }
   if (resource_name != nullptr) {
     const auto it = resources.find(resource_name);
     if (it != resources.end()) {
       resource = it->second;
     }
   }
+  out.servers = node_int_param(resource, "capacity", 1);
   out.failure_rate = node_float_param(resource, "failure_rate", 0.0);
   out.repair_rate = node_float_param(resource, "repair_rate", 1.0);
   return true;

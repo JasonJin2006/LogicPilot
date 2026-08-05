@@ -1,3 +1,2 @@
 input.lp:3:12: error[LP1001]: duplicate declaration of resource 'R' (previously declared at line 2)
-input.lp:4:3: error[LP2003]: process 'P' declares more than one source (v0 supports one)
 input.lp:8:12: error[LP1001]: duplicate stage 'A' in process 'P' (previously declared at line 5)

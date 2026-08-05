@@ -1,4 +1,0 @@
-input.lp:2:3: error[LP2001]: missing required field 'capacity' in resource 'Server'
-input.lp:5:5: error[LP2001]: missing required field 'arrival' in source 'Arrivals'
-input.lp:7:5: error[LP2001]: missing required field 'capacity' in queue 'WaitLine'
-input.lp:9:5: error[LP2001]: missing required field 'time' in service 'Server'

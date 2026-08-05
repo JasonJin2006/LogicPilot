@@ -59,9 +59,10 @@ flatbuffers::Offset<v2::Node> stage(flatbuffers::FlatBufferBuilder& builder,
       0, 0, 0, 0, 0);
 }
 
-// Builds the mm1-equivalent v2 model:
-//   resource Server; flow Arrivals(poisson 0.8) -> WaitLine(cap 1000000)
-//   -> Server(exp 1.0, resource=Server, servers=1)
+// Builds the mm1-equivalent v2 model (canonical DSL field names):
+//   resource Server (capacity 1); flow Arrivals(poisson 0.8) ->
+//   WaitLine(cap 1000000) -> Server(time exponential(1.0), resource=Server);
+//   the server count is resolved from the referenced resource's capacity.
 std::vector<std::uint8_t> build_mm1_ir() {
   flatbuffers::FlatBufferBuilder builder;
 
@@ -84,9 +85,8 @@ std::vector<std::uint8_t> build_mm1_ir() {
   queue_params.push_back(var_int(builder, "capacity", 1000000));
   std::vector<flatbuffers::Offset<v2::Var>> service_params;
   service_params.push_back(
-      var_distribution(builder, "rate", service_time));
+      var_distribution(builder, "time", service_time));
   service_params.push_back(var_string(builder, "resource", "Server"));
-  service_params.push_back(var_int(builder, "servers", 1));
 
   std::vector<flatbuffers::Offset<v2::Node>> stages;
   stages.push_back(stage(builder, "Arrivals", "source", source_params));

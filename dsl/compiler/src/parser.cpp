@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 #include <tree_sitter/api.h>
 
@@ -338,6 +339,10 @@ class Extractor {
       port.name = text_of(name);
     }
     port.type = text_of(field(node, "type"));
+    const TSNode condition = field(node, "condition");
+    if (!ts_node_is_null(condition)) {
+      port.condition = text_of(condition);
+    }
     return port;
   }
 
@@ -449,6 +454,7 @@ class Extractor {
         library_port.direction = port.direction;
         library_port.name = port.name;
         library_port.type = port.type;
+        library_port.condition = port.condition;
         library_port.span = port.span;
         block.ports.push_back(std::move(library_port));
       }

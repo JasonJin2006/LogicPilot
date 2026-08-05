@@ -11,6 +11,8 @@
 #include "logicpilot/dsl/semantic.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -434,6 +436,7 @@ class Analyzer {
       case BlockParamType::kRef:
       case BlockParamType::kBool:
       case BlockParamType::kString:
+      case BlockParamType::kExpression:
       case BlockParamType::kUnknown:
         break;  // references resolved in check_block_semantics
     }
@@ -537,8 +540,6 @@ class Analyzer {
   void check_process(const Node& node) {
     std::unordered_map<std::string, Span> stage_names;
     int sources = 0;
-    int queues = 0;
-    int services = 0;
     for (const Node& stage : node.children) {
       const auto [it, inserted] =
           stage_names.emplace(stage.name, stage.name_span);
@@ -549,46 +550,21 @@ class Analyzer {
                   std::to_string(it->second.line) + ")",
               stage.name_span);
       }
+      if (registry_ == nullptr || !registry_->has_block(stage.kind)) {
+        error("LP2004",
+              "block '" + stage.kind +
+                  "' is not a registered process library block",
+              stage.name_span);
+        continue;
+      }
       if (stage.kind == "source") {
         ++sources;
-      } else if (stage.kind == "queue") {
-        ++queues;
-      } else if (stage.kind == "service") {
-        ++services;
       }
-      if (stage.kind == "source" || stage.kind == "queue" ||
-          stage.kind == "service" || stage.kind == "sink") {
-        check_process_block(stage, model_scope_);
-      } else {
-        error("LP2004",
-              "block '" + stage.kind + "' is not a process stage "
-                  "(source/queue/service/sink)",
-              stage.name_span);
-      }
+      check_process_block(stage, model_scope_);
     }
     if (sources == 0) {
       error("LP2002",
             "process '" + node.name + "' has no source stage", node.span);
-    } else if (sources > 1) {
-      error("LP2003",
-            "process '" + node.name +
-                "' declares more than one source (v0 supports one)",
-            node.span);
-    }
-    if (queues > 1) {
-      error("LP2003",
-            "process '" + node.name +
-                "' declares more than one queue (v0 supports one)",
-            node.span);
-    }
-    if (services == 0) {
-      error("LP2002",
-            "process '" + node.name + "' has no service stage", node.span);
-    } else if (services > 1) {
-      error("LP2003",
-            "process '" + node.name +
-                "' declares more than one service (v0 supports one)",
-            node.span);
     }
   }
 
@@ -977,65 +953,144 @@ class Analyzer {
 
   void check_couplings(const ModelAst& model) {
     std::unordered_map<std::string, const Node*> atomics;
+    std::unordered_map<std::string, const Node*> process_stages;
     for (const Node& member : model.members) {
       if (member.kind == "atomic") {
         atomics.emplace(member.name, &member);
+      }
+      if (member.kind == "process") {
+        for (const Node& stage : member.children) {
+          process_stages.emplace(stage.name, &stage);
+        }
       }
     }
     for (const CoupleDecl& couple : model.couplings) {
       const auto from = atomics.find(couple.from_model);
       const auto to = atomics.find(couple.to_model);
-      if (from == atomics.end()) {
+      if (from != atomics.end() && to != atomics.end()) {
+        // Atomic-to-atomic: from_port must be an emitted output; to_port
+        // must be an input (existing v1 semantics).
+        check_atomic_coupling(*from->second, *to->second, couple);
+        continue;
+      }
+      // Process flow coupling: both ends must be registered process stages.
+      const auto from_stage = process_stages.find(couple.from_model);
+      const auto to_stage = process_stages.find(couple.to_model);
+      if (from_stage == process_stages.end()) {
         error("LP5002",
-              "coupling references undeclared atomic model '" +
+              "coupling references undeclared element '" +
                   couple.from_model + "'",
               couple.span);
         continue;
       }
-      if (to == atomics.end()) {
+      if (to_stage == process_stages.end()) {
         error("LP5002",
-              "coupling references undeclared atomic model '" +
+              "coupling references undeclared element '" +
                   couple.to_model + "'",
               couple.span);
         continue;
       }
-      // from_port must be an emitted output; to_port must be an input.
-      const Behavior* from_timeout = nullptr;
-      for (const Behavior& behavior : from->second->behaviors) {
-        if (behavior.trigger == "timeout") {
-          from_timeout = &behavior;
+      check_process_coupling(*from_stage->second, *to_stage->second, couple);
+    }
+  }
+
+  void check_atomic_coupling(const Node& from, const Node& to,
+                             const CoupleDecl& couple) {
+    const Behavior* from_timeout = nullptr;
+    for (const Behavior& behavior : from.behaviors) {
+      if (behavior.trigger == "timeout") {
+        from_timeout = &behavior;
+      }
+    }
+    bool valid_from = false;
+    if (from_timeout != nullptr) {
+      for (const Effect& effect : from_timeout->effects) {
+        if (effect.kind == Effect::Kind::kEmit &&
+            effect.name == couple.from_port) {
+          valid_from = true;
+          break;
         }
       }
-      bool valid_from = false;
-      if (from_timeout != nullptr) {
-        for (const Effect& effect : from_timeout->effects) {
-          if (effect.kind == Effect::Kind::kEmit &&
-              effect.name == couple.from_port) {
-            valid_from = true;
-            break;
-          }
-        }
+    }
+    const Behavior* to_input = nullptr;
+    for (const Behavior& behavior : to.behaviors) {
+      if (behavior.trigger == "input") {
+        to_input = &behavior;
       }
-      const Behavior* to_input = nullptr;
-      for (const Behavior& behavior : to->second->behaviors) {
-        if (behavior.trigger == "input") {
-          to_input = &behavior;
-        }
-      }
-      const bool valid_to =
-          to_input != nullptr && to_input->port == couple.to_port;
-      if (!valid_from) {
+    }
+    const bool valid_to =
+        to_input != nullptr && to_input->port == couple.to_port;
+    if (!valid_from) {
+      error("LP5003",
+            "coupling port '" + couple.from_model + "." +
+                couple.from_port + "' is not an emitted output port",
+            couple.span);
+    }
+    if (!valid_to) {
+      error("LP5003",
+            "coupling port '" + couple.to_model + "." + couple.to_port +
+                "' is not an input port",
+            couple.span);
+    }
+  }
+
+  // Process flow coupling validation against the registered block shapes:
+  // the from port must be an output of the source stage, the to port an
+  // input of the destination stage, and any conditional port's gating field
+  // must be set to true on the owning stage.
+  void check_process_coupling(const Node& from, const Node& to,
+                              const CoupleDecl& couple) {
+    const BlockShape* from_shape =
+        registry_ == nullptr ? nullptr : registry_->block(from.kind);
+    const BlockShape* to_shape =
+        registry_ == nullptr ? nullptr : registry_->block(to.kind);
+    if (from_shape != nullptr) {
+      const BlockPortSpec* port = from_shape->port(couple.from_port);
+      if (port == nullptr || port->direction == "in") {
         error("LP5003",
               "coupling port '" + couple.from_model + "." +
-                  couple.from_port + "' is not an emitted output port",
+                  couple.from_port + "' is not an output port of " +
+                  from.kind + " '" + from.name + "'",
               couple.span);
+      } else {
+        check_port_condition(from, *port, couple.from_model, couple.span);
       }
-      if (!valid_to) {
+    }
+    if (to_shape != nullptr) {
+      const BlockPortSpec* port = to_shape->port(couple.to_port);
+      if (port == nullptr || port->direction == "out") {
         error("LP5003",
               "coupling port '" + couple.to_model + "." + couple.to_port +
-                  "' is not an input port",
+                  "' is not an input port of " + to.kind + " '" +
+                  to.name + "'",
               couple.span);
+      } else {
+        check_port_condition(to, *port, couple.to_model, couple.span);
       }
+    }
+  }
+
+  void check_port_condition(const Node& stage, const BlockPortSpec& port,
+                            const std::string& stage_name,
+                            const Span& span) {
+    if (port.condition.empty()) {
+      return;
+    }
+    bool enabled = false;
+    const Field* field = field_of(stage, port.condition.c_str());
+    if (field != nullptr) {
+      Value folded;
+      if (fold_value(field->value, model_scope_, folded) &&
+          folded.kind == ValueKind::kBool) {
+        enabled = folded.bool_value;
+      }
+    }
+    if (!enabled) {
+      error("LP5003",
+            "coupling port '" + stage_name + "." + port.name +
+                "' requires field '" + port.condition +
+                "' to be true on '" + stage.name + "'",
+            span);
     }
   }
 

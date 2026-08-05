@@ -85,3 +85,48 @@ library process {
                     (value_literal
                       (float))))))))))))
 
+==================
+Library block with conditional ports
+==================
+
+library process {
+  block queue {
+    in: entity
+    out: entity
+    out outTimeout: entity when enableTimeout
+    out outPreempted: entity when enablePreemption
+    enableTimeout: bool = false
+  }
+}
+---
+
+(source_file
+  (library_declaration
+    name: (identifier)
+    body: (library_body
+      (block_declaration
+        name: (identifier)
+        body: (block_body
+          (port_declaration
+            type: (type_name
+              (identifier)))
+          (port_declaration
+            type: (type_name
+              (identifier)))
+          (port_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            condition: (identifier))
+          (port_declaration
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            condition: (identifier))
+          (typed_field
+            name: (identifier)
+            type: (type_name
+              (identifier))
+            default: (value
+              (value_literal
+                (boolean_literal)))))))))

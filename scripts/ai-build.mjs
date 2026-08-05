@@ -65,10 +65,15 @@ function runLpcli(lpcli, args) {
   });
 }
 
-// Remove the resource `capacity` line: forces an LP2001 diagnostic on the
-// first attempt so the repair loop is exercised deterministically.
+// Zero the resource `capacity` value: forces an LP3001 diagnostic (capacity
+// must be >= 1) on the first attempt so the repair loop is exercised
+// deterministically (the catalog registry gives every field a default, so a
+// missing field no longer errors).
 function sabotage(dsl) {
-  return dsl.replace(/^\s*capacity\s*=\s*\d+\s*$/m, '');
+  return dsl.replace(
+    /^(\s*capacity\s*=\s*)\d+(\s*)$/m,
+    (match, before, after) => `${before}0${after}`,
+  );
 }
 
 export async function buildModel({

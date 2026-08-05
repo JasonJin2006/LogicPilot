@@ -167,12 +167,12 @@ add_test(NAME ai_explain_smoke
 set_tests_properties(ai_explain_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "EXPLAIN TEST: PASS")
 
-add_test(NAME lpcli_compile_rejects_missing_capacity
+add_test(NAME lpcli_compile_rejects_unknown_field
   COMMAND lpcli compile
           "${CMAKE_CURRENT_SOURCE_DIR}/bad_sources/missing_capacity.lp"
           -o "${CMAKE_CURRENT_BINARY_DIR}/bad.ir.bin")
-set_tests_properties(lpcli_compile_rejects_missing_capacity PROPERTIES
-  PASS_REGULAR_EXPRESSION "error\\[LP2001\\]")
+set_tests_properties(lpcli_compile_rejects_unknown_field PROPERTIES
+  PASS_REGULAR_EXPRESSION "error\\[LP2005\\]")
 
 add_test(NAME lpcli_compile_rejects_unresolved_resource
   COMMAND lpcli compile

@@ -98,12 +98,17 @@ TEST_CASE("lowering: process nodes keep declaration order and chain",
   const v2::Var* capacity = flow->children()->Get(1)->params()->Get(0);
   REQUIRE(capacity->name()->str() == "capacity");
   REQUIRE(capacity->int_value() == 7);
-  // Service params: rate (Normal = kind 2), resource, servers.
+  // Service params: the written field `time` (Normal = kind 2); the
+  // resource reference and servers are resolved by the kernel from the
+  // referenced resource node (no synthetic `servers` param anymore).
   const v2::Node* service = flow->children()->Get(2);
-  REQUIRE(service->params()->size() == 3);
+  REQUIRE(service->params()->size() == 1);
+  REQUIRE(service->params()->Get(0)->name()->str() == "time");
   REQUIRE(service->params()->Get(0)->distribution()->kind() == 2);
-  REQUIRE(service->params()->Get(1)->string_value()->str() == "Server");
-  REQUIRE(service->params()->Get(2)->int_value() == 2);  // resource capacity
+
+  // Registered ports land on the IR nodes (queue has outTimeout etc).
+  REQUIRE(flow->children()->Get(0)->ports()->size() == 1);
+  REQUIRE(flow->children()->Get(1)->ports()->size() == 4);
 
   // Chain couplings: In.out -> Buf.in, Buf.out -> Server.in.
   REQUIRE(flow->couplings() != nullptr);
@@ -151,9 +156,15 @@ TEST_CASE("lowering: explicit resource reference decouples the service "
   REQUIRE(flow->children()->size() == 2);
   const v2::Node* service = flow->children()->Get(1);
   REQUIRE(service->metadata()->name()->str() == "Handle");
-  REQUIRE(service->params()->Get(1)->string_value()->str() == "Server");
-  // servers comes from the referenced resource's capacity, not the name.
-  REQUIRE(service->params()->Get(2)->int_value() == 3);
+  // Written fields land in order: resource (ref), time (distribution).
+  REQUIRE(service->params()->size() == 2);
+  REQUIRE(service->params()->Get(0)->name()->str() == "resource");
+  REQUIRE(service->params()->Get(0)->string_value()->str() == "Server");
+  REQUIRE(service->params()->Get(1)->name()->str() == "time");
+  // The kernel resolves the server count from the referenced resource's
+  // capacity (3), not from a synthetic `servers` param.
+  const v2::Node* resource = root->children()->Get(0);
+  REQUIRE(resource->params()->Get(0)->int_value() == 3);
   REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Handle");
 }
 
@@ -172,29 +183,17 @@ TEST_CASE("lowering: expressions and parameter references fold before the "
       "}\n",
       "fold.lp");
 
-  const v2::Node* root = loaded.file.v2_root->root();
-  // Model-level params land on the root node, folded.
-  REQUIRE(root->params()->size() == 2);
-  REQUIRE(root->params()->Get(0)->name()->str() == "arrival_rate");
-  REQUIRE(root->params()->Get(0)->float_value() == 0.4);
-  REQUIRE(root->params()->Get(1)->float_value() == 2.0);
-
-  const v2::Node* resource = root->children()->Get(0);
-  REQUIRE(resource->params()->Get(0)->int_value() == 2);  // 1 + 1
-
-  const v2::Node* flow = root->children()->Get(1);
-  const v2::Node* source = flow->children()->Get(0);
-  // rate(arrival_rate * 2) folds to Poisson [0.8].
-  REQUIRE(source->params()->Get(0)->distribution()->kind() == 4);
-  REQUIRE(source->params()->Get(0)->distribution()->params()->Get(0) == 0.8);
-
-  const v2::Node* queue = flow->children()->Get(1);
-  REQUIRE(queue->params()->Get(0)->int_value() == 101);  // 100 + 1
-
-  const v2::Node* service = flow->children()->Get(2);
-  // exponential(service_rate) folds to Exponential [2.0].
-  REQUIRE(service->params()->Get(0)->distribution()->kind() == 3);
-  REQUIRE(service->params()->Get(0)->distribution()->params()->Get(0) == 2.0);
+  // Assert on the deterministic structural dump (stable string rendering of
+  // the same zero-copy FlatBuffers view the kernel reads).
+  const std::string dump = dump_ir(loaded.file);
+  REQUIRE(dump.find("param arrival_rate = float(0.4)") != std::string::npos);
+  REQUIRE(dump.find("param service_rate = float(2)") != std::string::npos);
+  REQUIRE(dump.find("param capacity = int(2)") != std::string::npos);  // 1+1
+  REQUIRE(dump.find("param arrival = distribution(Poisson params=[0.8])") !=
+          std::string::npos);  // rate(arrival_rate * 2)
+  REQUIRE(dump.find("param capacity = int(101)") != std::string::npos);
+  REQUIRE(dump.find("param time = distribution(Exponential params=[2])") !=
+          std::string::npos);  // exponential(service_rate)
 }
 
 TEST_CASE("lowering: ir_loader consumes the DSL output end to end",

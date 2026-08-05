@@ -110,12 +110,15 @@ struct VarDecl {
   Span span;
 };
 
-// `in [name]: type` / `out [name]: type` / `inout [name]: type` (unnamed
-// ports default to `entity` in the library layer).
+// `in [name]: type [when <field>]` / `out [name]: type [when <field>]` /
+// `inout [name]: type` (unnamed ports default to `entity` in the library
+// layer; `condition` is the field name gating a conditional port, "" when
+// the port is unconditional).
 struct PortDecl {
   std::string direction;  // "in" | "out" | "inout"
   std::string name;       // "" => "entity"
   std::string type;
+  std::string condition;  // "" => unconditional
   Span span;
 };
 
@@ -229,6 +232,7 @@ struct LibraryPort {
   std::string direction;  // "in" | "out" | "inout"
   std::string name;       // "" => "entity"
   std::string type;
+  std::string condition;  // "" => unconditional
   Span span;
 };
 

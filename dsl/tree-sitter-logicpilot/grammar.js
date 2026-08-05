@@ -165,13 +165,17 @@ module.exports = grammar({
     // as Job/Signal are legal port types).
     type_name: $ => $.identifier,
 
-    // `in [name]: type` / `out [name]: type` / `inout [name]: type`;
-    // unnamed ports default to `entity` (process blocks).
+    // `in [name]: type [when <field>]` / `out [name]: type [when <field>]` /
+    // `inout [name]: type`; unnamed ports default to `entity` (process
+    // blocks). The optional `when <field>` marks a conditional port that is
+    // only available when the named block field evaluates to true (e.g.
+    // `outTimeout: entity when enableTimeout`).
     port_declaration: $ => seq(
       choice('in', 'out', 'inout'),
       optional(field('name', $.identifier)),
       ':',
       field('type', $.type_name),
+      optional(seq('when', field('condition', $.identifier))),
     ),
 
     // Unified behavior: `on_<trigger> [port] { effect; ... }`. The trigger

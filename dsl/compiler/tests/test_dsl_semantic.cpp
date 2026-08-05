@@ -63,8 +63,11 @@ TEST_CASE("semantic: queue capacity 0 is legal (no buffering)",
   REQUIRE(analyze_model(*parsed.model).empty());
 }
 
-TEST_CASE("semantic snapshot: missing required fields", "[dsl][semantic]") {
-  expect_diagnostic_snapshot(
+TEST_CASE("semantic: empty process blocks pass with registry defaults",
+          "[dsl][semantic]") {
+  // The catalog-driven process library gives every field a default, so a
+  // block with no fields is legal (the kernel applies the defaults).
+  const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource Server {\n"
       "  }\n"
@@ -77,7 +80,9 @@ TEST_CASE("semantic snapshot: missing required fields", "[dsl][semantic]") {
       "    }\n"
       "  }\n"
       "}\n",
-      "diag_missing_required_fields.txt");
+      "input.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
 }
 
 TEST_CASE("semantic snapshot: duplicate declarations", "[dsl][semantic]") {
@@ -263,17 +268,17 @@ TEST_CASE("semantic: diagnostics carry spans and machine-readable codes",
           "[dsl][semantic]") {
   const CompileResult result = compile_source(
       "model M {\n"
-      "  resource R { }\n"
+      "  resource R { bogus = 1 }\n"
       "}\n",
       "input.lp");
   REQUIRE(!result.ok);
   REQUIRE(result.diagnostics.size() == 1);
   const Diagnostic& diagnostic = result.diagnostics.front();
-  REQUIRE(diagnostic.code == "LP2001");
+  REQUIRE(diagnostic.code == "LP2005");
   REQUIRE(diagnostic.severity == Severity::kError);
   REQUIRE(diagnostic.span.line == 2);
   REQUIRE(diagnostic.span.column >= 1);
   REQUIRE(format_diagnostic("input.lp", diagnostic) ==
-          "input.lp:2:3: error[LP2001]: missing required field 'capacity' "
-          "in resource 'R'");
+          "input.lp:2:16: error[LP2005]: unknown field 'bogus' in resource "
+          "'R'");
 }

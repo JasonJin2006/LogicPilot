@@ -23,6 +23,7 @@ enum class BlockParamType {
   kString,
   kDistribution,
   kRef,
+  kExpression,
   kUnknown,
 };
 
@@ -35,9 +36,20 @@ struct BlockParamSpec {
   bool required{false};  // no default in the library declaration
 };
 
+// A block port declared in the library shape. `condition` is the name of a
+// block field that must evaluate to true for the port to be usable ("" =
+// unconditional). Ports are validated by the coupling checker.
+struct BlockPortSpec {
+  std::string name;
+  std::string direction;  // "in" | "out" | "inout"
+  std::string type;
+  std::string condition;  // "" => unconditional
+};
+
 struct BlockShape {
   std::string kind;
   std::vector<BlockParamSpec> params;
+  std::vector<BlockPortSpec> ports;
 
   [[nodiscard]] const BlockParamSpec* param(
       const std::string& name) const {
@@ -47,6 +59,34 @@ struct BlockShape {
       }
     }
     return nullptr;
+  }
+
+  [[nodiscard]] const BlockPortSpec* port(
+      const std::string& name) const {
+    for (const BlockPortSpec& spec : ports) {
+      if (spec.name == name) {
+        return &spec;
+      }
+    }
+    return nullptr;
+  }
+
+  [[nodiscard]] bool has_input_ports() const {
+    for (const BlockPortSpec& spec : ports) {
+      if (spec.direction == "in" || spec.direction == "inout") {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] bool has_output_ports() const {
+    for (const BlockPortSpec& spec : ports) {
+      if (spec.direction == "out" || spec.direction == "inout") {
+        return true;
+      }
+    }
+    return false;
   }
 };
 

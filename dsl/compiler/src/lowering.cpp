@@ -8,6 +8,8 @@
 // parameter references and arithmetic before they reach the IR.
 #include "logicpilot/dsl/lowering.h"
 
+#include "logicpilot/dsl/registry.h"
+
 #include <flatbuffers/flatbuffers.h>
 
 #include <unordered_map>
@@ -193,42 +195,67 @@ flatbuffers::Offset<v2::Node> v2_resource(
       v2_semantics(builder, "process", "resource"), 0, 0, 0, 0, 0);
 }
 
-// process stage -> process source/queue/service/sink block Node.
+// process stage -> process block Node: typed params from every written
+// field (typed by its value kind) plus the block's registered ports.
 flatbuffers::Offset<v2::Node> v2_process_block(
     flatbuffers::FlatBufferBuilder& builder, const Node& stage,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  if (stage.kind == "source") {
-    params.push_back(v2_var_distribution(
-        builder, "arrival", distribution_field(stage, "arrival", scope)));
-  } else if (stage.kind == "queue") {
-    params.push_back(v2_var_int(
-        builder, "capacity", int_field(stage, "capacity", scope, 0)));
-  } else if (stage.kind == "service") {
-    params.push_back(v2_var_distribution(
-        builder, "rate", distribution_field(stage, "time", scope)));
-    // Explicit `resource = R` reference (Phase C); the v0 identifier
-    // binding is the fallback when the field is absent.
-    std::string resource_name = stage.name;
-    const Field* resource_field = field_of(stage, "resource");
-    if (resource_field != nullptr &&
-        resource_field->value.kind == ValueKind::kIdentifier) {
-      resource_name = resource_field->value.string_value;
+  for (const Field& field : stage.fields) {
+    const Value folded = fold_or_raw(field.value, scope);
+    Distribution dist;
+    if (distribution_from_value(folded, dist)) {
+      params.push_back(v2_var_distribution(builder, field.name.c_str(), dist));
+      continue;
     }
-    params.push_back(v2_var_string(builder, "resource", resource_name));
-    std::int64_t servers = 1;
-    const auto it = resources.find(resource_name);
-    if (it != resources.end()) {
-      servers = int_field(*it->second, "capacity", scope, 1);
+    switch (folded.kind) {
+      case ValueKind::kBool:
+        params.push_back(
+            v2_var_bool(builder, field.name.c_str(), folded.bool_value));
+        break;
+      case ValueKind::kInt:
+        params.push_back(
+            v2_var_int(builder, field.name.c_str(), folded.int_value));
+        break;
+      case ValueKind::kFloat:
+        params.push_back(
+            v2_var_float(builder, field.name.c_str(), folded.float_value));
+        break;
+      case ValueKind::kString:
+      case ValueKind::kIdentifier:
+        params.push_back(
+            v2_var_string(builder, field.name.c_str(), folded.string_value));
+        break;
+      default:
+        // Non-constant values are rejected by the analyzer; never lower.
+        break;
     }
-    params.push_back(v2_var_int(builder, "servers", servers));
+  }
+  (void)resources;
+  // Registered block ports (direction + event type), so the IR carries the
+  // full connectable shape of every process stage.
+  std::vector<flatbuffers::Offset<v2::Port>> ports;
+  const LibraryRegistry& registry = builtin_process_registry();
+  const BlockShape* shape = registry.block(stage.kind);
+  if (shape != nullptr) {
+    for (const BlockPortSpec& spec : shape->ports) {
+      const auto direction =
+          spec.direction == "in"
+              ? v2::PortDirection_Input
+              : (spec.direction == "out" ? v2::PortDirection_Output
+                                         : v2::PortDirection_InOut);
+      ports.push_back(v2::CreatePort(
+          builder, builder.CreateString(spec.name), direction,
+          builder.CreateString(spec.type.empty() ? "entity" : spec.type)));
+    }
   }
   return v2::CreateNode(
       builder, v2_metadata(builder, stage.name, source_file),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(params), 0,
-      v2_semantics(builder, "process", stage.kind.c_str()), 0, 0, 0, 0, 0);
+      builder.CreateVector(params), builder.CreateVector(ports),
+      v2_semantics(builder, "process", stage.kind.c_str()),
+      0, 0, 0, 0, 0);
 }
 
 // process -> process/flow Node (block children + chain couplings).
@@ -242,12 +269,26 @@ flatbuffers::Offset<v2::Node> v2_process(
         v2_process_block(builder, stage, resources, scope, source_file));
   }
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
-  for (std::size_t i = 0; i + 1 < process.children.size(); ++i) {
-    couplings.push_back(v2::CreateCoupling(
-        builder, builder.CreateString(process.children[i].name),
-        builder.CreateString("out"),
-        builder.CreateString(process.children[i + 1].name),
-        builder.CreateString("in")));
+  if (!process.couplings.empty()) {
+    // Explicit `couple A.out -> B.in` declarations carry the real
+    // topology (multi-output blocks, conditional ports, branches).
+    for (const CoupleDecl& couple : process.couplings) {
+      couplings.push_back(v2::CreateCoupling(
+          builder, builder.CreateString(couple.from_model),
+          builder.CreateString(couple.from_port),
+          builder.CreateString(couple.to_model),
+          builder.CreateString(couple.to_port)));
+    }
+  } else {
+    // Legacy chain fallback: stages couple in declaration order
+    // (out -> in), matching the v0 implicit-flow semantics.
+    for (std::size_t i = 0; i + 1 < process.children.size(); ++i) {
+      couplings.push_back(v2::CreateCoupling(
+          builder, builder.CreateString(process.children[i].name),
+          builder.CreateString("out"),
+          builder.CreateString(process.children[i + 1].name),
+          builder.CreateString("in")));
+    }
   }
   return v2::CreateNode(
       builder, v2_metadata(builder, process.name, source_file),
@@ -513,8 +554,7 @@ flatbuffers::Offset<v2::Node> v2_node(
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment
   // members are handled via ModelFile.experiments, not the node tree.
-  if (node.kind == "source" || node.kind == "queue" ||
-      node.kind == "service" || node.kind == "sink") {
+  if (builtin_process_registry().has_block(node.kind)) {
     return v2_process_block(builder, node, resources, scope, source_file);
   }
   return 0;

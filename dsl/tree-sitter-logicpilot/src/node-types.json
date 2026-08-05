@@ -584,6 +584,16 @@
     "type": "port_declaration",
     "named": true,
     "fields": {
+      "condition": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": false,
@@ -983,6 +993,10 @@
   },
   {
     "type": "use",
+    "named": false
+  },
+  {
+    "type": "when",
     "named": false
   },
   {

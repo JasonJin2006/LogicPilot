@@ -1,6 +1,7 @@
 // Block-shape registry tests: the embedded standard process library
-// (libraries/process.lplib) must load and expose the five blocks with the
-// expected shapes; LibraryRegistry::load parses arbitrary library sources.
+// (libraries/process.lplib, generated from libraries/pml-catalog.json) must
+// load and expose all 23 blocks with the expected shapes; LibraryRegistry
+// parses ports (with `when` conditions) and typed params.
 #include <string>
 #include <vector>
 
@@ -10,36 +11,63 @@
 
 using namespace logicpilot::dsl;
 
-TEST_CASE("registry: embedded process library loads the five blocks",
+TEST_CASE("registry: embedded process library loads the 23 blocks",
           "[dsl][registry]") {
   const LibraryRegistry& registry = builtin_process_registry();
-  REQUIRE(registry.blocks().size() == 5);
-  REQUIRE(registry.has_block("resource"));
-  REQUIRE(registry.has_block("source"));
-  REQUIRE(registry.has_block("queue"));
-  REQUIRE(registry.has_block("service"));
-  REQUIRE(registry.has_block("sink"));
+  REQUIRE(registry.blocks().size() == 23);
+  for (const char* kind : {"resource", "source", "queue", "delay", "service",
+                           "split", "combine", "batch", "unbatch", "seize",
+                           "release", "wait", "hold", "match", "selectOutput",
+                           "enter", "exit", "moveTo", "timeMeasureStart",
+                           "timeMeasureEnd", "assembler", "count", "sink"}) {
+    REQUIRE(registry.has_block(kind));
+  }
 
   const BlockShape* resource = registry.block("resource");
   REQUIRE(resource != nullptr);
   const BlockParamSpec* capacity = resource->param("capacity");
   REQUIRE(capacity != nullptr);
   REQUIRE(capacity->type == BlockParamType::kInt);
-  REQUIRE(capacity->required);
+  REQUIRE(!capacity->required);  // catalog default 1
   const BlockParamSpec* failure_rate = resource->param("failure_rate");
   REQUIRE(failure_rate != nullptr);
   REQUIRE(failure_rate->type == BlockParamType::kFloat);
   REQUIRE(!failure_rate->required);
+  REQUIRE(resource->ports.empty());  // ResourcePool has no ports
 
   const BlockShape* service = registry.block("service");
   REQUIRE(service->param("resource")->type == BlockParamType::kRef);
   REQUIRE(!service->param("resource")->required);
   REQUIRE(service->param("time")->type == BlockParamType::kDistribution);
-  REQUIRE(service->param("time")->required);
+  REQUIRE(!service->param("time")->required);
+  REQUIRE(service->ports.size() == 4);
+  REQUIRE(service->port("in")->direction == "in");
+  REQUIRE(service->port("out")->direction == "out");
+  REQUIRE(service->port("outTimeout")->condition == "enableTimeout");
+  REQUIRE(service->port("outPreempted")->condition == "enablePreemption");
 
-  REQUIRE(registry.block("source")->param("arrival")->required);
-  REQUIRE(registry.block("queue")->param("capacity")->required);
-  REQUIRE(registry.block("sink")->params.empty());
+  const BlockShape* source = registry.block("source");
+  REQUIRE(source->param("arrival")->type == BlockParamType::kDistribution);
+  REQUIRE(!source->param("arrival")->required);
+  REQUIRE(source->ports.size() == 1);
+  REQUIRE(source->port("out")->direction == "out");
+
+  const BlockShape* queue = registry.block("queue");
+  REQUIRE(queue->param("capacity")->type == BlockParamType::kInt);
+  REQUIRE(!queue->param("capacity")->required);
+  REQUIRE(queue->ports.size() == 4);
+  REQUIRE(queue->port("outTimeout")->condition == "enableTimeout");
+  REQUIRE(queue->port("outPreempted")->condition == "enablePreemption");
+
+  const BlockShape* select_output = registry.block("selectOutput");
+  REQUIRE(select_output->port("in")->direction == "in");
+  REQUIRE(select_output->port("outT")->direction == "out");
+  REQUIRE(select_output->port("outF")->direction == "out");
+
+  const BlockShape* sink = registry.block("sink");
+  REQUIRE(sink->ports.size() == 1);
+  REQUIRE(sink->port("in")->direction == "in");
+  REQUIRE_FALSE(sink->has_output_ports());
 }
 
 TEST_CASE("registry: load parses a library source into shapes",

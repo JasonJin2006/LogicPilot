@@ -7,8 +7,11 @@ root     param failure_rate = float(0)
 root   node 'P' library='process' block='flow'
 root     node 'A' library='process' block='source'
 root       param arrival = distribution(Poisson params=[2])
+root       port 'out' dir=output
 root     node 'R' library='process' block='service'
-root       param rate = distribution(Constant params=[1.25])
-root       param resource = string('R')
-root       param servers = int(1)
+root       param time = distribution(Constant params=[1.25])
+root       port 'in' dir=input
+root       port 'out' dir=output
+root       port 'outTimeout' dir=output
+root       port 'outPreempted' dir=output
 root     coupling 'A'.out -> 'R'.in

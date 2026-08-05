@@ -16,6 +16,7 @@ BlockParamType block_param_type(const std::string& type_name) {
   if (type_name == "string") return BlockParamType::kString;
   if (type_name == "distribution") return BlockParamType::kDistribution;
   if (type_name == "ref") return BlockParamType::kRef;
+  if (type_name == "expression") return BlockParamType::kExpression;
   return BlockParamType::kUnknown;
 }
 
@@ -27,6 +28,7 @@ const char* block_param_type_name(BlockParamType type) {
     case BlockParamType::kString: return "string";
     case BlockParamType::kDistribution: return "distribution";
     case BlockParamType::kRef: return "ref";
+    case BlockParamType::kExpression: return "expression";
     case BlockParamType::kUnknown: return "unknown";
   }
   return "unknown";
@@ -55,6 +57,14 @@ bool LibraryRegistry::load(const std::string& source,
       spec.required = !param.has_default;
       shape.params.push_back(std::move(spec));
     }
+    for (const LibraryPort& port : block.ports) {
+      BlockPortSpec spec;
+      spec.name = port.name;
+      spec.direction = port.direction;
+      spec.type = port.type;
+      spec.condition = port.condition;
+      shape.ports.push_back(std::move(spec));
+    }
     index_.emplace(block.kind, blocks_.size());
     blocks_.push_back(std::move(shape));
   }
@@ -68,7 +78,7 @@ const LibraryRegistry& builtin_process_registry() {
     // pins the expected block set. A failure here leaves an empty registry
     // (model blocks then fail with LP2004 unknown kind).
     std::vector<Diagnostic> diagnostics;
-    (void)registry.load(kStdlibProcessSource, &diagnostics);
+    (void)registry.load(stdlib_process_source(), &diagnostics);
     return registry;
   }();
   return registry;
