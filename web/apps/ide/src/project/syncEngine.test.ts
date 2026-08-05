@@ -115,4 +115,30 @@ describe('project sync engine', () => {
     expect(loaded.diagnostics.some((d) => d.code === 'LP3102')).toBe(true);
     expect(loaded.diagnostics.some((d) => d.code === 'LP3100')).toBe(false);
   });
+
+  it('loadProject keeps AI-style full grammar (agent/continuous/experiment) intact', () => {
+    const bundle = createProject('Swarm');
+    bundle.files['model/main.lp'] =
+      'model Swarm {\n' +
+      '  param seed: int = 7\n' +
+      '  agent Drone {\n    count = 3\n    on_tick {\n      flip active\n    }\n  }\n' +
+      '  continuous Dynamics {\n    state y: float = 1.0\n    d y/dt = -k*y\n  }\n' +
+      '  experiment Tune {\n    budget = 20\n  }\n' +
+      '}\n';
+    const loaded = loadProject(bundle);
+    expect(loaded.ok).toBe(true);
+    expect(loaded.diagnostics).toHaveLength(0);
+    const kinds = loaded.document!.nodes.map((node) => node.kind);
+    expect(kinds).toContain('agent');
+    expect(kinds).toContain('on_tick');
+    expect(kinds).toContain('continuous');
+    expect(kinds).toContain('experiment');
+    const agent = loaded.document!.nodes.find((node) => node.kind === 'agent')!;
+    expect(agent.params['count']).toBe(3);
+    // Saving again keeps the full member set.
+    const saved = saveProject(loaded.document!, bundle);
+    expect(saved.diagnostics).toHaveLength(0);
+    expect(saved.files['model/scenes/Drone.lp']).toContain('agent Drone');
+    expect(saved.files['model/scenes/Tune.lp']).toContain('experiment Tune');
+  });
 });

@@ -90,7 +90,7 @@ function tokenize(source: string): Token[] | string {
       i = j;
       continue;
     }
-    if ('{}()=,:->.'.includes(c)) {
+    if ('{}()=,:->.*+/'.includes(c)) {
       let j = i + 1;
       if ((c === '-' || c === '>') && (source[j] === '-' || source[j] === '>')) j++;
       tokens.push({ type: 'punct', text: source.slice(i, j), start: i, end: j });
@@ -123,10 +123,15 @@ class Parser {
     const b = this.tokens[this.pos + 1];
     const c = this.tokens[this.pos + 2];
     return (
-      a?.type === 'word' &&
-      b?.type === 'word' &&
-      c?.type === 'punct' &&
-      c.text === '{'
+      (a?.type === 'word' &&
+        b?.type === 'word' &&
+        c?.type === 'punct' &&
+        c.text === '{') ||
+      // behavior blocks: on_<trigger> { ... } carry no name.
+      (a?.type === 'word' &&
+        a.text.startsWith('on_') &&
+        b?.type === 'punct' &&
+        b.text === '{')
     );
   }
 
@@ -215,7 +220,11 @@ class Parser {
       // kind name { ... } -> nested block.
       if (this.isChildBlockStart()) {
         const kind = this.next()!;
-        const name = this.next()!;
+        // Behavior blocks (on_<trigger> { ... }) have no name.
+        const name =
+          this.peek()?.type === 'word'
+            ? this.next()!
+            : ({ type: 'word', text: '', start: kind.start, end: kind.start } as Token);
         const open = this.next()!;
         const children = this.parseBody();
         const close = this.next();
@@ -252,6 +261,13 @@ class Parser {
         const current = this.peek()!;
         if (depth === 0 && current.type === 'punct' && current.text === '}') break;
         if (depth === 0 && this.isChildBlockStart()) break;
+        if (
+          depth === 0 &&
+          current.type === 'word' &&
+          (current.text === 'instance' || current.text === 'use')
+        ) {
+          break;
+        }
         this.next();
         if (current.type === 'punct' && current.text === '{') depth++;
         if (current.type === 'punct' && current.text === '}') depth--;
