@@ -55,7 +55,16 @@ interface View {
 }
 
 export function ModelCanvas() {
-  const document = useModelStore((state) => state.document);
+  const rawDocument = useModelStore((state) => state.document);
+  // Defensive: the persisted document can transiently be incomplete (older
+  // builds, hand-edited localStorage) and lack `nodes`/`edges`. The store
+  // merge sanitizes it, but keep this belt-and-braces so a single bad shape
+  // can never NPE the canvas render path.
+  const document = {
+    name: rawDocument?.name ?? 'Model',
+    nodes: Array.isArray(rawDocument?.nodes) ? rawDocument.nodes : [],
+    edges: Array.isArray(rawDocument?.edges) ? rawDocument.edges : [],
+  };
   const selectedId = useModelStore((state) => state.selectedId);
   const addBlock = useModelStore((state) => state.addBlock);
   const moveBlock = useModelStore((state) => state.moveBlock);

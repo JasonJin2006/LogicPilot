@@ -88,4 +88,12 @@ describe('modelStore undo/redo', () => {
     expect(state.canUndo).toBe(false);
     expect(state.canRedo).toBe(false);
   });
+
+  it('loadDocument sanitizes a malformed document instead of crashing', () => {
+    const store = useModelStore.getState();
+    store.loadDocument({ name: 'Broken' } as never);
+    const document = useModelStore.getState().document;
+    expect(Array.isArray(document.nodes)).toBe(true);
+    expect(Array.isArray(document.edges)).toBe(true);
+  });
 });

@@ -21,7 +21,7 @@ export function PropertiesPanel() {
   const setBlockParam = useModelStore((state) => state.setBlockParam);
   const removeBlock = useModelStore((state) => state.removeBlock);
 
-  const node = document.nodes.find((entry) => entry.id === selectedId);
+  const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
   if (!node) {
     return (
       <div className="side-panel-body">

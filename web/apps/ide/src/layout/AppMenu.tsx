@@ -66,7 +66,7 @@ export function AppMenu() {
   const clearProject = useProjectStore((state) => state.clearProject);
   const markClean = useProjectStore((state) => state.markClean);
 
-  const selected = modelDoc.nodes.find((node) => node.id === selectedId) ?? null;
+  const selected = (modelDoc?.nodes ?? []).find((node) => node.id === selectedId) ?? null;
   const close = () => setOpen(null);
 
   const fileNewProject = () => {
@@ -103,6 +103,15 @@ export function AppMenu() {
         clearProject();
         try {
           const parsed = JSON.parse(text) as unknown;
+          const documentLike =
+            parsed !== null &&
+            typeof parsed === 'object' &&
+            Array.isArray((parsed as { nodes?: unknown }).nodes) &&
+            Array.isArray((parsed as { edges?: unknown }).edges);
+          if (!documentLike) {
+            openInfo('Open failed', 'not a LogicPilot canvas document (.json)');
+            return;
+          }
           loadDocument(parsed as never);
           markClean();
           const parsedName =

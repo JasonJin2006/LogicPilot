@@ -23,6 +23,48 @@ const MAX_HISTORY = 100;
 // into a single undo step.
 const COALESCE_MS = 600;
 
+// Validate a hydrated document: must be an object with `nodes` and `edges`
+// arrays. Older builds (or hand-edited localStorage) can leave a partial
+// document behind whose `nodes` is undefined, which crashes the first render
+// (modelDoc.nodes.find -> Cannot read properties of undefined) and turns the
+// whole window into an unrecoverable black surface. Fall back to a fresh
+// blank document on any shape mismatch.
+function sanitizeDocument(value: unknown): ModelDocument {
+  if (
+    value &&
+    typeof value === 'object' &&
+    Array.isArray((value as ModelDocument).nodes) &&
+    Array.isArray((value as ModelDocument).edges) &&
+    typeof (value as ModelDocument).name === 'string'
+  ) {
+    return value as ModelDocument;
+  }
+  return createDocument('Model');
+}
+
+// zustand persist `merge`: keep the in-memory actions, only trust persisted
+// fields we recognize. The persisted document is validated; everything else
+// (past/future/selectedId...) is never persisted anyway and stays at defaults.
+function mergePersistedState(
+  persisted: unknown,
+  current: ModelState,
+): ModelState {
+  const stored = (persisted ?? {}) as Partial<ModelState>;
+  return {
+    ...current,
+    ...stored,
+    document: sanitizeDocument(stored.document),
+    // Never trust persisted history/selection: it can reference node ids that
+    // no longer exist after sanitize, which would break undo/redo invariants.
+    past: [],
+    future: [],
+    selectedId: null,
+    canUndo: false,
+    canRedo: false,
+    lastCommitAt: 0,
+  };
+}
+
 interface ModelState {
   document: ModelDocument;
   selectedId: string | null;
@@ -88,7 +130,8 @@ export const useModelStore = create<ModelState>()(
         set((state) => commit(state, renameNode(state.document, id, name))),
       setBlockParam: (id, key, value) =>
         set((state) => commit(state, setParam(state.document, id, key, value))),
-      loadDocument: (document) => set((state) => commit(state, document)),
+      loadDocument: (document) =>
+        set((state) => commit(state, sanitizeDocument(document))),
       undo: () =>
         set((state) => {
           if (state.past.length === 0) return {};
@@ -133,6 +176,7 @@ export const useModelStore = create<ModelState>()(
       version: 1,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ document: state.document }),
+      merge: mergePersistedState,
     },
   ),
 );
