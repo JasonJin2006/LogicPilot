@@ -65,6 +65,7 @@ export function AppMenu() {
   const openInfo = useUiStore((state) => state.openInfo);
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openBundle = useProjectStore((state) => state.openBundle);
+  const bundle = useProjectStore((state) => state.bundle);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
 
@@ -74,6 +75,7 @@ export function AppMenu() {
   const openDocument = (document: ModelDocument) => {
     loadDocument(document);
     useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(null);
   };
 
   const fileNewProject = () => {
@@ -160,6 +162,42 @@ export function AppMenu() {
     markClean();
     addRecent({ name, bundle, at: Date.now() });
     close();
+  };
+  // File > Close: close the current project. With unsaved changes, ask
+  // whether to save first (Save / Don't Save / Cancel).
+  const fileClose = () => {
+    const { bundle: current, dirty: isDirty } = useProjectStore.getState();
+    const projectName = current?.manifest.name ?? 'Model';
+    const doClose = () => {
+      useUiStore.getState().closeAllFiles();
+      useCanvasView.getState().resetCanvasViews();
+      useModelStore.getState().reset();
+      useProjectStore.getState().clearProject();
+      useProjectStore.getState().setPath(null);
+      close();
+    };
+    if (current && isDirty) {
+      useUiStore.getState().openConfirm({
+        title: 'Close project',
+        body: `Close "${projectName}"? Your changes will be lost if you do not save.`,
+        actions: [
+          {
+            label: 'Save',
+            primary: true,
+            onSelect: () => {
+              void fileSave().then(() => {
+                useProjectStore.getState().markClean();
+                doClose();
+              });
+            },
+          },
+          { label: "Don't Save", onSelect: doClose },
+          { label: 'Cancel', onSelect: () => useUiStore.getState().closeConfirm() },
+        ],
+      });
+      return;
+    }
+    doClose();
   };
   const exitApp = () => {
     close();
@@ -318,6 +356,8 @@ export function AppMenu() {
         { kind: 'separator' },
         { label: 'Save', shortcut: 'Ctrl+S', action: fileSave },
         { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: fileSave },
+        { kind: 'separator' },
+        { label: 'Close', disabled: !bundle, action: fileClose },
         { kind: 'separator' },
         { label: 'Exit', action: exitApp },
       ],

@@ -11,6 +11,12 @@ interface UiState {
   openFiles: string[];
   /** The file tab currently in front. */
   activeFile: string | null;
+  /** Multi-action confirm dialog (e.g. Close project with unsaved work). */
+  confirm: {
+    title: string;
+    body: string;
+    actions: Array<{ label: string; primary?: boolean; onSelect: () => void }>;
+  } | null;
   prompt: {
     title: string;
     label: string;
@@ -27,8 +33,11 @@ interface UiState {
   closeNewProject: () => void;
   openFile: (path: string) => void;
   closeFile: (path: string) => void;
+  closeAllFiles: () => void;
   openPrompt: (prompt: UiState['prompt']) => void;
   closePrompt: () => void;
+  openConfirm: (confirm: NonNullable<UiState['confirm']>) => void;
+  closeConfirm: () => void;
   openInfo: (title: string, body: string) => void;
   closeInfo: () => void;
 }
@@ -39,6 +48,7 @@ export const useUiStore = create<UiState>((set) => ({
   newProjectOpen: false,
   openFiles: [],
   activeFile: null,
+  confirm: null,
   prompt: null,
   info: null,
   openSettings: () => set({ settingsOpen: true }),
@@ -63,8 +73,11 @@ export const useUiStore = create<UiState>((set) => ({
           : state.activeFile;
       return { openFiles, activeFile };
     }),
+  closeAllFiles: () => set({ openFiles: [], activeFile: null }),
   openPrompt: (prompt) => set({ prompt }),
   closePrompt: () => set({ prompt: null }),
+  openConfirm: (confirm) => set({ confirm }),
+  closeConfirm: () => set({ confirm: null }),
   openInfo: (title, body) => set({ info: { title, body } }),
   closeInfo: () => set({ info: null }),
 }));

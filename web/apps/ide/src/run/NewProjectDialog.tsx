@@ -62,6 +62,7 @@ export function NewProjectDialog() {
     openBundle(bundle);
     setPath(projectPath);
     markClean();
+    setCreating(false);
     closeNewProject();
   };
 

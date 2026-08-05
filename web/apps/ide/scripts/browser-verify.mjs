@@ -371,6 +371,24 @@ try {
   log('AI panel charted a continuous-model trajectory');
   await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
+  // File > Close: the AI load left unsaved changes, so Close asks first and
+  // Don't Save returns to the empty center.
+  await page.getByRole('button', { name: 'File' }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
+  await page.getByRole('button', { name: "Don't Save" }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  log('File > Close with unsaved changes asks, then returns to the empty state');
+
+  // A pristine project closes without a prompt.
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.getByRole('button', { name: 'File' }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  log('pristine project closes without a prompt');
+
   if (consoleErrors.length > 0) {
     throw new Error(`console errors: ${consoleErrors.join(' | ')}`);
   }
