@@ -487,6 +487,7 @@
   align-items: center;
   gap: 2px;
   margin-left: auto;
+  padding: 0 4px;
 }
 
 .tab-action {

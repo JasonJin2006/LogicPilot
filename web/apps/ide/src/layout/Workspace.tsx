@@ -5,11 +5,15 @@
 
 import { useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { X } from 'lucide-react';
+import { Hammer, Play, Save, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
+import { useConnectionStore } from '../state/connectionStore';
 import { useModelStore } from '../state/modelStore';
+import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { useCanvasView } from '../state/canvasView';
+import { mergeModelSource } from '../project/project';
+import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, type AreaId, type PanelId } from './panels';
 
 function Splitter({
@@ -94,9 +98,43 @@ function TabBar({ area }: { area: AreaId }) {
   const activeFile = useUiStore((s) => s.activeFile);
   const openFile = useUiStore((s) => s.openFile);
   const closeFile = useUiStore((s) => s.closeFile);
+  const diskFiles = useUiStore((s) => s.diskFiles);
+  const openRunDialog = useUiStore((s) => s.openRunDialog);
+  const openInfo = useUiStore((s) => s.openInfo);
+  const projectPath = useProjectStore((s) => s.path);
+  const bundle = useProjectStore((s) => s.bundle);
+  const activePanel = state.activePanel;
   // Right/bottom panels can be collapsed; the model workspace stays open.
   const closable = area !== 'center';
   const perTabClose = area === 'center';
+  // Compile the merged model source (file editors compile the whole project).
+  const handleCompile = () => {
+    const { compile } = useConnectionStore.getState();
+    if (bundle) {
+      const merged = mergeModelSource(
+        bundle.files[bundle.manifest.model] ?? '',
+        bundle.files,
+        bundle.manifest.modelParts ?? [],
+      );
+      compile(merged);
+    } else {
+      compile();
+    }
+  };
+  // Write the currently open disk file back to the project folder.
+  const handleSaveDiskFile = () => {
+    const content = activeFile !== null ? diskFiles[activeFile] : undefined;
+    if (activeFile === null || projectPath === null || content === undefined) {
+      return;
+    }
+    void writeProjectFile(projectPath, activeFile, content).then((result) => {
+      if (!result.ok) {
+        openInfo('Save failed', result.error ?? 'cannot write the file');
+        return;
+      }
+      void useProjectStore.getState().refreshDiskTree();
+    });
+  };
   const renderTab = (panel: PanelId) => (
     <div
       key={panel}
@@ -209,6 +247,43 @@ function TabBar({ area }: { area: AreaId }) {
               </div>
             );
           })}
+          {/* The right end of the tab bar is a contextual action area:
+              Run for the canvas, Compile (and Save for disk files) for the
+              code editor - icon buttons, not text. */}
+          <div className="tab-actions">
+            {activePanel === 'model' && (
+              <button
+                className="tab-action"
+                title="Run the model"
+                aria-label="Run"
+                onClick={openRunDialog}
+              >
+                <Play size={14} />
+              </button>
+            )}
+            {activePanel === 'dsl' && (
+              <>
+                {activeFile !== null && diskFiles[activeFile] !== undefined && (
+                  <button
+                    className="tab-action"
+                    title="Save file to disk"
+                    aria-label="Save"
+                    onClick={handleSaveDiskFile}
+                  >
+                    <Save size={14} />
+                  </button>
+                )}
+                <button
+                  className="tab-action"
+                  title="Compile the model"
+                  aria-label="Compile"
+                  onClick={handleCompile}
+                >
+                  <Hammer size={14} />
+                </button>
+              </>
+            )}
+          </div>
         </>
       ) : (
         state.panels.map(renderTab)

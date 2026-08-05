@@ -95,7 +95,8 @@ try {
 
   // Run parameters + Start live in the canvas Run dialog (per-experiment,
   // not IDE settings). The canvas is empty, so the served model runs.
-  await page.locator('.canvas-run').click();
+  // Run lives in the tab bar's contextual action area (icon button).
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
   await page.getByRole('dialog', { name: 'Run' }).waitFor();
   for (const [label, value] of [
     ['arrivals', '200'],
@@ -242,7 +243,7 @@ try {
     document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null,
   );
 
-  await page.locator('.canvas-run').click();
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
   await page.getByRole('dialog', { name: 'Run' }).waitFor();
   for (const [label, value] of [
     ['arrivals', '100'],
