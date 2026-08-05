@@ -1,8 +1,12 @@
-// DSL v2 -> canvas ModelDocument (the reverse of generateDsl). Supports the
-// process-library subset the canvas models: model { use?, param*, resource*,
-// process { source/queue/service/sink } }. Blocks are laid out left to right
-// and process stages are coupled in declaration order (the DSL's sequential
-// flow semantics), matching what generateDsl emits.
+// DSL v2 -> canvas ModelDocument (the reverse of generateDsl). Parses the
+// full grammar on a line/semicolon basis: use / param / resource, the
+// container kinds (process / agent / atomic / continuous / experiment,
+// recursively nested), arbitrary declaration blocks (source/queue/... and
+// unknown kinds), field lines (key = value, typed states, `d y/dt` ODE
+// equations), behavior blocks (on_<trigger> { effects }) and instance
+// references. Kinds the canvas does not render yet become placeholder nodes
+// (parsed, never dropped), so the model tree survives any DSL the AI or a
+// user writes. Process stages are coupled in declaration order.
 
 import type { BlockKind, ModelDocument, ModelNode } from './graph.js';
 import { connect, createDocument, freshId } from './graph.js';
@@ -17,14 +21,31 @@ type Token =
   | { type: 'word'; text: string }
   | { type: 'number'; text: string }
   | { type: 'string'; text: string }
-  | { type: 'punct'; text: string };
+  | { type: 'punct'; text: string }
+  | { type: 'newline'; text: string };
 
-const PROCESS_KINDS: ReadonlySet<string> = new Set([
+/** Container kinds: their members are nested children (one scene file per
+ *  container in the on-disk layout). */
+const CONTAINER_KINDS: ReadonlySet<string> = new Set([
+  'process',
+  'agent',
+  'atomic',
+  'continuous',
+  'experiment',
+]);
+
+/** Kinds the canvas renders natively; everything else is a placeholder
+ *  node (grey frame, read-only) so no DSL member is ever dropped. */
+const CANVAS_KINDS: ReadonlySet<string> = new Set([
+  'resource',
   'source',
   'queue',
   'service',
   'sink',
+  ...CONTAINER_KINDS,
 ]);
+
+const PUNCT = '{}()=,;:/*+->.';
 
 function tokenize(source: string): Token[] | string {
   const tokens: Token[] = [];
@@ -36,6 +57,11 @@ function tokenize(source: string): Token[] | string {
     const c = source[i]!;
     if (c === '/' && source[i + 1] === '/') {
       while (i < n && source[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '\n') {
+      tokens.push({ type: 'newline', text: '\n' });
+      i++;
       continue;
     }
     if (/\s/.test(c)) {
@@ -70,7 +96,7 @@ function tokenize(source: string): Token[] | string {
       i = j;
       continue;
     }
-    if ('{}()=,:'.includes(c)) {
+    if (PUNCT.includes(c)) {
       tokens.push({ type: 'punct', text: c });
       i++;
       continue;
@@ -78,6 +104,18 @@ function tokenize(source: string): Token[] | string {
     return `unexpected character '${c}' at offset ${i}`;
   }
   return tokens;
+}
+
+/** One parsed body member. `field` covers key = value lines (including
+ *  typed `state x: type = v` and `d y/dt = expr`), `block` covers
+ *  kind-name declarations, `behavior` covers on_<trigger> blocks, `effect`
+ *  covers bare lines inside a behavior, `use`/`param` are the special
+ *  member lines. */
+interface BodyMember {
+  kind: string;
+  name: string;
+  params: Record<string, string | number | boolean>;
+  children: BodyMember[];
 }
 
 class Parser {
@@ -119,23 +157,82 @@ class Parser {
     return null;
   }
 
-  // One `key = value` field value: number, string, bare identifier, or a
-  // function call like rate(0.8) rebuilt from tokens.
-  parseValue(): string | number {
-    const token = this.next();
-    if (token === undefined) return '';
-    if (token.type === 'number') {
-      return Number(token.text);
-    }
-    if (token.type === 'string') {
-      return token.text;
-    }
-    if (token.type === 'word' && this.atPunct('(')) {
-      return token.text + this.captureParens();
-    }
-    return token.text;
+  private isSeparator(token: Token | undefined): boolean {
+    return (
+      token === undefined ||
+      token.type === 'newline' ||
+      (token.type === 'punct' && (token.text === ';' || token.text === '}'))
+    );
   }
 
+  /** Join member tokens back into a readable string: words keep a space
+   *  between them, punctuation hugs its neighbours (d y/dt, -k*y), except a
+   *  colon followed by a word (`state x: bool`). */
+  private static joinTokens(parts: Array<{ text: string }>): string {
+    let out = '';
+    for (const part of parts) {
+      const prevAlpha = /[A-Za-z0-9_)]$/.test(out);
+      const curAlpha = /^[A-Za-z0-9_("]/.test(part.text);
+      const afterColon = out.endsWith(':');
+      out += curAlpha && (prevAlpha || afterColon) ? ` ${part.text}` : part.text;
+    }
+    return out.trim();
+  }
+
+  /** Read one field value: tokens up to a separator, rebuilt into a string
+   *  (or kept as a number when it is a single literal). Calls like
+   *  rate(0.8) and expressions like -k*y are reconstructed. */
+  private readValue(): string | number | boolean {
+    const parts: string[] = [];
+    let literalOnly = true;
+    for (;;) {
+      const token = this.peek();
+      if (this.isSeparator(token)) {
+        break;
+      }
+      this.next();
+      if (
+        token!.type === 'word' &&
+        this.peek()?.type === 'punct' &&
+        this.peek()!.text === '('
+      ) {
+        this.next();
+        parts.push(`${token!.text}(${this.captureParens()}`);
+        literalOnly = false;
+        continue;
+      }
+      if (token!.type === 'punct' && token!.text === '(') {
+        parts.push(`(${this.captureParens()}`);
+        literalOnly = false;
+        continue;
+      }
+      if (token!.type === 'string') {
+        parts.push(JSON.stringify(token!.text));
+        literalOnly = false;
+        continue;
+      }
+      parts.push(token!.text);
+      if (
+        token!.type !== 'number' ||
+        !Number.isFinite(Number(token!.text))
+      ) {
+        literalOnly = false;
+      }
+    }
+    if (parts.length === 1) {
+      const only = parts[0]!;
+      if (only === 'true' || only === 'false') {
+        return only === 'true';
+      }
+      const numeric = Number(only);
+      return /^-?[0-9.eE+-]+$/.test(only) && Number.isFinite(numeric)
+        ? numeric
+        : only;
+    }
+    return Parser.joinTokens(parts.map((part) => ({ text: part })));
+  }
+
+  /** Consume balanced parentheses and rebuild their content. */
   private captureParens(): string {
     let out = '';
     let depth = 0;
@@ -146,11 +243,15 @@ class Parser {
         depth++;
         out += '(';
       } else if (token.type === 'punct' && token.text === ')') {
-        depth--;
         out += ')';
-        if (depth === 0) break;
+        if (depth === 0) {
+          break;
+        }
+        depth--;
       } else if (token.type === 'punct' && token.text === ',') {
         out += ', ';
+      } else if (token.type === 'newline' || token.type === 'punct') {
+        out += token.text;
       } else {
         out += token.text;
       }
@@ -158,16 +259,127 @@ class Parser {
     return out;
   }
 
-  parseFields(): Record<string, string | number | boolean> {
-    const params: Record<string, string | number | boolean> = {};
-    while (!this.atPunct('}')) {
-      const key = this.expectWord();
-      if (key === null || !this.expectPunct('=')) {
-        return params;
+  /** Parse one body (model root or a container) into members. */
+  parseBody(): BodyMember[] | string {
+    const members: BodyMember[] = [];
+    for (;;) {
+      while (this.atPunct(';') || this.peek()?.type === 'newline') {
+        this.next();
       }
-      params[key] = this.parseValue();
+      if (this.atPunct('}')) {
+        break;
+      }
+      if (this.peek() === undefined) {
+        return 'unexpected end of input (missing closing brace)';
+      }
+      if (this.expectWord('use') !== null) {
+        const name = this.expectWord();
+        if (name === null) {
+          return "expected a library name after 'use'";
+        }
+        members.push({ kind: 'use', name, params: {}, children: [] });
+        continue;
+      }
+      if (this.expectWord('param') !== null) {
+        const name = this.expectWord();
+        if (name === null) {
+          return "expected 'param <name>[: <type>] = <value>'";
+        }
+        let type = '';
+        if (this.expectPunct(':')) {
+          const typeWord = this.expectWord();
+          if (typeWord === null) {
+            return "expected a type after 'param <name>:'";
+          }
+          type = typeWord;
+        }
+        if (!this.expectPunct('=')) {
+          return "expected 'param <name>[: <type>] = <value>'";
+        }
+        members.push({
+          kind: 'param',
+          name,
+          params: { type, value: this.readValue() },
+          children: [],
+        });
+        continue;
+      }
+      const member = this.parseMember();
+      if (typeof member === 'string') {
+        return member;
+      }
+      members.push(member);
     }
-    return params;
+    return members;
+  }
+
+  private parseMember(): BodyMember | string {
+    const head: Token[] = [];
+    for (;;) {
+      const token = this.peek();
+      if (this.isSeparator(token)) {
+        break;
+      }
+      if (token!.type === 'punct' && token!.text === '{') {
+        this.next();
+        if (head.length === 1 && head[0]!.text.startsWith('on_')) {
+          const children = this.parseBody();
+          if (typeof children === 'string') {
+            return children;
+          }
+          if (!this.expectPunct('}')) {
+            return `unterminated behavior '${head[0]!.text}'`;
+          }
+          return {
+            kind: head[0]!.text,
+            name: head[0]!.text,
+            params: {},
+            children,
+          };
+        }
+        if (head.length === 2) {
+          const children = this.parseBody();
+          if (typeof children === 'string') {
+            return children;
+          }
+          if (!this.expectPunct('}')) {
+            return `unterminated ${head[0]!.text} '${head[1]!.text}'`;
+          }
+          return {
+            kind: head[0]!.text,
+            name: head[1]!.text,
+            params: {},
+            children,
+          };
+        }
+        return "expected 'kind name { ... }'";
+      }
+      if (token!.type === 'punct' && token!.text === '=') {
+        this.next();
+        return {
+          kind: 'field',
+          name: Parser.joinTokens(head),
+          params: { value: this.readValue() },
+          children: [],
+        };
+      }
+      if (token!.type === 'punct' && token!.text === ':') {
+        // Typed state: `state x: type = value` - keep the whole key.
+        head.push(this.next()!);
+        continue;
+      }
+      head.push(this.next()!);
+    }
+    if (head.length === 0) {
+      return 'expected a member';
+    }
+    // A bare line (e.g. an effect inside a behavior): keep it verbatim.
+    return {
+      kind: 'effect',
+      name: head.map((entry) => entry.text).join(' '),
+      params: {},
+      children: [],
+    };
   }
 }
 
@@ -190,123 +402,125 @@ export function parseDsl(source: string): ParseResult {
   if (modelName === null || !parser.expectPunct('{')) {
     return fail("expected a model name and '{'");
   }
-
-  const resources: Array<{ name: string; params: Record<string, string | number | boolean> }> = [];
-  const containers: Array<{ name: string }> = [];
-  const stages: Array<{
-    kind: BlockKind;
-    name: string;
-    params: Record<string, string | number | boolean>;
-    container?: string;
-  }> = [];
-
-  while (!parser.atPunct('}')) {
-    if (parser.expectWord('use') !== null) {
-      parser.expectWord(); // library name
-      continue;
-    }
-    if (parser.expectWord('param') !== null) {
-      parser.expectWord(); // param name
-      parser.expectPunct(':');
-      parser.expectWord(); // type
-      parser.expectPunct('=');
-      parser.parseValue();
-      continue;
-    }
-    if (parser.expectWord('resource') !== null) {
-      const name = parser.expectWord();
-      if (name === null || !parser.expectPunct('{')) {
-        return fail(`expected a name and '{' for resource`);
-      }
-      const params = parser.parseFields();
-      if (!parser.expectPunct('}')) {
-        return fail(`unterminated resource '${name}'`);
-      }
-      resources.push({ name, params });
-      continue;
-    }
-    if (parser.expectWord('process') !== null) {
-      const processName = parser.expectWord(); // process container name
-      if (!parser.expectPunct('{')) {
-        return fail("expected '{' after process name");
-      }
-      if (processName !== null && !containers.some((entry) => entry.name === processName)) {
-        containers.push({ name: processName });
-      }
-      while (!parser.atPunct('}')) {
-        const kind = parser.expectWord();
-        const name = parser.expectWord();
-        if (kind === null || name === null) {
-          return fail('expected a block kind and name in the process');
-        }
-        if (!PROCESS_KINDS.has(kind)) {
-          return fail(`unsupported process block '${kind}' (only source/queue/service/sink)`);
-        }
-        if (!parser.expectPunct('{')) {
-          return fail(`expected '{' for process block '${name}'`);
-        }
-        const params = parser.parseFields();
-        if (!parser.expectPunct('}')) {
-          return fail(`unterminated process block '${name}'`);
-        }
-        stages.push({
-          kind: kind as BlockKind,
-          name,
-          params,
-          container: processName ?? undefined,
-        });
-      }
-      if (!parser.expectPunct('}')) {
-        return fail('unterminated process block');
-      }
-      continue;
-    }
-    return fail(
-      `unsupported top-level block (only resource/process can load into the canvas)`,
-    );
+  const members = parser.parseBody();
+  if (typeof members === 'string') {
+    return fail(members);
   }
-
-  if (resources.length === 0 && containers.length === 0 && stages.length === 0) {
-    return fail('the model has no elements to load into the canvas');
+  if (!parser.expectPunct('}')) {
+    return fail('unterminated model body');
+  }
+  while (parser.peek()?.type === 'newline') {
+    parser.next();
+  }
+  if (parser.peek() !== undefined) {
+    return fail('unexpected content after the model');
   }
 
   const document = createDocument(modelName);
-  const resourceNodes: ModelNode[] = resources.map((resource, index) => ({
-    id: freshId('resource'),
-    kind: 'resource',
-    name: resource.name,
-    x: 120,
-    y: 80 + index * 100,
-    params: { ...resource.params },
-  }));
-  const containerNodes: ModelNode[] = containers.map((container, index) => ({
-    id: freshId('process'),
-    kind: 'process',
-    name: container.name,
-    x: 120,
-    y: 80 + (resources.length + index) * 100,
-    params: {},
-    library: 'process',
-  }));
-  const stageNodes: ModelNode[] = stages.map((stage, index) => ({
-    id: freshId(stage.kind),
-    kind: stage.kind,
-    name: stage.name,
-    x: 160 + index * 180,
-    y: 240,
-    params: { ...stage.params },
-    container: stage.container,
-  }));
+  const nodes: ModelNode[] = [];
+  // Sequential stage order per process container (declaration order).
+  const processStages = new Map<string, ModelNode[]>();
+  let order = 0;
 
-  let doc: ModelDocument = { ...document, nodes: [...resourceNodes, ...containerNodes, ...stageNodes] };
-  // Sequential couplings inside one process container (declaration order);
-  // the edge across two containers would be dropped by the per-container
-  // canvas filter anyway, so never emit it.
-  for (let i = 0; i + 1 < stageNodes.length; i++) {
-    if (stages[i]!.container !== stages[i + 1]!.container) {
-      continue;
+  const position = () => {
+    const x = 160 + (order % 8) * 180;
+    const y = 80 + Math.floor(order / 8) * 100;
+    order += 1;
+    return { x, y };
+  };
+
+  const flatten = (
+    member: BodyMember,
+    parent: string | undefined,
+    parentKind: string | undefined,
+  ): void => {
+    const pos = position();
+    if (member.kind === 'field' || member.kind === 'effect') {
+      nodes.push({
+        id: freshId('member'),
+        kind: member.kind,
+        name: member.name,
+        x: pos.x,
+        y: pos.y,
+        params: { ...member.params },
+        container: parent,
+        placeholder: true,
+      });
+      return;
     }
-    doc = connect(doc, stageNodes[i]!.id, stageNodes[i + 1]!.id).document;
+    if (member.kind === 'use' || member.kind === 'param') {
+      nodes.push({
+        id: freshId(member.kind),
+        kind: member.kind,
+        name: member.name,
+        x: pos.x,
+        y: pos.y,
+        params: { ...member.params },
+        container: parent,
+        placeholder: !CANVAS_KINDS.has(member.kind),
+      });
+      return;
+    }
+    if (member.kind.startsWith('on_')) {
+      nodes.push({
+        id: freshId('behavior'),
+        kind: member.kind,
+        name: member.name,
+        x: pos.x,
+        y: pos.y,
+        params: {},
+        container: parent,
+        placeholder: true,
+      });
+      for (const child of member.children) {
+        flatten(child, member.name, member.kind);
+      }
+      return;
+    }
+    // A declaration block: merge its field lines into params, keep nested
+    // blocks / behaviors as children.
+    const params: Record<string, string | number | boolean> = {};
+    const nested: BodyMember[] = [];
+    for (const child of member.children) {
+      if (child.kind === 'field') {
+        params[child.name] = child.params['value'] ?? '';
+      } else {
+        nested.push(child);
+      }
+    }
+    const node: ModelNode = {
+      id: freshId(member.kind),
+      kind: member.kind,
+      name: member.name,
+      x: pos.x,
+      y: pos.y,
+      params,
+      container: parent,
+      placeholder: !CANVAS_KINDS.has(member.kind),
+    };
+    nodes.push(node);
+    for (const child of nested) {
+      flatten(child, member.name, member.kind);
+    }
+    if (parentKind === 'process' && !CONTAINER_KINDS.has(member.kind)) {
+      const group = processStages.get(parent ?? '');
+      if (group) {
+        group.push(node);
+      } else {
+        processStages.set(parent ?? '', [node]);
+      }
+    }
+  };
+
+  for (const member of members) {
+    flatten(member, undefined, undefined);
+  }
+
+  let doc: ModelDocument = { ...document, nodes };
+  for (const group of processStages.values()) {
+    for (let i = 0; i + 1 < group.length; i++) {
+      doc = connect(doc, group[i]!.id, group[i + 1]!.id).document;
+    }
   }
   return { ok: true, document: doc };
 }

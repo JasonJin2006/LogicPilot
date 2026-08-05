@@ -31,7 +31,9 @@ describe('parseDsl', () => {
     expect(result.ok).toBe(true);
     const doc = result.document;
     expect(doc.name).toBe('MM1');
-    expect(doc.nodes).toHaveLength(6);
+    // use/param are now kept as model members (placeholder nodes), so the
+    // full grammar round-trips losslessly.
+    expect(doc.nodes).toHaveLength(8);
     expect(doc.edges).toHaveLength(3);
 
     const container = doc.nodes.find((node) => node.kind === 'process')!;
@@ -51,10 +53,8 @@ describe('parseDsl', () => {
     expect(service.params['resource']).toBe('Server');
     expect(service.params['time']).toBe('exponential(1.0)');
 
-    // The container Node comes first, then stages coupled in declaration
-    // order inside it.
-    const kinds = doc.nodes.filter((node) => node.kind !== 'resource').map((node) => node.kind);
-    expect(kinds).toEqual(['process', 'source', 'queue', 'service', 'sink']);
+    expect(doc.nodes.find((node) => node.kind === 'use')!.name).toBe('process');
+    expect(doc.nodes.find((node) => node.kind === 'param')!.name).toBe('arrival_rate');
   });
 
   it('round-trips through generateDsl', () => {
@@ -68,10 +68,53 @@ describe('parseDsl', () => {
     expect(regenerated).toContain('sink Done { }');
   });
 
-  it('rejects models without a process flow', () => {
-    const result = parseDsl('model Decay { continuous x { rate = 0.5 } }');
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain('unsupported');
+  it('parses the full grammar: continuous/agent/experiment with placeholders', () => {
+    const source = `model Swarm {
+  param seed: int = 7
+  agent Drone {
+    count = 3
+    state active: bool = true
+    on_tick {
+      flip active
+    }
+  }
+  continuous Dynamics {
+    state y: float = 1.0
+    param k = 0.5
+    d y/dt = -k*y
+  }
+  experiment Tune {
+    objective = minimize Wq
+    variable = arrival_rate
+    budget = 20
+  }
+}
+`;
+    const result = parseDsl(source);
+    expect(result.ok).toBe(true);
+    const doc = result.document;
+    const agent = doc.nodes.find((node) => node.kind === 'agent')!;
+    expect(agent.name).toBe('Drone');
+    // count/state became params, the behavior block a child node.
+    expect(agent.params['count']).toBe(3);
+    expect(agent.params['state active: bool']).toBe(true);
+    const behavior = doc.nodes.find((node) => node.kind === 'on_tick')!;
+    expect(behavior.container).toBe('Drone');
+    const continuous = doc.nodes.find((node) => node.kind === 'continuous')!;
+    expect(continuous.name).toBe('Dynamics');
+    // The ODE equation is a container field, merged into the container's
+    // params (kept verbatim so the round trip is lossless).
+    expect(continuous.params['d y/dt']).toBe('-k*y');
+    // Round trip is lossless: re-parsing the generated DSL yields the same
+    // member set.
+    const regenerated = generateDsl(doc);
+    const reparsed = parseDsl(regenerated);
+    expect(reparsed.ok).toBe(true);
+    const kinds = reparsed.document.nodes.map((node) => node.kind).sort();
+    expect(kinds).toEqual(doc.nodes.map((node) => node.kind).sort());
+    expect(regenerated).toContain('agent Drone');
+    expect(regenerated).toContain('state active: bool = true');
+    expect(regenerated).toContain('experiment Tune');
   });
 
   it('parses an empty process container into a canvas container node', () => {

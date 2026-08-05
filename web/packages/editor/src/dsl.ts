@@ -1,38 +1,47 @@
 // ModelDocument -> DSL v2 source generation.
 //
 // The generated syntax follows docs/specs/dsl-v2.md (thin core grammar +
-// process library blocks): `resource` blocks at model level, process stages
-// inside one `process` container ordered by canvas x position (the DSL
-// connects sequential stages by declaration order). Block field values are
-// serialized from the node params.
+// process library blocks). Every node is emitted - use/param members,
+// field/effect lines, behavior blocks, nested containers and placeholder
+// kinds - so generate(parse(x)) is semantically lossless. Stage ordering
+// inside a process container follows the coupling edges when present
+// (topological flow order), falling back to canvas x position.
 
 import type { ModelDocument, ModelEdge, ModelNode } from './graph.js';
 
-function paramValue(value: string | number | boolean): string {
-  if (typeof value === 'number') {
-    return Number.isInteger(value) ? String(value) : String(value);
-  }
+/** Container kinds emit as nested `kind name { ... }` blocks. */
+const CONTAINER_KINDS: ReadonlySet<string> = new Set([
+  'process',
+  'agent',
+  'atomic',
+  'continuous',
+  'experiment',
+]);
+
+/** Serialize a field/param value. Parser-produced values are already
+ *  verbatim (numbers as numbers, quoted strings, calls, expressions), while
+ *  hand-built params follow the old rules: bare identifiers and distribution
+ *  calls pass through, anything else is a quoted string literal. */
+function fieldValue(value: string | number | boolean): string {
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
   }
-  // Bare identifiers (resource references) and distribution calls pass
-  // through; anything else is a string literal.
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
-    return value;
+  if (typeof value === 'number') {
+    return String(value);
   }
-  if (/^(rate|interarrival|poisson|exponential|normal|constant)\(.*\)$/.test(value.trim())) {
-    return value.trim();
+  const text = value.trim();
+  if (
+    text.startsWith('"') ||
+    /^[0-9]/.test(text) ||
+    /[/*+\-]/.test(text) ||
+    /^[A-Za-z_][A-Za-z0-9_]*\(.*\)$/.test(text)
+  ) {
+    return text;
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
+    return text;
   }
   return JSON.stringify(value);
-}
-
-function renderBlock(node: ModelNode, indent: string): string {
-  const params = Object.entries(node.params);
-  if (params.length === 0) {
-    return `${indent}${node.kind} ${node.name} { }`;
-  }
-  const body = params.map(([key, value]) => `${indent}  ${key} = ${paramValue(value)}`).join('\n');
-  return `${indent}${node.kind} ${node.name} {\n${body}\n${indent}}`;
 }
 
 // Order process stages by coupling edges (topological flow order, stable by
@@ -72,63 +81,86 @@ function orderStages(
   return [...ordered, ...leftovers];
 }
 
-/** Generate DSL v2 source for the document. Stage ordering inside the
- *  process container follows the coupling edges when present (topological
- *  flow order), falling back to canvas x position (left to right). */
+/** Generate DSL v2 source for the document. */
 export function generateDsl(document: ModelDocument): string {
   const modelName = document.name || 'Model';
-  const resources = document.nodes.filter((node) => node.kind === 'resource');
-  // Process-flow stages only. Drawing and behavior elements
-  // (presentation/statechart/action libraries) are canvas annotations and do
-  // not emit. Custom-library kinds (library 'process') emit too: the
-  // compiler reports them as unknown (LP2004) until the matching library is
-  // registered in the kernel. Container Nodes (kind 'process') emit as
-  // `process <name> { ... }` wrappers around their stages.
-  const stages = document.nodes.filter(
-    (node) =>
-      node.kind !== 'resource' &&
-      node.kind !== 'process' &&
-      (node.library === undefined || node.library === 'process'),
-  );
-  const containers = document.nodes.filter((node) => node.kind === 'process');
-
   const lines: string[] = [];
   lines.push(`model ${modelName} {`);
-  for (const resource of resources) {
-    lines.push(renderBlock(resource, '  '));
-  }
-  // Group stages by their container block (node.container, defaulting to the
-  // legacy single 'Flow' container) so multiple process containers round-trip
-  // through the DSL.
-  const byContainer = new Map<string, ModelNode[]>();
-  for (const stage of stages) {
-    const key = stage.container ?? 'Flow';
-    const group = byContainer.get(key);
-    if (group) {
-      group.push(stage);
-    } else {
-      byContainer.set(key, [stage]);
+
+  // Drawing/behavior annotations (presentation/statechart/action libraries)
+  // are canvas-only and never emit.
+  const emitCandidate = (node: ModelNode): boolean =>
+    node.library === undefined || node.library === 'process';
+  const childrenOf = (name: string): ModelNode[] =>
+    document.nodes.filter((node) => node.container === name && emitCandidate(node));
+
+  const emitNode = (node: ModelNode, indent: string) => {
+    if (node.kind === 'use') {
+      lines.push(`${indent}use ${node.name}`);
+      return;
     }
-  }
-  const emitContainer = (containerName: string) => {
-    lines.push(`  process ${containerName} {`);
-    const group = byContainer.get(containerName);
-    if (group) {
-      for (const stage of orderStages(group, document.edges, document)) {
-        lines.push(renderBlock(stage, '    '));
+    if (node.kind === 'param') {
+      const { type, value } = node.params;
+      lines.push(
+        `${indent}param ${node.name}${type ? `: ${type}` : ''} = ${fieldValue(value ?? '')}`,
+      );
+      return;
+    }
+    if (node.kind === 'field') {
+      lines.push(`${indent}${node.name} = ${fieldValue(node.params['value'] ?? '')}`);
+      return;
+    }
+    if (node.kind === 'effect') {
+      lines.push(`${indent}${node.name}`);
+      return;
+    }
+    if (node.kind.startsWith('on_')) {
+      lines.push(`${indent}${node.kind} {`);
+      for (const child of childrenOf(node.name)) {
+        emitNode(child, `${indent}  `);
       }
+      lines.push(`${indent}}`);
+      return;
+    }
+    const children = childrenOf(node.name);
+    const params = Object.entries(node.params);
+    if (params.length === 0 && children.length === 0) {
+      lines.push(`${indent}${node.kind} ${node.name} { }`);
+      return;
+    }
+    lines.push(`${indent}${node.kind} ${node.name} {`);
+    for (const [key, value] of params) {
+      lines.push(`${indent}  ${key} = ${fieldValue(value)}`);
+    }
+    for (const child of children) {
+      emitNode(child, `${indent}  `);
+    }
+    lines.push(`${indent}}`);
+  };
+
+  const isDeclarationLeaf = (node: ModelNode): boolean =>
+    node.kind !== 'use' &&
+    node.kind !== 'param' &&
+    node.kind !== 'resource' &&
+    node.kind !== 'field' &&
+    node.kind !== 'effect' &&
+    !node.kind.startsWith('on_') &&
+    !CONTAINER_KINDS.has(node.kind);
+
+  const topLevel = document.nodes.filter((node) => !node.container && emitCandidate(node));
+  // Legacy data without a process container node: its bare stages fall back
+  // to the single 'Flow' process so the DSL stays loadable.
+  const orphanLeaves = topLevel.filter(isDeclarationLeaf);
+  const direct = topLevel.filter((node) => !isDeclarationLeaf(node));
+  for (const node of direct) {
+    emitNode(node, '  ');
+  }
+  if (orphanLeaves.length > 0) {
+    lines.push('  process Flow {');
+    for (const stage of orderStages(orphanLeaves, document.edges, document)) {
+      emitNode(stage, '    ');
     }
     lines.push('  }');
-  };
-  // Container Nodes first, in document order (empty containers emit too);
-  // then any orphan stage groups (legacy data without a container Node).
-  const emitted = new Set<string>();
-  for (const container of containers) {
-    emitContainer(container.name);
-    emitted.add(container.name);
-  }
-  for (const containerName of [...byContainer.keys()].filter((name) => !emitted.has(name)).sort()) {
-    emitContainer(containerName);
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;

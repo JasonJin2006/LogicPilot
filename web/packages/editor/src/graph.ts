@@ -5,13 +5,10 @@
 // the IDE can layer undo/redo and diagnostics on top without mutating
 // shared state.
 
-export type BlockKind =
-  | 'resource'
-  | 'source'
-  | 'queue'
-  | 'service'
-  | 'sink'
-  | 'process';
+// Any DSL v2 member kind: the five kernel blocks, container kinds and
+// library-registered or still-unknown kinds (the latter render as
+// placeholder nodes so the canvas never drops DSL members).
+export type BlockKind = string;
 
 /** Block kinds that are containers: their children (nodes whose `container`
  *  equals the container's name) form a subgraph edited on its own canvas. */
@@ -33,6 +30,10 @@ export interface ModelNode {
    *  'statechart', 'action', ...). Process-flow blocks emit into the DSL;
    *  drawing/behavior elements do not. Legacy nodes leave it undefined. */
   library?: string;
+  /** True for kinds the canvas cannot render yet: the node stays in the
+   *  model and the DSL round-trip (never dropped), shown as a grey
+   *  placeholder frame. */
+  placeholder?: boolean;
 }
 
 /** A sequential coupling between two block instances (process flow). */
