@@ -7,6 +7,7 @@ import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';
 import { Workspace } from './layout/Workspace';
 import { InfoDialog } from './layout/InfoDialog';
+import { PromptDialog } from './layout/PromptDialog';
 import { NewProjectDialog } from './run/NewProjectDialog';
 import { RunDialog } from './run/RunDialog';
 import { SettingsDialog } from './run/SettingsDialog';
@@ -56,6 +57,7 @@ export default function App() {
         {settingsOpen && <SettingsDialog />}
         {runDialogOpen && <RunDialog />}
         <NewProjectDialog />
+        <PromptDialog />
         <InfoDialog />
       </div>
     </>

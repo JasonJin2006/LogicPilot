@@ -16,6 +16,10 @@ interface ProjectState {
   dirty: boolean;
   openBundle: (bundle: ProjectBundle) => void;
   setPath: (path: string | null) => void;
+  /** Apply an edit to the bundle's files and mark the project dirty. */
+  updateFiles: (
+    updater: (files: Record<string, string>) => Record<string, string>,
+  ) => void;
   markDirty: () => void;
   markClean: () => void;
   setDirty: (dirty: boolean) => void;
@@ -30,6 +34,14 @@ export const useProjectStore = create<ProjectState>()(
       dirty: false,
       openBundle: (bundle) => set({ bundle, dirty: false }),
       setPath: (path) => set({ path }),
+      updateFiles: (updater) =>
+        set((state) => {
+          if (!state.bundle) return {};
+          return {
+            bundle: { ...state.bundle, files: updater(state.bundle.files) },
+            dirty: true,
+          };
+        }),
       markDirty: () => set({ dirty: true }),
       markClean: () => set({ dirty: false }),
       setDirty: (dirty) => set({ dirty }),

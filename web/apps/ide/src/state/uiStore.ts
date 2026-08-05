@@ -7,6 +7,13 @@ interface UiState {
   settingsOpen: boolean;
   runDialogOpen: boolean;
   newProjectOpen: boolean;
+  prompt: {
+    title: string;
+    label: string;
+    initial: string;
+    submitLabel?: string;
+    onSubmit: (value: string) => void;
+  } | null;
   info: { title: string; body: string } | null;
   openSettings: () => void;
   closeSettings: () => void;
@@ -14,6 +21,8 @@ interface UiState {
   closeRunDialog: () => void;
   openNewProject: () => void;
   closeNewProject: () => void;
+  openPrompt: (prompt: UiState['prompt']) => void;
+  closePrompt: () => void;
   openInfo: (title: string, body: string) => void;
   closeInfo: () => void;
 }
@@ -22,6 +31,7 @@ export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   runDialogOpen: false,
   newProjectOpen: false,
+  prompt: null,
   info: null,
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
@@ -29,6 +39,8 @@ export const useUiStore = create<UiState>((set) => ({
   closeRunDialog: () => set({ runDialogOpen: false }),
   openNewProject: () => set({ newProjectOpen: true }),
   closeNewProject: () => set({ newProjectOpen: false }),
+  openPrompt: (prompt) => set({ prompt }),
+  closePrompt: () => set({ prompt: null }),
   openInfo: (title, body) => set({ info: { title, body } }),
   closeInfo: () => set({ info: null }),
 }));

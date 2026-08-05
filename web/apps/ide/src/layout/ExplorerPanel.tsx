@@ -1,12 +1,17 @@
-// Side panel (Explorer view): the project's file tree. The source files
-// (model DSL + canvas presentation) come from the open *.lpproj bundle when
-// one is loaded, otherwise they are derived from the live canvas document.
-// build/ and results/ are derived-artifact folders that the CLI materializes
-// (docs/specs/project-format.md).
+// Side panel (Explorer view): the project's file tree. Source files come
+// from the open *.lpproj bundle; build/ and results/ are derived-artifact
+// folders. Right-click on a folder creates a file, on a file renames or
+// deletes it - all edits update the bundle in place (the Project panel
+// re-parses the changed DSL automatically) and mark the project dirty.
 
+import { useState } from 'react';
+import type { MouseEvent } from 'react';
 import { FileCode2, FileJson2, Folder, FolderOpen } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
+import { useUiStore } from '../state/uiStore';
+import { ContextMenu } from './ContextMenu';
+import type { ContextAction } from './ContextMenu';
 
 interface TreeFile {
   name: string;
@@ -82,11 +87,24 @@ function treeFromPaths(paths: string[]): TreeFolder[] {
   return roots;
 }
 
-function FileRow({ file, indent }: { file: TreeFile; indent: number }) {
+function FileRow({
+  file,
+  indent,
+  dataPath,
+}: {
+  file: TreeFile;
+  indent: number;
+  dataPath?: string;
+}) {
   const Icon = file.kind === 'dsl' ? FileCode2 : FileJson2;
   const muted = file.kind === 'muted' || file.kind === 'ir';
   return (
-    <div className="tree-row tree-file" style={{ paddingLeft: indent * 14 + 8 }} title={file.path}>
+    <div
+      className="tree-row tree-file"
+      style={{ paddingLeft: indent * 14 + 8 }}
+      title={file.path}
+      data-path={dataPath}
+    >
       {file.kind === 'ir' || file.kind === 'muted' ? (
         <span className="tree-glyph tree-glyph-muted">·</span>
       ) : (
@@ -99,13 +117,22 @@ function FileRow({ file, indent }: { file: TreeFile; indent: number }) {
   );
 }
 
-function FolderRow({ folder, indent }: { folder: TreeFolder; indent: number }) {
+function FolderRow({
+  folder,
+  indent,
+  dataDir,
+}: {
+  folder: TreeFolder;
+  indent: number;
+  dataDir?: string;
+}) {
   return (
     <>
       <div
         className={`tree-row tree-folder${folder.muted ? ' tree-muted' : ''}`}
         style={{ paddingLeft: indent * 14 + 8 }}
         title={folder.path}
+        data-dir={dataDir}
       >
         <span className="tree-glyph">
           <Folder size={12} />
@@ -114,7 +141,12 @@ function FolderRow({ folder, indent }: { folder: TreeFolder; indent: number }) {
       </div>
       {folder.children.map((child) =>
         isFolder(child) ? (
-          <FolderRow key={child.path} folder={child} indent={indent + 1} />
+          <FolderRow
+            key={child.path}
+            folder={child}
+            indent={indent + 1}
+            dataDir={child.muted ? undefined : child.path}
+          />
         ) : (
           <FileRow key={child.path} file={child} indent={indent + 1} />
         ),
@@ -128,6 +160,11 @@ export function ExplorerPanel() {
   const bundle = useProjectStore((state) => state.bundle);
   const dirty = useProjectStore((state) => state.dirty);
   const projectPath = useProjectStore((state) => state.path);
+  const updateFiles = useProjectStore((state) => state.updateFiles);
+  const openPrompt = useUiStore((state) => state.openPrompt);
+  const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(
+    null,
+  );
 
   const rootName = bundle ? bundle.manifest.name : `${modelDoc.name || 'Model'} (unsaved)`;
   const sourceFolders = treeFromPaths(
@@ -136,19 +173,84 @@ export function ExplorerPanel() {
       : ['model/main.lp', 'presentation/main.canvas.json'],
   );
 
+  const newFile = (dir: string) => {
+    openPrompt({
+      title: 'New file',
+      label: 'file name',
+      initial: 'new.lp',
+      submitLabel: 'Create',
+      onSubmit: (name) => {
+        const path = dir === '' ? name : `${dir}/${name}`;
+        const stem = name.replace(/\.lp$/, '');
+        const content = path.endsWith('.lp') ? `model ${stem} {\n}\n` : '';
+        updateFiles((files) => ({ ...files, [path]: content }));
+      },
+    });
+  };
+
+  const renameFile = (path: string, name: string) => {
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+    openPrompt({
+      title: 'Rename file',
+      label: 'file name',
+      initial: name,
+      submitLabel: 'Rename',
+      onSubmit: (value) =>
+        updateFiles((files) => {
+          const next = { ...files };
+          const content = next[path] ?? '';
+          delete next[path];
+          next[`${dir}${value}`] = content;
+          return next;
+        }),
+    });
+  };
+
+  const deleteFileRow = (path: string) =>
+    updateFiles((files) => {
+      const next = { ...files };
+      delete next[path];
+      return next;
+    });
+
+  const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    if (!bundle) {
+      return;
+    }
+    const row = (event.target as Element).closest('.tree-row');
+    if (!row) {
+      return;
+    }
+    const path = row.getAttribute('data-path');
+    const dir = row.getAttribute('data-dir');
+    const actions: ContextAction[] = [];
+    if (path !== null) {
+      const name = path.slice(path.lastIndexOf('/') + 1);
+      actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
+      actions.push({
+        label: 'Delete',
+        danger: true,
+        onSelect: () => deleteFileRow(path),
+      });
+    } else if (dir !== null) {
+      actions.push({ label: 'New file...', onSelect: () => newFile(dir) });
+    }
+    if (actions.length > 0) {
+      setMenu({ x: event.clientX, y: event.clientY, actions });
+    }
+  };
+
   return (
-    <div className="side-panel-body explorer-panel">
+    <div className="side-panel-body explorer-panel" onContextMenu={onContextMenu}>
       <div className="tree-row tree-root">
         <span className="tree-glyph">
           {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}
         </span>
         <span className="tree-label">{rootName}</span>
-        {bundle && dirty && (
-          <span className="tree-dirty-dot" title="unsaved changes" />
-        )}
+        {bundle && dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
       </div>
       {sourceFolders.map((entry) => (
-        <FolderRow key={entry.path} folder={entry} indent={1} />
+        <FolderRow key={entry.path} folder={entry} indent={1} dataDir={entry.path} />
       ))}
       {ARTIFACT_ROWS.map((entry) => (
         <FolderRow key={entry.path} folder={entry} indent={1} />
@@ -160,6 +262,14 @@ export function ExplorerPanel() {
             : `已保存工程（${Object.keys(bundle.files).length} 个源文件）`
           : '尚未保存为工程；File > Save 生成 .lpproj'}
       </div>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          actions={menu.actions}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
