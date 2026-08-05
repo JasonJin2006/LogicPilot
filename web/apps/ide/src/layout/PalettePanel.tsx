@@ -4,11 +4,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
-import { Plus } from 'lucide-react';
-import { setDraggedKind } from '../model/paletteDnd';
+import { GitBranch, Plus } from 'lucide-react';
+import { sceneContainerFromFile } from '../project/project';
+import { setDraggedKind, setDraggedScene } from '../model/paletteDnd';
 import { BLOCK_DEFS, LIBRARIES } from '../model/blockDefs';
 import { BlockIcon } from '../model/BlockIcon';
 import { usePaletteStore } from '../state/paletteStore';
+import { useProjectStore } from '../state/projectStore';
 
 const DRAG_IMAGE_CLASS = 'palette-drag-image';
 const DRAG_IMAGE_SIZE = 34;
@@ -20,6 +22,12 @@ interface PaletteBlock {
   hint?: string;
   in?: boolean;
   out?: boolean;
+}
+
+interface PaletteScene {
+  path: string;
+  name: string;
+  kind: string;
 }
 
 // Browsers render the drag ghost from a live element: append an offscreen
@@ -46,6 +54,7 @@ export function PalettePanel() {
   const recentKinds = usePaletteStore((state) => state.recentKinds);
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
+  const files = useProjectStore((state) => state.bundle?.files);
   const [importError, setImportError] = useState('');
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -94,6 +103,21 @@ export function PalettePanel() {
     visible = customLibraries[library]?.blocks ?? [];
   }
 
+  const scenes: PaletteScene[] =
+    files === undefined
+      ? []
+      : Object.keys(files)
+          .filter((path) => path.startsWith('model/scenes/') && path.endsWith('.lp'))
+          .map((path) => {
+            const container = sceneContainerFromFile(path, files[path]!);
+            return {
+              path,
+              name: container?.name ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.lp$/, ''),
+              kind: container?.kind ?? 'process',
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
+
   const onImportFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -107,6 +131,7 @@ export function PalettePanel() {
   const tabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
+    { id: 'scenes', label: 'Scenes' },
     ...LIBRARIES.map((entry) => ({ id: entry.id, label: entry.name })),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
@@ -137,7 +162,37 @@ export function PalettePanel() {
       </div>
       {importError !== '' && <p className="palette-import-error">{importError}</p>}
       <ul className="palette-list">
-        {visible.map((block) => (
+        {library === 'scenes'
+          ? scenes.map((scene) => (
+              <li
+                key={scene.path}
+                className="palette-item"
+                draggable
+                title={`Instance scene ${scene.name} (${scene.path})`}
+                onDragStart={(event) => {
+                  event.dataTransfer.setData('text/plain', 'scene');
+                  event.dataTransfer.setData('application/x-logicpilot-scene', scene.path);
+                  event.dataTransfer.effectAllowed = 'copy';
+                  setDraggedScene(scene.path);
+                  event.currentTarget.classList.add('dragging');
+                  installIconDragImage(event, event.currentTarget.querySelector('.palette-chip-icon svg'));
+                }}
+                onDragEnd={(event) => {
+                  event.currentTarget.classList.remove('dragging');
+                  removeDragImages();
+                }}
+              >
+                <span className="palette-chip">
+                  <span className="palette-chip-icon">
+                    <GitBranch size={15} />
+                    <span className="palette-port port-in" aria-hidden />
+                    <span className="palette-port port-out" aria-hidden />
+                  </span>
+                </span>
+                <span className="palette-name">{scene.name}</span>
+              </li>
+            ))
+          : visible.map((block) => (
           <li
             key={block.kind}
             className="palette-item"
@@ -165,7 +220,7 @@ export function PalettePanel() {
             </span>
             <span className="palette-name">{block.name}</span>
           </li>
-        ))}
+            ))}
       </ul>
     </div>
   );

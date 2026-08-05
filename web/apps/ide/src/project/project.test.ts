@@ -5,11 +5,13 @@ import { parseProjectSource } from './projectTree';
 import {
   PROJECT_SCHEMA,
   DEFAULT_MODEL_PATH,
+  addInstanceLine,
   bundleToJson,
   createProject,
   createProjectBundle,
   mergeCanvasSplit,
   mergeModelSource,
+  nextInstanceName,
   parseProjectBundle,
   projectToDocument,
   sceneContainerFromFile,
@@ -193,6 +195,27 @@ describe('project bundle', () => {
     const instance = parsed.model!.members.find((member) => member.kind === 'instance')!;
     expect(instance.name).toBe('Flow');
     expect(instance.path).toBe('model/scenes/Flow.lp');
+  });
+
+  it('addInstanceLine inserts an instance member into the model body', () => {
+    const source = 'model M {\n  resource Server { }\n}\n';
+    const next = addInstanceLine(source, 'model/scenes/Flow.lp', 'Flow');
+    expect(next).toContain('instance Flow = "model/scenes/Flow.lp"');
+    const reparsed = parseProjectSource(next);
+    expect(reparsed.ok).toBe(true);
+    const instance = reparsed.model!.members.find((member) => member.kind === 'instance')!;
+    expect(instance.name).toBe('Flow');
+    expect(instance.path).toBe('model/scenes/Flow.lp');
+    // The inserted member lives inside the model body, before the closing brace.
+    expect(next.indexOf('instance Flow')).toBeLessThan(next.indexOf('\n}\n'));
+  });
+
+  it('nextInstanceName avoids collisions with existing members', () => {
+    const source =
+      'model M {\n  instance Flow = "model/scenes/Flow.lp"\n  instance Flow2 = "model/scenes/Flow2.lp"\n}\n';
+    expect(nextInstanceName(source, 'Flow')).toBe('Flow3');
+    expect(nextInstanceName(source, 'New')).toBe('New');
+    expect(nextInstanceName('model M {\n}\n', 'Flow')).toBe('Flow');
   });
 
   it('split emits instances and merge resolves them back to inline containers', () => {

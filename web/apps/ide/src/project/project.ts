@@ -136,6 +136,40 @@ export function sceneContainerFromFile(
   return first ? { kind: first.kind, name: first.name } : null;
 }
 
+/** Insert an `instance <name> = "<scene-path>"` member into the model body. */
+export function addInstanceLine(
+  source: string,
+  path: string,
+  name: string,
+): string {
+  const parsed = parseProjectSource(source);
+  if (!parsed.ok || !parsed.model) {
+    return source;
+  }
+  return insertMember(
+    source,
+    parsed.model.bodyClose,
+    '  ',
+    `instance ${name} = "${path}"`,
+  );
+}
+
+/** A unique member name based on `baseName` (Flow, Flow2, Flow3, ...). */
+export function nextInstanceName(source: string, baseName: string): string {
+  const parsed = parseProjectSource(source);
+  const names = new Set(
+    parsed.ok && parsed.model ? parsed.model.members.map((member) => member.name) : [],
+  );
+  let n = 1;
+  for (;;) {
+    const candidate = n === 1 ? baseName : `${baseName}${n}`;
+    if (!names.has(candidate)) {
+      return candidate;
+    }
+    n += 1;
+  }
+}
+
 /** Part files present in `files` (kind-based leaf parts), excluding main.lp
  *  and scene files (scenes are referenced by `instance` members instead). */
 export function collectModelParts(files: Record<string, string>): string[] {

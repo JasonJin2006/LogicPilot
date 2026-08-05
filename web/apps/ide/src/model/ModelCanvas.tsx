@@ -9,7 +9,10 @@ import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, ModelNode } from '@logicpilot/editor';
-import { getDraggedKind, getDraggedLibrary } from './paletteDnd';
+import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd';
+import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
+import { useProjectStore } from '../state/projectStore';
+import { syncCanvasFromProject } from '../state/projectSync';
 import {
   BLOCK_DEFAULTS,
   blockPorts,
@@ -216,6 +219,34 @@ export function ModelCanvas() {
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    // A palette Scenes entry instances the referenced scene: add an
+    // `instance <name> = "<scene-path>"` member to the model body, reload the
+    // canvas and focus the new container so blocks can be dropped into it.
+    const scenePath =
+      event.dataTransfer.getData('application/x-logicpilot-scene') || getDraggedScene();
+    if (scenePath) {
+      const bundle = useProjectStore.getState().bundle;
+      const mainSource = bundle ? bundle.files[bundle.manifest.model] : undefined;
+      const sceneSource = bundle ? bundle.files[scenePath] : undefined;
+      if (mainSource !== undefined && sceneSource !== undefined) {
+        const container = sceneContainerFromFile(scenePath, sceneSource);
+        const baseName =
+          container?.name ??
+          scenePath.slice(scenePath.lastIndexOf('/') + 1).replace(/\.lp$/, '');
+        const instanceName = nextInstanceName(mainSource, baseName);
+        const nextMain = addInstanceLine(mainSource, scenePath, instanceName);
+        useProjectStore.getState().updateFiles((files) => ({
+          ...files,
+          [bundle!.manifest.model]: nextMain,
+        }));
+        syncCanvasFromProject();
+        if (container) {
+          setFocusView({ kind: container.kind, name: instanceName });
+        }
+      }
+      select(null);
+      return;
+    }
     const kind =
       (event.dataTransfer.getData('text/plain') as BlockKind) || (getDraggedKind() as BlockKind);
     const library =
