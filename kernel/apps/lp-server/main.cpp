@@ -22,6 +22,16 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "server.h"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <tlhelp32.h>
+#else
+#include <unistd.h>
+#endif
+
 namespace {
 
 void print_usage() {
@@ -65,6 +75,48 @@ void handle_signal(int) {
     g_server->stop();
   }
 }
+
+// Parent-process watchdog: the desktop app server (Node) spawns lp-server
+// and shuts it down with a tree-kill on a clean exit, but when the Tauri
+// shell is killed hard (crash / force-quit) that cleanup never runs. Poll
+// the parent a few times a second and exit when it is gone, so the gateway
+// never lingers as an orphaned console window.
+#if defined(_WIN32)
+DWORD find_parent_pid() {
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return 0;
+  }
+  PROCESSENTRY32W entry;
+  entry.dwSize = sizeof(entry);
+  const DWORD self = GetCurrentProcessId();
+  DWORD parent = 0;
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      if (entry.th32ProcessID == self) {
+        parent = entry.th32ParentProcessID;
+        break;
+      }
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+  return parent;
+}
+
+bool parent_process_alive(DWORD pid) {
+  if (pid == 0) {
+    return true;  // parent unknown: nothing to watch
+  }
+  HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (handle == nullptr) {
+    return false;
+  }
+  DWORD code = 0;
+  const BOOL ok = GetExitCodeProcess(handle, &code);
+  CloseHandle(handle);
+  return ok != 0 && code == STILL_ACTIVE;
+}
+#endif
 
 }  // namespace
 
@@ -196,6 +248,11 @@ int main(int argc, char** argv) {
   g_server = &server;
   std::signal(SIGINT, handle_signal);
   std::signal(SIGTERM, handle_signal);
+#if defined(_WIN32)
+  const DWORD parent_pid = find_parent_pid();
+#else
+  const pid_t parent_pid = getppid();
+#endif
 
   fmt::print(
       "lp-server: ws://127.0.0.1:{}/sim  model={}  seed={}  reps={}  "
@@ -207,6 +264,15 @@ int main(int argc, char** argv) {
 
   // Block until stop() runs (signal handler or fatal client error).
   while (server.running()) {
+#if defined(_WIN32)
+    if (!parent_process_alive(parent_pid)) {
+      break;
+    }
+#else
+    if (getppid() != parent_pid) {
+      break;
+    }
+#endif
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   server.stop();

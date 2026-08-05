@@ -48,7 +48,9 @@ function findLpServer() {
     return process.env.LP_SERVER;
   }
   const exe = process.platform === 'win32' ? 'lp-server.exe' : 'lp-server';
-  for (const dir of ['integration-dev', 'local-mingw']) {
+  // The MSVC dev build is the maintained one on Windows; the older mingw
+  // builds are kept as fallbacks.
+  for (const dir of ['windows-msvc-dev', 'integration-dev', 'local-mingw']) {
     const candidate = join(root, 'build', dir, 'kernel', exe);
     if (existsSync(candidate)) {
       return candidate;
@@ -165,6 +167,22 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+  // Watch the parent: the Tauri shell can be killed hard (crash / force
+  // quit), which never runs its tree-kill; shut down then so the gateway is
+  // not left orphaned next to the dead app.
+  const parentPid = process.ppid;
+  const parentWatchdog = setInterval(() => {
+    let alive = true;
+    try {
+      process.kill(parentPid, 0);
+    } catch {
+      alive = false;
+    }
+    if (!alive) {
+      clearInterval(parentWatchdog);
+      shutdown();
+    }
+  }, 2000);
   // The Tauri parent exits -> its stdout pipe closes -> shut the gateway.
   process.stdout.on('end', shutdown);
   process.stdout.on('close', shutdown);
