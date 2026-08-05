@@ -196,6 +196,7 @@ export function parseDsl(source: string): ParseResult {
     kind: BlockKind;
     name: string;
     params: Record<string, string | number | boolean>;
+    container?: string;
   }> = [];
 
   while (!parser.atPunct('}')) {
@@ -224,7 +225,7 @@ export function parseDsl(source: string): ParseResult {
       continue;
     }
     if (parser.expectWord('process') !== null) {
-      parser.expectWord(); // process name
+      const processName = parser.expectWord(); // process container name
       if (!parser.expectPunct('{')) {
         return fail("expected '{' after process name");
       }
@@ -244,7 +245,12 @@ export function parseDsl(source: string): ParseResult {
         if (!parser.expectPunct('}')) {
           return fail(`unterminated process block '${name}'`);
         }
-        stages.push({ kind: kind as BlockKind, name, params });
+        stages.push({
+          kind: kind as BlockKind,
+          name,
+          params,
+          container: processName ?? undefined,
+        });
       }
       if (!parser.expectPunct('}')) {
         return fail('unterminated process block');
@@ -280,6 +286,7 @@ export function parseDsl(source: string): ParseResult {
       x: 160 + index * 180,
       y: 240,
       params: { ...stage.params },
+      container: stage.container,
     });
   });
 

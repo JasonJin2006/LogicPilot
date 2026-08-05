@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { parseDsl } from '@logicpilot/editor';
 import { mergeModelSource } from '../project/project';
+import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -118,6 +119,8 @@ export function ModelInfoPanel() {
   const openPrompt = useUiStore((state) => state.openPrompt);
   const document = useModelStore((state) => state.document);
   const loadDocument = useModelStore((state) => state.loadDocument);
+  const focusView = useCanvasView((state) => state.view);
+  const setFocusView = useCanvasView((state) => state.setView);
   const selected = useModelStore((state) =>
     state.selectedId !== null
       ? state.document.nodes.find((node) => node.id === state.selectedId)
@@ -294,6 +297,8 @@ export function ModelInfoPanel() {
     const hasChildren = member.children.length > 0;
     const isSelected =
       selected !== undefined && selected.kind === member.kind && selected.name === member.name;
+    const isViewing =
+      focusView !== null && focusView.kind === member.kind && focusView.name === member.name;
     const KindIcon = KIND_ICONS[member.kind] ?? Boxes;
     const actions: ContextAction[] = [];
     if (member.kind === 'process') {
@@ -322,10 +327,19 @@ export function ModelInfoPanel() {
     return (
       <div key={key}>
         <div
-          className={`tree-row tree-file${isSelected ? ' tree-selected' : ''}`}
+          className={`tree-row tree-file${isSelected ? ' tree-selected' : ''}${isViewing ? ' tree-viewing' : ''}`}
           style={{ paddingLeft: (depth + 1) * 14 + 8 }}
           title={`${member.kind} ${member.name} — ${file}`}
-          onClick={hasChildren ? () => toggle(key) : undefined}
+          onClick={
+            hasChildren
+              ? member.kind === 'process'
+                ? () => {
+                    toggle(key);
+                    setFocusView({ kind: member.kind, name: member.name });
+                  }
+                : () => toggle(key)
+              : undefined
+          }
           onContextMenu={(event) => {
             event.preventDefault();
             showMenu(event.clientX, event.clientY, actions);
@@ -366,10 +380,13 @@ export function ModelInfoPanel() {
     return (
       <div key={key}>
         <div
-          className="tree-row tree-folder"
+          className={`tree-row tree-folder${focusView === null ? ' tree-viewing' : ''}`}
           style={{ paddingLeft: 8 }}
           title={entry.path}
-          onClick={() => toggle(key)}
+          onClick={() => {
+            toggle(key);
+            setFocusView(null);
+          }}
           onContextMenu={(event) => {
             event.preventDefault();
             showMenu(event.clientX, event.clientY, actions);

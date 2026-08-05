@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { useModelStore } from '../state/modelStore';
+import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, ModelNode } from '@logicpilot/editor';
 import { getDraggedKind, getDraggedLibrary } from './paletteDnd';
 import {
@@ -65,6 +66,13 @@ export function ModelCanvas() {
     nodes: Array.isArray(rawDocument?.nodes) ? rawDocument.nodes : [],
     edges: Array.isArray(rawDocument?.edges) ? rawDocument.edges : [],
   };
+  // The canvas can focus on one container Node's subgraph (e.g. process
+  // Flow); null = the model root showing everything.
+  const focusView = useCanvasView((state) => state.view);
+  const setFocusView = useCanvasView((state) => state.setView);
+  const visibleDocument = documentForView(document, focusView);
+  const visibleNodes = visibleDocument.nodes;
+  const visibleEdges = visibleDocument.edges;
   const selectedId = useModelStore((state) => state.selectedId);
   const addBlock = useModelStore((state) => state.addBlock);
   const moveBlock = useModelStore((state) => state.moveBlock);
@@ -217,7 +225,19 @@ export function ModelCanvas() {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left - view.panX) / view.scale;
     const y = (event.clientY - rect.top - view.panY) / view.scale;
-    addBlock({ kind, name: kind, x, y, params: BLOCK_DEFAULTS[kind], library });
+    const isStage =
+      kind !== 'resource' && (library === undefined || library === 'process');
+    addBlock({
+      kind,
+      name: kind,
+      x,
+      y,
+      params: BLOCK_DEFAULTS[kind],
+      library,
+      // Stages belong to a process container: the focused one, or the legacy
+      // single 'Flow' container at the model root.
+      container: isStage ? (focusView ? focusView.name : 'Flow') : undefined,
+    });
     recordUse(kind);
     select(null);
   };
@@ -237,7 +257,7 @@ export function ModelCanvas() {
     const tolerance = 12 / view.scale;
     let best: string | null = null;
     let bestDistance = tolerance;
-    for (const node of document.nodes) {
+    for (const node of visibleNodes) {
       if (node.id === fromId || !blockPorts(node.kind).in) continue;
       const anchor = portAnchor(node, 'in');
       const distance = Math.hypot(anchor.x - world.x, anchor.y - world.y);
@@ -404,15 +424,15 @@ export function ModelCanvas() {
   const yAxisVisible = panX >= 0 && panX <= size.width;
 
   // Edges (out -> in) rendered in world coordinates, plus the live wire.
-  const edgeSegments = document.edges.flatMap((edge) => {
-    const from = document.nodes.find((node) => node.id === edge.from);
-    const to = document.nodes.find((node) => node.id === edge.to);
+  const edgeSegments = visibleEdges.flatMap((edge) => {
+    const from = visibleNodes.find((node) => node.id === edge.from);
+    const to = visibleNodes.find((node) => node.id === edge.to);
     if (!from || !to) return [];
     return [{ id: edge.id, a: portAnchor(from, 'out'), b: portAnchor(to, 'in') }];
   });
   const wirePoints: Array<{ x: number; y: number }> = [];
   if (draftWire) {
-    const fromNode = document.nodes.find((node) => node.id === draftWire.fromId);
+  const fromNode = visibleNodes.find((node) => node.id === draftWire.fromId);
     if (fromNode) {
       wirePoints.push(portAnchor(fromNode, 'out'), { x: draftWire.x, y: draftWire.y });
     }
@@ -473,7 +493,7 @@ export function ModelCanvas() {
 
   // Presentation shapes: rendered as real drawing shapes in a bounds-fitted
   // svg inside the world layer (canvas annotations, not process blocks).
-  const shapeNodes = document.nodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
+  const shapeNodes = visibleNodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
   let shapesView: ReactElement | null = null;
   if (shapeNodes.length > 0) {
     const pad = 80;
@@ -517,6 +537,18 @@ export function ModelCanvas() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
+      {focusView && (
+        <div className="canvas-view-pill" title="Editing this container's subgraph">
+          <span>{focusView.name}</span>
+          <button
+            aria-label="Show the whole model"
+            title="Back to the whole model"
+            onClick={() => setFocusView(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <svg className="model-grid" width={size.width} height={size.height}>
         {verticals}
         {horizontals}
@@ -553,7 +585,7 @@ export function ModelCanvas() {
       >
         {edgesView}
         {shapesView}
-        {document.nodes.map((node) => {
+      {visibleNodes.map((node) => {
           if (PRESENTATION_KINDS.has(node.kind)) {
             return null; // rendered as a real shape above
           }
@@ -607,7 +639,7 @@ export function ModelCanvas() {
           );
         })}
       </div>
-      {document.nodes.length === 0 && (
+      {visibleNodes.length === 0 && (
         <div className="model-empty">Drag blocks from the palette to build a model.</div>
       )}
     </div>

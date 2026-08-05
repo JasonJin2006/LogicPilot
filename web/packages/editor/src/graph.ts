@@ -16,6 +16,9 @@ export interface ModelNode {
   x: number;
   y: number;
   params: Record<string, string | number | boolean>;
+  /** The containing process block's name (e.g. 'Flow'); undefined = model
+   *  level. The canvas can focus on one container's subgraph. */
+  container?: string;
   /** The palette library the block came from ('process', 'presentation',
    *  'statechart', 'action', ...). Process-flow blocks emit into the DSL;
    *  drawing/behavior elements do not. Legacy nodes leave it undefined. */
@@ -41,6 +44,7 @@ export interface AddNodeInput {
   x: number;
   y: number;
   params?: Record<string, string | number | boolean>;
+  container?: string;
   library?: string;
 }
 
@@ -67,6 +71,7 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
     x: input.x,
     y: input.y,
     params: { ...input.params },
+    container: input.container,
     library: input.library,
   };
   return { ...document, nodes: [...document.nodes, node] };

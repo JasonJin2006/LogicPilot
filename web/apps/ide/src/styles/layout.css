@@ -647,6 +647,13 @@
   border-radius: 4px;
 }
 
+.tree-viewing {
+  color: var(--on-accent);
+  font-weight: 600;
+  background: var(--accent);
+  border-radius: 4px;
+}
+
 .outline-section {
   display: flex;
   flex-direction: column;

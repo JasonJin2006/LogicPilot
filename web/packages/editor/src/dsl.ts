@@ -83,14 +83,10 @@ export function generateDsl(document: ModelDocument): string {
   // annotations and do not emit. Custom-library kinds (library 'process')
   // emit too: the compiler reports them as unknown (LP2004) until the
   // matching library is registered in the kernel.
-  const stages = orderStages(
-    document.nodes.filter(
-      (node) =>
-        node.kind !== 'resource' &&
-        (node.library === undefined || node.library === 'process'),
-    ),
-    document.edges,
-    document,
+  const stages = document.nodes.filter(
+    (node) =>
+      node.kind !== 'resource' &&
+      (node.library === undefined || node.library === 'process'),
   );
 
   const lines: string[] = [];
@@ -99,11 +95,26 @@ export function generateDsl(document: ModelDocument): string {
     lines.push(renderBlock(resource, '  '));
   }
   if (stages.length > 0) {
-    lines.push('  process Flow {');
+    // Group stages by their container block (node.container, defaulting to
+    // the legacy single 'Flow' container) so multiple process containers
+    // round-trip through the DSL.
+    const byContainer = new Map<string, ModelNode[]>();
     for (const stage of stages) {
-      lines.push(renderBlock(stage, '    '));
+      const key = stage.container ?? 'Flow';
+      const group = byContainer.get(key);
+      if (group) {
+        group.push(stage);
+      } else {
+        byContainer.set(key, [stage]);
+      }
     }
-    lines.push('  }');
+    for (const containerName of [...byContainer.keys()].sort()) {
+      lines.push(`  process ${containerName} {`);
+      for (const stage of orderStages(byContainer.get(containerName)!, document.edges, document)) {
+        lines.push(renderBlock(stage, '    '));
+      }
+      lines.push('  }');
+    }
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;
