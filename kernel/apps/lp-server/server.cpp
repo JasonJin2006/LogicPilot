@@ -25,6 +25,8 @@
 
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/devs/process_flow.h"
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
@@ -404,6 +406,78 @@ struct SimServer::Impl {
     const SeedStreams streams{params.seed};
     std::vector<ReplicationMetrics> results;
     bool cancelled = false;
+
+    // Generic-model batch path: models that are not the M/M/1 exponential
+    // family (delay/split/selectOutput flows, agent/atomic/continuous)
+    // cannot stream Tick frames yet, so each replication runs to completion
+    // and the run reports its summary stats via RunFinished.
+    if (config.generic_model && !config.model_bytes.empty()) {
+      IrLoadResult loaded = load_model_buffer(config.model_bytes.data(),
+                                              config.model_bytes.size());
+      if (!loaded.ok()) {
+        RunFinishedFrame failed;
+        failed.seq = ++seq_;
+        failed.run_id = run_id;
+        failed.status = 1;  // Failed
+        failed.error = "cannot load served model: " + loaded.message;
+        emit(build_run_finished_frame(failed), trace_run_finished(failed));
+        return;
+      }
+      std::string build_error;
+      auto model = build_replication_model(loaded.file, &build_error);
+      if (model == nullptr) {
+        RunFinishedFrame failed;
+        failed.seq = ++seq_;
+        failed.run_id = run_id;
+        failed.status = 1;
+        failed.error = "cannot build served model: " + build_error;
+        emit(build_run_finished_frame(failed), trace_run_finished(failed));
+        return;
+      }
+      for (std::uint64_t rep = 0; rep < params.reps; ++rep) {
+        ReplicationConfig rep_config;
+        rep_config.seed = streams.derive_state(rep)[0];
+        rep_config.arrivals = params.arrivals;
+        rep_config.warmup_arrivals = params.warmup;
+        results.push_back(model->run(rep_config, nullptr));
+        {
+          std::lock_guard lock{run_mutex_};
+          if (stop_request_) {
+            cancelled = true;
+            break;
+          }
+        }
+      }
+      RunFinishedFrame finished;
+      finished.seq = ++seq_;
+      finished.sim_time_ns = last_frame_sim_ns_;
+      finished.run_id = run_id;
+      if (cancelled) {
+        finished.status = 2;  // Cancelled
+      } else {
+        finished.status = 0;  // Completed
+        const ReplicationSummary summary =
+            summarize_replications(results, 0.95);
+        auto& stats = finished.stats;
+        stats.push_back({"reps", static_cast<double>(summary.reps)});
+        stats.push_back({"confidence", summary.confidence});
+        const auto add_metric = [&](const char* name,
+                                    const MetricSummary& m) {
+          stats.push_back({fmt::format("{}.mean", name), m.mean});
+          stats.push_back({fmt::format("{}.std", name), m.stddev});
+          stats.push_back({fmt::format("{}.ci_low", name), m.ci_low});
+          stats.push_back({fmt::format("{}.ci_high", name), m.ci_high});
+        };
+        add_metric("throughput", summary.throughput);
+        add_metric("L", summary.mean_in_system);
+        add_metric("Lq", summary.mean_in_queue);
+        add_metric("W", summary.mean_sojourn);
+        add_metric("Wq", summary.mean_wait);
+      }
+      emit(build_run_finished_frame(finished), trace_run_finished(finished));
+      return;
+    }
+
     for (std::uint64_t rep = 0; rep < params.reps; ++rep) {
       StreamRunConfig run_config;
       run_config.seed = streams.derive_state(rep)[0];

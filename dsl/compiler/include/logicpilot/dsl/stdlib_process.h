@@ -163,7 +163,7 @@ library process {
     out out: entity
 
     type: string = "timeout"
-    delayTime: float = 0
+    delayTime: distribution = exponential(1)
     capacity: int = 1
     maximumCapacity: bool = false
     entityLocation: expression = ""
@@ -268,9 +268,9 @@ library process {
     newAgentCombined: ref = ""
     changeDimensions: bool = false
     length: float = 0
-    width: float = 0
-  )lp",
-    R"lp(  height: float = 0
+   )lp",
+    R"lp( width: float = 0
+    height: float = 0
     entityLocation1: expression = ""
     entityLocation2: expression = ""
     entityLocation: expression = ""
@@ -554,9 +554,9 @@ library process {
     node: ref = ""
     attractor: expression = ""
     resource: ref = ""
-    agent: ref = ""
-    xYZ: float )lp",
-    R"lp(= 0
+    agent: ref )lp",
+    R"lp(= ""
+    xYZ: float = 0
     latitudeLongitude: float = 0
     nameOfPlace: string = ""
     destinationUseRotation: bool = false

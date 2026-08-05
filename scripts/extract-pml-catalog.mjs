@@ -354,6 +354,7 @@ const TYPE_OVERRIDES = {
   service: { resource: 'ref' },
   seize: { resource: 'ref' },
   source: { arrival: 'distribution' },
+  delay: { delayTime: 'distribution' },
 };
 
 /** Default overrides for kernel-facing fields (the DSL abstraction maps
@@ -362,6 +363,7 @@ const DEFAULT_OVERRIDES = {
   source: { arrival: 'rate(1)' },
   service: { seizeFromOnePool: true },
   seize: { seizeFromOnePool: true },
+  delay: { delayTime: 'exponential(1)' },
 };
 
 /** Map AnyLogic property-section h3 ids to our panel sections. */

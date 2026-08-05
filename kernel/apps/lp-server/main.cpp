@@ -235,6 +235,19 @@ int main(int argc, char** argv) {
       fmt::print(stderr, "error: {}\n", build_error);
       return 1;
     }
+    config.model_bytes = loaded.file.v2_bytes;
+    logicpilot::FlowRunParams flow_params;
+    std::string flow_error;
+    config.generic_model = !logicpilot::extract_flow_params(
+        loaded.file, flow_params, &flow_error);
+    if (!config.generic_model) {
+      // Carry the IR's actual M/M/1-family rates into the streaming driver.
+      config.lambda = flow_params.lambda;
+      config.mu = flow_params.mu;
+      config.servers = flow_params.servers;
+      config.failure_rate = flow_params.failure_rate;
+      config.repair_rate = flow_params.repair_rate;
+    }
     config.model_name = logicpilot::inspect_model(loaded.file);
   }
 

@@ -152,7 +152,7 @@ library process {
     out out: entity
 
     type: string = "timeout"
-    delayTime: float = 0
+    delayTime: distribution = exponential(1)
     capacity: int = 1
     maximumCapacity: bool = false
     entityLocation: expression = ""

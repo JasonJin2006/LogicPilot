@@ -1527,8 +1527,8 @@ export const BLOCK_CATALOG: CatalogBlock[] = [
       {
         name: "delayTime",
         displayName: "Delay time",
-        type: "float",
-        default: null,
+        type: "distribution",
+        default: "exponential(1)",
         validValues: null,
         visibleWhen: "type == \"timeout\"",
         section: "basic",
