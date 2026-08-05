@@ -65,8 +65,10 @@ Agent 唯一核心会把我们压回 AnyLogic 的运营仿真范畴，不采用�
 
 1. **步骤 1（本迭代）**：`container` 字段贯通 parse/generate；画布按视图过滤 +
    面包屑；Project 树点击容器节点聚焦。
-2. **步骤 2**：容器 Node 即 scene 文件（每容器一个文件，实例化/复用）；
-   自定义块库 = 可实例化的 Node 树。
+2. **步骤 2**（进行中）：容器 Node 即 scene 文件——已完成"每容器一个文件"
+   （`model/scenes/<name>.lp`，`splitModelSource` 按容器拆分、点 scene 文件
+   打开该容器画布、`lpcli` 合并编译）；剩余：**实例化/复用**（自定义块库 =
+   可实例化的 Node 树，模型文件按路径引用 scene）。
 3. **步骤 3**：画布分区严格化（根画布只显示模型级元素；容器画布显示其 children），
    多容器画布切换。
 

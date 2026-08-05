@@ -12,6 +12,7 @@ import {
   mergeModelSource,
   parseProjectBundle,
   projectToDocument,
+  sceneContainerFromFile,
   splitModelSource,
 } from './project';
 
@@ -78,8 +79,6 @@ describe('project bundle', () => {
     const bundle = createProject('Factory');
     expect(bundle.manifest.modelParts).toEqual([
       'model/resources.lp',
-      'model/process.lp',
-      'model/agents.lp',
       'model/experiments.lp',
     ]);
     expect(bundle.files['model/main.lp']).toContain('model Factory');
@@ -108,12 +107,14 @@ describe('project bundle', () => {
     const split = splitModelSource(source);
     expect(split['model/main.lp']).toContain('model M');
     expect(split['model/resources.lp']).toContain('resource Server');
-    expect(split['model/process.lp']).toContain('process Flow');
+    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
     expect(split['model/experiments.lp']).toContain('experiment Tune');
-    expect(split['model/agents.lp']).toBeUndefined();
+    expect(split['model/process.lp']).toBeUndefined();
+    expect(split['model/scenes/Drone.lp']).toBeUndefined();
     // Parts keep their model-body indentation so the merged model stays tidy.
     expect(split['model/resources.lp']).toMatch(/^  resource Server/);
     expect(split['model/experiments.lp']).toMatch(/^  experiment Tune/);
+    expect(split['model/scenes/Flow.lp']).toMatch(/^  process Flow/);
   });
 
   it('mergeModelSource reconstructs the full model from parts', () => {
@@ -121,7 +122,7 @@ describe('project bundle', () => {
     const files = {
       'model/main.lp': main,
       'model/resources.lp': '  resource Server {\n    capacity = 1\n  }\n',
-      'model/process.lp': '  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n',
+      'model/scenes/Flow.lp': '  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n',
       'model/experiments.lp': '  experiment Tune {\n    budget = 20\n  }\n',
     };
     const merged = mergeModelSource(main, files);
@@ -130,11 +131,9 @@ describe('project bundle', () => {
     expect(merged).toContain('experiment Tune');
     const parsed = parseProjectSource(merged);
     expect(parsed.ok).toBe(true);
-    expect(parsed.model!.members.map((member) => member.kind)).toEqual([
-      'resource',
-      'process',
-      'experiment',
-    ]);
+    expect(new Set(parsed.model!.members.map((member) => member.kind))).toEqual(
+      new Set(['resource', 'process', 'experiment']),
+    );
   });
 
   it('split then merge is lossless for resources/process/experiments', () => {
@@ -170,8 +169,20 @@ describe('project bundle', () => {
     const merged = mergeCanvasSplit(base, split, current);
     expect(merged.files['model/experiments.lp']).toContain('experiment Tune');
     expect(merged.files['model/resources.lp']).toContain('resource');
-    expect(merged.files['model/process.lp']).toBeDefined();
-    expect(merged.manifest.modelParts).toHaveLength(4);
+    expect(merged.files['model/scenes/Flow.lp']).toContain('process');
+    expect(merged.manifest.modelParts).toEqual([
+      'model/experiments.lp',
+      'model/resources.lp',
+      'model/scenes/Flow.lp',
+    ]);
+  });
+
+  it('sceneContainerFromFile identifies the container of a scene file', () => {
+    expect(
+      sceneContainerFromFile('model/scenes/Flow.lp', '  process Flow {\n    queue Q { }\n  }\n'),
+    ).toEqual({ kind: 'process', name: 'Flow' });
+    expect(sceneContainerFromFile('model/main.lp', 'model M {\n}\n')).toBeNull();
+    expect(sceneContainerFromFile('model/scenes/Bad.lp', 'not a fragment')).toBeNull();
   });
 
   it('round-trips the canvas layout (positions, ids and edges survive)', () => {

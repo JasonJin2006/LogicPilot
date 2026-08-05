@@ -69,6 +69,8 @@ fn create_project_dir(
     // Blank-project structure: derived artifacts and run results folders.
     let _ = std::fs::create_dir_all(project_dir.join("build"));
     let _ = std::fs::create_dir_all(project_dir.join("results"));
+    // Container scene files (one per container node) live under model/scenes/.
+    let _ = std::fs::create_dir_all(project_dir.join("model").join("scenes"));
     Ok(project_dir.to_string_lossy().into_owned())
 }
 

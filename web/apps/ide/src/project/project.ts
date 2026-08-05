@@ -6,29 +6,22 @@
 
 import { createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
-import { insertMember, parseProjectSource } from './projectTree';
+import { insertMember, parseProjectMembers, parseProjectSource } from './projectTree';
 
 export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
 export const DEFAULT_MODEL_PATH = 'model/main.lp';
 export const DEFAULT_PRESENTATION_PATH = 'presentation/main.canvas.json';
-/** Per-concern model part files: the model source is split across these
- *  fragments instead of living in one main.lp (docs/specs/project-format.md). */
+/** Kind-based leaf part files. Container nodes (process/agent/atomic/...)
+ *  are split into their own scene files under model/scenes/ so each
+ *  container Node is a file (docs/specs/node-scene-model.md). */
 export const MODEL_PART_PATHS = [
   'model/resources.lp',
-  'model/process.lp',
-  'model/agents.lp',
   'model/experiments.lp',
 ] as const;
+export const MODEL_SCENE_DIR = 'model/scenes';
 export const DEFAULT_SEED = 42;
 export const DEFAULT_SCHEMA_VERSION = 2;
-
-const PART_PATH_BY_KIND: Record<string, string> = {
-  resource: 'model/resources.lp',
-  process: 'model/process.lp',
-  agent: 'model/agents.lp',
-  experiment: 'model/experiments.lp',
-};
 
 export interface ProjectManifest {
   name: string;
@@ -75,8 +68,8 @@ export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle 
   return bundle;
 }
 
-/** Split a single-model source into the main file plus per-concern parts.
- *  Members whose kind has no part file stay in main.lp. */
+/** Split a single-model source into the main file, kind-based leaf parts and
+ *  one scene file per container node. Members with no part stay in main.lp. */
 export function splitModelSource(source: string): Record<string, string> {
   const parsed = parseProjectSource(source);
   const out: Record<string, string> = {};
@@ -84,66 +77,75 @@ export function splitModelSource(source: string): Record<string, string> {
     out[DEFAULT_MODEL_PATH] = source;
     return out;
   }
-  const parts: Record<string, string[]> = {
-    'model/resources.lp': [],
-    'model/process.lp': [],
-    'model/agents.lp': [],
-    'model/experiments.lp': [],
-  };
+  const resources: string[] = [];
+  const experiments: string[] = [];
+  const scenes = new Map<string, string[]>();
   const remaining: string[] = [];
   for (const member of parsed.model.members) {
     // Keep the member's leading indentation (the span starts at the kind
     // token, so slice from the start of its line).
     const lineStart = source.lastIndexOf('\n', member.span.start - 1) + 1;
     const text = source.slice(lineStart, member.span.end).trimEnd();
-    const partPath = member.isLeaf ? undefined : PART_PATH_BY_KIND[member.kind];
-    if (partPath !== undefined) {
-      parts[partPath]!.push(text);
+    if (member.isLeaf) {
+      remaining.push(text);
+    } else if (member.kind === 'resource') {
+      resources.push(text);
+    } else if (member.kind === 'experiment') {
+      experiments.push(text);
+    } else if (['process', 'agent', 'atomic', 'continuous'].includes(member.kind)) {
+      // One scene file per container node (the file is that node's subgraph).
+      const blocks = scenes.get(member.name) ?? [];
+      blocks.push(text);
+      scenes.set(member.name, blocks);
     } else {
       remaining.push(text);
     }
   }
   const mainBody = remaining.length > 0 ? `\n${remaining.join('\n')}` : '';
   out[DEFAULT_MODEL_PATH] = `model ${parsed.model.name} {${mainBody}\n}\n`;
-  for (const [path, blocks] of Object.entries(parts)) {
-    if (blocks.length > 0) {
-      out[path] = `${blocks.join('\n')}\n`;
-    }
+  if (resources.length > 0) {
+    out['model/resources.lp'] = `${resources.join('\n')}\n`;
+  }
+  if (experiments.length > 0) {
+    out['model/experiments.lp'] = `${experiments.join('\n')}\n`;
+  }
+  for (const [name, blocks] of scenes) {
+    out[`${MODEL_SCENE_DIR}/${name}.lp`] = `${blocks.join('\n')}\n`;
   }
   return out;
 }
 
-/** Merge the main model source with its part fragments (parts are stored
- *  already indented as they appear inside the model body). */
-export function mergeModelSource(
-  mainSource: string,
-  files: Record<string, string>,
-  partPaths: string[] = [...MODEL_PART_PATHS],
-): string {
-  const parsed = parseProjectSource(mainSource);
-  if (!parsed.ok || !parsed.model) {
-    return mainSource;
+/** Identify the container a scene file holds (process Flow in
+ *  model/scenes/Flow.lp); null for non-scene files. */
+export function sceneContainerFromFile(
+  path: string,
+  source: string,
+): { kind: string; name: string } | null {
+  if (!path.startsWith(`${MODEL_SCENE_DIR}/`)) {
+    return null;
   }
-  const chunks = partPaths
-    .map((path) => files[path])
-    .filter((content) => content !== undefined && content.trim() !== '')
-    .join('\n');
-  if (chunks === '') {
-    return mainSource;
-  }
-  return insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
+  const parsed = parseProjectMembers(source);
+  const first = parsed.ok ? (parsed.members ?? []).find((member) => !member.isLeaf) : undefined;
+  return first ? { kind: first.kind, name: first.name } : null;
+}
+
+/** Part files present in `files` (kind-based + scenes), excluding main.lp. */
+export function collectModelParts(files: Record<string, string>): string[] {
+  return Object.keys(files)
+    .filter((path) => path.startsWith('model/') && path !== DEFAULT_MODEL_PATH)
+    .sort();
 }
 
 /** Combine a fresh canvas-derived bundle with the current one on Save: the
  *  canvas owns resources/process (via `split`), while existing part files it
- *  does not write (agents/experiments) are preserved from `current`. */
+ *  does not write (experiments, scenes) are preserved from `current`. */
 export function mergeCanvasSplit(
   base: ProjectBundle,
   split: Record<string, string>,
   current: ProjectBundle | null,
 ): ProjectBundle {
   const files = { ...base.files, ...split };
-  for (const part of MODEL_PART_PATHS) {
+  for (const part of current?.manifest.modelParts ?? []) {
     if (files[part] === undefined && current?.files[part] !== undefined) {
       files[part] = current.files[part];
     }
@@ -151,8 +153,29 @@ export function mergeCanvasSplit(
   return {
     ...base,
     files,
-    manifest: { ...base.manifest, modelParts: [...MODEL_PART_PATHS] },
+    manifest: { ...base.manifest, modelParts: collectModelParts(files) },
   };
+}
+
+/** Merge the main model source with its part fragments (parts are stored
+ *  already indented as they appear inside the model body). */
+export function mergeModelSource(
+  mainSource: string,
+  files: Record<string, string>,
+  partPaths?: string[],
+): string {
+  const parsed = parseProjectSource(mainSource);
+  if (!parsed.ok || !parsed.model) {
+    return mainSource;
+  }
+  const chunks = (partPaths ?? collectModelParts(files))
+    .map((path) => files[path])
+    .filter((content) => content !== undefined && content.trim() !== '')
+    .join('\n');
+  if (chunks === '') {
+    return mainSource;
+  }
+  return insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
 }
 
 /** Serialize the current canvas document into a project bundle. The DSL is

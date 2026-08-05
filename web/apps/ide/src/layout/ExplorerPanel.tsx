@@ -14,6 +14,8 @@ import {
   Folder,
   FolderOpen,
 } from 'lucide-react';
+import { sceneContainerFromFile } from '../project/project';
+import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -192,6 +194,7 @@ export function ExplorerPanel() {
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openDslEditor = useUiStore((state) => state.openDslEditor);
+  const setCanvasView = useCanvasView((state) => state.setView);
   const activePath = useUiStore((state) => state.dslEditorFile);
   const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(
     null,
@@ -260,6 +263,15 @@ export function ExplorerPanel() {
     const actions: ContextAction[] = [];
     if (path !== null) {
       const name = path.slice(path.lastIndexOf('/') + 1);
+      const source = bundle.files[path];
+      const scene =
+        source !== undefined ? sceneContainerFromFile(path, source) : null;
+      if (scene) {
+        actions.push({
+          label: 'Open in DSL',
+          onSelect: () => openDslEditor(path),
+        });
+      }
       actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
       actions.push({
         label: 'Delete',
@@ -281,7 +293,15 @@ export function ExplorerPanel() {
     const row = (event.target as Element).closest('.tree-row');
     const path = row?.getAttribute('data-path');
     if (path !== null && path !== undefined) {
-      openDslEditor(path);
+      const source = bundle.files[path];
+      const scene =
+        source !== undefined ? sceneContainerFromFile(path, source) : null;
+      if (scene) {
+        // A scene file IS a container Node: clicking it opens its canvas.
+        setCanvasView(scene);
+      } else {
+        openDslEditor(path);
+      }
     }
   };
 
