@@ -22,7 +22,8 @@ ctest --preset windows-msvc-dev      # 153+ 个测试
 ## 第一条仿真：命令行跑通 M/M/1
 
 仓库自带示例 `examples/mm1.lp`（DSL v2：模型级 `param` + `rate(...)` 到达 +
-`service { resource = R }` 显式资源引用）：
+`service { resource = R }` 显式资源引用；流程块直接是 model 根成员，由
+`couple` 连线，无 `process` 容器）：
 
 ```logicpilot
 model MM1 {
@@ -34,11 +35,14 @@ model MM1 {
     capacity = 1
   }
 
-  process Flow {
-    source Arrivals { arrival = rate(arrival_rate) }
-    queue WaitLine { capacity = 1000000 }
-    service Handle { resource = Server; time = exponential(service_rate) }
-  }
+  source Arrivals { arrival = rate(arrival_rate) }
+  queue WaitLine { capacity = 1000000 }
+  service Handle { resource = Server; time = exponential(service_rate) }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }
 ```
 

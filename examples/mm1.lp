@@ -5,6 +5,10 @@
 // mu = 1.0, unbounded FIFO queue. Steady state: rho = 0.8,
 // Wq = rho / (mu - lambda) = 4.0. Acceptance constants live in
 // examples/mm1.expect.json.
+//
+// Agent-centric structure: process-library blocks are direct members of the
+// model root (no `process` container), connected by model-level `couple`
+// lines. Semantics identical to the legacy `process Flow { ... }` form.
 model MM1 {
   use process
   param arrival_rate: float = 0.8
@@ -14,16 +18,19 @@ model MM1 {
     capacity = 1
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = rate(arrival_rate)
-    }
-    queue WaitLine {
-      capacity = 1000000
-    }
-    service Handle {
-      resource = Server
-      time = exponential(service_rate)
-    }
+  source Arrivals {
+    arrival = rate(arrival_rate)
   }
+  queue WaitLine {
+    capacity = 1000000
+  }
+  service Handle {
+    resource = Server
+    time = exponential(service_rate)
+  }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }

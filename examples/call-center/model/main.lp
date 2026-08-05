@@ -1,8 +1,9 @@
-// CallCenter - project-format-v2 example project.
+// CallCenter - agent-centric example project.
 //
-// The model root keeps leaf members (param / resource) and references its
-// process container via an instance member; the container itself lives in
-// model/scenes/CallFlow.lp (one file per container, carrying a stable uid).
+// The model root keeps every member: params, the resource pool, the process
+// flow blocks and their model-level `couple` lines (no `process` container,
+// no scene file for the flow). Nested agents would each live in
+// model/scenes/<Agent>.lp, referenced by an `instance` member.
 model CallCenter {
   use process
 
@@ -14,5 +15,19 @@ model CallCenter {
     failure_rate = 0.02
   }
 
-  instance CallFlow = "model/scenes/CallFlow.lp"
+  source Incoming {
+    arrival = rate(arrival_rate)
+  }
+  queue Wait {
+    capacity = 100
+  }
+  service Handle {
+    resource = Agent
+    time = exponential(service_rate)
+  }
+  sink Done { }
+
+  couple Incoming.out -> Wait.in
+  couple Wait.out -> Handle.in
+  couple Handle.out -> Done.in
 }

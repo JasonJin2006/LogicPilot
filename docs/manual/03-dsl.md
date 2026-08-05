@@ -11,7 +11,8 @@ model <Name> {
   use process      // 可选：声明使用 process 库（阶段 1 隐式可用）
   param <p> = <值> // 模型级参数（可带 : float 类型注解）
   resource ...     // process 库块：资源池（容量/故障）
-  process ...      // 流程容器（source → queue → service → sink）
+  source/queue/service/sink ... // process 库块：直接是 model/agent 成员
+  couple a.out -> b.in   // 同作用域连线（根级或 agent 体内）
   atomic ...       // DEVS 原子 + couple 布线
   agent ...        // Agent 群体（tick 行为）
   continuous ...   // 连续 ODE 系统
@@ -30,22 +31,30 @@ model MM1Failure {
     failure_rate = 0.1        // 忙时故障率（可选，默认 0）
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = rate(0.8)     // 到达分布：rate(λ)（= poisson(λ)，指数到达）
-    }
-    queue WaitLine {
-      capacity = 1000000      // 0 = 无缓冲
-    }
-    service Handle {          // 服务块名与资源名解耦
-      resource = Server       // 显式引用资源（LP4001 校验）
-      time = exponential(1.0) // 服务时间：exponential(μ) 或 normal(均值, 标准差)
-    }
+  source Arrivals {
+    arrival = rate(0.8)     // 到达分布：rate(λ)（= poisson(λ)，指数到达）
   }
+  queue WaitLine {
+    capacity = 1000000      // 0 = 无缓冲
+  }
+  service Handle {          // 服务块名与资源名解耦
+    resource = Server       // 显式引用资源（LP4001 校验）
+    time = exponential(1.0) // 服务时间：exponential(μ) 或 normal(均值, 标准差)
+  }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }
 ```
 
-实体按声明顺序流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`service` 通过 `resource = R` 显式引用资源（不写则回退为按服务块名匹配）；`resource` 的 `capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模（可用性 `a = r/(f+r)`）。
+流程块直接是 model 根（或 agent 体）的成员，用 `couple` 连线，不再需要
+`process` 容器（旧 `process Flow { ... }` 写法仍兼容读取）。实体按声明顺序
+流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`service` 通过
+`resource = R` 显式引用资源（不写则回退为按服务块名匹配）；`resource` 的
+`capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模
+（可用性 `a = r/(f+r)`）。
 
 ## 表达式与参数
 
@@ -56,10 +65,8 @@ model MM1Failure {
 model Tuned {
   param arrival_rate: float = 0.4
   resource Server { capacity = 1 }
-  process Flow {
-    source A { arrival = rate(arrival_rate * 2) }  // = rate(0.8)
-    service R { resource = Server; time = exponential(1) }
-  }
+  source A { arrival = rate(arrival_rate * 2) }  // = rate(0.8)
+  service R { resource = Server; time = exponential(1) }
 }
 ```
 
@@ -138,6 +145,8 @@ experiment Optimization {
 | `examples/mm1.lp` | 基础 M/M/1（理论验收 `mm1.expect.json`） |
 | `examples/mm1_failure.lp` | M/M/1 + 机器故障（可用性/有效服务率验收） |
 | `examples/two_servers.lp` | 双服务器池 |
+| `examples/flat_mm1.lp` | 扁平 agent-centric M/M/1（根级流程块 + couple） |
+| `examples/agent_body_mm1.lp` | 流程块放在 agent 体内的 M/M/1（与根级 bit-exact） |
 | `examples/pulse_chain.lp` | DEVS 原子链 |
 | `examples/agents.lp` | ABM 群体 |
 | `examples/decay.lp` / `examples/sir.lp` | 连续 ODE（解析解验收） |

@@ -1,6 +1,10 @@
 # Node 场景模型（Node Scene Model）
 
-状态：v1 草案（2026-08-05）。目标：把工程结构的核心元素定为一个通用 **Node**，
+> **已废弃（2026-08-06）**：本文描述的"一切皆容器"分层已被
+> [agent-centric](./agent-centric) 取代——`process` 不再作为容器割裂 agent，
+> 流程块直接是 model/agent 成员。本文仅作历史记录保留。
+
+状态：v1 草案（2026-08-05，已废弃）。目标：把工程结构的核心元素定为一个通用 **Node**，
 每个容器 Node 拥有自己的画布（子图编辑器），Node 树即工程结构，容器 Node 即文件、
 可实例化复用。借鉴 AnyLogic（每 agent 一个画布）、Godot（一切皆 Node、Scene 即文件、
 场景实例化）、Unity（Scene/GameObject 层级 + Prefab 复用）。

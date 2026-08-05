@@ -53,12 +53,18 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
   const v2::Node* root = loaded.file.v2_root->root();
   REQUIRE(root != nullptr);
   REQUIRE(root->metadata()->name()->str() == "MM1");
-  // One resource block + one process flow block.
+  // Agent-centric: one resource block + four flat flow blocks under the root,
+  // connected by the root's own couplings (no `process Flow` container).
   REQUIRE(root->children() != nullptr);
-  REQUIRE(root->children()->size() == 2);
+  REQUIRE(root->children()->size() == 5);
   REQUIRE(root->children()->Get(0)->semantics()->block()->str() ==
           "resource");
-  REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "flow");
+  REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "source");
+  REQUIRE(root->children()->Get(2)->semantics()->block()->str() == "queue");
+  REQUIRE(root->children()->Get(3)->semantics()->block()->str() == "service");
+  REQUIRE(root->children()->Get(4)->semantics()->block()->str() == "sink");
+  REQUIRE(root->couplings() != nullptr);
+  REQUIRE(root->couplings()->size() == 3);
 
   // Structural dump golden.
   REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/mm1_ir_dump.txt",

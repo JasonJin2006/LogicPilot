@@ -504,7 +504,11 @@ mod tests {
         assert!(manifest.contains("CallCenter"));
         assert!(files.contains_key("model/main.lp"));
         assert!(files["model/main.lp"].starts_with("//"));
-        assert!(files.contains_key("model/scenes/CallFlow.lp"));
+        // Agent-centric: the flow lives flat under the model root (no
+        // process container scene file).
+        assert!(!files.keys().any(|path| path.starts_with("model/scenes/")));
+        assert!(files["model/main.lp"].contains("source Incoming"));
+        assert!(files["model/main.lp"].contains("couple Incoming.out -> Wait.in"));
         assert!(files.contains_key("presentation/main.canvas.json"));
     }
 }

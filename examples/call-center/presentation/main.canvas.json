@@ -3,15 +3,14 @@
   "version": 2,
   "layout": {
     "Agent": { "x": 120, "y": 80 },
-    "CallFlow": { "x": 120, "y": 220 },
-    "CallFlow/Incoming": { "x": 220, "y": 340 },
-    "CallFlow/Wait": { "x": 420, "y": 340 },
-    "CallFlow/Handle": { "x": 640, "y": 340 },
-    "CallFlow/Done": { "x": 860, "y": 340 }
+    "Incoming": { "x": 220, "y": 340 },
+    "Wait": { "x": 420, "y": 340 },
+    "Handle": { "x": 640, "y": 340 },
+    "Done": { "x": 860, "y": 340 }
   },
   "edges": [
-    { "from": "CallFlow/Incoming", "to": "CallFlow/Wait" },
-    { "from": "CallFlow/Wait", "to": "CallFlow/Handle" },
-    { "from": "CallFlow/Handle", "to": "CallFlow/Done" }
+    { "from": "Incoming", "to": "Wait" },
+    { "from": "Wait", "to": "Handle" },
+    { "from": "Handle", "to": "Done" }
   ]
 }

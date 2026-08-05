@@ -12,22 +12,29 @@
 //   moment; the effective service law is no longer exponential, so the
 //   plain M/M/1 formula understates the wait)
 // Acceptance constants live in examples/mm1_failure.expect.json.
+//
+// Agent-centric structure: process-library blocks are direct members of the
+// model root (no `process` container), connected by model-level `couple`
+// lines.
 model MM1Failure {
   resource Server {
     capacity = 1
     failure_rate = 0.1
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = poisson(0.8)
-    }
-    queue WaitLine {
-      capacity = 1000000
-    }
-    service Handle {
-      resource = Server
-      time = exponential(1.0)
-    }
+  source Arrivals {
+    arrival = poisson(0.8)
   }
+  queue WaitLine {
+    capacity = 1000000
+  }
+  service Handle {
+    resource = Server
+    time = exponential(1.0)
+  }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }

@@ -5,13 +5,11 @@ model Broken {
     capacity = 1
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = poisson(0.8)
-    }
-    service Worker {
-      resource = Missing
-      time = exponential(1.0)
-    }
+  source Arrivals {
+    arrival = poisson(0.8)
+  }
+  service Worker {
+    resource = Missing
+    time = exponential(1.0)
   }
 }

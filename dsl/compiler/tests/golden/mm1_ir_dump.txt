@@ -6,22 +6,24 @@ root   param service_rate = float(1)
 root   node 'Server' library='process' block='resource'
 root     param capacity = int(1)
 root     param failure_rate = float(0)
-root   node 'Flow' library='process' block='flow'
-root     node 'Arrivals' library='process' block='source'
-root       param arrival = distribution(Poisson params=[0.8])
-root       port 'out' dir=output
-root     node 'WaitLine' library='process' block='queue'
-root       param capacity = int(1000000)
-root       port 'in' dir=input
-root       port 'out' dir=output
-root       port 'outTimeout' dir=output
-root       port 'outPreempted' dir=output
-root     node 'Handle' library='process' block='service'
-root       param resource = string('Server')
-root       param time = distribution(Exponential params=[1])
-root       port 'in' dir=input
-root       port 'out' dir=output
-root       port 'outTimeout' dir=output
-root       port 'outPreempted' dir=output
-root     coupling 'Arrivals'.out -> 'WaitLine'.in
-root     coupling 'WaitLine'.out -> 'Handle'.in
+root   node 'Arrivals' library='process' block='source'
+root     param arrival = distribution(Poisson params=[0.8])
+root     port 'out' dir=output
+root   node 'WaitLine' library='process' block='queue'
+root     param capacity = int(1000000)
+root     port 'in' dir=input
+root     port 'out' dir=output
+root     port 'outTimeout' dir=output
+root     port 'outPreempted' dir=output
+root   node 'Handle' library='process' block='service'
+root     param resource = string('Server')
+root     param time = distribution(Exponential params=[1])
+root     port 'in' dir=input
+root     port 'out' dir=output
+root     port 'outTimeout' dir=output
+root     port 'outPreempted' dir=output
+root   node 'Done' library='process' block='sink'
+root     port 'in' dir=input
+root   coupling 'Arrivals'.out -> 'WaitLine'.in
+root   coupling 'WaitLine'.out -> 'Handle'.in
+root   coupling 'Handle'.out -> 'Done'.in

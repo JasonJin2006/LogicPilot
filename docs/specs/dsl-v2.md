@@ -76,7 +76,7 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 ┌────────────────────────────────────────────────┐
 │ 核心语法层（grammar.js，固定且薄）               │
 │  model / param / state / experiment             │
-│  容器: agent | atomic | process | continuous    │
+│  容器: agent | atomic | continuous              │
 │  行为: on_<trigger>{ }   耦合: couple            │
 │  元层: library / block / 类型注解                │
 └───────────────┬────────────────────────────────┘
@@ -90,7 +90,7 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 ┌───────────────▼────────────────────────────────┐
 │ 模型层（用户 .lp 文件）                          │
 │  model MM1 { use process; resource ...;         │
-│              process Flow { source ... } }      │
+│              source ...; couple a.out -> b.in } │
 └───────────────┬────────────────────────────────┘
                 │ lowering（1:1）
                 ▼
@@ -132,7 +132,7 @@ exp_field        := 'objective' '=' ('minimize'|'maximize') metric
 | `model` | 根 Node | 根容器：param、容器、库块实例、experiment |
 | `agent` | `{agent, agent}` | ABM 容器：`count`、`state`、`on_tick`、内嵌 agent |
 | `atomic` | `{devs, atomic}` | DEVS 容器：`state`、`time_advance`、`on_timeout/on_input`、端口 |
-| `process` | `{process, flow}` | 流程容器：库块实例按声明序自动连接 |
+| `process` | `{process, flow}` | 兼容容器（旧写法）：新模型直接把流程块写在 model/agent 作用域，用 `couple` 连线 |
 | `continuous` | `{sd, equation}` | 连续容器：`state`、`param`、`d x/dt = ...` |
 | `experiment` | `ModelFile.experiments[]` | 实验（核心配置块） |
 
@@ -201,12 +201,15 @@ model MM1 {
     capacity = 1
   }
 
-  process Flow {
-    source Arrivals { arrival = rate(arrival_rate) }
-    queue WaitLine { capacity = 1000000 }
-    service Handle { resource = Server; time = exponential(service_rate) }
-    sink Done { }
-  }
+  // 流程块直接是 model 根成员，用 couple 连线（agent-centric，无容器）。
+  source Arrivals { arrival = rate(arrival_rate) }
+  queue WaitLine { capacity = 1000000 }
+  service Handle { resource = Server; time = exponential(service_rate) }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 
   experiment TuneArrival {
     objective = minimize Wq
