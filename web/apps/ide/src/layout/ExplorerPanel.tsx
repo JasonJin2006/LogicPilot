@@ -164,7 +164,6 @@ export function ExplorerPanel() {
   const modelDoc = useModelStore((state) => state.document);
   const bundle = useProjectStore((state) => state.bundle);
   const dirty = useProjectStore((state) => state.dirty);
-  const projectPath = useProjectStore((state) => state.path);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openDslEditor = useUiStore((state) => state.openDslEditor);
@@ -278,9 +277,7 @@ export function ExplorerPanel() {
       ))}
       <div className="side-hint">
         {bundle
-          ? projectPath
-            ? `工程目录：${projectPath}`
-            : `已保存工程（${Object.keys(bundle.files).length} 个源文件）`
+          ? `已保存工程（${Object.keys(bundle.files).length} 个源文件）`
           : '尚未保存为工程；File > Save 生成 .lpproj'}
       </div>
       {menu && (
