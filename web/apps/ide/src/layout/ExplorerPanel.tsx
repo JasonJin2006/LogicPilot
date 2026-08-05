@@ -5,8 +5,15 @@
 // re-parses the changed DSL automatically) and mark the project dirty.
 
 import { useState } from 'react';
-import type { MouseEvent } from 'react';
-import { FileCode2, FileJson2, Folder, FolderOpen } from 'lucide-react';
+import type { CSSProperties, MouseEvent } from 'react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  FileJson2,
+  Folder,
+  FolderOpen,
+} from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -91,17 +98,19 @@ function FileRow({
   file,
   indent,
   dataPath,
+  active,
 }: {
   file: TreeFile;
   indent: number;
   dataPath?: string;
+  active?: boolean;
 }) {
   const Icon = file.kind === 'dsl' ? FileCode2 : FileJson2;
   const muted = file.kind === 'muted' || file.kind === 'ir';
   return (
     <div
-      className="tree-row tree-file"
-      style={{ paddingLeft: indent * 14 + 8 }}
+      className={`tree-row tree-file${active ? ' tree-active' : ''}`}
+      style={{ paddingLeft: indent * 14 + 8, '--depth': indent } as CSSProperties}
       title={file.path}
       data-path={dataPath}
     >
@@ -121,41 +130,57 @@ function FolderRow({
   folder,
   indent,
   dataDir,
+  collapsed,
+  activePath,
+  onToggle,
 }: {
   folder: TreeFolder;
   indent: number;
   dataDir?: string;
+  collapsed: Record<string, boolean>;
+  activePath: string | null;
+  onToggle: (path: string) => void;
 }) {
+  const open = collapsed[folder.path] !== true;
   return (
     <>
       <div
         className={`tree-row tree-folder${folder.muted ? ' tree-muted' : ''}`}
-        style={{ paddingLeft: indent * 14 + 8 }}
+        style={{ paddingLeft: indent * 14 + 8, '--depth': indent } as CSSProperties}
         title={folder.path}
         data-dir={dataDir}
+        onClick={() => onToggle(folder.path)}
       >
         <span className="tree-glyph">
-          <Folder size={12} />
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        <span className="tree-glyph">
+          {open ? <FolderOpen size={12} /> : <Folder size={12} />}
         </span>
         <span className="tree-label">{folder.name}</span>
       </div>
-      {folder.children.map((child) =>
-        isFolder(child) ? (
-          <FolderRow
-            key={child.path}
-            folder={child}
-            indent={indent + 1}
-            dataDir={child.muted ? undefined : child.path}
-          />
-        ) : (
-          <FileRow
-            key={child.path}
-            file={child}
-            indent={indent + 1}
-            dataPath={child.kind === 'muted' || child.kind === 'ir' ? undefined : child.path}
-          />
-        ),
-      )}
+      {open &&
+        folder.children.map((child) =>
+          isFolder(child) ? (
+            <FolderRow
+              key={child.path}
+              folder={child}
+              indent={indent + 1}
+              dataDir={child.muted ? undefined : child.path}
+              collapsed={collapsed}
+              activePath={activePath}
+              onToggle={onToggle}
+            />
+          ) : (
+            <FileRow
+              key={child.path}
+              file={child}
+              indent={indent + 1}
+              dataPath={child.kind === 'muted' || child.kind === 'ir' ? undefined : child.path}
+              active={child.path === activePath}
+            />
+          ),
+        )}
     </>
   );
 }
@@ -167,9 +192,13 @@ export function ExplorerPanel() {
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openDslEditor = useUiStore((state) => state.openDslEditor);
+  const activePath = useUiStore((state) => state.dslEditorFile);
   const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(
     null,
   );
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleFolder = (path: string) =>
+    setCollapsed((current) => ({ ...current, [path]: !(current[path] === true) }));
 
   const rootName = bundle ? bundle.manifest.name : `${modelDoc.name || 'Model'} (unsaved)`;
   const sourceFolders = treeFromPaths(
@@ -270,10 +299,25 @@ export function ExplorerPanel() {
         {bundle && dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
       </div>
       {sourceFolders.map((entry) => (
-        <FolderRow key={entry.path} folder={entry} indent={1} dataDir={entry.path} />
+        <FolderRow
+          key={entry.path}
+          folder={entry}
+          indent={1}
+          dataDir={entry.path}
+          collapsed={collapsed}
+          activePath={activePath}
+          onToggle={toggleFolder}
+        />
       ))}
       {ARTIFACT_ROWS.map((entry) => (
-        <FolderRow key={entry.path} folder={entry} indent={1} />
+        <FolderRow
+          key={entry.path}
+          folder={entry}
+          indent={1}
+          collapsed={collapsed}
+          activePath={activePath}
+          onToggle={toggleFolder}
+        />
       ))}
       {menu && (
         <ContextMenu

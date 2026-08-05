@@ -561,6 +561,7 @@
 }
 
 .tree-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -570,10 +571,39 @@
   white-space: nowrap;
 }
 
+.tree-row:hover:not(.tree-root) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* VS Code-style indentation guides (a thin vertical line per depth level). */
+.tree-file::before,
+.tree-folder::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--depth, 0) * 14px + 2px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .tree-root {
   font-weight: 600;
   color: var(--text);
   padding-bottom: 4px;
+}
+
+.tree-active {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.tree-active:hover:not(.tree-root) {
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .tree-dirty-dot {
