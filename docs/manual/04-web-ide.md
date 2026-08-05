@@ -12,12 +12,12 @@ pnpm --filter @logicpilot/ide build
 cargo build --manifest-path desktop/src-tauri/Cargo.toml
 desktop/src-tauri/target/debug/logicpilot-desktop.exe
 ```
-
 ## 连接
 
-活动栏齿轮打开**设置**：外观（亮/暗/跟随系统）+ 连接（网关地址）。点
-**Connect** 连接 `ws://127.0.0.1:8089/sim`（桌面客户端自动使用它拉起的
-lp-server 地址）。连接状态显示在底部状态栏（圆点 + FPS + 通知铃铛）。
+IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使用它的地址；
+浏览器模式默认连接 `ws://127.0.0.1:8089/sim`（网关未就绪时自动重试，失败后
+状态栏红点提示）。活动栏齿轮打开**设置**可改网关地址并手动
+**Connect / Disconnect**。连接状态显示在底部状态栏（圆点 + FPS + 通知铃铛）。
 
 ## 建模画布
 

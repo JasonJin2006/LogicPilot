@@ -222,7 +222,26 @@ fn main() {
             event,
             tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
         ) {
-            let _ = app_server.kill();
+            // Kill the app server AND its gateway child. A plain kill()
+            // terminates Node without letting it shut lp-server down,
+            // orphaning the console-subsystem gateway (and its terminal
+            // window) next to the closed app.
+            #[cfg(windows)]
+            {
+                let pid = app_server.id().to_string();
+                let _ = Command::new("taskkill")
+                    .arg("/PID")
+                    .arg(&pid)
+                    .arg("/T")
+                    .arg("/F")
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = app_server.kill();
+            }
         }
     });
 }

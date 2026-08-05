@@ -61,8 +61,19 @@ try {
   // Connection + run setup live in the settings dialog (activity bar gear).
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('dialog', { name: 'Settings' }).waitFor();
-  await page.getByRole('button', { name: 'Connect' }).click();
-  await page.waitForSelector('.conn-connected', { timeout: 10_000 });
+  // The IDE auto-connects on load (the gateway is up for this test); the
+  // dialog shows Disconnect once connected. Fall back to a manual Connect
+  // if the auto attempt already gave up.
+  await page
+    .waitForFunction(
+      () => document.querySelector('.conn-connected') !== null,
+      undefined,
+      { timeout: 15_000 },
+    )
+    .catch(async () => {
+      await page.getByRole('button', { name: 'Connect' }).click();
+      await page.waitForSelector('.conn-connected', { timeout: 10_000 });
+    });
   log('connected to ws://127.0.0.1:8089/sim');
 
   // Theme switching (light / dark) lives in the same dialog.

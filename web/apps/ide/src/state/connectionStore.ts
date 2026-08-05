@@ -34,6 +34,8 @@ interface ConnectionStore {
 
   setUrl: (url: string) => void;
   setFps: (fps: number) => void;
+  /** Connect now and retry silently while the gateway boots. */
+  autoConnect: () => void;
   connect: () => void;
   disconnect: () => void;
   start: (options: StartOptions) => void;
@@ -53,6 +55,22 @@ let configResolved = false;
 // Continuation invoked when the next compile reply arrives (Run = compile,
 // then start when the model compiles).
 let pendingRunContinuation: ((ok: boolean) => void) | null = null;
+// Auto-connect retry loop: the desktop gateway may still be booting when the
+// page first loads; retry a few times silently, then give up (the status dot
+// turns red and Settings offers a manual Connect). A manual disconnect
+// cancels the loop.
+let retryTimer: number | null = null;
+let retryCount = 0;
+const AUTO_CONNECT_INTERVAL_MS = 2000;
+const AUTO_CONNECT_MAX_RETRIES = 15;
+
+function stopAutoConnect(): void {
+  if (retryTimer !== null) {
+    window.clearInterval(retryTimer);
+    retryTimer = null;
+  }
+  retryCount = 0;
+}
 
 const MAX_EVENTS = 200;
 
@@ -176,20 +194,8 @@ function applyFrame(frame: WireFrame): void {
   useConnectionStore.setState({ seq: frame.seq, simTimeNs: frame.simTimeNs });
 }
 
-export const useConnectionStore = create<ConnectionStore>((set, get) => ({
-  url: DEFAULT_URL,
-  conn: 'disconnected',
-  seq: null,
-  simTimeNs: null,
-  fps: 0,
-  lastAck: '',
-  error: '',
-  badFrames: 0,
-  events: [],
-
-  setUrl: (url) => set({ url }),
-  setFps: (fps) => set({ fps }),
-  connect: () => {
+export const useConnectionStore = create<ConnectionStore>((set, get) => {
+  const connectNow = (silent: boolean): void => {
     client?.disconnect();
     set({ conn: 'connecting' });
     client = new SimClient({
@@ -218,12 +224,50 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       onError: (message) =>
         set((state) => ({
           error: message,
-          events: appendEvent(state, 'error', message),
+          // Retries are silent: the gateway is expected to still be booting
+          // on the first few attempts, and the console should not spam.
+          events: silent ? state.events : appendEvent(state, 'error', message),
         })),
     });
     void resolveGatewayConfig().then(() => client?.connect(get().url));
+  };
+  return {
+  url: DEFAULT_URL,
+  conn: 'disconnected',
+  seq: null,
+  simTimeNs: null,
+  fps: 0,
+  lastAck: '',
+  error: '',
+  badFrames: 0,
+  events: [],
+
+  setUrl: (url) => set({ url }),
+  setFps: (fps) => set({ fps }),
+  connect: () => {
+    stopAutoConnect();
+    connectNow(false);
+  },
+  autoConnect: () => {
+    stopAutoConnect();
+    connectNow(false);
+    // Keep retrying while the desktop gateway boots; stop once connected
+    // (or after the budget is spent) so a dead endpoint does not spam.
+    retryTimer = window.setInterval(() => {
+      if (get().conn === 'connected') {
+        stopAutoConnect();
+        return;
+      }
+      retryCount += 1;
+      if (retryCount > AUTO_CONNECT_MAX_RETRIES) {
+        stopAutoConnect();
+        return;
+      }
+      connectNow(true);
+    }, AUTO_CONNECT_INTERVAL_MS);
   },
   disconnect: () => {
+    stopAutoConnect();
     client?.disconnect();
     client = null;
     set({ conn: 'disconnected' });
@@ -287,4 +331,5 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       });
     };
   },
-}));
+  };
+});

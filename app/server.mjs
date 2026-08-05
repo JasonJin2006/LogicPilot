@@ -85,6 +85,9 @@ async function startGateway() {
   ensureMinGwinPath();
   const child = spawn(exe, ['--port', String(port)], {
     stdio: ['ignore', 'pipe', 'pipe'],
+    // lp-server is a console-subsystem binary: without this flag Windows
+    // pops a separate terminal window next to the GUI app.
+    windowsHide: true,
   });
   child.stdout.on('data', (chunk) => process.stdout.write(`[lp-server] ${chunk}`));
   child.stderr.on('data', (chunk) => process.stderr.write(`[lp-server] ${chunk}`));

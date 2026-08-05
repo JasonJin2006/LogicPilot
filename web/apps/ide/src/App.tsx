@@ -16,6 +16,7 @@ import { useModelStore } from './state/modelStore';
 import { useLayoutStore } from './state/layoutStore';
 import { useProjectStore } from './state/projectStore';
 import { useCanvasView } from './state/canvasView';
+import { useConnectionStore } from './state/connectionStore';
 import { useUiStore } from './state/uiStore';
 import { projectToDocument } from './project/project';
 import { ThemeManager } from './theme/ThemeManager';
@@ -26,6 +27,14 @@ export default function App() {
   const runDialogOpen = useUiStore((state) => state.runDialogOpen);
   const dslEditorFile = useUiStore((state) => state.dslEditorFile);
   const canvasView = useCanvasView((state) => state.view);
+
+  // The gateway should just work: auto-connect on startup (the desktop
+  // client launches lp-server itself; the browser dev server can connect to
+  // the default ws://127.0.0.1:8089/sim). Retries stop when connected.
+  useEffect(() => {
+    useConnectionStore.getState().autoConnect();
+    return () => useConnectionStore.getState().disconnect();
+  }, []);
 
   // Opening a file from the Explorer brings the DSL editor tab to the front.
   useEffect(() => {
