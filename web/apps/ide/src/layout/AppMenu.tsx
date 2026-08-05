@@ -80,6 +80,7 @@ export function AppMenu() {
   const close = () => setOpen(null);
   // Opening a different model shows its root canvas, not a stale container.
   const openDocument = (document: ModelDocument) => {
+    useUiStore.getState().closeAllFiles();
     loadDocument(document);
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView(null);

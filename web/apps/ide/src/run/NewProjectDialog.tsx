@@ -61,6 +61,14 @@ export function NewProjectDialog() {
     }
     openBundle(bundle);
     setPath(projectPath);
+    if (projectPath !== null) {
+      // Materialized on disk: read the fresh folder tree + fingerprints so
+      // the Explorer and Save-conflict baseline match the new project.
+      void useProjectStore.getState().refreshDiskTree();
+    } else {
+      useProjectStore.getState().setDiskFiles(null);
+      useProjectStore.getState().setDiskHashes(null);
+    }
     markClean();
     setCreating(false);
     closeNewProject();

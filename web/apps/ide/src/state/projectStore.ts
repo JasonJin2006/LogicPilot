@@ -84,5 +84,5 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   markClean: () => set({ dirty: false }),
   setDirty: (dirty) => set({ dirty }),
   clearProject: () =>
-    set({ bundle: null, dirty: false, diskFiles: null, diskHashes: null }),
+    set({ bundle: null, path: null, dirty: false, diskFiles: null, diskHashes: null }),
 }));

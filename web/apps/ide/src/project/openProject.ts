@@ -25,6 +25,9 @@ export async function openProjectFromFile(file: File): Promise<void> {
       openInfo('Open failed', loaded.error ?? 'invalid project');
       return;
     }
+    // A standalone bundle is not a folder project: drop any previous on-disk
+    // path / Explorer tree so Save does not target the old folder.
+    useProjectStore.getState().clearProject();
     useProjectStore.getState().openBundle(parsedBundle.bundle!);
     loadModelDocument(loaded.document!);
     useProjectStore.getState().markClean();

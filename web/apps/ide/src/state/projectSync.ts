@@ -8,14 +8,16 @@ import { mergeModelSource } from '../project/project';
 import { useCanvasView } from './canvasView';
 import { useModelStore } from './modelStore';
 import { useProjectStore } from './projectStore';
+import { useUiStore } from './uiStore';
 import { logConsoleEvent } from './connectionStore';
 
 /** Load a freshly parsed document and show its root canvas (a new project or
  *  an opened model should never land inside a stale container view). */
 export function loadModelDocument(document: ModelDocument): void {
   useModelStore.getState().loadDocument(document);
-  // A different model is loaded: close every container tab and open the new
-  // model's root canvas (the canvas tabs only exist once opened).
+  // A different model is loaded: close every container tab and open file
+  // tab, then open the new model's root canvas (tabs only exist once opened).
+  useUiStore.getState().closeAllFiles();
   useCanvasView.getState().resetCanvasViews();
   useCanvasView.getState().setView(null);
 }
