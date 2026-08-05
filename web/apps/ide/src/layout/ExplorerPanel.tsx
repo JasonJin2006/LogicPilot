@@ -234,8 +234,8 @@ export function ExplorerPanel() {
     setCollapsed((current) => ({ ...current, [path]: !(current[path] === true) }));
   const isDisk = projectPath !== null && diskFiles !== null;
 
-  // No project open: an empty panel with a single action instead of a tree.
-  if (!bundle) {
+  // No project and no folder open: an empty panel with a single action.
+  if (!bundle && !diskFiles) {
     return (
       <div className="side-panel-body explorer-panel">
         <div className="explorer-empty">
@@ -264,13 +264,17 @@ export function ExplorerPanel() {
     );
   }
 
-  const rootName = bundle.manifest.name;
+  // A bare folder opened without logicpilot.json still browses its files
+  // (code editing works; Save initializes the project).
+  const rootName = bundle
+    ? bundle.manifest.name
+    : (projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'Folder');
   // With an on-disk project the Explorer is a real workspace file browser
   // (the disk tree, including derived folders); otherwise it shows the
   // in-memory bundle files.
   const sourceFolders = diskFiles
     ? treeFromPaths(diskFiles)
-    : treeFromPaths(Object.keys(bundle.files));
+    : treeFromPaths(Object.keys(bundle?.files ?? {}));
 
   const newFile = (dir: string) => {
     openPrompt({

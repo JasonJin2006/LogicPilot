@@ -15,6 +15,7 @@ import { saveProject } from '../project/syncEngine';
 import {
   DEFAULT_MODEL_PATH,
   bundleToJson,
+  initializeProject,
   parseProjectBundle,
   projectToDiskFiles,
   projectToDocument,
@@ -101,7 +102,36 @@ export function AppMenu() {
     }
     const result = await readProjectDir(dir);
     if (!result.ok || !result.manifestJson || !result.files) {
-      openInfo('Open failed', result.error ?? 'cannot read the project folder');
+      // Not a LogicPilot project: offer to open it as a plain folder anyway
+      // so the user can edit code and Save to initialize the project.
+      const reason = result.error ?? 'cannot read the project folder';
+      const proceed = await new Promise<boolean>((resolve) => {
+        useUiStore.getState().openConfirm({
+          title: 'Not a LogicPilot project',
+          body: `'${dir}' is not a LogicPilot project (${reason}). Open it anyway and edit files? Saving will initialize the project.`,
+          actions: [
+            { label: 'Open anyway', primary: true, onSelect: () => resolve(true) },
+            { label: 'Cancel', onSelect: () => resolve(false) },
+          ],
+        });
+      });
+      if (!proceed) {
+        return;
+      }
+      useProjectStore.getState().clearProject();
+      useProjectStore.getState().setPath(dir);
+      const tree = await readProjectTree(dir);
+      if (tree.ok && tree.files) {
+        useProjectStore.getState().setDiskFiles(tree.files);
+      }
+      await useProjectStore.getState().refreshDiskHashes();
+      useUiStore.getState().closeAllFiles();
+      useCanvasView.getState().resetCanvasViews();
+      logConsoleEvent(
+        'warn',
+        'LP5100: folder is not a LogicPilot project - editing files only until Save initializes it',
+      );
+      close();
       return;
     }
     try {
@@ -148,9 +178,31 @@ export function AppMenu() {
     void openProjectFromFile(file);
   };
   const fileSave = async () => {
-    const name = modelDoc.name || 'Model';
-    const current = useProjectStore.getState().bundle;
-    const saved = saveProject(modelDoc, current);
+    const projectPath = useProjectStore.getState().path;
+    let current = useProjectStore.getState().bundle;
+    let model = modelDoc;
+    if (!current && projectPath) {
+      // A folder opened without logicpilot.json: initialize the project from
+      // the in-editor model/main.lp (or the file on disk) on first save.
+      const { readProjectFile } = await import('../state/tauriFs');
+      const editedMain = useUiStore.getState().diskFiles['model/main.lp'];
+      let mainContent = editedMain;
+      if (mainContent === undefined) {
+        const read = await readProjectFile(projectPath, 'model/main.lp');
+        if (read.ok && read.content !== undefined) {
+          mainContent = read.content;
+        }
+      }
+      const folderName =
+        projectPath.split(/[\\/]/).filter(Boolean).pop() ?? 'Model';
+      const initialized = initializeProject(mainContent, folderName);
+      model = initialized.document;
+      const base = initialized.bundle;
+      current = base;
+      useProjectStore.getState().openBundle(base);
+    }
+    const name = model.name || 'Model';
+    const saved = saveProject(model, current);
     for (const diagnostic of saved.diagnostics) {
       logConsoleEvent(
         diagnostic.severity === 'error' ? 'error' : 'warn',
@@ -166,7 +218,6 @@ export function AppMenu() {
     }
     const project = saved.bundle;
     const bundle = bundleToJson(project);
-    const projectPath = useProjectStore.getState().path;
     if (projectPath) {
       // Detect external edits since the project was opened (LP5xxx): never
       // silently overwrite a file that changed on disk.
@@ -516,6 +567,19 @@ export function AppMenu() {
               const modelPath = useProjectStore.getState().bundle?.manifest.model;
               if (modelPath) {
                 useUiStore.getState().openFile(modelPath);
+              } else {
+                // A bare folder: open model/main.lp from disk read-only if
+                // present so code editing is possible before Save initializes.
+                const dir = useProjectStore.getState().path;
+                const diskFiles = useProjectStore.getState().diskFiles;
+                if (dir && diskFiles?.includes('model/main.lp')) {
+                  void import('../state/tauriFs').then(async ({ readProjectFile }) => {
+                    const read = await readProjectFile(dir, 'model/main.lp');
+                    if (read.ok && read.content !== undefined) {
+                      useUiStore.getState().openDiskFile('model/main.lp', read.content);
+                    }
+                  });
+                }
               }
               useLayoutStore.getState().openPanel('center', 'dsl');
             }

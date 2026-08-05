@@ -98,6 +98,20 @@ export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle 
   return bundle;
 }
 
+/** Initialize a project bundle from a bare folder's model/main.lp (or an
+ *  empty model when missing). Used by the first Save after opening a folder
+ *  without logicpilot.json (project-format-v2: Save initializes). */
+export function initializeProject(
+  mainContent: string | undefined,
+  folderName: string,
+): { document: ModelDocument; bundle: ProjectBundle } {
+  const parsed = mainContent !== undefined ? parseDsl(mainContent) : null;
+  const document = parsed?.ok ? parsed.document : createDocument(folderName);
+  const bundle = createProjectBundle(document);
+  bundle.manifest.name = folderName;
+  return { document, bundle };
+}
+
 /** Split a single-model source into the main file, kind-based leaf parts and
  *  one scene file per container node. Members with no part stay in main.lp. */
 export function splitModelSource(source: string): Record<string, string> {

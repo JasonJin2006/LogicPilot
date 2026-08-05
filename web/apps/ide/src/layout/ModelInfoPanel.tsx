@@ -111,6 +111,7 @@ function countBlocks(members: ProjectMember[], kind: string): number {
 
 export function ModelInfoPanel() {
   const bundle = useProjectStore((state) => state.bundle);
+  const projectPath = useProjectStore((state) => state.path);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const focusView = useCanvasView((state) => state.view);
@@ -437,7 +438,16 @@ export function ModelInfoPanel() {
   };
 
   if (!bundle) {
-    return <div className="side-panel-body" />;
+    return (
+      <div className="side-panel-body">
+        {projectPath !== null && (
+          <p className="side-kv">
+            This folder is not a LogicPilot project. Edit files in the
+            Explorer, then Save to initialize it.
+          </p>
+        )}
+      </div>
+    );
   }
 
   return (

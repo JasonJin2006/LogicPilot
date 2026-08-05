@@ -9,6 +9,7 @@ import {
   bundleToJson,
   createProject,
   createProjectBundle,
+  initializeProject,
   mergeCanvasSplit,
   mergeModelSource,
   nextInstanceName,
@@ -75,6 +76,23 @@ describe('project bundle', () => {
 
   it('createProject defaults the seed when omitted', () => {
     expect(createProject('Plain').manifest.defaults.seed).toBe(42);
+  });
+
+  it('initializeProject builds a bundle from a bare folder main.lp', () => {
+    const { document, bundle } = initializeProject(
+      'model M {\n  resource R {\n    capacity = 2\n  }\n}\n',
+      'my-folder',
+    );
+    expect(bundle.manifest.name).toBe('my-folder');
+    expect(bundle.files['model/main.lp']).toContain('model M');
+    expect(document.nodes.find((node) => node.kind === 'resource')!.params['capacity']).toBe(2);
+  });
+
+  it('initializeProject falls back to an empty model without main.lp', () => {
+    const { document, bundle } = initializeProject(undefined, 'empty-folder');
+    expect(bundle.manifest.name).toBe('empty-folder');
+    expect(document.nodes).toHaveLength(0);
+    expect(bundle.files['model/main.lp']).toContain('model empty-folder');
   });
 
   it('createProject keeps all members in the owning container files', () => {
