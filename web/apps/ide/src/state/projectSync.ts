@@ -13,7 +13,8 @@ import { useProjectStore } from './projectStore';
  *  an opened model should never land inside a stale container view). */
 export function loadModelDocument(document: ModelDocument): void {
   useModelStore.getState().loadDocument(document);
-  useCanvasView.getState().setView(null);
+  // A different model is loaded: close every container tab, show its root.
+  useCanvasView.getState().resetCanvasViews();
 }
 
 export function syncCanvasFromProject(): void {

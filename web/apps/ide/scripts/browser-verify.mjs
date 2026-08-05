@@ -263,6 +263,27 @@ try {
   await page.waitForSelector('.model-block.kind-source', { timeout: 5_000 });
   log('canvas strict partition: root hides stages, container drills in');
 
+  // Parallel container tabs (node-scene): drilling in opens a Flow tab next
+  // to the Model tab; switching tabs changes the canvas without a trip back
+  // to the root, and closing the container tab returns to the root.
+  const flowTab = page.locator('.area-center .tab').filter({ hasText: 'Flow' });
+  if ((await flowTab.count()) !== 1) {
+    throw new Error('container view did not open as a center tab');
+  }
+  await page.locator('.area-center .tab').filter({ hasText: 'Model' }).click();
+  await page.waitForSelector('.model-block.kind-process', { timeout: 5_000 });
+  if (await page.locator('.model-block.kind-source').count() !== 0) {
+    throw new Error('Model tab did not show the root canvas');
+  }
+  await flowTab.click();
+  await page.waitForSelector('.model-block.kind-source', { timeout: 5_000 });
+  await flowTab.locator('.tab-x').click();
+  await page.waitForSelector('.model-block.kind-process', { timeout: 5_000 });
+  if ((await page.locator('.area-center .tab').filter({ hasText: 'Flow' }).count()) !== 0) {
+    throw new Error('closing the container tab did not remove it');
+  }
+  log('canvas parallel tabs: switch + close container views');
+
   // AI panel (right): generate / optimize / explain / trajectory.
   await page.locator('.tab-label', { hasText: 'AI' }).click();
   await page

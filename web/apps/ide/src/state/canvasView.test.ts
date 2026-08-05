@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { addNode, createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
-import { documentForView } from './canvasView';
+import { documentForView, useCanvasView } from './canvasView';
+
+const FLOW = { kind: 'process', name: 'Flow' };
+const BACKUP = { kind: 'process', name: 'Backup' };
 
 describe('canvas view', () => {
   it('null view shows only model-level elements (stages are hidden)', () => {
@@ -115,5 +118,54 @@ describe('canvas view', () => {
     );
     expect(reparsedStages.find((node) => node.name === 'S')?.container).toBe('Flow');
     expect(reparsedStages.find((node) => node.name === 'Done')?.container).toBe('Backup');
+  });
+});
+
+describe('canvas view store (parallel tabs)', () => {
+  it('opens container views in order and dedupes', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(BACKUP);
+    useCanvasView.getState().setView(FLOW); // already open: re-activate only
+    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual([
+      'Flow',
+      'Backup',
+    ]);
+    expect(useCanvasView.getState().view).toEqual(FLOW);
+  });
+
+  it('closing the active view falls back to the root', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(BACKUP);
+    useCanvasView.getState().closeView(BACKUP);
+    expect(useCanvasView.getState().view).toBeNull();
+    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Flow']);
+  });
+
+  it('closing an inactive view keeps the active one', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(BACKUP);
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().closeView(BACKUP);
+    expect(useCanvasView.getState().view).toEqual(FLOW);
+    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Flow']);
+  });
+
+  it('returning to the root keeps the tabs open', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(null);
+    expect(useCanvasView.getState().view).toBeNull();
+    expect(useCanvasView.getState().views).toHaveLength(1);
+  });
+
+  it('resetCanvasViews closes every tab', () => {
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(BACKUP);
+    useCanvasView.getState().resetCanvasViews();
+    expect(useCanvasView.getState().views).toHaveLength(0);
+    expect(useCanvasView.getState().view).toBeNull();
   });
 });

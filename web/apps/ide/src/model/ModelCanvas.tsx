@@ -88,7 +88,27 @@ export function ModelCanvas() {
   const redo = useModelStore((state) => state.redo);
 
   const viewportRef = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<View>({ scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN });
+  // Pan/zoom is remembered per canvas view (the root + each open container
+  // tab), like editor tabs keep their scroll position across switches.
+  const viewKey = focusView ? `${focusView.kind}:${focusView.name}` : '\u0000root';
+  const cameraCache = useRef<Map<string, View>>(new Map());
+  const defaultView: View = { scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN };
+  const [view, setViewState] = useState<View>(
+    () => cameraCache.current.get(viewKey) ?? defaultView,
+  );
+  useEffect(() => {
+    setViewState(cameraCache.current.get(viewKey) ?? defaultView);
+  }, [viewKey]);
+  const setView = (updater: View | ((current: View) => View)) => {
+    setViewState((current) => {
+      const next =
+        typeof updater === 'function'
+          ? (updater as (current: View) => View)(current)
+          : updater;
+      cameraCache.current.set(viewKey, next);
+      return next;
+    });
+  };
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);

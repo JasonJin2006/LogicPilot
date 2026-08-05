@@ -8,7 +8,8 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { useModelStore } from '../state/modelStore';
-import { PANELS, type AreaId } from './panels';
+import { useCanvasView } from '../state/canvasView';
+import { PANELS, type AreaId, type PanelId } from './panels';
 
 function Splitter({
   area,
@@ -82,33 +83,103 @@ function TabBar({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
+  const openPanel = useLayoutStore((s) => s.openPanel);
+  const canvasViews = useCanvasView((s) => s.views);
+  const activeView = useCanvasView((s) => s.view);
+  const setCanvasView = useCanvasView((s) => s.setView);
+  const closeView = useCanvasView((s) => s.closeView);
   // Right/bottom panels can be collapsed; the model workspace stays open.
   const closable = area !== 'center';
   const perTabClose = area === 'center';
+  const renderTab = (panel: PanelId) => (
+    <div
+      key={panel}
+      className={`tab${panel === state.activePanel ? ' active' : ''}`}
+      onClick={() => setActive(area, panel)}
+    >
+      <span className="tab-label">{PANELS[panel].title}</span>
+      {perTabClose && (
+        <button
+          className="tab-x"
+          aria-label={`Close ${panel} tab`}
+          title="Close tab"
+          onClick={(event) => {
+            event.stopPropagation();
+            useLayoutStore.getState().removePanel(area, panel);
+          }}
+        >
+          <X size={11} />
+        </button>
+      )}
+    </div>
+  );
   return (
     <div className="tab-bar">
-      {state.panels.map((panel) => (
-        <div
-          key={panel}
-          className={`tab${panel === state.activePanel ? ' active' : ''}`}
-          onClick={() => setActive(area, panel)}
-        >
-          <span className="tab-label">{PANELS[panel].title}</span>
-          {perTabClose && (
-            <button
-              className="tab-x"
-              aria-label={`Close ${panel} tab`}
-              title="Close tab"
-              onClick={(event) => {
-                event.stopPropagation();
-                useLayoutStore.getState().removePanel(area, panel);
-              }}
-            >
-              <X size={11} />
-            </button>
-          )}
-        </div>
-      ))}
+      {area === 'center' ? (
+        <>
+          {/* The Model tab = the root canvas; the open container views are
+              tabs of the same canvas (VS Code style), kept right after it. */}
+          {state.panels
+            .filter((panel) => panel === 'model')
+            .map((panel) => (
+              <div
+                key={panel}
+                className={`tab${panel === state.activePanel && activeView === null ? ' active' : ''}`}
+                onClick={() => {
+                  setActive(area, panel);
+                  setCanvasView(null);
+                }}
+              >
+                <span className="tab-label">{PANELS[panel].title}</span>
+                <button
+                  className="tab-x"
+                  aria-label={`Close ${panel} tab`}
+                  title="Close tab"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    useLayoutStore.getState().removePanel(area, panel);
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+          {canvasViews.map((view) => {
+            const active =
+              state.activePanel === 'model' &&
+              activeView !== null &&
+              activeView.kind === view.kind &&
+              activeView.name === view.name;
+            return (
+              <div
+                key={`view:${view.kind}:${view.name}`}
+                className={`tab tab-view${active ? ' active' : ''}`}
+                title={`Open ${view.kind} ${view.name}`}
+                onClick={() => {
+                  openPanel('center', 'model');
+                  setCanvasView(view);
+                }}
+              >
+                <span className="tab-label">{view.name}</span>
+                <button
+                  className="tab-x"
+                  aria-label={`Close ${view.name} tab`}
+                  title="Close tab"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeView(view);
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            );
+          })}
+          {state.panels.filter((panel) => panel !== 'model').map(renderTab)}
+        </>
+      ) : (
+        state.panels.map(renderTab)
+      )}
       {closable && state.panels.length > 0 && (
         <button
           className="tab-close"

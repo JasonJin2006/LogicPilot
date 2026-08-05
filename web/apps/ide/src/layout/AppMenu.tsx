@@ -53,7 +53,6 @@ export function AppMenu() {
   const addBlock = useModelStore((state) => state.addBlock);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const loadDocument = useModelStore((state) => state.loadDocument);
-  const setCanvasView = useCanvasView((state) => state.setView);
   const undo = useModelStore((state) => state.undo);
   const redo = useModelStore((state) => state.redo);
   const canUndo = useModelStore((state) => state.canUndo);
@@ -74,7 +73,7 @@ export function AppMenu() {
   // Opening a different model shows its root canvas, not a stale container.
   const openDocument = (document: ModelDocument) => {
     loadDocument(document);
-    setCanvasView(null);
+    useCanvasView.getState().resetCanvasViews();
   };
 
   const fileNewProject = () => {
