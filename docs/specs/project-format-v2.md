@@ -105,15 +105,21 @@ save(canonical):
 
 ## 8. 迁移步骤
 
-1. `parseDsl` 全语法 + 占位节点 + 全语法 round-trip golden（`generate(parse(x))` 语义等价）。
-2. 布局分离：布局表读写 + 旧合一 canvas 兼容读取。
-3. `splitModelSource` 统一为"一切皆容器"：移除 kind 部件文件，容器统一进 `scenes/`。
-4. `lpcli --project` 消费新目录布局（合并 instance）。
-5. sync 引擎 + 错误码 + mtime 冲突检测。
-6. uid 映射 + 重命名修复工具（v2 纳入）。
-7. 多模型根 / 项目级库（v3）。
+1. ✅ `parseDsl` 全语法 + 占位节点 + 全语法 round-trip golden（`generate(parse(x))` 语义等价）。
+2. ✅ 布局分离：`.canvas.json` 纯布局（按稳定路径索引），旧合一 canvas 兼容读取。
+3. ✅ `splitModelSource` 统一为"一切皆容器"：移除 kind 部件文件，容器统一进 `scenes/`。
+4. ✅ `lpcli --project` 消费新目录布局（合并 instance）。
+5. ✅ sync 引擎（load/save 双投影）+ 错误码族（LP2xxx 结构 / LP3xxx 引用 / LP4xxx 布局 / LP5xxx 同步冲突）+ mtime 冲突检测。
+6. ✅ uid 映射（scene 首行 `// @uid` + manifest.containerIds）+ 重命名修复（Explorer 重命名同步 instance 引用；外部重命名按 uid 自动修复）。
+7. ⏳ 多模型根 / 项目级库（v3）。
 
 ## 9. 验收
+
+> ✅ 已落地（2026-08-05）：AI 全语法 DSL（agent/continuous/experiment/param/行为块）
+> load/save 无损；保存 diff 干净可读（round-trip 门禁 LP4001）；DSL 解析失败保留旧结构并
+> 输出诊断（LP2101/LP3xxx）；编辑器 24、IDE 69 单测 + lpcli/ctest 165 + 浏览器 E2E 全绿。
+
+
 
 - AI 生成完整 DSL（含 agent/experiment）→ 打开工程，面板结构/参数无损。
 - 面板编辑 → 保存 → 磁盘文件 diff 干净、可读。
