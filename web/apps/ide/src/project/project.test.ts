@@ -248,18 +248,57 @@ describe('project bundle', () => {
     );
   });
 
-  it('round-trips the canvas layout (positions, ids and edges survive)', () => {
+  it('round-trips the canvas layout (positions and edges survive by path)', () => {
     const original = buildSample();
     const result = projectToDocument(createProjectBundle(original));
     expect(result.ok).toBe(true);
     const document = result.document!;
     expect(document.name).toBe('MM1');
-    expect(document.nodes).toHaveLength(5);
+    // parseDsl adds the container Node for the bare stages, so the reloaded
+    // document has the process container plus the five authored nodes.
+    expect(document.nodes).toHaveLength(6);
     expect(document.edges).toHaveLength(1);
-    expect(document.nodes[0]!.id).toBe(original.nodes[0]!.id);
-    expect(document.nodes[1]!.x).toBe(120);
-    expect(document.nodes[2]!.y).toBe(200);
-    expect(document.nodes[3]!.params).toEqual({ time: 'exponential(1.0)' });
+    // Positions are keyed by stable node path, not runtime ids.
+    const arrivals = document.nodes.find((node) => node.name === 'Arrivals')!;
+    expect(arrivals.x).toBe(120);
+    const waitLine = document.nodes.find((node) => node.name === 'WaitLine')!;
+    expect(waitLine.y).toBe(200);
+    const service = document.nodes.find((node) => node.name === 'Handle')!;
+    expect(service.params).toEqual({ time: 'exponential(1.0)' });
+    expect(document.nodes.find((node) => node.name === 'Server')!.x).toBe(40);
+  });
+
+  it('applies the layout to nested container members by path', () => {
+    let document = createDocument('Swarm');
+    document = addNode(document, { kind: 'agent', name: 'Drone', x: 300, y: 400, params: {} });
+    document = addNode(document, {
+      kind: 'on_tick',
+      name: 'on_tick',
+      x: 120,
+      y: 250,
+      params: {},
+      container: 'Drone',
+    });
+    const result = projectToDocument(createProjectBundle(document));
+    expect(result.ok).toBe(true);
+    const reloaded = result.document!;
+    const agent = reloaded.nodes.find((node) => node.name === 'Drone')!;
+    expect(agent.x).toBe(300);
+    expect(agent.y).toBe(400);
+    const behavior = reloaded.nodes.find((node) => node.kind === 'on_tick')!;
+    expect(behavior.x).toBe(120);
+    expect(behavior.y).toBe(250);
+  });
+
+  it('reads legacy v1 canvas documents (structure + layout)', () => {
+    const bundle = createProjectBundle(buildSample());
+    // Simulate a v1 canvas: the whole document JSON.
+    const legacy = JSON.stringify(buildSample(), null, 2);
+    bundle.files[bundle.manifest.presentation] = legacy;
+    const result = projectToDocument(bundle);
+    expect(result.ok).toBe(true);
+    expect(result.document!.nodes).toHaveLength(5);
+    expect(result.document!.nodes[1]!.x).toBe(120);
   });
 
   it('emits the DSL and canvas files under the canonical paths', () => {
@@ -269,7 +308,9 @@ describe('project bundle', () => {
     expect(bundle.manifest.presentation).toBe('presentation/main.canvas.json');
     expect(bundle.manifest.defaults.schemaVersion).toBe(2);
     expect(bundle.files['model/main.lp']).toContain('model MM1');
-    expect(bundle.files['presentation/main.canvas.json']).toContain('"nodes"');
+    // v2 canvas file is layout-only (structure lives in main.lp).
+    expect(bundle.files['presentation/main.canvas.json']).toContain('"layout"');
+    expect(bundle.files['presentation/main.canvas.json']).not.toContain('"nodes"');
   });
 
   it('survives a JSON text round trip', () => {

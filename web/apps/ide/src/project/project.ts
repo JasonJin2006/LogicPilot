@@ -4,7 +4,7 @@
 // (docs/specs/project-format.md) so it can later be unpacked to disk without
 // data loss.
 
-import { createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
+import { createDocument, freshId, generateDsl, parseDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
 import {
   insertMember,
@@ -12,6 +12,15 @@ import {
   parseProjectSource,
   replaceSpan,
 } from './projectTree';
+
+/** Container kinds reload with a nested structure (one scene file each). */
+const CONTAINER_KINDS: ReadonlySet<string> = new Set([
+  'process',
+  'agent',
+  'atomic',
+  'continuous',
+  'experiment',
+]);
 
 export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
@@ -274,7 +283,7 @@ export function mergeModelSource(
 /** Serialize the current canvas document into a project bundle. The DSL is
  *  derived from the document (positions are kept in the canvas file). */
 export function createProjectBundle(document: ModelDocument): ProjectBundle {
-  const canvas = JSON.stringify(document, null, 2);
+  const canvas = canvasLayoutJson(document);
   return {
     schema: PROJECT_SCHEMA,
     format: 'bundle',
@@ -291,6 +300,49 @@ export function createProjectBundle(document: ModelDocument): ProjectBundle {
       [DEFAULT_PRESENTATION_PATH]: canvas,
     },
   };
+}
+
+/** A stable, path-like identity for a node (root `name`, nested
+ *  `container/name`). The layout file keys positions/edges by this instead
+ *  of runtime ids, so a round trip through parse/generate restores the
+ *  canvas even though node ids are regenerated on load. */
+export function nodePath(node: ModelNode, nodes: ModelNode[]): string {
+  if (node.container === undefined) {
+    // Root-level members: containers/resources/params use their name. Bare
+    // process stages (legacy data without a container Node) reload under
+    // the generated 'Flow' process, so their path must match that.
+    const isBareStage =
+      node.kind !== 'resource' &&
+      node.kind !== 'param' &&
+      node.kind !== 'use' &&
+      !CONTAINER_KINDS.has(node.kind);
+    return isBareStage ? `Flow/${node.name}` : node.name;
+  }
+  const parent = nodes.find((candidate) => candidate.name === node.container);
+  const prefix = parent ? nodePath(parent, nodes) : node.container;
+  return `${prefix}/${node.name}`;
+}
+
+/** The v2 layout-only canvas file: node positions and couplings keyed by
+ *  stable node paths. Structure lives in main.lp (project-format-v2). */
+export function canvasLayoutJson(document: ModelDocument): string {
+  const layout: Record<string, { x: number; y: number }> = {};
+  for (const node of document.nodes) {
+    layout[nodePath(node, document.nodes)] = { x: node.x, y: node.y };
+  }
+  const edges = document.edges.flatMap((edge) => {
+    const from = document.nodes.find((node) => node.id === edge.from);
+    const to = document.nodes.find((node) => node.id === edge.to);
+    if (!from || !to) {
+      return [];
+    }
+    return [{ from: nodePath(from, document.nodes), to: nodePath(to, document.nodes) }];
+  });
+  return JSON.stringify(
+    { schema: 'logicpilot.canvas', version: 2, layout, edges },
+    null,
+    2,
+  );
 }
 
 export function bundleToJson(bundle: ProjectBundle): string {
@@ -368,21 +420,71 @@ export interface DocumentLoadResult {
  *  params), fall back to parsing the model source. */
 export function projectToDocument(bundle: ProjectBundle): DocumentLoadResult {
   const canvasText = bundle.files[bundle.manifest.presentation];
-  if (canvasText !== undefined) {
+  const source = bundle.files[bundle.manifest.model];
+  // Legacy v1 canvas: a whole document (structure + layout) - keep using it.
+  if (canvasText !== undefined && !isLayoutCanvas(canvasText)) {
     const document = parseCanvas(canvasText, bundle.manifest.name);
     if (document !== null) {
       return { ok: true, document };
     }
   }
-  const source = bundle.files[bundle.manifest.model];
   if (source !== undefined) {
     const parsed = parseDsl(source);
     if (parsed.ok) {
+      if (canvasText !== undefined) {
+        applyCanvasLayout(parsed.document, canvasText);
+      }
       return { ok: true, document: parsed.document };
     }
     return { ok: false, error: parsed.error ?? 'invalid model source' };
   }
   return { ok: false, error: `project is missing '${bundle.manifest.model}'` };
+}
+
+function isLayoutCanvas(text: string): boolean {
+  try {
+    const raw = JSON.parse(text) as { schema?: unknown } | null;
+    return raw !== null && typeof raw === 'object' && 'layout' in raw;
+  } catch {
+    return false;
+  }
+}
+
+/** Apply a v2 layout-only canvas file (positions + couplings by node path)
+ *  onto a freshly parsed document. */
+function applyCanvasLayout(document: ModelDocument, text: string): void {
+  let raw: { layout?: Record<string, { x?: unknown; y?: unknown }>; edges?: Array<{ from?: unknown; to?: unknown }> } | null;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return;
+  }
+  if (raw === null || typeof raw !== 'object' || !raw.layout) {
+    return;
+  }
+  const byPath = new Map<string, ModelNode>();
+  for (const node of document.nodes) {
+    byPath.set(nodePath(node, document.nodes), node);
+  }
+  for (const [path, position] of Object.entries(raw.layout)) {
+    const node = byPath.get(path);
+    if (node && position && typeof position.x === 'number' && typeof position.y === 'number') {
+      node.x = position.x;
+      node.y = position.y;
+    }
+  }
+  if (Array.isArray(raw.edges)) {
+    const next: ModelEdge[] = [];
+    for (const entry of raw.edges) {
+      const from = typeof entry?.from === 'string' ? byPath.get(entry.from) : undefined;
+      const to = typeof entry?.to === 'string' ? byPath.get(entry.to) : undefined;
+      if (from && to && from.id !== to.id) {
+        next.push({ id: freshId('edge'), from: from.id, to: to.id });
+      }
+    }
+    // The persisted couplings replace the parse-time default ones.
+    document.edges = next;
+  }
 }
 
 function parseCanvas(text: string, fallbackName: string): ModelDocument | null {
