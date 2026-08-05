@@ -111,6 +111,9 @@ describe('project bundle', () => {
     expect(split['model/process.lp']).toContain('process Flow');
     expect(split['model/experiments.lp']).toContain('experiment Tune');
     expect(split['model/agents.lp']).toBeUndefined();
+    // Parts keep their model-body indentation so the merged model stays tidy.
+    expect(split['model/resources.lp']).toMatch(/^  resource Server/);
+    expect(split['model/experiments.lp']).toMatch(/^  experiment Tune/);
   });
 
   it('mergeModelSource reconstructs the full model from parts', () => {

@@ -92,7 +92,10 @@ export function splitModelSource(source: string): Record<string, string> {
   };
   const remaining: string[] = [];
   for (const member of parsed.model.members) {
-    const text = source.slice(member.span.start, member.span.end).trimEnd();
+    // Keep the member's leading indentation (the span starts at the kind
+    // token, so slice from the start of its line).
+    const lineStart = source.lastIndexOf('\n', member.span.start - 1) + 1;
+    const text = source.slice(lineStart, member.span.end).trimEnd();
     const partPath = member.isLeaf ? undefined : PART_PATH_BY_KIND[member.kind];
     if (partPath !== undefined) {
       parts[partPath]!.push(text);
