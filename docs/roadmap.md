@@ -140,8 +140,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    测试）；`@logicpilot/editor` 新增 `modelRunParams`（画布块图 → M/M/1 驱动
    参数或拒绝原因）；DSL 编辑区新增 Run（编译通过后自动 start）；运行中画布
    块实时显示队列长度徽标与 service 忙/闲/宕机状态点。browser-verify 覆盖
-   完整闭环。局限：当前 streaming 驱动为 M/M/1 族，其他模型族需通用执行器
-   （后续）。
+   完整闭环。局限：当前 streaming 驱动为 M/M/1 族，其他模型族需通用流程执行器（ProcessFlowSim）支持任意 process 拓扑，端口感知路由 + 工作队列驱动，M/M/1 统计对拍与确定性测试；lp-server 对非 M/M/1 模型走批量 ProcessFlowSim 并回 RunFinished 摘要。
    **编辑器补强 ✅ 已完成**（2026-08-05）：撤销/重做（600ms 合并窗口，
    Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；
    Project 面板显示模型摘要 + "New model"。
