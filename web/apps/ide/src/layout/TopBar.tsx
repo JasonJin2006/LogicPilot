@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Minus, Square, X } from 'lucide-react';
+import { Copy, Minus, Square, X } from 'lucide-react';
 
 function useTauri(): boolean {
   const [isTauri, setIsTauri] = useState(false);
@@ -16,6 +16,27 @@ function useTauri(): boolean {
 
 export function TopBar() {
   const isTauri = useTauri();
+  const [maximized, setMaximized] = useState(false);
+
+  // Track the maximized state so the button flips between the maximize and
+  // restore glyphs.
+  useEffect(() => {
+    if (!isTauri) return;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const window = getCurrentWindow();
+        setMaximized(await window.isMaximized());
+        unlisten = await window.onResized(async () => {
+          setMaximized(await window.isMaximized());
+        });
+      } catch (error) {
+        console.error('maximize state tracking failed', error);
+      }
+    })();
+    return () => unlisten?.();
+  }, [isTauri]);
 
   const startDrag = async (event: MouseEvent) => {
     if (!isTauri) return;
@@ -68,11 +89,11 @@ export function TopBar() {
           </button>
           <button
             className="window-control"
-            aria-label="Maximize"
-            title="Maximize"
+            aria-label={maximized ? 'Restore' : 'Maximize'}
+            title={maximized ? 'Restore' : 'Maximize'}
             onClick={() => void windowAction('toggleMaximize')}
           >
-            <Square size={11} />
+            {maximized ? <Copy size={12} /> : <Square size={11} />}
           </button>
           <button
             className="window-control window-control-close"
