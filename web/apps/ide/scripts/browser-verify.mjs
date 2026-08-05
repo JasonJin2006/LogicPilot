@@ -174,8 +174,8 @@ try {
   await page.locator('.area-left .tree-row[data-path="model/main.lp"]').click();
   await page.waitForSelector('.dsl-textarea', { timeout: 5_000 });
   const dslText = await page.locator('.dsl-textarea').inputValue();
-  if (!dslText.includes('instance Flow')) {
-    throw new Error('DSL file editor did not show the split main.lp');
+  if (!dslText.includes('source')) {
+    throw new Error('DSL file editor did not show the flat main.lp');
   }
   log('canvas model saved; main.lp opened as a file tab');
   await page
@@ -288,44 +288,20 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('canvas model ran with live block badges');
 
-  // Strict partitioning (node-scene step 3): the root canvas shows only
-  // model-level elements (resource + process container); stages stay inside
-  // their container and only appear when drilling into it.
-  await page.locator('.pill-root').click();
-  await page.waitForTimeout(150);
+  // Agent-centric canvas: process blocks live flat on the root canvas (no
+  // synthetic `process Flow` container); the resource and all stages share
+  // the model root, so nothing disappears when placing blocks.
   const rootKinds = await page.evaluate(() =>
     [...document.querySelectorAll('.model-canvas .model-block')].map((el) => el.className),
   );
-  if (!rootKinds.some((cls) => cls.includes('kind-process'))) {
-    throw new Error('root canvas missing the process container Node');
+  if (!rootKinds.some((cls) => cls.includes('kind-source')) ||
+      !rootKinds.some((cls) => cls.includes('kind-resource'))) {
+    throw new Error('root canvas missing the flat flow members');
   }
-  if (rootKinds.some((cls) => cls.includes('kind-source') || cls.includes('kind-queue'))) {
-    throw new Error('root canvas leaked process stages');
+  if (rootKinds.some((cls) => cls.includes('kind-process'))) {
+    throw new Error('root canvas should not auto-create a process container');
   }
-  await page.locator('.model-block.kind-process').dblclick();
-  await page.waitForSelector('.model-block.kind-source', { timeout: 5_000 });
-  log('canvas strict partition: root hides stages, container drills in');
-
-  // Parallel container tabs (node-scene): drilling in opens a Flow tab next
-  // to the Model tab; switching tabs changes the canvas without a trip back
-  // to the root, and closing the container tab returns to the root.
-  const flowTab = page.locator('.area-center .tab').filter({ hasText: 'Flow' });
-  if ((await flowTab.count()) !== 1) {
-    throw new Error('container view did not open as a center tab');
-  }
-  await page.locator('.area-center .tab').filter({ hasText: 'Model' }).click();
-  await page.waitForSelector('.model-block.kind-process', { timeout: 5_000 });
-  if (await page.locator('.model-block.kind-source').count() !== 0) {
-    throw new Error('Model tab did not show the root canvas');
-  }
-  await flowTab.click();
-  await page.waitForSelector('.model-block.kind-source', { timeout: 5_000 });
-  await flowTab.locator('.tab-x').click();
-  await page.waitForSelector('.model-block.kind-process', { timeout: 5_000 });
-  if ((await page.locator('.area-center .tab').filter({ hasText: 'Flow' }).count()) !== 0) {
-    throw new Error('closing the container tab did not remove it');
-  }
-  log('canvas parallel tabs: switch + close container views');
+  log('agent-centric canvas: flat process blocks on the model root');
 
   // AI panel (right): generate / optimize / explain / trajectory.
   await page.locator('.tab-label').filter({ hasText: /^AI$/ }).click();

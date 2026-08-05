@@ -178,20 +178,20 @@ export function generateDsl(document: ModelDocument): string {
     !CONTAINER_KINDS.has(node.kind);
 
   const topLevel = document.nodes.filter((node) => !node.container && emitCandidate(node));
-  // Legacy data without a process container node: its bare stages fall back
-  // to the single 'Flow' process so the DSL stays loadable.
+  // Agent-centric emission: process-library blocks at the model root are
+  // emitted directly (no `process Flow` wrapper) with their model-level
+  // couplings. Documents that still carry a `process` container node keep
+  // the legacy nested form via emitNode.
   const orphanLeaves = topLevel.filter(isDeclarationLeaf);
   const direct = topLevel.filter((node) => !isDeclarationLeaf(node));
   for (const node of direct) {
     emitNode(node, '  ');
   }
   if (orphanLeaves.length > 0) {
-    lines.push('  process Flow {');
     for (const stage of orderStages(orphanLeaves, document.edges, document)) {
-      emitNode(stage, '    ');
+      emitNode(stage, '  ');
     }
-    emitCouplings(undefined, '    ');
-    lines.push('  }');
+    emitCouplings(undefined, '  ');
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;

@@ -19,8 +19,8 @@ export function insertBlockAt(
   library: string,
   world?: { x: number; y: number },
 ): void {
-  const { addBlock, document } = useModelStore.getState();
-  const { view, setView } = useCanvasView.getState();
+  const { addBlock } = useModelStore.getState();
+  const { view } = useCanvasView.getState();
   const pos = world ?? {
     x: 140 + (cascade % 8) * 28,
     y: 90 + Math.floor((cascade % 8) / 4) * 40,
@@ -33,23 +33,9 @@ export function insertBlockAt(
   if (isStage) {
     if (view) {
       container = view.name;
-    } else {
-      container = 'Flow';
-      const existing = document.nodes.some(
-        (node) => node.kind === 'process' && node.name === container,
-      );
-      if (!existing) {
-        addBlock({
-          kind: 'process',
-          name: container,
-          x: pos.x,
-          y: pos.y,
-          params: {},
-          library: 'process',
-        });
-      }
-      setView({ kind: 'process', name: container });
     }
+    // At the model root (no focused container) process blocks land directly
+    // in the root scope (agent-centric), so they render on the root canvas.
   }
   addBlock({
     kind,

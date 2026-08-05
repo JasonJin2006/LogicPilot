@@ -263,9 +263,10 @@ describe('project bundle', () => {
     expect(result.ok).toBe(true);
     const document = result.document!;
     expect(document.name).toBe('MM1');
-    // parseDsl adds the container Node for the bare stages, so the reloaded
-    // document has the process container plus the five authored nodes.
-    expect(document.nodes).toHaveLength(6);
+    // Agent-centric: bare stages stay at the model root (no synthetic
+    // `process Flow` container), so the reloaded document has exactly the
+    // five authored nodes.
+    expect(document.nodes).toHaveLength(5);
     expect(document.edges).toHaveLength(1);
     // Positions are keyed by stable node path, not runtime ids.
     const arrivals = document.nodes.find((node) => node.name === 'Arrivals')!;
@@ -349,7 +350,7 @@ describe('project bundle', () => {
     expect(result.ok).toBe(true);
     // parseDsl lays the blocks out (resource + process container + stages)
     // and couples the stages left to right.
-    expect(result.document!.nodes).toHaveLength(6);
+    expect(result.document!.nodes).toHaveLength(5);
     expect(result.document!.name).toBe('MM1');
   });
 

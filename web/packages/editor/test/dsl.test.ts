@@ -33,12 +33,16 @@ describe('DSL v2 generation', () => {
       params: { resource: 'Server', time: 'exponential(1.0)' },
     });
     doc = addNode(doc, { kind: 'sink', name: 'Done', x: 300, y: 40 });
+    const nodes = doc.nodes;
+    doc = connect(doc, nodes[1]!.id, nodes[2]!.id).document;
+    doc = connect(doc, nodes[2]!.id, nodes[3]!.id).document;
+    doc = connect(doc, nodes[3]!.id, nodes[4]!.id).document;
 
     const source = generateDsl(doc);
     expect(source).toContain('model MM1 {');
     expect(source).toContain('resource Server {');
     expect(source).toContain('capacity = 1');
-    expect(source).toContain('process Flow {');
+    // Agent-centric: process blocks emit directly at the model root.
     expect(source).toContain('source Arrivals {');
     expect(source).toContain('arrival = rate(0.8)');
     expect(source).toContain('queue WaitLine {');
@@ -47,6 +51,9 @@ describe('DSL v2 generation', () => {
     expect(source).toContain('resource = Server');
     expect(source).toContain('time = exponential(1.0)');
     expect(source).toContain('sink Done { }');
+    expect(source).toContain("couple Arrivals.out -> WaitLine.in");
+    expect(source).toContain("couple WaitLine.out -> Handle.in");
+    expect(source).toContain("couple Handle.out -> Done.in");
     expect(source).toContain('}');
   });
 

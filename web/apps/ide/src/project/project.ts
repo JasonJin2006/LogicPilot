@@ -401,15 +401,9 @@ export function createProjectBundle(document: ModelDocument): ProjectBundle {
  *  canvas even though node ids are regenerated on load. */
 export function nodePath(node: ModelNode, nodes: ModelNode[]): string {
   if (node.container === undefined) {
-    // Root-level members: containers/resources/params use their name. Bare
-    // process stages (legacy data without a container Node) reload under
-    // the generated 'Flow' process, so their path must match that.
-    const isBareStage =
-      node.kind !== 'resource' &&
-      node.kind !== 'param' &&
-      node.kind !== 'use' &&
-      !CONTAINER_KINDS.has(node.kind);
-    return isBareStage ? `Flow/${node.name}` : node.name;
+    // Agent-centric root: every member at the model root uses its name
+    // (process blocks included).
+    return node.name;
   }
   const parent = nodes.find((candidate) => candidate.name === node.container);
   const prefix = parent ? nodePath(parent, nodes) : node.container;
