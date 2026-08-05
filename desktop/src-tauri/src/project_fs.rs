@@ -358,7 +358,8 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join("build/main.lpir"), "binary").unwrap();
 
-        let (manifest, files) = read_project_dir(&dir.to_string_lossy()).unwrap();
+        let (manifest, files) = read_project_dir(&dir.to_string_lossy())
+            .unwrap_or_else(|error| panic!("read_project_dir failed: {} ({})", error, dir.display()));
         assert!(manifest.contains("logicpilot.project"));
         assert!(files.contains_key("model/main.lp"));
         assert!(files.contains_key("model/resources.lp"));
@@ -485,5 +486,25 @@ mod tests {
         assert_ne!(edited["model/main.lp"], first);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reads_the_examples_call_center_project() {
+        let root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let dir = Path::new(&root)
+            .join("..")
+            .join("..")
+            .join("examples")
+            .join("call-center");
+        let dir_text = dir.to_string_lossy().into_owned();
+        let (manifest, files) = match read_project_dir(&dir_text) {
+            Ok(result) => result,
+            Err(error) => panic!("read_project_dir('{}') failed: {}", dir_text, error),
+        };
+        assert!(manifest.contains("CallCenter"));
+        assert!(files.contains_key("model/main.lp"));
+        assert!(files["model/main.lp"].starts_with("//"));
+        assert!(files.contains_key("model/scenes/CallFlow.lp"));
+        assert!(files.contains_key("presentation/main.canvas.json"));
     }
 }
