@@ -4,7 +4,14 @@
 
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Minus, Square, X } from 'lucide-react';
+
+// Standard Windows title-bar glyphs (Segoe Fluent Icons / Segoe MDL2 Assets).
+const GLYPHS = {
+  minimize: '\uE921',
+  maximize: '\uE922',
+  restore: '\uE923',
+  close: '\uE8BB',
+};
 
 function useTauri(): boolean {
   const [isTauri, setIsTauri] = useState(false);
@@ -97,7 +104,9 @@ export function TopBar() {
             title="Minimize"
             onClick={() => void windowAction('minimize')}
           >
-            <Minus size={14} />
+            <span className="win-glyph" aria-hidden>
+              {GLYPHS.minimize}
+            </span>
           </button>
           <button
             className="window-control"
@@ -105,22 +114,9 @@ export function TopBar() {
             title={maximized ? 'Restore' : 'Maximize'}
             onClick={() => void windowAction('toggleMaximize')}
           >
-            {maximized ? (
-              // Windows-style restore: large frame behind, small frame in front.
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.2"
-              >
-                <rect x="4.5" y="0.5" width="7" height="7" rx="0.5" />
-                <rect x="0.5" y="4.5" width="7" height="7" rx="0.5" />
-              </svg>
-            ) : (
-              <Square size={11} />
-            )}
+            <span className="win-glyph" aria-hidden>
+              {maximized ? GLYPHS.restore : GLYPHS.maximize}
+            </span>
           </button>
           <button
             className="window-control window-control-close"
@@ -128,7 +124,9 @@ export function TopBar() {
             title="Close"
             onClick={() => void windowAction('close')}
           >
-            <X size={14} />
+            <span className="win-glyph" aria-hidden>
+              {GLYPHS.close}
+            </span>
           </button>
         </div>
       )}

@@ -32,6 +32,12 @@
   color: var(--text-muted);
 }
 
+.win-glyph {
+  font-family: 'Segoe Fluent Icons', 'Segoe MDL2 Assets', sans-serif;
+  font-size: 11px;
+  line-height: 1;
+}
+
 .window-control:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text);
