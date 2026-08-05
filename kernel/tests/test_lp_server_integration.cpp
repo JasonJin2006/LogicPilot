@@ -492,7 +492,14 @@ BroadcastCapture drain_broadcast(WsClient& client) {
 
 TEST_CASE("lp-server broadcasts identical frames to every connected client",
           "[server][integration]") {
-  logicpilot::server::SimServer server{make_test_config()};
+  logicpilot::server::ServerConfig config = make_test_config();
+  // The run below floods frames at speed=100000; on debug builds the single
+  // network thread cannot keep up, so the default 256-frame cap would drop
+  // the oldest frames (deliberately covered by the slow-client test). Raise
+  // the cap above the whole run's burst (~3722 frames for arrivals=1500) so
+  // this test asserts complete identical fan-out, not the drop policy.
+  config.write_queue_limit = 8192;
+  logicpilot::server::SimServer server{config};
   std::string error;
   REQUIRE(server.start(&error));
 
