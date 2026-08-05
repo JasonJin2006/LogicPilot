@@ -24,6 +24,7 @@ export interface LayoutState {
   removePanel: (area: AreaId, panel: PanelId) => void;
   toggleCollapse: (area: AreaId) => void;
   setActive: (area: AreaId, panel: PanelId) => void;
+  openPanel: (area: AreaId, panel: PanelId) => void;
   resetLayout: () => void;
 }
 
@@ -146,6 +147,20 @@ export const useLayoutStore = create<LayoutState>()(
         set((state) => ({
           areas: { ...state.areas, [area]: { ...state.areas[area], activePanel: panel } },
         })),
+      // Show a panel, adding it back to the area if it was closed.
+      openPanel: (area, panel) =>
+        set((state) => {
+          const areaState = state.areas[area];
+          const panels = areaState.panels.includes(panel)
+            ? areaState.panels
+            : [...areaState.panels, panel];
+          return {
+            areas: {
+              ...state.areas,
+              [area]: { ...areaState, panels, activePanel: panel },
+            },
+          };
+        }),
       resetLayout: () => set({ areas: defaultAreas() }),
     }),
     {

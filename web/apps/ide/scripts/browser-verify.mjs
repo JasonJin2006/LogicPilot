@@ -130,7 +130,8 @@ try {
     );
   });
   await page.waitForSelector('.model-block', { timeout: 5_000 });
-  await page.locator('.dsl-edge-tab').click();
+  // The DSL editor is its own center tab (no attached drawer).
+  await page.locator('.area-center .tab').filter({ hasText: 'DSL' }).click();
   await page.waitForSelector('.dsl-source', { timeout: 5_000 });
   const dslText = await page.locator('.dsl-source').textContent();
   if (!dslText?.includes('process Flow')) {
@@ -147,8 +148,9 @@ try {
     throw new Error('compile diagnostics missing a diagnostic code');
   }
   log('canvas DSL compiled with diagnostics echoed to the console');
-  // Collapse the DSL editor so the canvas is full-width for the run model.
-  await page.locator('.dsl-edge-tab').click();
+  // Switch back to the canvas tab for the run model step.
+  await page.locator('.area-center .tab').filter({ hasText: 'Model' }).click();
+  await page.waitForSelector('.model-canvas', { timeout: 5_000 });
 
   // Canvas model -> Run -> live block badges (P1-7 run loop): finish the
   // mm1 shape on the canvas, run it with fast params, and assert the live

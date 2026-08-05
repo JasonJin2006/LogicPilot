@@ -6,6 +6,7 @@
 import type { ComponentType } from 'react';
 import { Boxes, Files, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
+import { DslEditor } from '../model/DslEditor';
 import { ModelWorkspace } from '../model/ModelWorkspace';
 import { ConsolePanel } from './ConsolePanel';
 import { ExplorerPanel } from './ExplorerPanel';
@@ -19,6 +20,7 @@ export type PanelId =
   | 'model'
   | 'ai'
   | 'console'
+  | 'dsl'
   | 'explorer'
   | 'modelInfo'
   | 'palette'
@@ -33,6 +35,7 @@ export interface PanelDef {
 export const PANELS: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
+  dsl: { title: 'DSL', area: 'center', component: DslEditor },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // right: selected block properties.
@@ -60,7 +63,7 @@ export const ACTIVITY_VIEWS: Array<{
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
   left: { panels: ['explorer', 'modelInfo', 'palette'], active: 'explorer' },
-  center: { panels: ['model'], active: 'model' },
+  center: { panels: ['model', 'dsl'], active: 'model' },
   right: { panels: ['ai', 'properties'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },
 };

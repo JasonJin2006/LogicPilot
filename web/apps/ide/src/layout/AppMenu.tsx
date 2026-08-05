@@ -391,6 +391,14 @@ export function AppMenu() {
           action: () => showPanel('right', 'ai'),
         },
         {
+          label: 'DSL',
+          checked: areas.center.activePanel === 'dsl',
+          action: () => {
+            useLayoutStore.getState().openPanel('center', 'dsl');
+            close();
+          },
+        },
+        {
           label: 'Console',
           checked: !areas.bottom.collapsed,
           action: showConsole,

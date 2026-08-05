@@ -13,6 +13,7 @@ import { RunDialog } from './run/RunDialog';
 import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
 import { useModelStore } from './state/modelStore';
+import { useLayoutStore } from './state/layoutStore';
 import { useProjectStore } from './state/projectStore';
 import { useUiStore } from './state/uiStore';
 import { projectToDocument } from './project/project';
@@ -22,6 +23,14 @@ import { useEffect } from 'react';
 export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   const runDialogOpen = useUiStore((state) => state.runDialogOpen);
+  const dslEditorFile = useUiStore((state) => state.dslEditorFile);
+
+  // Opening a file from the Explorer brings the DSL editor tab to the front.
+  useEffect(() => {
+    if (dslEditorFile !== null) {
+      useLayoutStore.getState().openPanel('center', 'dsl');
+    }
+  }, [dslEditorFile]);
 
   // Track dirty state against the last saved project bundle: any canvas
   // document change marks the project dirty; the open/save/new handlers call

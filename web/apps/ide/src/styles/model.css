@@ -45,46 +45,16 @@
   touch-action: none;
 }
 
-/* Collapsible DSL code pane beside the canvas. */
-.dsl-splitter {
-  position: relative;
-  flex: none;
-  width: 1px;
-  cursor: var(--cursor-resize-h);
-}
-
-.dsl-splitter::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -3px;
-  right: -3px;
-}
-
-.dsl-splitter::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: transparent;
-  transition: background 120ms ease;
-}
-
-.dsl-splitter:hover::after,
-.dsl-splitter:active::after {
-  background: var(--accent);
-  opacity: 0.55;
-}
-
+/* Standalone DSL editor tab: fills its center panel pane. */
 .dsl-editor {
   position: relative;
   display: flex;
-  flex: none;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  width: 100%;
+  height: 100%;
   background: var(--bg-strong);
-  border-left: 1px solid var(--border);
 }
 
 .dsl-editor-header {
@@ -94,8 +64,6 @@
   gap: 6px;
   height: 26px;
   padding: 0 8px;
-  /* Keep the title + Compile clear of the edge tab at the header's right. */
-  padding-right: 30px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -139,50 +107,6 @@
   padding: 1px 6px;
   font-size: 12px;
   line-height: 1.4;
-}
-
-/* The edge tab is a drawer handle attached to the DSL area's leading (left)
-   edge at title-bar height. Collapsed it sits on the model / right-sidebar
-   boundary; open it rides the DSL editor's left edge over the splitter. */
-.dsl-edge-tab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 26px;
-  padding: 0;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  cursor: var(--cursor-pointer);
-}
-
-.dsl-edge-tab:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-/* Collapsed: the pull-out handle flush against the model area's right edge. */
-.model-workspace > .dsl-edge-tab {
-  position: absolute;
-  z-index: 2;
-  right: 0;
-  top: 0;
-  border-right: none;
-  border-radius: var(--r-sm) 0 0 var(--r-sm);
-}
-
-/* Open: attached to the DSL editor's left edge, sticking out over the
-   splitter so it stays visible as the leading-edge handle. */
-.dsl-editor .dsl-edge-tab {
-  position: absolute;
-  z-index: 2;
-  /* Button width + the editor's 1px left border: the right edge sits
-     exactly on the DSL area's left edge, flush instead of embedded. */
-  left: -23px;
-  top: 0;
-  border-right: none;
-  border-radius: var(--r-sm) 0 0 var(--r-sm);
 }
 
 .model-canvas.panning {

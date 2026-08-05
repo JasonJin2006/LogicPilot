@@ -53,15 +53,14 @@ describe('layoutStore', () => {
     const store = useLayoutStore.getState();
     store.removePanel('center', 'model');
     const center = useLayoutStore.getState().areas.center;
-    expect(center.panels).toEqual([]);
-    // Removing the only panel leaves the center empty; defaults come back
-    // on the next rehydrate (mergePersistedLayout).
-    expect(center.activePanel).toBe('model');
+    expect(center.panels).toEqual(['dsl']);
+    // The remaining tab becomes active.
+    expect(center.activePanel).toBe('dsl');
   });
 
   it('defaults areas to the registry layout', () => {
     const { areas } = useLayoutStore.getState();
-    expect(areas.center.panels).toEqual(['model']);
+    expect(areas.center.panels).toEqual(['model', 'dsl']);
     expect(areas.right.panels).toEqual(['ai', 'properties']);
     expect(areas.left.panels).toEqual(['explorer', 'modelInfo', 'palette']);
     expect(areas.bottom.panels).toEqual(['console']);
@@ -80,9 +79,9 @@ describe('layoutStore', () => {
       },
     };
     const merged = mergePersistedLayout(stale, current);
-    // counters/results were removed from the registry; only model survives
-    // and the active panel falls back to it.
-    expect(merged.areas.center.panels).toEqual(['model']);
+    // counters/results were removed from the registry; model and the
+    // newly registered dsl survive, active falls back to model.
+    expect(merged.areas.center.panels).toEqual(['model', 'dsl']);
     expect(merged.areas.center.activePanel).toBe('model');
   });
 
