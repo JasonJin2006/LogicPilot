@@ -13,6 +13,7 @@ import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
 import { PropertiesPanel } from '../model/PropertiesPanel';
+import { WelcomePanel } from './WelcomePanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
@@ -24,7 +25,8 @@ export type PanelId =
   | 'explorer'
   | 'modelInfo'
   | 'palette'
-  | 'properties';
+  | 'properties'
+  | 'welcome';
 
 export interface PanelDef {
   title: string;
@@ -36,6 +38,7 @@ export const PANELS: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
   dsl: { title: 'DSL', area: 'center', component: DslEditor },
+  welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // right: selected block properties.

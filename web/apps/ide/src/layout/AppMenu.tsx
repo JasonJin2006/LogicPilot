@@ -281,6 +281,10 @@ export function AppMenu() {
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(null);
       useProjectStore.getState().setDiskFiles(null);
+      // Back to the welcome tab when it is open, else a blank center.
+      if (useLayoutStore.getState().areas.center.panels.includes('welcome')) {
+        useLayoutStore.getState().setActive('center', 'welcome');
+      }
       close();
     };
     if (current && isDirty) {
@@ -599,10 +603,8 @@ export function AppMenu() {
         {
           label: 'Welcome',
           action: () => {
-            openInfo(
-              'Welcome to LogicPilot',
-              'AI-native simulation platform: drag-and-drop modeling, DSL v2, a C++ kernel and live visualization. Build a model from the Palette, wire the ports, compile in the DSL editor and press Run.',
-            );
+            // The welcome page is a closable center tab.
+            useLayoutStore.getState().openPanel('center', 'welcome');
             close();
           },
         },

@@ -247,6 +247,26 @@ function TabBar({ area }: { area: AreaId }) {
               </div>
             );
           })}
+          {state.panels.includes('welcome') && (
+            <div
+              className={`tab${activePanel === 'welcome' ? ' active' : ''}`}
+              title="Welcome"
+              onClick={() => setActive('center', 'welcome')}
+            >
+              <span className="tab-label">Welcome</span>
+              <button
+                className="tab-x"
+                aria-label="Close Welcome tab"
+                title="Close tab"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  useLayoutStore.getState().removePanel('center', 'welcome');
+                }}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          )}
           {/* The right end of the tab bar is a contextual action area:
               Run for the canvas, Compile (and Save for disk files) for the
               code editor - icon buttons, not text. */}
@@ -304,9 +324,13 @@ function TabBar({ area }: { area: AreaId }) {
 
 function PanelArea({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
+  const centerPanels = useLayoutStore((s) => s.areas.center.panels);
   const canvasOpen = useCanvasView((s) => s.rootOpen || s.views.length > 0);
   const filesOpen = useUiStore((s) => s.openFiles.length > 0);
-  const centerEmpty = area === 'center' && !canvasOpen && !filesOpen;
+  const welcomeOpen = area === 'center' && centerPanels.includes('welcome');
+  // Blank until a tab is opened: the welcome page is a closable tab too.
+  const centerEmpty =
+    area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen;
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
       {!state.collapsed &&
@@ -317,9 +341,7 @@ function PanelArea({ area }: { area: AreaId }) {
         ) : null)}
       {!state.collapsed && (
         <div className="panel-area-body">
-          {centerEmpty ? (
-            <CenterEmpty />
-          ) : (
+          {!centerEmpty &&
             state.panels.map((panel) => {
               const definition = PANELS[panel];
               if (definition === undefined) {
@@ -334,25 +356,10 @@ function PanelArea({ area }: { area: AreaId }) {
                   <PanelComponent />
                 </div>
               );
-            })
-          )}
+            })}
         </div>
       )}
     </section>
-  );
-}
-
-// Center workspace empty state: no canvas and no file tab is open yet.
-function CenterEmpty() {
-  const openNewProject = useUiStore((s) => s.openNewProject);
-  return (
-    <div className="center-empty">
-      <img className="center-empty-logo" src="/logo.svg" alt="LogicPilot" />
-      <p>Nothing is open - open a project element or a file to start editing.</p>
-      <button className="btn-primary" onClick={openNewProject}>
-        New project
-      </button>
-    </div>
   );
 }
 

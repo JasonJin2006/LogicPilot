@@ -27,7 +27,7 @@ export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   const runDialogOpen = useUiStore((state) => state.runDialogOpen);
   const activeFile = useUiStore((state) => state.activeFile);
-  const canvasView = useCanvasView((state) => state.view);
+  const canvasView = useCanvasView();
 
   // The gateway should just work: auto-connect on startup (the desktop
   // client launches lp-server itself; the browser dev server can connect to
@@ -44,9 +44,14 @@ export default function App() {
     }
   }, [activeFile]);
 
-  // Focusing a container (canvas view) brings the canvas tab to the front.
+  // Focusing a container (canvas view) brings the canvas tab to the front,
+  // but only while a canvas is actually open - closing a project falls back
+  // to the welcome tab / blank center instead of re-activating the canvas.
   useEffect(() => {
-    useLayoutStore.getState().openPanel('center', 'model');
+    const { rootOpen, views } = useCanvasView.getState();
+    if (rootOpen || views.length > 0) {
+      useLayoutStore.getState().openPanel('center', 'model');
+    }
   }, [canvasView]);
 
   // Track dirty state against the last saved project bundle: any canvas

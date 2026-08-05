@@ -47,11 +47,21 @@ page.on('pageerror', (err) => consoleErrors.push(String(err)));
 try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
-  // With nothing open the center shows its empty state, not a canvas tab.
-  await page.waitForSelector('.center-empty', { timeout: 20_000 });
-  log('page loaded: center empty state');
+  // With nothing open the center is blank (the welcome page is a closable
+  // tab, reached via Help > Welcome).
+  await page.waitForSelector('.area-center', { timeout: 20_000 });
+  await page.waitForTimeout(500);
+  if (await page.locator('.center-empty').count() !== 0) {
+    throw new Error('welcome page should not be pinned on startup');
+  }
+  log('page loaded: blank center (no pinned tabs)');
   await page.screenshot({ path: join(OUT, '1-loaded.png') });
 
+  // Help > Welcome opens the welcome tab, from which a project is created.
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Welcome' }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  await page.locator('.area-center .tab').filter({ hasText: 'Welcome' }).click();
   // New project opens the root canvas tab (canvas tabs are per-element).
   await page.getByRole('button', { name: 'New project' }).click();
   await page.getByRole('dialog', { name: 'New Project' }).waitFor();
