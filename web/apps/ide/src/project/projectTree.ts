@@ -9,6 +9,8 @@ export interface ProjectMember {
   kind: string;
   /** Block name; empty for leaf lines. */
   name: string;
+  /** Referenced scene path for `instance` members. */
+  path?: string;
   isLeaf: boolean;
   /** Full member text span in the source. */
   span: { start: number; end: number };
@@ -176,6 +178,32 @@ class Parser {
             name: library.text,
             isLeaf: true,
             span: { start: first.start, end: library.end },
+            bodyOpen: 0,
+            bodyClose: 0,
+            children: [],
+          });
+          continue;
+        }
+      }
+
+      // instance <name> = "<scene-path>" -> an instanced container node.
+      if (first.type === 'word' && first.text === 'instance') {
+        const name = this.tokens[this.pos + 1];
+        const eq = this.tokens[this.pos + 2];
+        const path = this.tokens[this.pos + 3];
+        if (
+          name?.type === 'word' &&
+          eq?.type === 'punct' &&
+          eq.text === '=' &&
+          path?.type === 'string'
+        ) {
+          this.pos += 4;
+          members.push({
+            kind: 'instance',
+            name: name.text,
+            path: path.text,
+            isLeaf: false,
+            span: { start: first.start, end: path.end },
             bodyOpen: 0,
             bodyClose: 0,
             children: [],

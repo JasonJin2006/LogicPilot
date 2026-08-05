@@ -118,7 +118,7 @@ describe('project bundle', () => {
   });
 
   it('mergeModelSource reconstructs the full model from parts', () => {
-    const main = 'model M {\n}\n';
+    const main = 'model M {\n  instance Flow = "model/scenes/Flow.lp"\n}\n';
     const files = {
       'model/main.lp': main,
       'model/resources.lp': '  resource Server {\n    capacity = 1\n  }\n',
@@ -154,8 +154,8 @@ describe('project bundle', () => {
     const original = parseProjectSource(source);
     const reparsed = parseProjectSource(merged);
     expect(reparsed.ok).toBe(true);
-    expect(reparsed.model!.members.map((m) => m.kind)).toEqual(
-      original.model!.members.map((m) => m.kind),
+    expect(new Set(reparsed.model!.members.map((m) => m.kind))).toEqual(
+      new Set(original.model!.members.map((m) => m.kind)),
     );
     expect(merged).toContain('arrival = rate(0.8)');
   });
@@ -170,10 +170,10 @@ describe('project bundle', () => {
     expect(merged.files['model/experiments.lp']).toContain('experiment Tune');
     expect(merged.files['model/resources.lp']).toContain('resource');
     expect(merged.files['model/scenes/Flow.lp']).toContain('process');
+    // Scenes are referenced via instance members, not listed as parts.
     expect(merged.manifest.modelParts).toEqual([
       'model/experiments.lp',
       'model/resources.lp',
-      'model/scenes/Flow.lp',
     ]);
   });
 
@@ -183,6 +183,46 @@ describe('project bundle', () => {
     ).toEqual({ kind: 'process', name: 'Flow' });
     expect(sceneContainerFromFile('model/main.lp', 'model M {\n}\n')).toBeNull();
     expect(sceneContainerFromFile('model/scenes/Bad.lp', 'not a fragment')).toBeNull();
+  });
+
+  it('projectTree parses instance members', () => {
+    const parsed = parseProjectSource(
+      'model M {\n  instance Flow = "model/scenes/Flow.lp"\n}\n',
+    );
+    expect(parsed.ok).toBe(true);
+    const instance = parsed.model!.members.find((member) => member.kind === 'instance')!;
+    expect(instance.name).toBe('Flow');
+    expect(instance.path).toBe('model/scenes/Flow.lp');
+  });
+
+  it('split emits instances and merge resolves them back to inline containers', () => {
+    const source = `model M {
+  resource Server {
+    capacity = 1
+  }
+  process Flow {
+    queue Q {
+      capacity = 10
+    }
+  }
+}
+`;
+    const split = splitModelSource(source);
+    expect(split['model/main.lp']).toContain(
+      'instance Flow = "model/scenes/Flow.lp"',
+    );
+    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
+    expect(split['model/resources.lp']).toContain('resource Server');
+
+    const merged = mergeModelSource(split['model/main.lp']!, split);
+    expect(merged).not.toContain('instance Flow');
+    expect(merged).toContain('process Flow');
+    expect(merged).toContain('queue Q');
+    const reparsed = parseProjectSource(merged);
+    expect(reparsed.ok).toBe(true);
+    expect(new Set(reparsed.model!.members.map((member) => member.kind))).toEqual(
+      new Set(['resource', 'process']),
+    );
   });
 
   it('round-trips the canvas layout (positions, ids and edges survive)', () => {

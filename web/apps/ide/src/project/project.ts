@@ -6,7 +6,12 @@
 
 import { createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
-import { insertMember, parseProjectMembers, parseProjectSource } from './projectTree';
+import {
+  insertMember,
+  parseProjectMembers,
+  parseProjectSource,
+  replaceSpan,
+} from './projectTree';
 
 export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
@@ -97,6 +102,8 @@ export function splitModelSource(source: string): Record<string, string> {
       const blocks = scenes.get(member.name) ?? [];
       blocks.push(text);
       scenes.set(member.name, blocks);
+      // The model references the scene by path instead of inlining it.
+      remaining.push(`  instance ${member.name} = "${MODEL_SCENE_DIR}/${member.name}.lp"`);
     } else {
       remaining.push(text);
     }
@@ -129,11 +136,39 @@ export function sceneContainerFromFile(
   return first ? { kind: first.kind, name: first.name } : null;
 }
 
-/** Part files present in `files` (kind-based + scenes), excluding main.lp. */
+/** Part files present in `files` (kind-based leaf parts), excluding main.lp
+ *  and scene files (scenes are referenced by `instance` members instead). */
 export function collectModelParts(files: Record<string, string>): string[] {
   return Object.keys(files)
-    .filter((path) => path.startsWith('model/') && path !== DEFAULT_MODEL_PATH)
+    .filter(
+      (path) =>
+        path.startsWith('model/') &&
+        path !== DEFAULT_MODEL_PATH &&
+        !path.startsWith(`${MODEL_SCENE_DIR}/`),
+    )
     .sort();
+}
+
+/** The expanded text for an `instance` member: load the referenced scene and
+ *  take its container declaration (renamed to the instance's name). */
+export function instanceContainerText(
+  sceneSource: string,
+  instanceName: string,
+): string {
+  const parsed = parseProjectMembers(sceneSource);
+  const container = parsed.ok
+    ? (parsed.members ?? []).find((member) => !member.isLeaf)
+    : undefined;
+  if (!container) {
+    return '';
+  }
+  const text = sceneSource.slice(container.span.start, container.span.end);
+  if (container.nameSpan && container.name !== instanceName) {
+    const relativeStart = container.nameSpan.start - container.span.start;
+    const relativeEnd = container.nameSpan.end - container.span.start;
+    return `${text.slice(0, relativeStart)}${instanceName}${text.slice(relativeEnd)}`;
+  }
+  return text;
 }
 
 /** Combine a fresh canvas-derived bundle with the current one on Save: the
@@ -172,10 +207,34 @@ export function mergeModelSource(
     .map((path) => files[path])
     .filter((content) => content !== undefined && content.trim() !== '')
     .join('\n');
-  if (chunks === '') {
-    return mainSource;
+  let merged =
+    chunks === ''
+      ? mainSource
+      : insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
+
+  // Expand `instance` members: replace each instance line with the referenced
+  // scene's container. Done after part insertion so spans are re-parsed.
+  const reparsed = parseProjectSource(merged);
+  if (reparsed.ok && reparsed.model) {
+    // Replace instances from the last to the first so earlier spans stay
+    // valid while later lines are rewritten.
+    const instances = reparsed.model.members.filter(
+      (member) => member.kind === 'instance' && member.path !== undefined,
+    );
+    for (const member of [...instances].reverse()) {
+      if (member.kind === 'instance' && member.path !== undefined) {
+        const scene = files[member.path];
+        if (scene === undefined) {
+          continue;
+        }
+        const containerText = instanceContainerText(scene, member.name);
+        if (containerText !== '') {
+          merged = replaceSpan(merged, member.span.start, member.span.end, containerText);
+        }
+      }
+    }
   }
-  return insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
+  return merged;
 }
 
 /** Serialize the current canvas document into a project bundle. The DSL is

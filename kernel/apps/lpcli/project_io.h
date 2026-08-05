@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,6 +35,51 @@ inline bool read_text_file(const std::string& path, std::string& out) {
   out.assign((std::istreambuf_iterator<char>(in)),
              std::istreambuf_iterator<char>());
   return true;
+}
+
+// Replace `instance <name> = "<path>"` lines with the referenced scene's
+// container text (resolved via `lookup`). Scenes are canonical: the instance
+// name equals the scene's container name, so no renaming is needed. Missing
+// scenes leave the line untouched (the compiler will report the unknown
+// kind).
+inline std::string resolve_instances(
+    const std::string& source,
+    const std::function<std::string(const std::string&)>& lookup) {
+  std::string out;
+  out.reserve(source.size());
+  std::size_t i = 0;
+  const std::size_t n = source.size();
+  while (i < n) {
+    std::size_t line_end = source.find('\n', i);
+    if (line_end == std::string::npos) {
+      line_end = n;
+    }
+    const std::string line = source.substr(i, line_end - i);
+    const std::size_t start = line.find_first_not_of(" \t\r");
+    if (start != std::string::npos && line.compare(start, 8, "instance") == 0) {
+      const std::size_t open = line.find('"', start + 8);
+      const std::size_t close =
+          open == std::string::npos ? std::string::npos : line.find('"', open + 1);
+      if (open != std::string::npos && close != std::string::npos) {
+        const std::string path = line.substr(open + 1, close - open - 1);
+        const std::string scene = lookup(path);
+        if (!scene.empty()) {
+          out += scene;
+          if (!scene.ends_with('\n')) {
+            out += '\n';
+          }
+          i = line_end < n ? line_end + 1 : n;
+          continue;
+        }
+      }
+    }
+    out += line;
+    if (line_end < n) {
+      out += '\n';
+    }
+    i = line_end < n ? line_end + 1 : n;
+  }
+  return out;
 }
 
 // Extract manifest name + model source from a bundle. Returns false with
@@ -336,6 +382,13 @@ inline bool read_project_bundle(const std::string& text,
   }
   out.part_paths = std::move(part_paths);
   out.model_source = detail::merge_model_parts(source, parts);
+  // Expand `instance` members by looking the referenced scenes up in the
+  // bundle's files table.
+  out.model_source = resolve_instances(out.model_source, [&](const std::string& path) {
+    std::string content;
+    detail::find_string(text, path, files_value, text.size(), content);
+    return content;
+  });
   return true;
 }
 
@@ -382,6 +435,12 @@ inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
   out.model_path = model_path;
   out.part_paths = std::move(part_paths);
   out.model_source = detail::merge_model_parts(main_source, parts);
+  // Expand `instance` members by reading the referenced scenes from disk.
+  out.model_source = resolve_instances(out.model_source, [&](const std::string& path) {
+    std::string content;
+    read_text_file((root / path).string(), content);
+    return content;
+  });
   return true;
 }
 

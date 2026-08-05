@@ -159,3 +159,24 @@ TEST_CASE("project dir: reads logicpilot.json, files and merges the parts") {
 
   std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("project bundle: resolves instance members from scene files") {
+  const std::string bundle =
+      "{\"schema\":\"logicpilot.project\",\"manifest\":{\"name\":\"M\","
+      "\"model\":\"model/main.lp\","
+      "\"modelParts\":[\"model/resources.lp\"]},"
+      "\"files\":{"
+      "\"model/main.lp\":\"model M {\\n  instance Flow = \\\"model/scenes/Flow.lp\\\"\\n}\\n\","
+      "\"model/resources.lp\":\"  resource Server {\\n    capacity = 1\\n  }\\n\","
+      "\"model/scenes/Flow.lp\":\"  process Flow {\\n    queue Q {\\n      "
+      "capacity = 10\\n    }\\n  }\\n\""
+      "}}";
+  ProjectBundleInfo info;
+  std::string error;
+  REQUIRE(read_project_bundle(bundle, info, error));
+  CHECK(info.model_source.find("resource Server") != std::string::npos);
+  CHECK(info.model_source.find("process Flow") != std::string::npos);
+  CHECK(info.model_source.find("queue Q") != std::string::npos);
+  // The instance line itself is expanded away.
+  CHECK(info.model_source.find("instance Flow") == std::string::npos);
+}

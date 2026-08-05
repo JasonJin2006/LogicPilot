@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { parseDsl } from '@logicpilot/editor';
 import { mergeModelSource } from '../project/project';
+import { MODEL_SCENE_DIR } from '../project/project';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
@@ -52,6 +53,8 @@ import type { ProjectMember, ProjectModel } from '../project/projectTree';
 interface MergedMember {
   file: string;
   member: ProjectMember;
+  /** For `instance` members: the resolved scene container (kind, children). */
+  resolved?: { kind: string; childrenFile: string; children: ProjectMember[] };
 }
 
 type PanelEntry =
@@ -148,14 +151,49 @@ export function ModelInfoPanel() {
         // file below. Report a broken fragment only if no model referenced it.
         continue;
       }
+      if (path.startsWith(`${MODEL_SCENE_DIR}/`)) {
+        // Scene files are container subgraphs referenced via `instance`
+        // members; they are shown through their instance, not standalone.
+        continue;
+      }
       const parsed = parseProjectSource(source);
       if (!parsed.ok) {
         orphans.push({ type: 'orphan', path, error: parsed.error ?? 'invalid DSL' });
         continue;
       }
-      const members: MergedMember[] = parsed
-        .model!.members.filter((member) => !member.isLeaf)
-        .map((member) => ({ file: path, member }));
+      const members: MergedMember[] = [];
+      for (const member of parsed.model!.members) {
+        if (member.isLeaf) {
+          continue;
+        }
+        if (member.kind === 'instance' && member.path !== undefined) {
+          // Resolve an instance to its scene's container so it displays as a
+          // normal container with the scene's children.
+          const scene = files[member.path];
+          const container =
+            scene !== undefined
+              ? (() => {
+                  const sceneParsed = parseProjectMembers(scene);
+                  return sceneParsed.ok
+                    ? (sceneParsed.members ?? []).find((m) => !m.isLeaf)
+                    : undefined;
+                })()
+              : undefined;
+          if (container) {
+            members.push({
+              file: path,
+              member,
+              resolved: {
+                kind: container.kind,
+                childrenFile: member.path,
+                children: container.children,
+              },
+            });
+            continue;
+          }
+        }
+        members.push({ file: path, member });
+      }
       for (const part of partPaths) {
         const partSource = files[part];
         if (partSource === undefined) {
@@ -292,33 +330,39 @@ export function ModelInfoPanel() {
 
   const renderMember = (entry: MergedMember, depth: number): ReactNode => {
     const { file, member } = entry;
-    const key = `${file}:${member.kind}:${member.name}`;
+    const kind = entry.resolved?.kind ?? member.kind;
+    const children = entry.resolved?.children ?? member.children;
+    const childrenFile = entry.resolved?.childrenFile ?? file;
+    const isInstance = entry.resolved !== undefined;
+    const key = `${file}:${kind}:${member.name}`;
     const open = !isCollapsed(key);
-    const hasChildren = member.children.length > 0;
+    const hasChildren = children.length > 0;
     const isSelected =
-      selected !== undefined && selected.kind === member.kind && selected.name === member.name;
+      selected !== undefined && selected.kind === kind && selected.name === member.name;
     const isViewing =
-      focusView !== null && focusView.kind === member.kind && focusView.name === member.name;
-    const KindIcon = KIND_ICONS[member.kind] ?? Boxes;
+      focusView !== null && focusView.kind === kind && focusView.name === member.name;
+    const KindIcon = KIND_ICONS[kind] ?? Boxes;
     const actions: ContextAction[] = [];
-    if (member.kind === 'process') {
+    if (!isInstance && kind === 'process') {
       for (const stage of STAGE_ADD_KINDS) {
         actions.push({
           label: `Add ${stage.kind}`,
           onSelect: () => addBlock(file, member, depth, stage.kind, stage.template),
         });
       }
-    } else if (member.kind === 'agent') {
+    } else if (!isInstance && kind === 'agent') {
       const agent = MODEL_ADD_KINDS.find((item) => item.kind === 'agent')!;
       actions.push({
         label: 'Add agent',
         onSelect: () => addBlock(file, member, depth, 'agent', agent.template),
       });
     }
-    actions.push({
-      label: 'Rename',
-      onSelect: () => renameBlock(file, member.nameSpan!, member.name),
-    });
+    if (!isInstance) {
+      actions.push({
+        label: 'Rename',
+        onSelect: () => renameBlock(file, member.nameSpan!, member.name),
+      });
+    }
     actions.push({
       label: 'Delete',
       danger: true,
@@ -329,13 +373,13 @@ export function ModelInfoPanel() {
         <div
           className={`tree-row tree-file${isSelected ? ' tree-selected' : ''}${isViewing ? ' tree-viewing' : ''}`}
           style={{ paddingLeft: (depth + 1) * 14 + 8 }}
-          title={`${member.kind} ${member.name} — ${file}`}
+          title={`${kind} ${member.name} — ${isInstance ? childrenFile : file}`}
           onClick={
             hasChildren
-              ? member.kind === 'process'
+              ? kind === 'process'
                 ? () => {
                     toggle(key);
-                    setFocusView({ kind: member.kind, name: member.name });
+                    setFocusView({ kind, name: member.name });
                   }
                 : () => toggle(key)
               : undefined
@@ -359,7 +403,12 @@ export function ModelInfoPanel() {
           </span>
           <span className="outline-name">{member.name}</span>
         </div>
-        {open && hasChildren && renderMembers(childrenOf(entry), depth + 1)}
+        {open &&
+          hasChildren &&
+          renderMembers(
+            children.map((child) => ({ file: childrenFile, member: child })),
+            depth + 1,
+          )}
       </div>
     );
   };
@@ -459,12 +508,6 @@ export function ModelInfoPanel() {
       )}
     </div>
   );
-}
-
-function childrenOf(entry: MergedMember): MergedMember[] {
-  return entry.member.children
-    .filter((member) => !member.isLeaf)
-    .map((member) => ({ file: entry.file, member }));
 }
 
 // Find the children of the block whose closing brace is at `bodyClose`.
