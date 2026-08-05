@@ -12,7 +12,7 @@ SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 ICONS_DIR = os.path.normpath(
     os.path.join(SCRIPTS, "..", "..", "..", "..", "desktop", "src-tauri", "icons")
 )
-SIZES = [16, 24, 32, 48, 64, 128, 256]
+SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 
 
 def dib_rgba(img):

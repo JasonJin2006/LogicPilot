@@ -14,7 +14,10 @@ import { fileURLToPath } from 'node:url';
 const here = fileURLToPath(new URL('.', import.meta.url));
 const root = join(here, '..', '..', '..', '..');
 const iconsDir = join(root, 'desktop', 'src-tauri', 'icons');
-const SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
+// Windows asks the icon resource for exact DPI-dependent sizes (the taskbar
+// uses 16-40px); every plausible target gets a native entry so the shell
+// never has to scale a nearby bitmap (which is what makes it look soft).
+const SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512];
 
 const exe = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
