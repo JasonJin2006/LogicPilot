@@ -58,3 +58,32 @@ export function writeProjectFiles(
 ): Promise<TauriFsResult> {
   return invokeCommand('write_project_files', { projectDir, files });
 }
+
+export interface ProjectDirReadResult {
+  ok: boolean;
+  manifestJson?: string;
+  files?: Record<string, string>;
+  error?: string;
+}
+
+/** Read an on-disk project directory back into the bundle envelope. */
+export function readProjectDir(projectDir: string): Promise<ProjectDirReadResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<{ manifest_json: string; files: Record<string, string> }>(
+        'read_project_dir',
+        { projectDir },
+      ).then(
+        (result) => ({
+          ok: true,
+          manifestJson: result.manifest_json,
+          files: result.files,
+        }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}

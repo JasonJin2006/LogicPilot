@@ -1,6 +1,10 @@
 // Unit tests for the *.lpproj bundle reader (kernel/apps/lpcli/project_io.h).
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+
 #include "../apps/lpcli/project_io.h"
 
 namespace {
@@ -115,4 +119,43 @@ TEST_CASE("project bundle: merge keeps a single-file bundle unchanged") {
   REQUIRE(read_project_bundle(bundle, info, error));
   CHECK(info.model_source.find("resource R") != std::string::npos);
   CHECK(info.part_paths.empty());
+}
+
+TEST_CASE("project dir: reads logicpilot.json, files and merges the parts") {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("lpcli_project_dir_test_" +
+                    std::to_string(std::chrono::steady_clock::now()
+                                       .time_since_epoch()
+                                       .count()));
+  std::filesystem::create_directories(dir / "model");
+  {
+    std::ofstream out(dir / "logicpilot.json");
+    out << R"({"schema":"logicpilot.project","name":"MM1",)"
+           R"("model":"model/main.lp",)"
+           R"("modelParts":["model/resources.lp","model/process.lp"])";
+  }
+  {
+    std::ofstream out(dir / "model/main.lp");
+    out << "model MM1 {\n}\n";
+  }
+  {
+    std::ofstream out(dir / "model/resources.lp");
+    out << "  resource Server {\n    capacity = 1\n  }\n";
+  }
+  {
+    std::ofstream out(dir / "model/process.lp");
+    out << "  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n";
+  }
+
+  ProjectBundleInfo info;
+  std::string error;
+  REQUIRE(read_project_dir(dir.string(), info, error));
+  CHECK(info.name == "MM1");
+  CHECK(info.model_path == "model/main.lp");
+  CHECK(info.model_source.find("model MM1 {") != std::string::npos);
+  CHECK(info.model_source.find("resource Server") != std::string::npos);
+  CHECK(info.model_source.find("queue Q") != std::string::npos);
+  CHECK(info.part_paths.size() == 2);
+
+  std::filesystem::remove_all(dir);
 }

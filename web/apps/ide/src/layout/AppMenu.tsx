@@ -19,7 +19,7 @@ import {
   projectToDocument,
   splitModelSource,
 } from '../project/project';
-import { writeProjectFiles } from '../state/tauriFs';
+import { isTauri, pickProjectFolder, readProjectDir, writeProjectFiles } from '../state/tauriFs';
 
 interface MenuEntry {
   label: string;
@@ -64,6 +64,7 @@ export function AppMenu() {
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openBundle = useProjectStore((state) => state.openBundle);
   const clearProject = useProjectStore((state) => state.clearProject);
+  const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
 
   const selected = (modelDoc?.nodes ?? []).find((node) => node.id === selectedId) ?? null;
@@ -75,6 +76,48 @@ export function AppMenu() {
   };
   const fileOpen = () => {
     fileRef.current?.click();
+    close();
+  };
+  const fileOpenProjectFolder = async () => {
+    const dir = await pickProjectFolder();
+    if (!dir) {
+      return;
+    }
+    const result = await readProjectDir(dir);
+    if (!result.ok || !result.manifestJson || !result.files) {
+      openInfo('Open failed', result.error ?? 'cannot read the project folder');
+      return;
+    }
+    try {
+      const envelope = {
+        schema: 'logicpilot.project',
+        format: 'bundle' as const,
+        version: 1,
+        manifest: JSON.parse(result.manifestJson) as Record<string, unknown>,
+        files: result.files,
+      };
+      const parsedBundle = parseProjectBundle(JSON.stringify(envelope));
+      if (!parsedBundle.ok) {
+        openInfo('Open failed', parsedBundle.error ?? 'invalid manifest');
+        return;
+      }
+      const loaded = projectToDocument(parsedBundle.bundle!);
+      if (!loaded.ok) {
+        openInfo('Open failed', loaded.error ?? 'invalid project');
+        return;
+      }
+      openBundle(parsedBundle.bundle!);
+      setPath(dir);
+      loadDocument(loaded.document!);
+      markClean();
+      addRecent({
+        name: parsedBundle.bundle!.manifest.name,
+        bundle: JSON.stringify(parsedBundle.bundle!),
+        at: Date.now(),
+      });
+    } catch (error) {
+      openInfo('Open failed', String(error));
+    }
     close();
   };
   const onFileChosen = (event: ChangeEvent<HTMLInputElement>) => {
@@ -256,6 +299,14 @@ export function AppMenu() {
       entries: [
         { label: 'New Project...', shortcut: 'Ctrl+N', action: fileNewProject },
         { label: 'Open...', shortcut: 'Ctrl+O', action: fileOpen },
+        ...(isTauri()
+          ? [
+              {
+                label: 'Open Project Folder...',
+                action: () => void fileOpenProjectFolder(),
+              },
+            ]
+          : []),
         { kind: 'separator' },
         { kind: 'sectionLabel', label: 'Open Recent' },
         ...(recent.length > 0

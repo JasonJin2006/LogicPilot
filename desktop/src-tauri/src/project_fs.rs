@@ -64,6 +64,65 @@ pub fn write_project_files_impl(
     Ok(())
 }
 
+// Read an on-disk project directory back into the bundle envelope: the raw
+// logicpilot.json manifest plus every file under the project except the
+// derived build/ and results/ folders. Paths are `/`-separated relative to
+// the project root.
+pub fn read_project_dir(
+    dir: &str,
+) -> Result<(String, HashMap<String, String>), String> {
+    let root = Path::new(dir);
+    if !root.is_absolute() {
+        return Err("the project directory must be an absolute path".to_string());
+    }
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a folder", dir));
+    }
+    let manifest_path = root.join("logicpilot.json");
+    if !manifest_path.is_file() {
+        return Err(format!("'{}' has no logicpilot.json", dir));
+    }
+    let manifest_json = std::fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("cannot read '{}': {}", manifest_path.display(), error))?;
+    let mut files = HashMap::new();
+    collect_project_files(root, root, &mut files)?;
+    Ok((manifest_json, files))
+}
+
+fn collect_project_files(
+    root: &Path,
+    dir: &Path,
+    files: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name == "build" || name == "results" {
+                continue;
+            }
+            collect_project_files(root, &path, files)?;
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|_| format!("path outside project: {}", path.display()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if rel == "logicpilot.json" {
+            continue;
+        }
+        let content = std::fs::read_to_string(&path)
+            .map_err(|error| format!("cannot read '{}': {}", path.display(), error))?;
+        files.insert(rel, content);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +166,38 @@ mod tests {
         escaping.insert("../escape.txt".to_string(), "x".to_string());
         assert!(write_project_files_impl(&dir, &escaping).is_err());
         assert!(!dir.parent().unwrap().join("escape.txt").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reads_a_project_directory_back() {
+        let dir = std::env::temp_dir().join(format!(
+            "lp_project_dir_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("model")).unwrap();
+        std::fs::create_dir_all(dir.join("build")).unwrap();
+        std::fs::write(
+            dir.join("logicpilot.json"),
+            r#"{"schema":"logicpilot.project","name":"Demo","model":"model/main.lp","modelParts":["model/resources.lp"],"presentation":"presentation/main.canvas.json"}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("model/main.lp"), "model Demo {\n}\n").unwrap();
+        std::fs::write(
+            dir.join("model/resources.lp"),
+            "  resource Server {\n    capacity = 1\n  }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("build/main.lpir"), "binary").unwrap();
+
+        let (manifest, files) = read_project_dir(&dir.to_string_lossy()).unwrap();
+        assert!(manifest.contains("logicpilot.project"));
+        assert!(files.contains_key("model/main.lp"));
+        assert!(files.contains_key("model/resources.lp"));
+        // Derived folders are skipped.
+        assert!(!files.contains_key("build/main.lpir"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

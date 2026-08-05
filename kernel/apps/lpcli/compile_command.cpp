@@ -114,16 +114,22 @@ int compile_command(std::span<const std::string> args) {
   dsl::CompileResult compiled;
   std::string display_path = input;
   if (!project_path.empty()) {
-    std::ifstream in(project_path, std::ios::binary);
-    if (!in) {
-      fmt::print(stderr, "error: cannot read project '{}'\n", project_path);
-      return 1;
-    }
-    const std::string text((std::istreambuf_iterator<char>(in)),
-                           std::istreambuf_iterator<char>());
     ProjectBundleInfo bundle;
     std::string bundle_error;
-    if (!read_project_bundle(text, bundle, bundle_error)) {
+    const bool ok =
+        std::filesystem::is_directory(project_path)
+            ? read_project_dir(project_path, bundle, bundle_error)
+            : [&]() {
+                std::ifstream in(project_path, std::ios::binary);
+                if (!in) {
+                  bundle_error = "cannot read project file";
+                  return false;
+                }
+                const std::string text((std::istreambuf_iterator<char>(in)),
+                                       std::istreambuf_iterator<char>());
+                return read_project_bundle(text, bundle, bundle_error);
+              }();
+    if (!ok) {
       fmt::print(stderr, "error: cannot read project '{}': {}\n",
                  project_path, bundle_error);
       return 1;

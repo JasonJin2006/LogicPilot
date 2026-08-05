@@ -311,16 +311,22 @@ int run_command(std::span<const std::string> args) {
   std::string model_label;
   if (explicit_project) {
 #ifdef LOGICPILOT_HAS_DSL
-    std::ifstream in(options.project, std::ios::binary);
-    if (!in) {
-      fmt::print(stderr, "error: cannot read project '{}'\n", options.project);
-      return 1;
-    }
-    const std::string text((std::istreambuf_iterator<char>(in)),
-                           std::istreambuf_iterator<char>());
     ProjectBundleInfo bundle;
     std::string bundle_error;
-    if (!read_project_bundle(text, bundle, bundle_error)) {
+    const bool ok =
+        std::filesystem::is_directory(options.project)
+            ? read_project_dir(options.project, bundle, bundle_error)
+            : [&]() {
+                std::ifstream in(options.project, std::ios::binary);
+                if (!in) {
+                  bundle_error = "cannot read project file";
+                  return false;
+                }
+                const std::string text((std::istreambuf_iterator<char>(in)),
+                                       std::istreambuf_iterator<char>());
+                return read_project_bundle(text, bundle, bundle_error);
+              }();
+    if (!ok) {
       fmt::print(stderr, "error: cannot read project '{}': {}\n",
                  options.project, bundle_error);
       return 1;

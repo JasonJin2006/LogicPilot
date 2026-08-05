@@ -11,6 +11,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,6 +25,16 @@ struct ProjectBundleInfo {
   std::string model_source;    // merged DSL source (main + model parts)
   std::vector<std::string> part_paths;  // manifest.modelParts
 };
+
+inline bool read_text_file(const std::string& path, std::string& out) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return false;
+  }
+  out.assign((std::istreambuf_iterator<char>(in)),
+             std::istreambuf_iterator<char>());
+  return true;
+}
 
 // Extract manifest name + model source from a bundle. Returns false with
 // `error` filled when the envelope is malformed or the model source is
@@ -324,6 +336,52 @@ inline bool read_project_bundle(const std::string& text,
   }
   out.part_paths = std::move(part_paths);
   out.model_source = detail::merge_model_parts(source, parts);
+  return true;
+}
+
+// Read an on-disk project directory: <dir>/logicpilot.json plus the declared
+// model source and part fragments (merged), mirroring read_project_bundle.
+inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
+                             std::string& error) {
+  const std::filesystem::path root{dir};
+  std::string manifest;
+  if (!read_text_file((root / "logicpilot.json").string(), manifest)) {
+    error = "project directory has no logicpilot.json";
+    return false;
+  }
+  std::string name;
+  std::string model_path;
+  detail::find_string(manifest, "name", 0, manifest.size(), name);
+  detail::find_string(manifest, "model", 0, manifest.size(), model_path);
+  if (model_path.empty()) {
+    model_path = "model/main.lp";
+  }
+  std::vector<std::string> part_paths;
+  const std::string parts_key = "\"modelParts\"";
+  const std::size_t parts_pos = manifest.find(parts_key);
+  if (parts_pos != std::string::npos) {
+    const std::size_t colon = manifest.find(':', parts_pos + parts_key.size());
+    if (colon != std::string::npos) {
+      detail::parse_json_string_array(
+          manifest, detail::skip_ws(manifest, colon + 1), part_paths);
+    }
+  }
+  std::string main_source;
+  if (!read_text_file((root / model_path).string(), main_source)) {
+    error = "cannot read model source '" + model_path + "'";
+    return false;
+  }
+  std::vector<std::pair<std::string, std::string>> parts;
+  for (const std::string& part_path : part_paths) {
+    std::string content;
+    if (read_text_file((root / part_path).string(), content)) {
+      parts.emplace_back(part_path, std::move(content));
+    }
+  }
+  out.name = name;
+  out.model_path = model_path;
+  out.part_paths = std::move(part_paths);
+  out.model_source = detail::merge_model_parts(main_source, parts);
   return true;
 }
 

@@ -32,6 +32,12 @@ fn app_config() -> AppEndpoints {
         .expect("app endpoints not set")
 }
 
+#[derive(Serialize)]
+struct ProjectDirRead {
+    manifest_json: String,
+    files: HashMap<String, String>,
+}
+
 // ---------------------------------------------------------------------------
 // Project directory I/O commands: create_project_dir materializes the blank
 // *.lpproj structure on disk (logicpilot.json + model/main.lp +
@@ -82,6 +88,19 @@ fn write_project_files(
     }
     write_project_files_impl(&dir, &files)?;
     Ok(project_dir)
+}
+
+// Read an on-disk project directory back into the bundle envelope: the raw
+// logicpilot.json manifest plus every project file (build/ and results/ are
+// derived artifacts and are skipped). The frontend wraps this into a bundle
+// for File > Open Project Folder.
+#[tauri::command]
+fn read_project_dir(project_dir: String) -> Result<ProjectDirRead, String> {
+    let (manifest_json, files) = project_fs::read_project_dir(&project_dir)?;
+    Ok(ProjectDirRead {
+        manifest_json,
+        files,
+    })
 }
 
 fn repo_root() -> PathBuf {
@@ -175,7 +194,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_config,
             create_project_dir,
-            write_project_files
+            write_project_files,
+            read_project_dir
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(
