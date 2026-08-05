@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Application icon: the LogicPilot logo (deep rounded tile + blue flow
-       mark + green event dot), rendered at icon-safe margins. Keep in sync
-       with web/apps/ide/public/logo.svg. -->
-  <rect width="512" height="512" rx="112" fill="#0d1117"/>
+  <!-- Application icon: the LogicPilot mark (flow bend + event dot) on a
+       high-contrast brand-blue tile. The deep tile used by the top-bar logo
+       disappears on dark taskbars at 16-24px, so the app icon inverts the
+       palette (blue tile + dark mark) while keeping the same glyph. Keep the
+       glyph geometry in sync with web/apps/ide/public/logo.svg. -->
+  <rect width="512" height="512" rx="112" fill="#2f81f7"/>
   <g transform="translate(-6 16) scale(15)">
-    <path d="M9 24V8h3v13h8v3H9z" fill="#58a6ff"/>
+    <path d="M9 24V8h3v13h8v3H9z" fill="#0d1117"/>
     <circle cx="23" cy="21" r="3" fill="#3fb950"/>
   </g>
 </svg>
