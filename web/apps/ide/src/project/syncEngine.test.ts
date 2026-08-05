@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addNode, createDocument } from '@logicpilot/editor';
-import { createProject, splitModelSource } from './project';
+import { createProject, sceneUid, sceneUidOf } from './project';
 import { loadProject, saveProject } from './syncEngine';
 
 describe('project sync engine', () => {
@@ -81,5 +81,38 @@ describe('project sync engine', () => {
     const keys = (nodes: Array<{ kind: string; name: string }>) =>
       new Set(nodes.map((node) => `${node.kind}:${node.name}`));
     expect(keys(loaded.document!.nodes)).toEqual(keys(document.nodes));
+  });
+
+  it('saveProject stamps scene files with a stable uid and records containerIds', () => {
+    let document = createDocument('M');
+    document = addNode(document, { kind: 'process', name: 'Flow', x: 0, y: 100, params: {} });
+    document = addNode(document, {
+      kind: 'queue',
+      name: 'Q',
+      x: 200,
+      y: 200,
+      params: {},
+      container: 'Flow',
+    });
+    const saved = saveProject(document, null);
+    const scenePath = 'model/scenes/Flow.lp';
+    const scene = saved.files[scenePath]!;
+    expect(scene).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
+    expect(sceneUidOf(scene)).toBe(sceneUid(scenePath));
+    expect(saved.bundle.manifest.containerIds?.[sceneUid(scenePath)]).toBe(scenePath);
+  });
+
+  it('loadProject repairs a scene renamed outside the IDE via its uid', () => {
+    const bundle = createProject('M');
+    bundle.files['model/main.lp'] =
+      'model M {\n  instance Flow = "model/scenes/Flow.lp"\n}\n';
+    const oldPath = 'model/scenes/Flow.lp';
+    const uid = sceneUid(oldPath);
+    bundle.files['model/scenes/Renamed.lp'] = `// @uid ${uid}\n  process Flow {\n    queue Q {\n      capacity = 1\n    }\n  }\n`;
+    const loaded = loadProject(bundle);
+    expect(loaded.ok).toBe(true);
+    expect(loaded.document!.nodes.find((node) => node.kind === 'process')).toBeDefined();
+    expect(loaded.diagnostics.some((d) => d.code === 'LP3102')).toBe(true);
+    expect(loaded.diagnostics.some((d) => d.code === 'LP3100')).toBe(false);
   });
 });

@@ -113,7 +113,8 @@ describe('project bundle', () => {
     expect(split['model/scenes/Drone.lp']).toBeUndefined();
     // Members keep their model-body indentation so the merged model stays tidy.
     expect(split['model/main.lp']).toMatch(/  resource Server/);
-    expect(split['model/scenes/Flow.lp']).toMatch(/^  process Flow/);
+    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
+    expect(split['model/scenes/Flow.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
   });
 
   it('mergeModelSource reconstructs the full model from parts', () => {

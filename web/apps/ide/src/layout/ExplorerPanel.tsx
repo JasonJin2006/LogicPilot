@@ -19,6 +19,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { sceneContainerFromFile } from '../project/project';
+import { DEFAULT_MODEL_PATH } from '../project/project';
 import { openProjectFromFile } from '../project/openProject';
 import { useCanvasView } from '../state/canvasView';
 import { useProjectStore } from '../state/projectStore';
@@ -352,6 +353,14 @@ export function ExplorerPanel() {
               } else if (mapped[path] !== undefined) {
                 mapped[next] = mapped[path]!;
                 delete mapped[path];
+              }
+              // A scene rename must also rewrite its instance reference in
+              // the parent model file (project-format-v2 §6).
+              if (!isDir && path.startsWith('model/scenes/')) {
+                const main = mapped[DEFAULT_MODEL_PATH];
+                if (main !== undefined) {
+                  mapped[DEFAULT_MODEL_PATH] = main.split(`"${path}"`).join(`"${next}"`);
+                }
               }
               return mapped;
             });

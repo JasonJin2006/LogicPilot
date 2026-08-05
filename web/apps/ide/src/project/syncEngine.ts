@@ -17,7 +17,10 @@ import {
   mergeCanvasSplit,
   mergeModelSourceChecked,
   projectToDocument,
+  sceneUid,
+  sceneUidOf,
   splitModelSource,
+  MODEL_SCENE_DIR,
   type ProjectBundle,
   type SyncDiagnostic,
 } from './project';
@@ -59,6 +62,15 @@ export function saveProject(
   const base = createProjectBundle(document);
   const split = splitModelSource(base.files[DEFAULT_MODEL_PATH] ?? '');
   const project = mergeCanvasSplit(base, split, current);
+  // Stable container identities: every scene file records its uid and the
+  // manifest maps uid -> path so renames can be repaired.
+  const containerIds: Record<string, string> = {};
+  for (const [path, content] of Object.entries(project.files)) {
+    if (path.startsWith(`${MODEL_SCENE_DIR}/`)) {
+      containerIds[sceneUidOf(content) ?? sceneUid(path)] = path;
+    }
+  }
+  project.manifest.containerIds = containerIds;
 
   const diagnostics: SyncDiagnostic[] = [];
   // Save-time round-trip guard: the generated DSL must parse back to the

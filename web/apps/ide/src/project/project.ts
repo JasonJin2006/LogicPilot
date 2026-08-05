@@ -30,6 +30,26 @@ export const MODEL_SCENE_DIR = 'model/scenes';
 export const DEFAULT_SEED = 42;
 export const DEFAULT_SCHEMA_VERSION = 2;
 
+/** Deterministic stable uid for a container scene: `lp_` + FNV-1a of the
+ *  relative path, so re-saving a scene keeps its identity (and a rename
+ *  produces a new identity the manifest records). */
+export function sceneUid(path: string): string {
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of new TextEncoder().encode(path)) {
+    hash ^= BigInt(byte);
+    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return `lp_${hash.toString(16).padStart(16, '0')}`;
+}
+
+/** The uid recorded in a scene file's leading `// @uid lp_...` comment. */
+export function sceneUidOf(source: string): string | null {
+  const newline = source.indexOf('\n');
+  const firstLine = newline === -1 ? source : source.slice(0, newline);
+  const match = /@uid\s+(lp_[0-9a-f]{16})/.exec(firstLine);
+  return match ? match[1]! : null;
+}
+
 export interface ProjectManifest {
   name: string;
   model: string;
@@ -37,6 +57,10 @@ export interface ProjectManifest {
   defaultExperiment: string | null;
   /** Per-concern fragment files merged into the model at compile time. */
   modelParts?: string[];
+  /** Stable container identities: scene uid -> relative path
+   *  (project-format-v2 §6). Keeps instance references intact across
+   *  renames. */
+  containerIds?: Record<string, string>;
   defaults: { seed: number; schemaVersion: number };
 }
 
@@ -105,7 +129,10 @@ export function splitModelSource(source: string): Record<string, string> {
   const mainBody = remaining.length > 0 ? `\n${remaining.join('\n')}` : '';
   out[DEFAULT_MODEL_PATH] = `model ${parsed.model.name} {${mainBody}\n}\n`;
   for (const [name, blocks] of scenes) {
-    out[`${MODEL_SCENE_DIR}/${name}.lp`] = `${blocks.join('\n')}\n`;
+    const path = `${MODEL_SCENE_DIR}/${name}.lp`;
+    // A stable uid line keeps the container's identity across renames
+    // (project-format-v2 §6).
+    out[path] = `// @uid ${sceneUid(path)}\n${blocks.join('\n')}\n`;
   }
   return out;
 }
@@ -247,6 +274,7 @@ export function mergeModelSourceChecked(
   mainSource: string,
   files: Record<string, string>,
   partPaths?: string[],
+  aliases?: Record<string, string>,
 ): { source: string; diagnostics: SyncDiagnostic[] } {
   const diagnostics: SyncDiagnostic[] = [];
   const parsed = parseProjectSource(mainSource);
@@ -289,13 +317,32 @@ export function mergeModelSourceChecked(
     seen.add(instance.path);
     const scene = files[instance.path];
     if (scene === undefined) {
+      // The scene may have been renamed outside the IDE: its file keeps the
+      // uid comment, so find the current path by uid and repair the
+      // reference (project-format-v2 §6).
+      const expectedUid = sceneUid(instance.path);
+      const repairedPath = aliases?.[expectedUid];
+      const repaired = repairedPath !== undefined ? files[repairedPath] : undefined;
+      if (repaired === undefined) {
+        diagnostics.push({
+          code: 'LP3100',
+          severity: 'error',
+          message: `instance '${instance.name}' references missing scene '${instance.path}'`,
+          path: instance.path,
+        });
+        break;
+      }
       diagnostics.push({
-        code: 'LP3100',
-        severity: 'error',
-        message: `instance '${instance.name}' references missing scene '${instance.path}'`,
+        code: 'LP3102',
+        severity: 'warning',
+        message: `scene '${instance.path}' was renamed to '${repairedPath}' - reference repaired`,
         path: instance.path,
       });
-      break;
+      const repairedContainer = instanceContainerText(repaired, instance.name);
+      if (repairedContainer !== '') {
+        merged = replaceSpan(merged, instance.span.start, instance.span.end, repairedContainer);
+      }
+      continue;
     }
     const containerText = instanceContainerText(scene, instance.name);
     if (containerText === '') {
@@ -462,10 +509,22 @@ export function projectToDocument(bundle: ProjectBundle): DocumentLoadResult {
     }
   }
   if (source !== undefined) {
+    // uid -> current path, from the scene files' leading uid comments: used
+    // to repair instance references whose scene was renamed outside the IDE.
+    const aliases: Record<string, string> = {};
+    for (const [path, content] of Object.entries(bundle.files)) {
+      if (path.startsWith(`${MODEL_SCENE_DIR}/`)) {
+        const uid = sceneUidOf(content);
+        if (uid !== null) {
+          aliases[uid] = path;
+        }
+      }
+    }
     const merged = mergeModelSourceChecked(
       source,
       bundle.files,
       bundle.manifest.modelParts ?? [],
+      aliases,
     );
     const parsed = parseDsl(merged.source);
     if (parsed.ok) {
