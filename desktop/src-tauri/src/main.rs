@@ -187,13 +187,19 @@ fn main() {
             .inner_size(1440.0, 900.0)
             .min_inner_size(1024.0, 700.0)
             .decorations(false)
+            // Match the app's dark surface so a pre-paint frame is never a
+            // black flash before the webview draws its first frame.
+            .background_color(tauri::window::Color(10, 14, 20, 255))
             .build()?;
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building the LogicPilot desktop app");
     app.run(move |_app_handle, event| {
-        if matches!(event, tauri::RunEvent::Exit) {
+        if matches!(
+            event,
+            tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+        ) {
             let _ = app_server.kill();
         }
     });
