@@ -21,7 +21,7 @@ features:
   - title: AI 建模闭环
     details: 自然语言 → DSL → 结构化诊断 → 自动修复 → 运行，规则 provider 离线可用，LLM provider 可选；自动优化与瓶颈归因开箱即用。
   - title: Web 实时可视化
-    details: WebSocket + FlatBuffers 推流，PixiJS 2D 队列动画、实时图表、AI 面板轨迹/优化曲线。
+    details: WebSocket + FlatBuffers 推流，拖拽建模画布、DSL 编译、实时运行徽标、AI 生成/优化。
   - title: 契约冻结
     details: F1（IR）/F2（wire）schema 双门禁冻结，v1/v2 契约双向互操作由 CI 逐字段校验。
 ---

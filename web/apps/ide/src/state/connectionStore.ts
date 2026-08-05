@@ -4,7 +4,7 @@
 // re-renders only the subscribers that actually display it.
 
 import { create } from 'zustand';
-import { MM1_STATE_SERVING, simTimeSeconds, type WireFrame } from '@logicpilot/renderer2d';
+import { MM1_STATE_SERVING, type WireFrame } from '@logicpilot/renderer2d';
 import { generateDsl, modelRunParams } from '@logicpilot/editor';
 import { SimClient, type ConnState, type StartOptions } from '../client/simClient';
 import { resetVizState, vizState, type VizAgent } from './vizState';
@@ -162,7 +162,6 @@ function applyFrame(frame: WireFrame): void {
       vizState.servers = Math.max(1, Math.round(frame.payload.values['servers'] ?? 1));
       vizState.downServers = Math.max(0, Math.round(frame.payload.values['down_servers'] ?? 0));
       vizState.queueLength = Math.max(0, Math.round(frame.payload.values['queue_length'] ?? 0));
-      useRunStore.getState().pushCharts(simTimeSeconds(frame.simTimeNs), frame.payload.values);
       break;
     }
     case 'run-finished': {

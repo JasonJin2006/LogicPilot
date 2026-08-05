@@ -1,5 +1,4 @@
-/* Run domain: run toolbar, connection settings dialog, queue view, status
-   bar, counter charts and the results table. */
+/* Run domain: connection settings dialog + status bar. */
 
 .url-input {
   min-width: 0;
@@ -41,20 +40,6 @@
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-}
-
-.dialog-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.dialog-field .url-input {
-  width: 100%;
-  font-family: var(--font-mono);
-  font-size: 12px;
 }
 
 .dialog-actions {
@@ -105,53 +90,6 @@
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-}
-
-.queue-view {
-  position: relative;
-  flex: 1;
-  min-height: 260px;
-  overflow: hidden;
-}
-
-.queue-canvas {
-  position: absolute;
-  inset: 0;
-}
-
-.queue-legend {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-right: 4px;
-}
-
-.dot-serving {
-  background: var(--ok);
-}
-
-.dot-waiting {
-  background: var(--accent);
-}
-
-.dot-server {
-  background: var(--warn);
-}
-
-.dot-down {
-  background: var(--error);
 }
 
 .status-bar {
@@ -237,46 +175,6 @@
   font-size: 12px;
 }
 
-.notif-line {
-  display: flex;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
-  padding: 3px 6px;
-  border-radius: 4px;
-}
-
-.notif-line:hover {
-  background: var(--surface-2);
-}
-
-.notif-time {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.notif-text {
-  color: var(--text-secondary);
-  word-break: break-all;
-}
-
-.notif-ack .notif-text {
-  color: var(--ok-text);
-}
-
-.notif-error .notif-text {
-  color: var(--error);
-}
-
-.notif-bad .notif-text {
-  color: var(--warn);
-}
-
-.notif-info .notif-text {
-  color: var(--accent-text);
-}
-
 .conn-badge {
   display: inline-flex;
   align-items: center;
@@ -318,77 +216,4 @@
 
 .status-bar .warn {
   color: var(--warn);
-}
-
-.charts {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.chart-block {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-
-.chart-title {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  margin-bottom: 2px;
-}
-
-.results {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-}
-
-.results.empty {
-  color: var(--muted);
-}
-
-.run-info {
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-
-.run-info code {
-  color: var(--text);
-}
-
-.run-status {
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.status-completed {
-  color: var(--ok);
-}
-
-.status-failed {
-  color: var(--error);
-}
-
-.status-cancelled {
-  color: var(--warn);
-}
-
-.results table {
-  width: 100%;
-  border-collapse: collapse;
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.results td {
-  padding: 2px 4px;
-  border-bottom: 1px solid var(--row-border);
-}
-
-.results td.num {
-  text-align: right;
-  color: var(--accent);
 }
