@@ -8,6 +8,7 @@ import { GitBranch, Plus } from 'lucide-react';
 import { sceneContainerFromFile } from '../project/project';
 import { setDraggedKind, setDraggedScene } from '../model/paletteDnd';
 import { BLOCK_DEFS, LIBRARIES } from '../model/blockDefs';
+import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
 import { usePaletteStore } from '../state/paletteStore';
 import { useProjectStore } from '../state/projectStore';
@@ -57,6 +58,7 @@ export function PalettePanel() {
   const recentKinds = usePaletteStore((state) => state.recentKinds);
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
+  const recordUse = usePaletteStore((state) => state.recordUse);
   const files = useProjectStore((state) => state.bundle?.files);
   const [importError, setImportError] = useState('');
   const barRef = useRef<HTMLDivElement>(null);
@@ -218,6 +220,10 @@ export function PalettePanel() {
             onDragEnd={(event) => {
               event.currentTarget.classList.remove('dragging');
               removeDragImages();
+            }}
+            onDoubleClick={() => {
+              insertBlockAt(block.kind, block.library ?? 'process');
+              recordUse(block.kind);
             }}
           >
             <span className="palette-chip">

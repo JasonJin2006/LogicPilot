@@ -21,6 +21,7 @@ import {
 } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 import { PresentationShape } from './PresentationShape';
+import { insertBlockAt } from './canvasInsert';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
@@ -314,35 +315,7 @@ export function ModelCanvas() {
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left - view.panX) / view.scale;
     const y = (event.clientY - rect.top - view.panY) / view.scale;
-    const isStage =
-      kind !== 'resource' && (library === undefined || library === 'process');
-    let container: string | undefined;
-    if (isStage) {
-      if (focusView) {
-        container = focusView.name;
-      } else {
-        // Dropping a stage on the model root creates (or reuses) the 'Flow'
-        // process container at the drop point and focuses it, so the stage
-        // lands on its own canvas instead of an invisible root.
-        container = 'Flow';
-        const existing = document.nodes.some(
-          (node) => node.kind === 'process' && node.name === container,
-        );
-        if (!existing) {
-          addBlock({ kind: 'process', name: container, x, y, params: {}, library: 'process' });
-        }
-        setFocusView({ kind: 'process', name: container });
-      }
-    }
-    addBlock({
-      kind,
-      name: kind,
-      x,
-      y,
-      params: BLOCK_DEFAULTS[kind],
-      library,
-      container,
-    });
+    insertBlockAt(kind, library, { x, y });
     recordUse(kind);
     select(null);
   };
