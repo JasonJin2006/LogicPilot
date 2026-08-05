@@ -405,6 +405,10 @@ export function parseDsl(source: string): ParseResult {
     return fail(tokens);
   }
   const parser = new Parser(tokens);
+  // Leading comments/blank lines produce newline tokens before `model`.
+  while (parser.peek()?.type === 'newline') {
+    parser.next();
+  }
   if (parser.expectWord('model') === null) {
     return fail("expected 'model' at the start of the source");
   }

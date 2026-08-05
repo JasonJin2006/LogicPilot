@@ -1,0 +1,15 @@
+{
+  "schema": "logicpilot.project",
+  "version": 1,
+  "name": "CallCenter",
+  "model": "model/main.lp",
+  "presentation": "presentation/main.canvas.json",
+  "defaultExperiment": null,
+  "defaults": {
+    "seed": 42,
+    "schemaVersion": 2
+  },
+  "containerIds": {
+    "lp_bb589d32b05e296b": "model/scenes/CallFlow.lp"
+  }
+}
