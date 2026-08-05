@@ -57,6 +57,7 @@ add_library(logicpilot_phase1b STATIC
   src/devs/continuous.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
+  src/devs/process_flow.cpp
   src/devs/ir_loader.cpp
 )
 target_link_libraries(logicpilot_phase1b PUBLIC
@@ -74,6 +75,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_state_machine.cpp
     tests/test_devs.cpp
     tests/test_ir_loader.cpp
+    tests/test_process_flow.cpp
     tests/test_mm1_acceptance.cpp
     tests/test_mm1_failure.cpp
     tests/test_continuous.cpp

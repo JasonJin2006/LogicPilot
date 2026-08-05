@@ -24,6 +24,7 @@
 #include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_atomic.h"
 #include "logicpilot/devs/mm1.h"
+#include "logicpilot/devs/process_flow.h"
 
 namespace logicpilot {
 
@@ -260,6 +261,32 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
     return fail(flow_count == 0
                     ? "no process flow node to execute"
                     : "multiple process flow nodes; single-flow lowering only");
+  }
+
+  // Generic topology check: the specialized M/M/1 path handles exactly
+  // source/queue/service/sink chains; anything else (delay, split,
+  // selectOutput, ...) goes to the generic ProcessFlowSim engine.
+  bool generic_flow = false;
+  int source_count = 0;
+  if (flow->children() != nullptr) {
+    for (const Node* stage : *flow->children()) {
+      const std::string block = node_block(stage);
+      if (block == "source") {
+        ++source_count;
+      } else if (block != "queue" && block != "service" &&
+                 block != "sink") {
+        generic_flow = true;
+      }
+    }
+  }
+  if (generic_flow || source_count > 1) {
+    auto generic = std::make_unique<ProcessFlowSim>(flow, model_root, error);
+    if (generic == nullptr || (error != nullptr && !error->empty())) {
+      return fail(error != nullptr && !error->empty()
+                      ? *error
+                      : "cannot build generic process flow");
+    }
+    return generic;
   }
 
   // Index the flow's stages by block; first of each kind wins (matches the
