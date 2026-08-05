@@ -26,13 +26,6 @@ export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
 export const DEFAULT_MODEL_PATH = 'model/main.lp';
 export const DEFAULT_PRESENTATION_PATH = 'presentation/main.canvas.json';
-/** Kind-based leaf part files. Container nodes (process/agent/atomic/...)
- *  are split into their own scene files under model/scenes/ so each
- *  container Node is a file (docs/specs/node-scene-model.md). */
-export const MODEL_PART_PATHS = [
-  'model/resources.lp',
-  'model/experiments.lp',
-] as const;
 export const MODEL_SCENE_DIR = 'model/scenes';
 export const DEFAULT_SEED = 42;
 export const DEFAULT_SCHEMA_VERSION = 2;
@@ -73,12 +66,11 @@ export function projectToDiskFiles(bundle: ProjectBundle): Record<string, string
 export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle {
   const bundle = createProjectBundle(createDocument(name));
   bundle.manifest.defaults.seed = seed;
-  bundle.manifest.modelParts = [...MODEL_PART_PATHS];
+  // project-format-v2: every member lives in its owning container file -
+  // the model root keeps resource/param/experiment members, containers go to
+  // model/scenes/*.lp. There are no kind-based part files anymore.
+  bundle.manifest.modelParts = [];
   bundle.files[DEFAULT_MODEL_PATH] = `model ${name} {\n}\n`;
-  for (const part of MODEL_PART_PATHS) {
-    const label = part.split('/').pop()!.replace(/\.lp$/, '');
-    bundle.files[part] = `// ${label} blocks\n`;
-  }
   return bundle;
 }
 
@@ -91,8 +83,6 @@ export function splitModelSource(source: string): Record<string, string> {
     out[DEFAULT_MODEL_PATH] = source;
     return out;
   }
-  const resources: string[] = [];
-  const experiments: string[] = [];
   const scenes = new Map<string, string[]>();
   const remaining: string[] = [];
   for (const member of parsed.model.members) {
@@ -100,13 +90,7 @@ export function splitModelSource(source: string): Record<string, string> {
     // token, so slice from the start of its line).
     const lineStart = source.lastIndexOf('\n', member.span.start - 1) + 1;
     const text = source.slice(lineStart, member.span.end).trimEnd();
-    if (member.isLeaf) {
-      remaining.push(text);
-    } else if (member.kind === 'resource') {
-      resources.push(text);
-    } else if (member.kind === 'experiment') {
-      experiments.push(text);
-    } else if (['process', 'agent', 'atomic', 'continuous'].includes(member.kind)) {
+    if (['process', 'agent', 'atomic', 'continuous', 'experiment'].includes(member.kind)) {
       // One scene file per container node (the file is that node's subgraph).
       const blocks = scenes.get(member.name) ?? [];
       blocks.push(text);
@@ -114,17 +98,12 @@ export function splitModelSource(source: string): Record<string, string> {
       // The model references the scene by path instead of inlining it.
       remaining.push(`  instance ${member.name} = "${MODEL_SCENE_DIR}/${member.name}.lp"`);
     } else {
+      // Leaf members (resource/param/use/...) stay in their owning file.
       remaining.push(text);
     }
   }
   const mainBody = remaining.length > 0 ? `\n${remaining.join('\n')}` : '';
   out[DEFAULT_MODEL_PATH] = `model ${parsed.model.name} {${mainBody}\n}\n`;
-  if (resources.length > 0) {
-    out['model/resources.lp'] = `${resources.join('\n')}\n`;
-  }
-  if (experiments.length > 0) {
-    out['model/experiments.lp'] = `${experiments.join('\n')}\n`;
-  }
   for (const [name, blocks] of scenes) {
     out[`${MODEL_SCENE_DIR}/${name}.lp`] = `${blocks.join('\n')}\n`;
   }
@@ -223,9 +202,16 @@ export function mergeCanvasSplit(
   current: ProjectBundle | null,
 ): ProjectBundle {
   const files = { ...base.files, ...split };
+  // Preserve scene files the canvas does not own (hand-authored containers
+  // referenced by instance) plus legacy kind-based part files.
   for (const part of current?.manifest.modelParts ?? []) {
     if (files[part] === undefined && current?.files[part] !== undefined) {
       files[part] = current.files[part];
+    }
+  }
+  for (const [path, content] of Object.entries(current?.files ?? {})) {
+    if (path.startsWith(`${MODEL_SCENE_DIR}/`) && files[path] === undefined) {
+      files[path] = content;
     }
   }
   return {

@@ -85,12 +85,6 @@ const KIND_ICONS: Record<string, ComponentType<{ size?: number }>> = {
   param: SlidersHorizontal,
 };
 
-const PART_PATH_BY_KIND: Record<string, string> = {
-  resource: 'model/resources.lp',
-  process: 'model/process.lp',
-  agent: 'model/agents.lp',
-  experiment: 'model/experiments.lp',
-};
 
 function kindRank(kind: string): number {
   switch (kind) {
@@ -255,18 +249,6 @@ export function ModelInfoPanel() {
   ) => {
     const current = useProjectStore.getState().bundle;
     if (!current) {
-      return;
-    }
-    const targetPart = PART_PATH_BY_KIND[kind];
-    if (container === null && targetPart !== undefined) {
-      // Add at the model level -> route to the per-concern part file.
-      const partSource = current.files[targetPart] ?? '';
-      const parsedPart = parseProjectMembers(partSource);
-      const siblings = parsedPart.ok ? (parsedPart.members ?? []) : [];
-      const name = `${kind}${countBlocks(siblings, kind) + 1}`;
-      const block = insertMember(partSource, partSource.length, '  ', template(name));
-      updateFiles((files) => ({ ...files, [targetPart]: block }));
-      syncCanvasFromProject();
       return;
     }
     // Insert into the model body (main file) or a block body.

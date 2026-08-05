@@ -77,21 +77,17 @@ describe('project bundle', () => {
     expect(createProject('Plain').manifest.defaults.seed).toBe(42);
   });
 
-  it('createProject produces the multi-file part structure', () => {
+  it('createProject keeps all members in the owning container files', () => {
     const bundle = createProject('Factory');
-    expect(bundle.manifest.modelParts).toEqual([
-      'model/resources.lp',
-      'model/experiments.lp',
-    ]);
+    expect(bundle.manifest.modelParts).toEqual([]);
     expect(bundle.files['model/main.lp']).toContain('model Factory');
-    for (const part of bundle.manifest.modelParts ?? []) {
-      expect(bundle.files[part]).toBeDefined();
-    }
+    expect(bundle.files['model/resources.lp']).toBeUndefined();
+    expect(bundle.files['model/experiments.lp']).toBeUndefined();
     const loaded = projectToDocument(bundle);
     expect(loaded.ok).toBe(true);
   });
 
-  it('splitModelSource partitions members into per-concern parts', () => {
+  it('splitModelSource keeps leaf members in main.lp and containers in scenes', () => {
     const source = `model M {
   resource Server {
     capacity = 1
@@ -108,14 +104,15 @@ describe('project bundle', () => {
 `;
     const split = splitModelSource(source);
     expect(split['model/main.lp']).toContain('model M');
-    expect(split['model/resources.lp']).toContain('resource Server');
+    expect(split['model/main.lp']).toContain('resource Server');
+    expect(split['model/main.lp']).toContain('instance Tune = "model/scenes/Tune.lp"');
     expect(split['model/scenes/Flow.lp']).toContain('process Flow');
-    expect(split['model/experiments.lp']).toContain('experiment Tune');
-    expect(split['model/process.lp']).toBeUndefined();
+    expect(split['model/scenes/Tune.lp']).toContain('experiment Tune');
+    expect(split['model/resources.lp']).toBeUndefined();
+    expect(split['model/experiments.lp']).toBeUndefined();
     expect(split['model/scenes/Drone.lp']).toBeUndefined();
-    // Parts keep their model-body indentation so the merged model stays tidy.
-    expect(split['model/resources.lp']).toMatch(/^  resource Server/);
-    expect(split['model/experiments.lp']).toMatch(/^  experiment Tune/);
+    // Members keep their model-body indentation so the merged model stays tidy.
+    expect(split['model/main.lp']).toMatch(/  resource Server/);
     expect(split['model/scenes/Flow.lp']).toMatch(/^  process Flow/);
   });
 
@@ -162,21 +159,14 @@ describe('project bundle', () => {
     expect(merged).toContain('arrival = rate(0.8)');
   });
 
-  it('mergeCanvasSplit preserves part files the canvas does not own', () => {
+  it('mergeCanvasSplit keeps container scenes the canvas does not own', () => {
     const base = createProjectBundle(buildSample());
     const split = splitModelSource(base.files[DEFAULT_MODEL_PATH]!);
     const current = createProject('Keep');
-    current.files['model/experiments.lp'] =
-      '  experiment Tune {\n    budget = 20\n  }\n';
+    current.files['model/scenes/Keep.lp'] = '  agent Keep {\n    count = 1\n  }\n';
     const merged = mergeCanvasSplit(base, split, current);
-    expect(merged.files['model/experiments.lp']).toContain('experiment Tune');
-    expect(merged.files['model/resources.lp']).toContain('resource');
-    expect(merged.files['model/scenes/Flow.lp']).toContain('process');
-    // Scenes are referenced via instance members, not listed as parts.
-    expect(merged.manifest.modelParts).toEqual([
-      'model/experiments.lp',
-      'model/resources.lp',
-    ]);
+    expect(merged.files['model/scenes/Keep.lp']).toContain('agent Keep');
+    expect(merged.manifest.modelParts).toEqual([]);
   });
 
   it('sceneContainerFromFile identifies the container of a scene file', () => {
@@ -235,7 +225,7 @@ describe('project bundle', () => {
       'instance Flow = "model/scenes/Flow.lp"',
     );
     expect(split['model/scenes/Flow.lp']).toContain('process Flow');
-    expect(split['model/resources.lp']).toContain('resource Server');
+    expect(split['model/main.lp']).toContain('resource Server');
 
     const merged = mergeModelSource(split['model/main.lp']!, split);
     expect(merged).not.toContain('instance Flow');
