@@ -34,6 +34,12 @@ export interface ProjectParseResult {
   model?: ProjectModel;
 }
 
+export interface MembersParseResult {
+  ok: boolean;
+  error?: string;
+  members?: ProjectMember[];
+}
+
 interface Token {
   type: 'word' | 'number' | 'string' | 'punct';
   text: string;
@@ -102,7 +108,7 @@ class Parser {
     private readonly tokens: Token[],
   ) {}
 
-  private peek(): Token | undefined {
+  peek(): Token | undefined {
     return this.tokens[this.pos];
   }
 
@@ -153,7 +159,7 @@ class Parser {
     };
   }
 
-  private parseBody(): ProjectMember[] {
+  parseBody(): ProjectMember[] {
     const members: ProjectMember[] = [];
     for (;;) {
       const first = this.peek();
@@ -245,6 +251,21 @@ export function parseProjectSource(source: string): ProjectParseResult {
     return { ok: false, error: tokens };
   }
   return new Parser(source, tokens).parseModel();
+}
+
+/** Parse a fragment (member declarations without the `model` wrapper), as
+ *  used by the per-concern model part files (model/resources.lp, ...). */
+export function parseProjectMembers(source: string): MembersParseResult {
+  const tokens = tokenize(source);
+  if (typeof tokens === 'string') {
+    return { ok: false, error: tokens };
+  }
+  const parser = new Parser(source, tokens);
+  const members = parser.parseBody();
+  if (parser.peek() !== undefined) {
+    return { ok: false, error: 'unexpected content after members' };
+  }
+  return { ok: true, members };
 }
 
 // --- edit operations (in-place text mutation) -------------------------------

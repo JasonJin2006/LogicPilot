@@ -83,3 +83,36 @@ TEST_CASE("project bundle: rejects a bundle missing the model source") {
   REQUIRE_FALSE(read_project_bundle(bundle, info, error));
   CHECK(error.find("missing model source") != std::string::npos);
 }
+
+TEST_CASE("project bundle: merges model part fragments before compiling") {
+  const std::string bundle =
+      "{\"schema\":\"logicpilot.project\",\"format\":\"bundle\",\"version\":1,"
+      "\"manifest\":{\"name\":\"M\",\"model\":\"model/main.lp\","
+      "\"modelParts\":[\"model/resources.lp\",\"model/process.lp\"],"
+      "\"defaults\":{\"seed\":42,\"schemaVersion\":2}},"
+      "\"files\":{"
+      "\"model/main.lp\":\"model M {\\n}\\n\","
+      "\"model/resources.lp\":\"  resource Server {\\n    capacity = 1\\n  }\\n\","
+      "\"model/process.lp\":\"  process Flow {\\n    queue Q {\\n      "
+      "capacity = 10\\n    }\\n  }\\n\""
+      "}}";
+  ProjectBundleInfo info;
+  std::string error;
+  REQUIRE(read_project_bundle(bundle, info, error));
+  CHECK(info.model_source.find("model M {") != std::string::npos);
+  CHECK(info.model_source.find("resource Server") != std::string::npos);
+  CHECK(info.model_source.find("process Flow") != std::string::npos);
+  CHECK(info.part_paths.size() == 2);
+}
+
+TEST_CASE("project bundle: merge keeps a single-file bundle unchanged") {
+  const std::string bundle =
+      "{\"schema\":\"logicpilot.project\",\"manifest\":{\"name\":\"M\","
+      "\"model\":\"model/main.lp\"},"
+      "\"files\":{\"model/main.lp\":\"model M {\\n  resource R {\\n  }\\n}\\n\"}}";
+  ProjectBundleInfo info;
+  std::string error;
+  REQUIRE(read_project_bundle(bundle, info, error));
+  CHECK(info.model_source.find("resource R") != std::string::npos);
+  CHECK(info.part_paths.empty());
+}

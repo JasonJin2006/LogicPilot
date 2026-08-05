@@ -6,19 +6,37 @@
 
 import { createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
+import { insertMember, parseProjectSource } from './projectTree';
 
 export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
 export const DEFAULT_MODEL_PATH = 'model/main.lp';
 export const DEFAULT_PRESENTATION_PATH = 'presentation/main.canvas.json';
+/** Per-concern model part files: the model source is split across these
+ *  fragments instead of living in one main.lp (docs/specs/project-format.md). */
+export const MODEL_PART_PATHS = [
+  'model/resources.lp',
+  'model/process.lp',
+  'model/agents.lp',
+  'model/experiments.lp',
+] as const;
 export const DEFAULT_SEED = 42;
 export const DEFAULT_SCHEMA_VERSION = 2;
+
+const PART_PATH_BY_KIND: Record<string, string> = {
+  resource: 'model/resources.lp',
+  process: 'model/process.lp',
+  agent: 'model/agents.lp',
+  experiment: 'model/experiments.lp',
+};
 
 export interface ProjectManifest {
   name: string;
   model: string;
   presentation: string;
   defaultExperiment: string | null;
+  /** Per-concern fragment files merged into the model at compile time. */
+  modelParts?: string[];
   defaults: { seed: number; schemaVersion: number };
 }
 
@@ -48,7 +66,69 @@ export function projectToDiskFiles(bundle: ProjectBundle): Record<string, string
 export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle {
   const bundle = createProjectBundle(createDocument(name));
   bundle.manifest.defaults.seed = seed;
+  bundle.manifest.modelParts = [...MODEL_PART_PATHS];
+  bundle.files[DEFAULT_MODEL_PATH] = `model ${name} {\n}\n`;
+  for (const part of MODEL_PART_PATHS) {
+    const label = part.split('/').pop()!.replace(/\.lp$/, '');
+    bundle.files[part] = `// ${label} blocks\n`;
+  }
   return bundle;
+}
+
+/** Split a single-model source into the main file plus per-concern parts.
+ *  Members whose kind has no part file stay in main.lp. */
+export function splitModelSource(source: string): Record<string, string> {
+  const parsed = parseProjectSource(source);
+  const out: Record<string, string> = {};
+  if (!parsed.ok || !parsed.model) {
+    out[DEFAULT_MODEL_PATH] = source;
+    return out;
+  }
+  const parts: Record<string, string[]> = {
+    'model/resources.lp': [],
+    'model/process.lp': [],
+    'model/agents.lp': [],
+    'model/experiments.lp': [],
+  };
+  const remaining: string[] = [];
+  for (const member of parsed.model.members) {
+    const text = source.slice(member.span.start, member.span.end).trimEnd();
+    const partPath = member.isLeaf ? undefined : PART_PATH_BY_KIND[member.kind];
+    if (partPath !== undefined) {
+      parts[partPath]!.push(text);
+    } else {
+      remaining.push(text);
+    }
+  }
+  const mainBody = remaining.length > 0 ? `\n${remaining.join('\n')}` : '';
+  out[DEFAULT_MODEL_PATH] = `model ${parsed.model.name} {${mainBody}\n}\n`;
+  for (const [path, blocks] of Object.entries(parts)) {
+    if (blocks.length > 0) {
+      out[path] = `${blocks.join('\n')}\n`;
+    }
+  }
+  return out;
+}
+
+/** Merge the main model source with its part fragments (parts are stored
+ *  already indented as they appear inside the model body). */
+export function mergeModelSource(
+  mainSource: string,
+  files: Record<string, string>,
+  partPaths: string[] = [...MODEL_PART_PATHS],
+): string {
+  const parsed = parseProjectSource(mainSource);
+  if (!parsed.ok || !parsed.model) {
+    return mainSource;
+  }
+  const chunks = partPaths
+    .map((path) => files[path])
+    .filter((content) => content !== undefined && content.trim() !== '')
+    .join('\n');
+  if (chunks === '') {
+    return mainSource;
+  }
+  return insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
 }
 
 /** Serialize the current canvas document into a project bundle. The DSL is
@@ -122,6 +202,9 @@ export function parseProjectBundle(text: string): BundleParseResult {
             : DEFAULT_PRESENTATION_PATH,
         defaultExperiment:
           typeof manifest.defaultExperiment === 'string' ? manifest.defaultExperiment : null,
+        modelParts: Array.isArray(manifest.modelParts)
+          ? manifest.modelParts.filter((part): part is string => typeof part === 'string')
+          : [],
         defaults: {
           seed: typeof manifest.defaults?.seed === 'number' ? manifest.defaults.seed : DEFAULT_SEED,
           schemaVersion:

@@ -1,14 +1,26 @@
-// Side panel (Project view): the project's CODE structure parsed from the
-// DSL files in the bundle. Each model file renders as a collapsible tree of
-// blocks; right-click adds/renames/deletes elements, rewriting the DSL text
-// in place (projectTree.ts) and marking the project dirty. Files that do not
-// parse as a model are shown as orphan rows. Without a project bundle the
-// panel shows a hint instead.
+// Side panel (Project view): the project's CODE structure, split across the
+// per-concern model files. The main model file renders as a model node with
+// its direct members; the model part fragments (resources/process/agents/
+// experiments) render as their block trees. Right-click adds/renames/deletes
+// elements in the owning file, rewriting the DSL text in place; the canvas is
+// best-effort reloaded from the merged source. Files that do not parse show
+// as orphan rows.
 
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronDown, ChevronRight, FileCode2, FileJson2, FileX2, FolderOpen } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  FileJson2,
+  FileX2,
+  FolderOpen,
+} from 'lucide-react';
 import { parseDsl } from '@logicpilot/editor';
+import {
+  DEFAULT_MODEL_PATH,
+  mergeModelSource,
+} from '../project/project';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -19,13 +31,15 @@ import {
   STAGE_ADD_KINDS,
   deleteSpan,
   insertMember,
+  parseProjectMembers,
   parseProjectSource,
   replaceSpan,
 } from '../project/projectTree';
 import type { ProjectMember, ProjectModel } from '../project/projectTree';
 
-type PanelEntry =
+type PanelFile =
   | { type: 'model'; path: string; source: string; model: ProjectModel }
+  | { type: 'part'; path: string; source: string; members: ProjectMember[] }
   | { type: 'orphan'; path: string; error: string }
   | { type: 'other'; path: string };
 
@@ -35,27 +49,22 @@ interface MenuState {
   actions: ContextAction[];
 }
 
-function nextName(source: string, bodyClose: number, kind: string): string {
-  const parsed = parseProjectSource(source);
-  if (!parsed.ok || !parsed.model) {
-    return `${kind}1`;
-  }
-  const find = (members: ProjectMember[]): ProjectMember[] => {
-    for (const member of members) {
-      if (member.bodyClose === bodyClose) {
-        return member.children;
-      }
-      const nested = find(member.children);
-      if (nested.length > 0) {
-        return nested;
-      }
-    }
-    return [];
-  };
-  const siblings =
-    parsed.model.bodyClose === bodyClose ? parsed.model.members : find(parsed.model.members);
-  const count = siblings.filter((member) => member.kind === kind).length;
-  return `${kind}${count + 1}`;
+const PART_KIND_BY_PATH: Record<string, string> = {
+  'model/resources.lp': 'resource',
+  'model/process.lp': 'process',
+  'model/agents.lp': 'agent',
+  'model/experiments.lp': 'experiment',
+};
+
+const PART_PATH_BY_KIND: Record<string, string> = {
+  resource: 'model/resources.lp',
+  process: 'model/process.lp',
+  agent: 'model/agents.lp',
+  experiment: 'model/experiments.lp',
+};
+
+function countBlocks(members: ProjectMember[], kind: string): number {
+  return members.filter((member) => !member.isLeaf && member.kind === kind).length;
 }
 
 export function ModelInfoPanel() {
@@ -67,16 +76,26 @@ export function ModelInfoPanel() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
 
-  const entries = useMemo<PanelEntry[]>(() => {
+  const mainPath = bundle?.manifest.model ?? DEFAULT_MODEL_PATH;
+  const partPaths = bundle?.manifest.modelParts ?? [];
+
+  const entries = useMemo<PanelFile[]>(() => {
     if (!bundle) {
       return [];
     }
     return Object.keys(bundle.files)
       .sort()
-      .map((path): PanelEntry => {
+      .map((path): PanelFile => {
         const source = bundle.files[path]!;
         if (!path.endsWith('.lp')) {
           return { type: 'other', path };
+        }
+        if (partPaths.includes(path)) {
+          const parsed = parseProjectMembers(source);
+          if (!parsed.ok) {
+            return { type: 'orphan', path, error: parsed.error ?? 'invalid fragment' };
+          }
+          return { type: 'part', path, source, members: parsed.members ?? [] };
         }
         const parsed = parseProjectSource(source);
         if (!parsed.ok) {
@@ -84,13 +103,29 @@ export function ModelInfoPanel() {
         }
         return { type: 'model', path, source, model: parsed.model! };
       });
-  }, [bundle]);
+  }, [bundle, partPaths]);
 
   const toggle = (key: string) =>
     setCollapsed((current) => ({ ...current, [key]: !current[key] }));
   const isCollapsed = (key: string) => collapsed[key] === true;
   const showMenu = (x: number, y: number, actions: ContextAction[]) =>
     setMenu({ x, y, actions });
+
+  const syncCanvas = () => {
+    const current = useProjectStore.getState().bundle;
+    if (!current) {
+      return;
+    }
+    const merged = mergeModelSource(
+      current.files[current.manifest.model] ?? '',
+      current.files,
+      current.manifest.modelParts ?? [],
+    );
+    const canvas = parseDsl(merged);
+    if (canvas.ok) {
+      loadDocument(canvas.document);
+    }
+  };
 
   const commitEdit = (path: string, apply: (source: string) => string) => {
     const current = useProjectStore.getState().bundle;
@@ -100,11 +135,7 @@ export function ModelInfoPanel() {
     const source = current.files[path] ?? '';
     const next = apply(source);
     updateFiles((files) => ({ ...files, [path]: next }));
-    // Best-effort canvas sync for the process subset the canvas can render.
-    const canvas = parseDsl(next);
-    if (canvas.ok) {
-      loadDocument(canvas.document);
-    }
+    syncCanvas();
   };
 
   const deleteFile = (path: string) => {
@@ -115,23 +146,53 @@ export function ModelInfoPanel() {
     });
   };
 
+  // Insert a new block. `container` is either the model (main file) or a
+  // block inside a part file; `depth` is the container's nesting depth.
   const addBlock = (
     path: string,
-    source: string,
-    container: { bodyClose: number },
+    container: { bodyClose: number } | null,
     depth: number,
     kind: string,
     template: (name: string) => string,
   ) => {
-    const name = nextName(source, container.bodyClose, kind);
+    const current = useProjectStore.getState().bundle;
+    if (!current) {
+      return;
+    }
+    const targetPart = PART_PATH_BY_KIND[kind];
+    if (container === null && targetPart !== undefined) {
+      // Add at the model level -> route to the per-concern part file.
+      const partSource = current.files[targetPart] ?? '';
+      const parsedPart = parseProjectMembers(partSource);
+      const siblings = parsedPart.ok ? (parsedPart.members ?? []) : [];
+      const name = `${kind}${countBlocks(siblings, kind) + 1}`;
+      const block = insertMember(partSource, partSource.length, '  ', template(name));
+      updateFiles((files) => ({ ...files, [targetPart]: block }));
+      syncCanvas();
+      return;
+    }
+    // Insert into the model body (main file) or a block body.
+    const source = current.files[path] ?? '';
+    let siblings: ProjectMember[] = [];
+    let insertAt = source.length;
+    if (container === null) {
+      const parsed = parseProjectSource(source);
+      if (parsed.ok && parsed.model) {
+        siblings = parsed.model.members;
+        insertAt = parsed.model.bodyClose;
+      }
+    } else {
+      siblings = findChildren(source, container.bodyClose);
+      insertAt = container.bodyClose;
+    }
+    const name = `${kind}${countBlocks(siblings, kind) + 1}`;
     commitEdit(path, (src) =>
-      insertMember(src, container.bodyClose, '  '.repeat(depth + 1), template(name)),
+      insertMember(src, insertAt, '  '.repeat(depth + 1), template(name)),
     );
   };
 
   const renameBlock = (
     path: string,
-    source: string,
     nameSpan: { start: number; end: number },
     currentName: string,
   ) => {
@@ -152,17 +213,15 @@ export function ModelInfoPanel() {
   const renderMembers = (
     members: ProjectMember[],
     path: string,
-    source: string,
     depth: number,
   ): ReactNode =>
     members
       .filter((member) => !member.isLeaf)
-      .map((member) => renderMember(member, path, source, depth));
+      .map((member) => renderMember(member, path, depth));
 
   const renderMember = (
     member: ProjectMember,
     path: string,
-    source: string,
     depth: number,
   ): ReactNode => {
     const key = `${path}:${member.kind}:${member.name}`;
@@ -173,20 +232,19 @@ export function ModelInfoPanel() {
       for (const stage of STAGE_ADD_KINDS) {
         actions.push({
           label: `Add ${stage.kind}`,
-          onSelect: () =>
-            addBlock(path, source, member, depth, stage.kind, stage.template),
+          onSelect: () => addBlock(path, member, depth, stage.kind, stage.template),
         });
       }
     } else if (member.kind === 'agent') {
       const agent = MODEL_ADD_KINDS.find((entry) => entry.kind === 'agent')!;
       actions.push({
         label: 'Add agent',
-        onSelect: () => addBlock(path, source, member, depth, 'agent', agent.template),
+        onSelect: () => addBlock(path, member, depth, 'agent', agent.template),
       });
     }
     actions.push({
       label: 'Rename',
-      onSelect: () => renameBlock(path, source, member.nameSpan!, member.name),
+      onSelect: () => renameBlock(path, member.nameSpan!, member.name),
     });
     actions.push({
       label: 'Delete',
@@ -217,25 +275,63 @@ export function ModelInfoPanel() {
           <span className="outline-kind">{member.kind}</span>
           <span className="outline-name">{member.name}</span>
         </div>
-        {open && hasChildren && renderMembers(member.children, path, source, depth + 1)}
+        {open && hasChildren && renderMembers(member.children, path, depth + 1)}
       </div>
     );
   };
 
-  const renderModel = (entry: Extract<PanelEntry, { type: 'model' }>): ReactNode => {
-    const key = entry.path;
+  const renderModelNode = (
+    path: string,
+    source: string,
+    model: ProjectModel,
+  ): ReactNode => {
+    const key = `${path}#model`;
     const open = !isCollapsed(key);
-    const model = entry.model;
     const actions: ContextAction[] = [
       ...MODEL_ADD_KINDS.map(({ kind, template }) => ({
         label: `Add ${kind}`,
-        onSelect: () =>
-          addBlock(entry.path, entry.source, model, 0, kind, template),
+        onSelect: () => addBlock(path, null, 0, kind, template),
       })),
       {
         label: 'Rename model',
-        onSelect: () =>
-          renameBlock(entry.path, entry.source, model.nameSpan, model.name),
+        onSelect: () => renameBlock(path, model.nameSpan, model.name),
+      },
+      {
+        label: 'Delete file',
+        danger: true,
+        onSelect: () => deleteFile(path),
+      },
+    ];
+    return (
+      <div key={key}>
+        <div
+          className="tree-row tree-file"
+          style={{ paddingLeft: 22 }}
+          onClick={() => toggle(key)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            showMenu(event.clientX, event.clientY, actions);
+          }}
+        >
+          <span className="outline-kind">model</span>
+          <span className="outline-name">{model.name}</span>
+        </div>
+        {open && renderMembers(model.members, path, 1)}
+      </div>
+    );
+  };
+
+  const renderModelFile = (entry: Extract<PanelFile, { type: 'model' }>): ReactNode => {
+    const key = entry.path;
+    const open = !isCollapsed(key);
+    const actions: ContextAction[] = [
+      ...MODEL_ADD_KINDS.map(({ kind, template }) => ({
+        label: `Add ${kind}`,
+        onSelect: () => addBlock(entry.path, null, 0, kind, template),
+      })),
+      {
+        label: 'Rename model',
+        onSelect: () => renameBlock(entry.path, entry.model.nameSpan, entry.model.name),
       },
       {
         label: 'Delete file',
@@ -258,28 +354,49 @@ export function ModelInfoPanel() {
           <FileCode2 size={12} />
           <span className="tree-label">{entry.path}</span>
         </div>
-        {open && (
-          <>
-            <div
-              className="tree-row tree-file"
-              style={{ paddingLeft: 22 }}
-              onClick={() => toggle(`${key}#model`)}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                showMenu(event.clientX, event.clientY, actions);
-              }}
-            >
-              <span className="outline-kind">model</span>
-              <span className="outline-name">{model.name}</span>
-            </div>
-            {renderMembers(model.members, entry.path, entry.source, 1)}
-          </>
-        )}
+        {open && renderModelNode(entry.path, entry.source, entry.model)}
       </div>
     );
   };
 
-  const renderFileRow = (entry: Extract<PanelEntry, { type: 'orphan' | 'other' }>): ReactNode => {
+  const renderPartFile = (entry: Extract<PanelFile, { type: 'part' }>): ReactNode => {
+    const key = entry.path;
+    const open = !isCollapsed(key);
+    const kind = PART_KIND_BY_PATH[entry.path] ?? 'resource';
+    const add = MODEL_ADD_KINDS.find((item) => item.kind === kind);
+    const actions: ContextAction[] = [];
+    if (add) {
+      actions.push({
+        label: `Add ${kind}`,
+        onSelect: () => addBlock(entry.path, null, 0, kind, add.template),
+      });
+    }
+    actions.push({
+      label: 'Delete file',
+      danger: true,
+      onSelect: () => deleteFile(entry.path),
+    });
+    return (
+      <div key={entry.path}>
+        <div
+          className="tree-row tree-folder"
+          style={{ paddingLeft: 8 }}
+          onClick={() => toggle(key)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            showMenu(event.clientX, event.clientY, actions);
+          }}
+        >
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <FileCode2 size={12} />
+          <span className="tree-label">{entry.path}</span>
+        </div>
+        {open && renderMembers(entry.members, entry.path, 1)}
+      </div>
+    );
+  };
+
+  const renderFileRow = (entry: Extract<PanelFile, { type: 'orphan' | 'other' }>): ReactNode => {
     const Icon = entry.type === 'orphan' ? FileX2 : FileJson2;
     return (
       <div
@@ -298,9 +415,7 @@ export function ModelInfoPanel() {
           <Icon size={12} />
         </span>
         <span className="tree-label">{entry.path}</span>
-        {entry.type === 'orphan' && (
-          <span className="tree-muted">(invalid)</span>
-        )}
+        {entry.type === 'orphan' && <span className="tree-muted">(invalid)</span>}
       </div>
     );
   };
@@ -327,11 +442,11 @@ export function ModelInfoPanel() {
         </span>
         <span className="tree-label">{bundle.manifest.name}</span>
       </div>
-      {entries.map((entry) =>
-        entry.type === 'model'
-          ? renderModel(entry)
-          : renderFileRow(entry),
-      )}
+      {entries.map((entry) => {
+        if (entry.type === 'model') return renderModelFile(entry);
+        if (entry.type === 'part') return renderPartFile(entry);
+        return renderFileRow(entry);
+      })}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -342,4 +457,25 @@ export function ModelInfoPanel() {
       )}
     </div>
   );
+}
+
+// Find the children of the block whose closing brace is at `bodyClose`.
+function findChildren(source: string, bodyClose: number): ProjectMember[] {
+  const parsed = parseProjectMembers(source);
+  if (!parsed.ok || !parsed.members) {
+    return [];
+  }
+  const search = (members: ProjectMember[]): ProjectMember[] => {
+    for (const member of members) {
+      if (member.bodyClose === bodyClose) {
+        return member.children;
+      }
+      const nested = search(member.children);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+    return [];
+  };
+  return search(parsed.members);
 }

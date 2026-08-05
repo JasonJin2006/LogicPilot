@@ -12,13 +12,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace logicpilot::cli {
 
 struct ProjectBundleInfo {
-  std::string name;          // manifest.name (may be empty)
-  std::string model_path;    // manifest.model (default "model/main.lp")
-  std::string model_source;  // extracted DSL source
+  std::string name;            // manifest.name (may be empty)
+  std::string model_path;      // manifest.model (default "model/main.lp")
+  std::string model_source;    // merged DSL source (main + model parts)
+  std::vector<std::string> part_paths;  // manifest.modelParts
 };
 
 // Extract manifest name + model source from a bundle. Returns false with
@@ -178,6 +181,80 @@ inline bool find_string(const std::string& text, const std::string& key,
   return false;
 }
 
+// Parse a JSON array of strings, e.g. manifest.modelParts. `open` must point
+// at '['. Returns false on malformed input.
+inline bool parse_json_string_array(const std::string& text, std::size_t open,
+                                    std::vector<std::string>& out) {
+  if (open >= text.size() || text[open] != '[') {
+    return false;
+  }
+  std::size_t i = skip_ws(text, open + 1);
+  if (i < text.size() && text[i] == ']') {
+    return true;  // empty array
+  }
+  for (;;) {
+    i = skip_ws(text, i);
+    if (i >= text.size() || text[i] != '"') {
+      return false;
+    }
+    std::string value;
+    std::size_t end = 0;
+    if (!parse_json_string(text, i, value, end)) {
+      return false;
+    }
+    out.push_back(std::move(value));
+    i = skip_ws(text, end);
+    if (i >= text.size()) {
+      return false;
+    }
+    if (text[i] == ']') {
+      return true;
+    }
+    if (text[i] != ',') {
+      return false;
+    }
+    ++i;
+  }
+}
+
+// Insert `parts` (already indented as model members) before the model's
+// closing brace. The scan is intentionally simple: the main file written by
+// the IDE is `model <name> { ... }` without string literals containing
+// braces.
+inline std::string merge_model_parts(
+    const std::string& main_source,
+    const std::vector<std::pair<std::string, std::string>>& parts) {
+  std::string chunks;
+  for (const auto& [path, content] : parts) {
+    (void)path;
+    if (content.find_first_not_of(" \t\r\n") != std::string::npos) {
+      chunks += content;
+      if (chunks.empty() || chunks.back() != '\n') {
+        chunks += '\n';
+      }
+    }
+  }
+  if (chunks.empty()) {
+    return main_source;
+  }
+  const std::size_t open = main_source.find('{');
+  if (open == std::string::npos) {
+    return main_source;
+  }
+  std::size_t depth = 1;
+  std::size_t i = open + 1;
+  while (i < main_source.size() && depth > 0) {
+    if (main_source[i] == '{') {
+      ++depth;
+    } else if (main_source[i] == '}') {
+      --depth;
+    }
+    ++i;
+  }
+  const std::size_t close = depth == 0 ? i - 1 : main_source.size();
+  return main_source.substr(0, close) + "\n" + chunks + main_source.substr(close);
+}
+
 }  // namespace detail
 
 inline bool read_project_bundle(const std::string& text,
@@ -224,7 +301,29 @@ inline bool read_project_bundle(const std::string& text,
     error = "project bundle is missing model source '" + model_path + "'";
     return false;
   }
-  out.model_source = source;
+
+  // Per-concern model part files (manifest.modelParts) are merged into the
+  // model body before compiling.
+  std::vector<std::string> part_paths;
+  const std::string parts_key = "\"modelParts\"";
+  const std::size_t parts_pos = text.find(parts_key);
+  if (parts_pos != std::string::npos) {
+    const std::size_t colon = text.find(':', parts_pos + parts_key.size());
+    if (colon != std::string::npos) {
+      const std::size_t open = detail::skip_ws(text, colon + 1);
+      detail::parse_json_string_array(text, open, part_paths);
+    }
+  }
+  std::vector<std::pair<std::string, std::string>> parts;
+  for (const std::string& part_path : part_paths) {
+    std::string part_source;
+    if (detail::find_string(text, part_path, files_value, text.size(),
+                            part_source)) {
+      parts.emplace_back(part_path, std::move(part_source));
+    }
+  }
+  out.part_paths = std::move(part_paths);
+  out.model_source = detail::merge_model_parts(source, parts);
   return true;
 }
 

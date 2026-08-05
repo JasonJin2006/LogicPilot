@@ -65,6 +65,25 @@ factory-twin.lpproj/                  # 一个工程 = 一个模型 + 它的世�
 | `defaults.seed` | `int` | 默认随机种子，当前默认 `42` |
 | `defaults.schemaVersion` | `int` | 默认 IR 契约版本，当前默认 `2` |
 
+## 5.1 模型片段（model parts）
+
+单个模型不再挤在 `model/main.lp` 一个文件里：`manifest.modelParts` 列出按关注点
+拆分的片段文件，编译时按清单顺序文本合并进模型体（lpcli `--project` 读取并合并）。
+
+```
+model/
+├── main.lp              # model <name> { ... } 根（use/param 等留在主文件）
+├── resources.lp         # resource 块
+├── process.lp           # process 块
+├── agents.lp            # agent 块
+└── experiments.lp       # experiment 块
+```
+
+- 片段文件里是**不带 model 包装的成员声明**，缩进与模型体内一致（2 空格/层）。
+- IDE 的 Project 面板按文件分组展示，右键增删改路由到所属片段；画布保存时按
+  kind 拆分写回各片段。
+- 兼容：`modelParts` 缺省（旧工程）时整个模型仍在 `model/main.lp`，行为不变。
+
 ## 6. 单文件 bundle（当前交换格式）
 
 `*.lpproj` = 一个 JSON 信封，`files` 的键是目录相对路径，值是对应文件内容；

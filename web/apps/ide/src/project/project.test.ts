@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { addNode, connect, createDocument } from '@logicpilot/editor';
 import type { ModelDocument } from '@logicpilot/editor';
+import { parseProjectSource } from './projectTree';
 import {
   PROJECT_SCHEMA,
   bundleToJson,
   createProject,
   createProjectBundle,
+  mergeModelSource,
   parseProjectBundle,
   projectToDocument,
+  splitModelSource,
 } from './project';
 
 function buildSample(): ModelDocument {
@@ -67,6 +70,90 @@ describe('project bundle', () => {
 
   it('createProject defaults the seed when omitted', () => {
     expect(createProject('Plain').manifest.defaults.seed).toBe(42);
+  });
+
+  it('createProject produces the multi-file part structure', () => {
+    const bundle = createProject('Factory');
+    expect(bundle.manifest.modelParts).toEqual([
+      'model/resources.lp',
+      'model/process.lp',
+      'model/agents.lp',
+      'model/experiments.lp',
+    ]);
+    expect(bundle.files['model/main.lp']).toContain('model Factory');
+    for (const part of bundle.manifest.modelParts ?? []) {
+      expect(bundle.files[part]).toBeDefined();
+    }
+    const loaded = projectToDocument(bundle);
+    expect(loaded.ok).toBe(true);
+  });
+
+  it('splitModelSource partitions members into per-concern parts', () => {
+    const source = `model M {
+  resource Server {
+    capacity = 1
+  }
+  process Flow {
+    queue Q {
+      capacity = 10
+    }
+  }
+  experiment Tune {
+    budget = 20
+  }
+}
+`;
+    const split = splitModelSource(source);
+    expect(split['model/main.lp']).toContain('model M');
+    expect(split['model/resources.lp']).toContain('resource Server');
+    expect(split['model/process.lp']).toContain('process Flow');
+    expect(split['model/experiments.lp']).toContain('experiment Tune');
+    expect(split['model/agents.lp']).toBeUndefined();
+  });
+
+  it('mergeModelSource reconstructs the full model from parts', () => {
+    const main = 'model M {\n}\n';
+    const files = {
+      'model/main.lp': main,
+      'model/resources.lp': '  resource Server {\n    capacity = 1\n  }\n',
+      'model/process.lp': '  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n',
+      'model/experiments.lp': '  experiment Tune {\n    budget = 20\n  }\n',
+    };
+    const merged = mergeModelSource(main, files);
+    expect(merged).toContain('resource Server');
+    expect(merged).toContain('queue Q');
+    expect(merged).toContain('experiment Tune');
+    const parsed = parseProjectSource(merged);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.model!.members.map((member) => member.kind)).toEqual([
+      'resource',
+      'process',
+      'experiment',
+    ]);
+  });
+
+  it('split then merge is lossless for resources/process/experiments', () => {
+    const source = `model M {
+  resource Server {
+    capacity = 1
+  }
+  process Flow {
+    source S {
+      arrival = rate(0.8)
+    }
+  }
+}
+`;
+    const split = splitModelSource(source);
+    const main = split['model/main.lp']!;
+    const merged = mergeModelSource(main, split);
+    const original = parseProjectSource(source);
+    const reparsed = parseProjectSource(merged);
+    expect(reparsed.ok).toBe(true);
+    expect(reparsed.model!.members.map((m) => m.kind)).toEqual(
+      original.model!.members.map((m) => m.kind),
+    );
+    expect(merged).toContain('arrival = rate(0.8)');
   });
 
   it('round-trips the canvas layout (positions, ids and edges survive)', () => {
