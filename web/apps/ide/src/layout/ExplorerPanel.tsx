@@ -67,14 +67,14 @@ const ARTIFACT_ROWS: TreeFolder[] = [
   },
 ];
 
-function isFolder(entry: TreeEntry): entry is TreeFolder {
+export function isFolder(entry: TreeEntry): entry is TreeFolder {
   return 'children' in entry;
 }
 
 // Group flat project paths into a nested folder tree (model/main.lp ->
 // model/ > main.lp).
-function treeFromPaths(paths: string[]): TreeFolder[] {
-  const roots: TreeFolder[] = [];
+export function treeFromPaths(paths: string[]): TreeEntry[] {
+  const roots: TreeEntry[] = [];
   for (const path of [...paths].sort()) {
     const parts = path.split('/');
     let level: TreeEntry[] = roots;
@@ -559,17 +559,29 @@ export function ExplorerPanel() {
           </button>
         </span>
       </div>
-      {sourceFolders.map((entry) => (
-        <FolderRow
-          key={entry.path}
-          folder={entry}
-          indent={1}
-          dataDir={entry.path}
-          collapsed={collapsed}
-          activePath={activePath}
-          onToggle={toggleFolder}
-        />
-      ))}
+      {/* Root-level files (e.g. logicpilot.json in a disk tree) render as
+          rows, folders recurse - passing a file to FolderRow would crash. */}
+      {sourceFolders.map((entry) =>
+        isFolder(entry) ? (
+          <FolderRow
+            key={entry.path}
+            folder={entry}
+            indent={1}
+            dataDir={entry.path}
+            collapsed={collapsed}
+            activePath={activePath}
+            onToggle={toggleFolder}
+          />
+        ) : (
+          <FileRow
+            key={entry.path}
+            file={entry}
+            indent={1}
+            dataPath={entry.path}
+            active={entry.path === activePath}
+          />
+        ),
+      )}
       {!diskFiles &&
         ARTIFACT_ROWS.map((entry) => (
           <FolderRow
