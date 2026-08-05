@@ -134,3 +134,77 @@ export function readProjectFile(
     )
     .catch((error) => ({ ok: false, error: String(error) }));
 }
+
+/** Write (or overwrite) one project file; parents are created. */
+export function writeProjectFile(
+  projectDir: string,
+  rel: string,
+  content: string,
+): Promise<TauriFsResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<void>('write_project_file', { projectDir, rel, content }).then(
+        () => ({ ok: true }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}
+
+/** Create one directory inside the project. */
+export function createDirectory(
+  projectDir: string,
+  rel: string,
+): Promise<TauriFsResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<void>('create_directory', { projectDir, rel }).then(
+        () => ({ ok: true }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}
+
+/** Rename or move a file/folder inside the project. */
+export function renameProjectEntry(
+  projectDir: string,
+  oldRel: string,
+  newRel: string,
+): Promise<TauriFsResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<void>('rename_project_entry', { projectDir, oldRel, newRel }).then(
+        () => ({ ok: true }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}
+
+/** Delete a file or folder (recursive for folders). */
+export function deleteProjectEntry(
+  projectDir: string,
+  rel: string,
+): Promise<TauriFsResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<void>('delete_project_entry', { projectDir, rel }).then(
+        () => ({ ok: true }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}

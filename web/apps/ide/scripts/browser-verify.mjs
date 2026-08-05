@@ -151,7 +151,7 @@ try {
   // Code tabs are per file: save the canvas back to the bundle (File > Save);
   // splitModelSource rewrites main.lp to reference the scene, so opening
   // model/main.lp shows the instance line and Compile builds the merged model.
-  await page.getByRole('button', { name: 'File' }).click();
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 5_000 }).catch(() => null),
     page
@@ -404,7 +404,7 @@ try {
 
   // File > Close: the AI load left unsaved changes, so Close asks first and
   // Don't Save returns to the empty center.
-  await page.getByRole('button', { name: 'File' }).click();
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
   await page.getByRole('dialog', { name: 'Close project' }).waitFor();
   await page.getByRole('button', { name: "Don't Save" }).click();
@@ -415,7 +415,7 @@ try {
   await page.getByRole('button', { name: 'New project' }).click();
   await page.getByRole('dialog', { name: 'New Project' }).waitFor();
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await page.getByRole('button', { name: 'File' }).click();
+  await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
   await page.waitForSelector('.center-empty', { timeout: 5_000 });
   log('pristine project closes without a prompt');

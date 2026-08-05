@@ -20,6 +20,8 @@ interface ProjectState {
   openBundle: (bundle: ProjectBundle) => void;
   setPath: (path: string | null) => void;
   setDiskFiles: (files: string[] | null) => void;
+  /** Re-read the on-disk tree (Explorer refresh / after disk mutations). */
+  refreshDiskTree: () => Promise<void>;
   /** Apply an edit to the bundle's files and mark the project dirty. */
   updateFiles: (updater: (files: Record<string, string>) => Record<string, string>) => void;
   markDirty: () => void;
@@ -36,6 +38,17 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   openBundle: (bundle) => set({ bundle, dirty: false }),
   setPath: (path) => set({ path }),
   setDiskFiles: (files) => set({ diskFiles: files }),
+  refreshDiskTree: async () => {
+    const { path: dir } = useProjectStore.getState();
+    if (!dir) {
+      return;
+    }
+    const { readProjectTree } = await import('../state/tauriFs');
+    const tree = await readProjectTree(dir);
+    if (tree.ok && tree.files) {
+      useProjectStore.getState().setDiskFiles(tree.files);
+    }
+  },
   updateFiles: (updater) =>
     set((state) => {
       if (!state.bundle) return {};

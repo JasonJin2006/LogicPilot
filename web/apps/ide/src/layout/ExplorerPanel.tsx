@@ -6,13 +6,30 @@
 
 import { useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
-import { ChevronDown, ChevronRight, FileCode2, FileJson2, Folder, FolderOpen } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  FileJson2,
+  FilePlus,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Minimize2,
+  RefreshCw,
+} from 'lucide-react';
 import { sceneContainerFromFile } from '../project/project';
 import { openProjectFromFile } from '../project/openProject';
 import { useCanvasView } from '../state/canvasView';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
-import { readProjectFile } from '../state/tauriFs';
+import {
+  createDirectory,
+  deleteProjectEntry,
+  readProjectFile,
+  renameProjectEntry,
+  writeProjectFile,
+} from '../state/tauriFs';
 import { ContextMenu } from './ContextMenu';
 import type { ContextAction } from './ContextMenu';
 
@@ -87,7 +104,25 @@ function treeFromPaths(paths: string[]): TreeFolder[] {
       level = folder.children;
     }
   }
+  sortEntries(roots);
   return roots;
+}
+
+// VS Code ordering: folders first, then files, each by name.
+function sortEntries(entries: TreeEntry[]): void {
+  entries.sort((a, b) => {
+    const aFolder = isFolder(a) ? 0 : 1;
+    const bFolder = isFolder(b) ? 0 : 1;
+    if (aFolder !== bFolder) {
+      return aFolder - bFolder;
+    }
+    return a.name.localeCompare(b.name);
+  });
+  for (const entry of entries) {
+    if (isFolder(entry)) {
+      sortEntries(entry.children);
+    }
+  }
 }
 
 function FileRow({
@@ -183,9 +218,11 @@ export function ExplorerPanel() {
   const bundle = useProjectStore((state) => state.bundle);
   const projectPath = useProjectStore((state) => state.path);
   const diskFiles = useProjectStore((state) => state.diskFiles);
+  const refreshDiskTree = useProjectStore((state) => state.refreshDiskTree);
   const dirty = useProjectStore((state) => state.dirty);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
+  const openInfo = useUiStore((state) => state.openInfo);
   const openFile = useUiStore((state) => state.openFile);
   const setCanvasView = useCanvasView((state) => state.setView);
   const activePath = useUiStore((state) => state.activeFile);
@@ -194,6 +231,7 @@ export function ExplorerPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toggleFolder = (path: string) =>
     setCollapsed((current) => ({ ...current, [path]: !(current[path] === true) }));
+  const isDisk = projectPath !== null && diskFiles !== null;
 
   // No project open: an empty panel with a single action instead of a tree.
   if (!bundle) {
@@ -241,37 +279,143 @@ export function ExplorerPanel() {
       submitLabel: 'Create',
       onSubmit: (name) => {
         const path = dir === '' ? name : `${dir}/${name}`;
-        const stem = name.replace(/\.lp$/, '');
-        const content = path.endsWith('.lp') ? `model ${stem} {\n}\n` : '';
-        updateFiles((files) => ({ ...files, [path]: content }));
+        if (isDisk && projectPath) {
+          const content = path.endsWith('.lp')
+            ? `model ${name.replace(/\.lp$/, '')} {\n}\n`
+            : '';
+          void writeProjectFile(projectPath, path, content).then((result) => {
+            if (!result.ok) {
+              openInfo('Create failed', result.error ?? 'cannot create the file');
+            }
+            void refreshDiskTree();
+          });
+          return;
+        }
+        updateFiles((files) => ({
+          ...files,
+          [path]: path.endsWith('.lp')
+            ? `model ${name.replace(/\.lp$/, '')} {\n}\n`
+            : '',
+        }));
       },
     });
   };
 
-  const renameFile = (path: string, name: string) => {
-    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+  const newFolder = (dir: string) => {
+    if (!isDisk || !projectPath) {
+      return;
+    }
     openPrompt({
-      title: 'Rename file',
-      label: 'file name',
-      initial: name,
-      submitLabel: 'Rename',
-      onSubmit: (value) =>
-        updateFiles((files) => {
-          const next = { ...files };
-          const content = next[path] ?? '';
-          delete next[path];
-          next[`${dir}${value}`] = content;
-          return next;
-        }),
+      title: 'New folder',
+      label: 'folder name',
+      initial: 'new-folder',
+      submitLabel: 'Create',
+      onSubmit: (name) => {
+        const path = dir === '' ? name : `${dir}/${name}`;
+        void createDirectory(projectPath, path).then((result) => {
+          if (!result.ok) {
+            openInfo('Create failed', result.error ?? 'cannot create the folder');
+          }
+          void refreshDiskTree();
+        });
+      },
     });
   };
 
-  const deleteFileRow = (path: string) =>
-    updateFiles((files) => {
-      const next = { ...files };
-      delete next[path];
-      return next;
+  const renameEntry = (path: string, isDir: boolean) => {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+    openPrompt({
+      title: isDir ? 'Rename folder' : 'Rename file',
+      label: isDir ? 'folder name' : 'file name',
+      initial: name,
+      submitLabel: 'Rename',
+      onSubmit: (value) => {
+        const next = `${dir}${value}`;
+        if (isDisk && projectPath) {
+          void renameProjectEntry(projectPath, path, next).then((result) => {
+            if (!result.ok) {
+              openInfo('Rename failed', result.error ?? 'cannot rename');
+              return;
+            }
+            // Keep the bundle file map in sync when bundle files were moved.
+            updateFiles((files) => {
+              const mapped = { ...files };
+              if (isDir) {
+                const prefix = `${path}/`;
+                for (const key of Object.keys(mapped)) {
+                  if (key.startsWith(prefix)) {
+                    mapped[`${next}/${key.slice(prefix.length)}`] = mapped[key]!;
+                    delete mapped[key];
+                  }
+                }
+              } else if (mapped[path] !== undefined) {
+                mapped[next] = mapped[path]!;
+                delete mapped[path];
+              }
+              return mapped;
+            });
+            void refreshDiskTree();
+          });
+          return;
+        }
+        if (isDir) {
+          return; // in-memory bundles have no empty folders
+        }
+        updateFiles((files) => {
+          const nextFiles = { ...files };
+          const content = nextFiles[path] ?? '';
+          delete nextFiles[path];
+          nextFiles[next] = content;
+          return nextFiles;
+        });
+      },
     });
+  };
+
+  const deleteEntry = (path: string, isDir: boolean) => {
+    if (isDisk && projectPath) {
+      void deleteProjectEntry(projectPath, path).then((result) => {
+        if (!result.ok) {
+          openInfo('Delete failed', result.error ?? 'cannot delete');
+          return;
+        }
+        updateFiles((files) => {
+          const next = { ...files };
+          if (isDir) {
+            const prefix = `${path}/`;
+            for (const key of Object.keys(next)) {
+              if (key.startsWith(prefix)) {
+                delete next[key];
+              }
+            }
+          } else {
+            delete next[path];
+          }
+          return next;
+        });
+        void refreshDiskTree();
+      });
+      return;
+    }
+    if (!isDir) {
+      updateFiles((files) => {
+        const next = { ...files };
+        delete next[path];
+        return next;
+      });
+    }
+  };
+
+  const collectFolders = (entries: TreeEntry[]): string[] =>
+    entries.flatMap((entry) =>
+      isFolder(entry) ? [entry.path, ...collectFolders(entry.children)] : [],
+    );
+  const collapseAll = () => {
+    setCollapsed(
+      Object.fromEntries(collectFolders(sourceFolders).map((path) => [path, true])),
+    );
+  };
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     if (!bundle) {
@@ -284,8 +428,7 @@ export function ExplorerPanel() {
     const path = row.getAttribute('data-path');
     const dir = row.getAttribute('data-dir');
     const actions: ContextAction[] = [];
-    if (path !== null) {
-      const name = path.slice(path.lastIndexOf('/') + 1);
+    if (path !== null && path !== undefined) {
       const source = bundle.files[path];
       const scene = source !== undefined ? sceneContainerFromFile(path, source) : null;
       if (scene) {
@@ -294,16 +437,26 @@ export function ExplorerPanel() {
           onSelect: () => openFile(path),
         });
       }
-      if (source !== undefined) {
-        actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
-        actions.push({
-          label: 'Delete',
-          danger: true,
-          onSelect: () => deleteFileRow(path),
-        });
-      }
-    } else if (dir !== null) {
+      actions.push({ label: 'Rename...', onSelect: () => renameEntry(path, false) });
+      actions.push({
+        label: 'Delete',
+        danger: true,
+        onSelect: () => deleteEntry(path, false),
+      });
+    } else if (dir !== null && dir !== undefined) {
+      const isRoot = dir === '';
       actions.push({ label: 'New file...', onSelect: () => newFile(dir) });
+      if (isDisk) {
+        actions.push({ label: 'New folder...', onSelect: () => newFolder(dir) });
+        if (!isRoot) {
+          actions.push({ label: 'Rename...', onSelect: () => renameEntry(dir, true) });
+          actions.push({
+            label: 'Delete',
+            danger: true,
+            onSelect: () => deleteEntry(dir, true),
+          });
+        }
+      }
     }
     if (actions.length > 0) {
       setMenu({ x: event.clientX, y: event.clientY, actions });
@@ -342,12 +495,56 @@ export function ExplorerPanel() {
       onClick={onFileOpen}
       onContextMenu={onContextMenu}
     >
-      <div className="tree-row tree-root">
+      <div className="tree-row tree-root" data-dir="">
         <span className="tree-glyph">
           {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}
         </span>
         <span className="tree-label">{rootName}</span>
         {bundle && dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
+        <span className="tree-actions">
+          <button
+            type="button"
+            title="New file"
+            onClick={(event) => {
+              event.stopPropagation();
+              newFile('');
+            }}
+          >
+            <FilePlus size={12} />
+          </button>
+          {isDisk && (
+            <button
+              type="button"
+              title="New folder"
+              onClick={(event) => {
+                event.stopPropagation();
+                newFolder('');
+              }}
+            >
+              <FolderPlus size={12} />
+            </button>
+          )}
+          <button
+            type="button"
+            title="Refresh"
+            onClick={(event) => {
+              event.stopPropagation();
+              void refreshDiskTree();
+            }}
+          >
+            <RefreshCw size={12} />
+          </button>
+          <button
+            type="button"
+            title="Collapse all"
+            onClick={(event) => {
+              event.stopPropagation();
+              collapseAll();
+            }}
+          >
+            <Minimize2 size={12} />
+          </button>
+        </span>
       </div>
       {sourceFolders.map((entry) => (
         <FolderRow

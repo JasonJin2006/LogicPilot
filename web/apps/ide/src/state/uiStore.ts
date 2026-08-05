@@ -36,6 +36,7 @@ interface UiState {
   closeNewProject: () => void;
   openFile: (path: string) => void;
   openDiskFile: (path: string, content: string) => void;
+  updateDiskFile: (path: string, content: string) => void;
   closeFile: (path: string) => void;
   closeAllFiles: () => void;
   openPrompt: (prompt: UiState['prompt']) => void;
@@ -85,6 +86,10 @@ export const useUiStore = create<UiState>((set) => ({
         ? state.openFiles
         : [...state.openFiles, path],
       activeFile: path,
+    })),
+  updateDiskFile: (path, content) =>
+    set((state) => ({
+      diskFiles: { ...state.diskFiles, [path]: content },
     })),
   closeAllFiles: () => set({ openFiles: [], activeFile: null, diskFiles: {} }),
   openPrompt: (prompt) => set({ prompt }),

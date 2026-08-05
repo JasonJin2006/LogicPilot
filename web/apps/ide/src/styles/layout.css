@@ -700,6 +700,38 @@
   background: var(--accent);
 }
 
+/* Explorer toolbar: new file/folder, refresh, collapse all on the root row. */
+.tree-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.tree-root:hover .tree-actions {
+  opacity: 1;
+}
+
+.tree-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.tree-actions button:hover {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+
 .tree-folder {
   margin-top: 2px;
 }

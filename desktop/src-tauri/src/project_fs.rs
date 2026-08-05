@@ -146,6 +146,62 @@ pub fn read_project_file(root: &Path, rel: &str) -> Result<String, String> {
         .map_err(|error| format!("cannot read '{}': {}", target.display(), error))
 }
 
+// Write (or overwrite) one project file; parent directories are created.
+pub fn write_project_file_impl(root: &Path, rel: &str, content: &str) -> Result<(), String> {
+    let rel_path = validate_relative_path(rel)?;
+    let target = root.join(&rel_path);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create '{}': {}", parent.display(), error))?;
+    }
+    std::fs::write(&target, content)
+        .map_err(|error| format!("cannot write '{}': {}", target.display(), error))
+}
+
+// Create one directory entry inside the project.
+pub fn create_project_dir_impl(root: &Path, rel: &str) -> Result<(), String> {
+    let rel_path = validate_relative_path(rel)?;
+    let target = root.join(&rel_path);
+    std::fs::create_dir_all(&target)
+        .map_err(|error| format!("cannot create '{}': {}", target.display(), error))
+}
+
+// Rename or move a file/folder inside the project (both paths validated so
+// the move can never leave the project root).
+pub fn rename_project_entry_impl(
+    root: &Path,
+    old_rel: &str,
+    new_rel: &str,
+) -> Result<(), String> {
+    let from = root.join(validate_relative_path(old_rel)?);
+    let to = root.join(validate_relative_path(new_rel)?);
+    if !from.exists() {
+        return Err(format!("'{}' does not exist", from.display()));
+    }
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create '{}': {}", parent.display(), error))?;
+    }
+    std::fs::rename(&from, &to)
+        .map_err(|error| format!("cannot rename '{}': {}", from.display(), error))
+}
+
+// Delete one file or folder (recursively for folders). The relative path is
+// validated first, so the delete can never escape the project root.
+pub fn delete_project_entry_impl(root: &Path, rel: &str) -> Result<(), String> {
+    let target = root.join(validate_relative_path(rel)?);
+    if !target.exists() {
+        return Err(format!("'{}' does not exist", target.display()));
+    }
+    if target.is_dir() {
+        std::fs::remove_dir_all(&target)
+            .map_err(|error| format!("cannot delete '{}': {}", target.display(), error))
+    } else {
+        std::fs::remove_file(&target)
+            .map_err(|error| format!("cannot delete '{}': {}", target.display(), error))
+    }
+}
+
 fn collect_project_files(
     root: &Path,
     dir: &Path,
@@ -310,6 +366,44 @@ mod tests {
         assert!(read_project_file(&dir, "../outside.txt").is_err());
         assert!(read_project_file(&dir, "C:\\windows\\x").is_err());
         assert!(read_project_file(&dir, "missing.txt").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_rename_delete_roundtrip() {
+        let dir = std::env::temp_dir().join(format!(
+            "lp_mutate_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        write_project_file_impl(&dir, "model/main.lp", "model M {\n}\n").unwrap();
+        assert!(dir.join("model/main.lp").is_file());
+        // Overwrite.
+        write_project_file_impl(&dir, "model/main.lp", "model N {\n}\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("model/main.lp")).unwrap(),
+            "model N {\n}\n"
+        );
+
+        create_project_dir_impl(&dir, "notes").unwrap();
+        assert!(dir.join("notes").is_dir());
+
+        rename_project_entry_impl(&dir, "model/main.lp", "model/renamed.lp").unwrap();
+        assert!(!dir.join("model/main.lp").exists());
+        assert!(dir.join("model/renamed.lp").is_file());
+        assert!(rename_project_entry_impl(&dir, "missing", "x").is_err());
+
+        delete_project_entry_impl(&dir, "model/renamed.lp").unwrap();
+        delete_project_entry_impl(&dir, "notes").unwrap();
+        assert!(!dir.join("model/renamed.lp").exists());
+        assert!(!dir.join("notes").exists());
+
+        // Escaping paths are rejected before touching the filesystem.
+        assert!(write_project_file_impl(&dir, "../escape.txt", "x").is_err());
+        assert!(delete_project_entry_impl(&dir, "../outside").is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

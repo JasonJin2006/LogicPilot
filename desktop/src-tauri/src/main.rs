@@ -117,6 +117,26 @@ fn read_project_file(project_dir: String, rel: String) -> Result<String, String>
     project_fs::read_project_file(&PathBuf::from(&project_dir), &rel)
 }
 
+#[tauri::command]
+fn write_project_file(project_dir: String, rel: String, content: String) -> Result<(), String> {
+    project_fs::write_project_file_impl(&PathBuf::from(&project_dir), &rel, &content)
+}
+
+#[tauri::command]
+fn create_directory(project_dir: String, rel: String) -> Result<(), String> {
+    project_fs::create_project_dir_impl(&PathBuf::from(&project_dir), &rel)
+}
+
+#[tauri::command]
+fn rename_project_entry(project_dir: String, old_rel: String, new_rel: String) -> Result<(), String> {
+    project_fs::rename_project_entry_impl(&PathBuf::from(&project_dir), &old_rel, &new_rel)
+}
+
+#[tauri::command]
+fn delete_project_entry(project_dir: String, rel: String) -> Result<(), String> {
+    project_fs::delete_project_entry_impl(&PathBuf::from(&project_dir), &rel)
+}
+
 fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
         return PathBuf::from(root);
@@ -211,7 +231,11 @@ fn main() {
             write_project_files,
             read_project_dir,
             read_project_tree,
-            read_project_file
+            read_project_file,
+            write_project_file,
+            create_directory,
+            rename_project_entry,
+            delete_project_entry
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(
