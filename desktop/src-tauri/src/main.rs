@@ -3,6 +3,7 @@
 // frontend (tauri://localhost, so the window controls' IPC is allowed). The
 // app server reports its ports on stdout; a command hands them to the page.
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -11,6 +12,9 @@ use std::sync::OnceLock;
 use serde::Serialize;
 use tauri::WebviewUrl;
 use tauri::WebviewWindowBuilder;
+
+mod project_fs;
+use project_fs::{sanitize_project_name, write_project_files_impl};
 
 static APP_ENDPOINTS: OnceLock<AppEndpoints> = OnceLock::new();
 
@@ -26,6 +30,58 @@ fn app_config() -> AppEndpoints {
         .get()
         .cloned()
         .expect("app endpoints not set")
+}
+
+// ---------------------------------------------------------------------------
+// Project directory I/O commands: create_project_dir materializes the blank
+// *.lpproj structure on disk (logicpilot.json + model/main.lp +
+// presentation/main.canvas.json + build/ + results/); write_project_files
+// updates an existing project directory (File > Save). Paths come from the
+// native folder picker or a previously created project; path-safety lives in
+// project_fs.rs.
+
+// Create <base_dir>/<name> with the blank project structure and the given
+// files. Returns the absolute project directory on success.
+#[tauri::command]
+fn create_project_dir(
+    base_dir: String,
+    name: String,
+    files: HashMap<String, String>,
+) -> Result<String, String> {
+    let name = sanitize_project_name(&name)?;
+    let base = PathBuf::from(&base_dir);
+    if !base.is_absolute() {
+        return Err("the project folder must be an absolute path".to_string());
+    }
+    if !base.is_dir() {
+        return Err(format!("'{}' is not a folder", base.display()));
+    }
+    let project_dir = base.join(&name);
+    std::fs::create_dir_all(&project_dir)
+        .map_err(|error| format!("cannot create '{}': {}", project_dir.display(), error))?;
+    write_project_files_impl(&project_dir, &files)?;
+    // Blank-project structure: derived artifacts and run results folders.
+    let _ = std::fs::create_dir_all(project_dir.join("build"));
+    let _ = std::fs::create_dir_all(project_dir.join("results"));
+    Ok(project_dir.to_string_lossy().into_owned())
+}
+
+// Write the current source files into an existing project directory
+// (File > Save). Returns the project directory on success.
+#[tauri::command]
+fn write_project_files(
+    project_dir: String,
+    files: HashMap<String, String>,
+) -> Result<String, String> {
+    let dir = PathBuf::from(&project_dir);
+    if !dir.is_absolute() {
+        return Err("the project directory must be an absolute path".to_string());
+    }
+    if !dir.is_dir() {
+        return Err(format!("'{}' is not a folder", dir.display()));
+    }
+    write_project_files_impl(&dir, &files)?;
+    Ok(project_dir)
 }
 
 fn repo_root() -> PathBuf {
@@ -115,7 +171,12 @@ fn main() {
     let _ = APP_ENDPOINTS.set(endpoints.clone());
 
     let app = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![app_config])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            app_config,
+            create_project_dir,
+            write_project_files
+        ])
         .setup(move |app| {
             WebviewWindowBuilder::new(
                 app,

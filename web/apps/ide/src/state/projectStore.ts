@@ -11,8 +11,11 @@ import type { ProjectBundle } from '../project/project';
 
 interface ProjectState {
   bundle: ProjectBundle | null;
+  /** Absolute directory of the on-disk project (desktop client). */
+  path: string | null;
   dirty: boolean;
   openBundle: (bundle: ProjectBundle) => void;
+  setPath: (path: string | null) => void;
   markDirty: () => void;
   markClean: () => void;
   setDirty: (dirty: boolean) => void;
@@ -23,8 +26,10 @@ export const useProjectStore = create<ProjectState>()(
   persist(
     (set) => ({
       bundle: null,
+      path: null,
       dirty: false,
       openBundle: (bundle) => set({ bundle, dirty: false }),
+      setPath: (path) => set({ path }),
       markDirty: () => set({ dirty: true }),
       markClean: () => set({ dirty: false }),
       setDirty: (dirty) => set({ dirty }),
@@ -33,7 +38,7 @@ export const useProjectStore = create<ProjectState>()(
     {
       name: 'logicpilot.project',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ bundle: state.bundle, dirty: state.dirty }),
+      partialize: (state) => ({ bundle: state.bundle, path: state.path, dirty: state.dirty }),
     },
   ),
 );

@@ -242,6 +242,23 @@ input[type='number'] {
   width: 80px;
 }
 
+.field-wide {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.folder-picker {
+  display: flex;
+  gap: 6px;
+}
+
+.folder-picker input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 button {
   background: var(--surface-2);
   border: 1px solid var(--border);

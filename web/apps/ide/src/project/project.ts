@@ -30,6 +30,20 @@ export interface ProjectBundle {
   files: Record<string, string>;
 }
 
+/** The on-disk file set for a project: logicpilot.json (the manifest with
+ *  the schema marker) plus the bundled source files (model/main.lp and
+ *  presentation/main.canvas.json). */
+export function projectToDiskFiles(bundle: ProjectBundle): Record<string, string> {
+  return {
+    'logicpilot.json': `${JSON.stringify(
+      { schema: bundle.schema, version: bundle.version, ...bundle.manifest },
+      null,
+      2,
+    )}\n`,
+    ...bundle.files,
+  };
+}
+
 /** Create a fresh, empty project bundle (File > New Project). */
 export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle {
   const bundle = createProjectBundle(createDocument(name));

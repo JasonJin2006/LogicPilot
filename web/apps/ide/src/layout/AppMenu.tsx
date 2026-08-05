@@ -13,8 +13,10 @@ import {
   bundleToJson,
   createProjectBundle,
   parseProjectBundle,
+  projectToDiskFiles,
   projectToDocument,
 } from '../project/project';
+import { writeProjectFiles } from '../state/tauriFs';
 
 interface MenuEntry {
   label: string;
@@ -121,19 +123,28 @@ export function AppMenu() {
       }
     });
   };
-  const fileSave = () => {
+  const fileSave = async () => {
     const name = modelDoc.name || 'Model';
     const project = createProjectBundle(modelDoc);
     const bundle = bundleToJson(project);
+    const projectPath = useProjectStore.getState().path;
+    if (projectPath) {
+      const result = await writeProjectFiles(projectPath, projectToDiskFiles(project));
+      if (!result.ok) {
+        openInfo('Save failed', result.error ?? 'cannot write the project folder');
+        return;
+      }
+    } else {
+      const blob = new Blob([bundle], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${name}.lpproj`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    }
     openBundle(project);
     markClean();
-    const blob = new Blob([bundle], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${name}.lpproj`;
-    anchor.click();
-    URL.revokeObjectURL(url);
     addRecent({ name, bundle, at: Date.now() });
     close();
   };
