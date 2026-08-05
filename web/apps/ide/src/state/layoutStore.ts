@@ -58,9 +58,10 @@ function defaultAreas(): Areas {
   return areas;
 }
 
-// Merge a persisted layout with the current defaults, dropping panels that
-// are no longer registered (registry changes must not crash rendering with
-// a stale localStorage layout) and fixing the active panel.
+// Merge a persisted layout with the current defaults: drop panels that are
+// no longer registered (a stale localStorage layout must not crash
+// rendering), append newly registered panels that the persisted layout does
+// not know about yet (e.g. Explorer), and fix the active panel.
 export function mergePersistedLayout(persisted: unknown, current: LayoutState): LayoutState {
   const stored = (persisted ?? {}) as Partial<LayoutState>;
   const areas = {} as Areas;
@@ -69,7 +70,13 @@ export function mergePersistedLayout(persisted: unknown, current: LayoutState): 
       ...current.areas[area],
       ...(stored.areas?.[area] ?? {}),
     };
-    const panels = (merged.panels ?? []).filter((panel): panel is PanelId => panel in PANELS);
+    const persistedPanels = (merged.panels ?? []).filter(
+      (panel): panel is PanelId => panel in PANELS,
+    );
+    const panels = [
+      ...persistedPanels,
+      ...DEFAULT_LAYOUT[area].panels.filter((panel) => !persistedPanels.includes(panel)),
+    ];
     if (panels.length === 0) {
       panels.push(...DEFAULT_LAYOUT[area].panels);
     }

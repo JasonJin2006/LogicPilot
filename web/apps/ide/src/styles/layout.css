@@ -610,6 +610,13 @@
   opacity: 0.75;
 }
 
+.tree-selected {
+  color: var(--accent-text);
+  font-weight: 600;
+  background: var(--accent-dim);
+  border-radius: 4px;
+}
+
 .outline-section {
   display: flex;
   flex-direction: column;

@@ -86,6 +86,20 @@ describe('layoutStore', () => {
     expect(merged.areas.center.activePanel).toBe('model');
   });
 
+  it('merge appends newly registered panels to a stale persisted layout', () => {
+    const stale = {
+      state: {
+        areas: {
+          left: { size: 280, collapsed: false, activePanel: 'modelInfo', panels: ['modelInfo', 'palette'] },
+        },
+      },
+    };
+    const merged = mergePersistedLayout(stale, useLayoutStore.getState());
+    expect(merged.areas.left.panels).toContain('explorer');
+    expect(merged.areas.left.panels).toContain('modelInfo');
+    expect(merged.areas.left.panels).toContain('palette');
+  });
+
   it('merge restores defaults when a persisted area is empty', () => {
     const current = useLayoutStore.getState();
     const stale = {

@@ -7,16 +7,31 @@
 // files that do not parse as a model are listed as orphan rows at the end.
 
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import {
+  Atom,
   Boxes,
   ChevronDown,
   ChevronRight,
   FileX2,
+  FlaskConical,
   FolderOpen,
+  Hourglass,
+  Inbox,
+  Layers,
+  ListOrdered,
+  Lock,
+  LogOut,
+  Settings,
+  SlidersHorizontal,
+  Split,
+  Unlock,
+  Users,
+  Waves,
+  Workflow,
 } from 'lucide-react';
 import { parseDsl } from '@logicpilot/editor';
-import { DEFAULT_MODEL_PATH, mergeModelSource } from '../project/project';
+import { mergeModelSource } from '../project/project';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -47,6 +62,25 @@ interface MenuState {
   y: number;
   actions: ContextAction[];
 }
+
+const KIND_ICONS: Record<string, ComponentType<{ size?: number }>> = {
+  resource: Boxes,
+  source: Inbox,
+  queue: ListOrdered,
+  service: Settings,
+  sink: LogOut,
+  delay: Hourglass,
+  split: Split,
+  batch: Layers,
+  seize: Lock,
+  release: Unlock,
+  process: Workflow,
+  agent: Users,
+  atomic: Atom,
+  continuous: Waves,
+  experiment: FlaskConical,
+  param: SlidersHorizontal,
+};
 
 const PART_PATH_BY_KIND: Record<string, string> = {
   resource: 'model/resources.lp',
@@ -84,6 +118,11 @@ export function ModelInfoPanel() {
   const openPrompt = useUiStore((state) => state.openPrompt);
   const document = useModelStore((state) => state.document);
   const loadDocument = useModelStore((state) => state.loadDocument);
+  const selected = useModelStore((state) =>
+    state.selectedId !== null
+      ? state.document.nodes.find((node) => node.id === state.selectedId)
+      : undefined,
+  );
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
 
@@ -253,6 +292,9 @@ export function ModelInfoPanel() {
     const key = `${file}:${member.kind}:${member.name}`;
     const open = !isCollapsed(key);
     const hasChildren = member.children.length > 0;
+    const isSelected =
+      selected !== undefined && selected.kind === member.kind && selected.name === member.name;
+    const KindIcon = KIND_ICONS[member.kind] ?? Boxes;
     const actions: ContextAction[] = [];
     if (member.kind === 'process') {
       for (const stage of STAGE_ADD_KINDS) {
@@ -280,7 +322,7 @@ export function ModelInfoPanel() {
     return (
       <div key={key}>
         <div
-          className="tree-row tree-file"
+          className={`tree-row tree-file${isSelected ? ' tree-selected' : ''}`}
           style={{ paddingLeft: (depth + 1) * 14 + 8 }}
           title={`${member.kind} ${member.name} — ${file}`}
           onClick={hasChildren ? () => toggle(key) : undefined}
@@ -298,7 +340,9 @@ export function ModelInfoPanel() {
           ) : (
             <span className="tree-glyph tree-glyph-muted">·</span>
           )}
-          <span className="outline-kind">{member.kind}</span>
+          <span className="tree-glyph">
+            <KindIcon size={12} />
+          </span>
           <span className="outline-name">{member.name}</span>
         </div>
         {open && hasChildren && renderMembers(childrenOf(entry), depth + 1)}
@@ -333,7 +377,6 @@ export function ModelInfoPanel() {
         >
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           <Boxes size={12} />
-          <span className="outline-kind">Model</span>
           <span className="outline-name">{entry.model.name}</span>
         </div>
         {open && renderMembers(entry.members, 1)}
