@@ -170,8 +170,9 @@
   padding-right: 26px;
 }
 
-.app-menu-entry.checked .app-menu-entry-label::before {
-  content: '\2713 ';
+.app-menu-entry-check {
+  color: var(--accent);
+  font-size: 11px;
 }
 
 .app-menu-entry-remove {

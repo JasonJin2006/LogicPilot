@@ -371,6 +371,26 @@ try {
   log('AI panel charted a continuous-model trajectory');
   await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
+  // View menu: the trailing check mark means "panel open", and clicking an
+  // open panel collapses it (AI toggles the right area).
+  await page.getByRole('button', { name: 'View' }).click();
+  const aiChecked = await page
+    .locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' })
+    .evaluate((el) => el.querySelector('.app-menu-entry-check') !== null);
+  if (!aiChecked) {
+    throw new Error('View > AI should be checked while the panel is open');
+  }
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' }).click();
+  await page.waitForFunction(
+    () => document.querySelector('.area-right')?.classList.contains('collapsed') ?? false,
+    undefined,
+    { timeout: 5_000 },
+  );
+  await page.getByRole('button', { name: 'View' }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' }).click();
+  await page.waitForSelector('.area-right:not(.collapsed)', { timeout: 5_000 });
+  log('View menu toggles open panels via the check mark');
+
   // File > Close: the AI load left unsaved changes, so Close asks first and
   // Don't Save returns to the empty center.
   await page.getByRole('button', { name: 'File' }).click();

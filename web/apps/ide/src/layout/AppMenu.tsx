@@ -59,11 +59,12 @@ export function AppMenu() {
   const canUndo = useModelStore((state) => state.canUndo);
   const canRedo = useModelStore((state) => state.canRedo);
   const areas = useLayoutStore((state) => state.areas);
-  const setActive = useLayoutStore((state) => state.setActive);
   const reopenArea = useLayoutStore((state) => state.reopenArea);
   const toggleCollapse = useLayoutStore((state) => state.toggleCollapse);
+  const openPanel = useLayoutStore((state) => state.openPanel);
   const openInfo = useUiStore((state) => state.openInfo);
   const openNewProject = useUiStore((state) => state.openNewProject);
+  const openFiles = useUiStore((state) => state.openFiles);
   const openBundle = useProjectStore((state) => state.openBundle);
   const bundle = useProjectStore((state) => state.bundle);
   const setPath = useProjectStore((state) => state.setPath);
@@ -261,10 +262,21 @@ export function AppMenu() {
     area: 'left' | 'right',
     panel: 'explorer' | 'modelInfo' | 'palette' | 'properties' | 'ai',
   ) => {
-    if (areas[area].collapsed) {
-      reopenArea(area, areas[area].size || (area === 'left' ? 280 : 360));
+    const areaState = areas[area];
+    // The check mark means "this panel is open", not "focused": clicking an
+    // open panel collapses its area; clicking a closed one opens it.
+    const isOpen =
+      area === 'left'
+        ? !areaState.collapsed && areaState.activePanel === panel
+        : !areaState.collapsed && areaState.panels.includes(panel);
+    if (isOpen) {
+      toggleCollapse(area);
+    } else {
+      if (areaState.collapsed) {
+        reopenArea(area, areaState.size || (area === 'left' ? 280 : 360));
+      }
+      openPanel(area, panel);
     }
-    setActive(area, panel);
     close();
   };
   const showConsole = () => {
@@ -282,6 +294,7 @@ export function AppMenu() {
       >
         <span className="app-menu-entry-label">{entry.label}</span>
         {entry.shortcut && <span className="app-menu-entry-shortcut">{entry.shortcut}</span>}
+        {entry.checked && <span className="app-menu-entry-check">✓</span>}
       </button>
       {entry.onRemove && (
         <button
@@ -396,34 +409,44 @@ export function AppMenu() {
       entries: [
         {
           label: 'Explorer',
-          checked: areas.left.activePanel === 'explorer',
+          checked: !areas.left.collapsed && areas.left.activePanel === 'explorer',
           action: () => showPanel('left', 'explorer'),
         },
         {
           label: 'Project',
-          checked: areas.left.activePanel === 'modelInfo',
+          checked: !areas.left.collapsed && areas.left.activePanel === 'modelInfo',
           action: () => showPanel('left', 'modelInfo'),
         },
         {
           label: 'Palette',
-          checked: areas.left.activePanel === 'palette',
+          checked: !areas.left.collapsed && areas.left.activePanel === 'palette',
           action: () => showPanel('left', 'palette'),
         },
         {
           label: 'Properties',
-          checked: areas.right.activePanel === 'properties',
+          checked: !areas.right.collapsed && areas.right.panels.includes('properties'),
           action: () => showPanel('right', 'properties'),
         },
         {
           label: 'AI',
-          checked: areas.right.activePanel === 'ai',
+          checked: !areas.right.collapsed && areas.right.panels.includes('ai'),
           action: () => showPanel('right', 'ai'),
         },
         {
           label: 'DSL',
-          checked: areas.center.activePanel === 'dsl',
+          // Code tabs are per file; the DSL panel counts as open when any
+          // file tab exists. Clicking it again closes every file tab.
+          checked: openFiles.length > 0,
           action: () => {
-            useLayoutStore.getState().openPanel('center', 'dsl');
+            if (useUiStore.getState().openFiles.length > 0) {
+              useUiStore.getState().closeAllFiles();
+            } else {
+              const modelPath = useProjectStore.getState().bundle?.manifest.model;
+              if (modelPath) {
+                useUiStore.getState().openFile(modelPath);
+              }
+              useLayoutStore.getState().openPanel('center', 'dsl');
+            }
             close();
           },
         },
