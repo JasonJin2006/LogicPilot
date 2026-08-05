@@ -12,7 +12,13 @@ SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 ICONS_DIR = os.path.normpath(
     os.path.join(SCRIPTS, "..", "..", "..", "..", "desktop", "src-tauri", "icons")
 )
-SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
+# Entry order matters: tauri-codegen (generate_context!) decodes ONLY the
+# first ICO entry as the runtime default window icon, and tao applies it as
+# ICON_SMALL while ICON_BIG stays unset -- the taskbar then scales whatever
+# the small icon holds. If the first entry is 16px, the taskbar (24-48px
+# depending on DPI) upscales it and the icon looks soft/low-res. Largest
+# entry first so every shell surface downscales from a crisp bitmap.
+SIZES = [256, 128, 64, 48, 40, 32, 24, 20, 16]
 
 
 def dib_rgba(img):
