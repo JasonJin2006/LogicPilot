@@ -143,6 +143,7 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   add_executable(logicpilot_server_tests
     tests/test_lp_server_integration.cpp
     tests/test_json_controls.cpp
+    tests/test_project_io.cpp
   )
   target_link_libraries(logicpilot_server_tests PRIVATE
     lp_server_core

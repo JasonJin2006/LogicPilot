@@ -8,6 +8,7 @@ import { useModelStore } from '../state/modelStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent, loadRecent } from '../state/recentStore';
+import { useProjectStore } from '../state/projectStore';
 import {
   bundleToJson,
   createProjectBundle,
@@ -56,11 +57,14 @@ export function AppMenu() {
   const reopenArea = useLayoutStore((state) => state.reopenArea);
   const toggleCollapse = useLayoutStore((state) => state.toggleCollapse);
   const openInfo = useUiStore((state) => state.openInfo);
+  const openBundle = useProjectStore((state) => state.openBundle);
+  const clearProject = useProjectStore((state) => state.clearProject);
 
   const selected = modelDoc.nodes.find((node) => node.id === selectedId) ?? null;
   const close = () => setOpen(null);
 
   const fileNew = () => {
+    clearProject();
     reset();
     close();
   };
@@ -84,11 +88,13 @@ export function AppMenu() {
           openInfo('Open failed', loaded.error ?? 'invalid project');
           return;
         }
+        openBundle(parsedBundle.bundle!);
         loadDocument(loaded.document!);
         addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
         return;
       }
       if (file.name.toLowerCase().endsWith('.json')) {
+        clearProject();
         try {
           const parsed = JSON.parse(text) as unknown;
           loadDocument(parsed as never);
@@ -102,6 +108,7 @@ export function AppMenu() {
         }
         return;
       }
+      clearProject();
       const parsed = parseDsl(text);
       if (parsed.ok) {
         loadDocument(parsed.document);
@@ -113,7 +120,9 @@ export function AppMenu() {
   };
   const fileSave = () => {
     const name = modelDoc.name || 'Model';
-    const bundle = bundleToJson(createProjectBundle(modelDoc));
+    const project = createProjectBundle(modelDoc);
+    const bundle = bundleToJson(project);
+    openBundle(project);
     const blob = new Blob([bundle], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -182,7 +191,10 @@ export function AppMenu() {
     close();
   };
 
-  const showPanel = (area: 'left' | 'right', panel: 'modelInfo' | 'palette' | 'properties' | 'ai') => {
+  const showPanel = (
+    area: 'left' | 'right',
+    panel: 'explorer' | 'modelInfo' | 'palette' | 'properties' | 'ai',
+  ) => {
     if (areas[area].collapsed) {
       reopenArea(area, areas[area].size || (area === 'left' ? 280 : 360));
     }
@@ -226,6 +238,7 @@ export function AppMenu() {
                   } else {
                     const loaded = projectToDocument(parsedBundle.bundle!);
                     if (loaded.ok) {
+                      openBundle(parsedBundle.bundle!);
                       loadDocument(loaded.document!);
                     } else {
                       openInfo('Open failed', loaded.error ?? 'invalid project');
@@ -268,6 +281,11 @@ export function AppMenu() {
     {
       label: 'View',
       entries: [
+        {
+          label: 'Explorer',
+          checked: areas.left.activePanel === 'explorer',
+          action: () => showPanel('left', 'explorer'),
+        },
         {
           label: 'Project',
           checked: areas.left.activePanel === 'modelInfo',

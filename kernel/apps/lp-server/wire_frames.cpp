@@ -41,8 +41,12 @@ std::vector<flatbuffers::Offset<wire::Counter>> make_counters(
   std::vector<flatbuffers::Offset<wire::Counter>> offsets;
   offsets.reserve(values.size());
   for (const CounterValue& counter : values) {
+    // Create the name string before starting the Counter table: FlatBuffers
+    // forbids building sub-objects (tables/vectors/strings) while a parent
+    // table is open (NotNested assert in newer releases).
+    const auto name = builder.CreateString(counter.name);
     wire::CounterBuilder cb{builder};
-    cb.add_name(builder.CreateString(counter.name));
+    cb.add_name(name);
     cb.add_value(counter.value);
     offsets.push_back(cb.Finish());
   }
@@ -53,9 +57,11 @@ std::vector<flatbuffers::Offset<wire::Counter>> make_counters(
 
 std::vector<std::uint8_t> build_run_started_frame(const RunStartedFrame& f) {
   Builder builder{256};
+  const auto run_id = builder.CreateString(f.run_id);
+  const auto model_name = builder.CreateString(f.model_name);
   wire::RunStartedBuilder payload{builder};
-  payload.add_run_id(builder.CreateString(f.run_id));
-  payload.add_model_name(builder.CreateString(f.model_name));
+  payload.add_run_id(run_id);
+  payload.add_model_name(model_name);
   payload.add_seed(f.seed);
   const auto payload_offset = payload.Finish();
   const auto header =
@@ -80,9 +86,10 @@ std::vector<std::uint8_t> build_tick_frame(const TickFrame& f) {
     delta.add_state_bits(agent.state_bits);
     deltas.push_back(delta.Finish());
   }
+  const auto deltas_vector = builder.CreateVector(deltas);
   wire::TickBuilder payload{builder};
   payload.add_sim_time_ns(f.sim_time_ns);
-  payload.add_deltas(builder.CreateVector(deltas));
+  payload.add_deltas(deltas_vector);
   const auto payload_offset = payload.Finish();
   const auto header =
       make_header(builder, f.seq, f.sim_time_ns, wire::FrameKind_Tick);
@@ -96,8 +103,9 @@ std::vector<std::uint8_t> build_tick_frame(const TickFrame& f) {
 std::vector<std::uint8_t> build_counters_frame(const CountersFrame& f) {
   Builder builder{512};
   const auto counters = make_counters(builder, f.values);
+  const auto counters_vector = builder.CreateVector(counters);
   wire::CountersBuilder payload{builder};
-  payload.add_values(builder.CreateVector(counters));
+  payload.add_values(counters_vector);
   const auto payload_offset = payload.Finish();
   const auto header =
       make_header(builder, f.seq, f.sim_time_ns, wire::FrameKind_Counters);
@@ -111,13 +119,18 @@ std::vector<std::uint8_t> build_counters_frame(const CountersFrame& f) {
 std::vector<std::uint8_t> build_run_finished_frame(const RunFinishedFrame& f) {
   Builder builder{1024};
   const auto stats = make_counters(builder, f.stats);
+  const auto run_id = builder.CreateString(f.run_id);
+  const auto stats_vector = builder.CreateVector(stats);
+  const auto error = f.error.empty()
+                         ? flatbuffers::Offset<flatbuffers::String>{}
+                         : builder.CreateString(f.error);
   wire::RunFinishedBuilder payload{builder};
-  payload.add_run_id(builder.CreateString(f.run_id));
+  payload.add_run_id(run_id);
   payload.add_status(static_cast<wire::RunStatus>(f.status));
   if (!f.error.empty()) {
-    payload.add_error(builder.CreateString(f.error));
+    payload.add_error(error);
   }
-  payload.add_stats(builder.CreateVector(stats));
+  payload.add_stats(stats_vector);
   const auto payload_offset = payload.Finish();
   const auto header = make_header(builder, f.seq, f.sim_time_ns,
                                   wire::FrameKind_RunFinished);

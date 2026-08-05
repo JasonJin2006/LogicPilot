@@ -4,17 +4,25 @@
 // touches the layout system. See docs/specs/ide-layout.md.
 
 import type { ComponentType } from 'react';
-import { Boxes, Palette } from 'lucide-react';
+import { Boxes, Files, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
 import { ModelWorkspace } from '../model/ModelWorkspace';
 import { ConsolePanel } from './ConsolePanel';
+import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
 import { PropertiesPanel } from '../model/PropertiesPanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
-export type PanelId = 'model' | 'ai' | 'console' | 'modelInfo' | 'palette' | 'properties';
+export type PanelId =
+  | 'model'
+  | 'ai'
+  | 'console'
+  | 'explorer'
+  | 'modelInfo'
+  | 'palette'
+  | 'properties';
 
 export interface PanelDef {
   title: string;
@@ -32,6 +40,7 @@ export const PANELS: Record<PanelId, PanelDef> = {
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
   // left: side panels switched by the activity bar (VS Code style).
+  explorer: { title: 'Explorer', area: 'left', component: ExplorerPanel },
   modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
 };
@@ -43,13 +52,14 @@ export const ACTIVITY_VIEWS: Array<{
   icon: ComponentType<{ size?: number }>;
   panel: PanelId;
 }> = [
+  { id: 'explorer', label: 'Explorer', icon: Files, panel: 'explorer' },
   { id: 'model', label: 'Project', icon: Boxes, panel: 'modelInfo' },
   { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
 ];
 
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
-  left: { panels: ['modelInfo', 'palette'], active: 'modelInfo' },
+  left: { panels: ['explorer', 'modelInfo', 'palette'], active: 'explorer' },
   center: { panels: ['model'], active: 'model' },
   right: { panels: ['ai', 'properties'], active: 'ai' },
   bottom: { panels: ['console'], active: 'console' },

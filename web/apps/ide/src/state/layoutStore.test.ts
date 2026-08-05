@@ -63,7 +63,7 @@ describe('layoutStore', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['model']);
     expect(areas.right.panels).toEqual(['ai', 'properties']);
-    expect(areas.left.panels).toEqual(['modelInfo', 'palette']);
+    expect(areas.left.panels).toEqual(['explorer', 'modelInfo', 'palette']);
     expect(areas.bottom.panels).toEqual(['console']);
   });
 

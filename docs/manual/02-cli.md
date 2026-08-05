@@ -15,11 +15,14 @@ commands:
 
 ```text
 usage: lpcli compile <input.lp> [-o <output>]
+                        [--project <path.lpproj>]
                         [--diagnostics-json <path>]
                         [--experiments-json <path>]
 ```
 
 - `-o, --output <path>`：输出 IR 文件（默认 `<input>.ir.bin`）
+- `--project <path.lpproj>`：编译工程包内打包的 DSL（`*.lpproj`，格式见
+  [工程格式](../specs/project-format)），默认输出 `<工程名>.lpir`
 - `--diagnostics-json <path>`：写结构化诊断 JSON（AI Copilot 的修复输入，含 span/行号/错误码）
 - `--experiments-json <path>`：导出模型声明的 `experiment` 块（优化搜索规格）
 
@@ -27,6 +30,7 @@ usage: lpcli compile <input.lp> [-o <output>]
 
 ```powershell
 lpcli compile examples/two_servers.lp -o build/two_servers.ir.bin
+lpcli compile factory.lpproj -o build/factory.lpir
 lpcli compile examples/bad.lp --diagnostics-json diag.json
 ```
 
@@ -36,6 +40,10 @@ lpcli compile examples/bad.lp --diagnostics-json diag.json
 usage: lpcli run [options]
   --model <built-in:NAME>    built-in model (default built-in:mm1)
   --model-file <path.lpir>   load model from FlatBuffers IR instead
+  --project <path.lpproj>    compile the bundled DSL and run it
+  --output-ir <path>         write the compiled IR (with --project)
+  --results-dir <path>       write run.json + metrics.json here
+                             (default <project stem>.results/)
   --seed <n>                 run seed (default 42)
   --reps <n>                 replications (default 30)
   --arrivals <n>             arrivals per replication (default 20000)
@@ -46,6 +54,10 @@ usage: lpcli run [options]
   --trajectory <path>        write continuous-model trajectory JSON
 ```
 
+- `--project <path.lpproj>`：直接运行 `*.lpproj` 工程包（读取 `model/main.lp`
+  编译为 IR v2 后执行）；与 `--model` / `--model-file` 互斥
+- `--results-dir <path>`：把运行配置（`run.json`）与汇总指标（`metrics.json`）
+  落盘到该目录；使用 `--project` 时默认写到 `<工程名>.results/`
 - `--trajectory`：连续模型（`continuous` 块）输出采样轨迹 JSON，供 AI 面板/脚本绘制 ODE 曲线
 - 同一种子 + 相同参数 → 逐位相同结果（见 [确定性复现](./06-determinism)）
 

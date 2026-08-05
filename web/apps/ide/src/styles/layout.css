@@ -555,6 +555,99 @@
   margin: 0;
 }
 
+/* Explorer file tree and Project structure outline. */
+.explorer-panel {
+  overflow: auto;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tree-root {
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 4px;
+}
+
+.tree-folder {
+  margin-top: 2px;
+}
+
+.tree-glyph {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.tree-glyph-muted {
+  justify-content: center;
+  width: 12px;
+}
+
+.tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-muted {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.outline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.outline-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.outline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  padding: 1px 0 1px 18px;
+}
+
+.outline-kind {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 52px;
+}
+
+.outline-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0 2px 18px;
+}
+
 /* --- console ------------------------------------------------------------ */
 
 .console-empty {
