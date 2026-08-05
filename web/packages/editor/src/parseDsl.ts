@@ -428,6 +428,11 @@ export function parseDsl(source: string): ParseResult {
 
   const document = createDocument(modelName);
   const nodes: ModelNode[] = [];
+  const diagnostics: DslDiagnostic[] = [];
+  // Duplicate-name validation (LP3103): members must be unique within their
+  // container. Behavior blocks (on_*) are exempt - a container may hold
+  // several behaviors with the same trigger.
+  const seenNames = new Map<string, Set<string>>();
   // Sequential stage order per process container (declaration order).
   const processStages = new Map<string, ModelNode[]>();
   let order = 0;
@@ -444,6 +449,19 @@ export function parseDsl(source: string): ParseResult {
     parent: string | undefined,
     parentKind: string | undefined,
   ): void => {
+    if (!member.kind.startsWith('on_')) {
+      const scope = parent ?? '';
+      const seen = seenNames.get(scope) ?? new Set<string>();
+      if (seen.has(member.name)) {
+        diagnostics.push({
+          code: 'LP3103',
+          severity: 'warning',
+          message: `duplicate member name '${member.name}' in '${scope || 'model'}'`,
+        });
+      }
+      seen.add(member.name);
+      seenNames.set(scope, seen);
+    }
     const pos = position();
     if (member.kind === 'field' || member.kind === 'effect') {
       nodes.push({
@@ -532,5 +550,5 @@ export function parseDsl(source: string): ParseResult {
       doc = connect(doc, group[i]!.id, group[i + 1]!.id).document;
     }
   }
-  return { ok: true, document: doc };
+  return { ok: true, document: doc, diagnostics };
 }

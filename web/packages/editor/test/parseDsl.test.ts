@@ -131,4 +131,12 @@ describe('parseDsl', () => {
     const result = parseDsl('model { source A { } }');
     expect(result.ok).toBe(false);
   });
+
+  it('reports duplicate member names as LP3103', () => {
+    const result = parseDsl(
+      'model M {\n  resource A {\n    capacity = 1\n  }\n  resource A {\n    capacity = 2\n  }\n}\n',
+    );
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics!.some((diagnostic) => diagnostic.code === 'LP3103')).toBe(true);
+  });
 });
