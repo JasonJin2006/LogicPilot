@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { Copy, Minus, Square, X } from 'lucide-react';
+import { Minus, Square, X } from 'lucide-react';
 
 function useTauri(): boolean {
   const [isTauri, setIsTauri] = useState(false);
@@ -19,23 +19,34 @@ export function TopBar() {
   const [maximized, setMaximized] = useState(false);
 
   // Track the maximized state so the button flips between the maximize and
-  // restore glyphs.
+  // restore glyphs. Polling is more reliable than resize events (which can
+  // fire mid-transition on Windows); the poll only runs inside Tauri.
   useEffect(() => {
     if (!isTauri) return;
-    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    let timer: number | undefined;
     void (async () => {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const window = getCurrentWindow();
-        setMaximized(await window.isMaximized());
-        unlisten = await window.onResized(async () => {
-          setMaximized(await window.isMaximized());
-        });
+        const update = async () => {
+          try {
+            const state = await window.isMaximized();
+            if (!disposed) setMaximized(state);
+          } catch {
+            // ignore transient errors
+          }
+        };
+        await update();
+        timer = setInterval(() => void update(), 500);
       } catch (error) {
         console.error('maximize state tracking failed', error);
       }
     })();
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) clearInterval(timer);
+    };
   }, [isTauri]);
 
   const startDrag = async (event: MouseEvent) => {
@@ -57,6 +68,7 @@ export function TopBar() {
         await window.minimize();
       } else if (action === 'toggleMaximize') {
         await window.toggleMaximize();
+        setMaximized(await window.isMaximized());
       } else {
         await window.close();
       }
@@ -93,7 +105,22 @@ export function TopBar() {
             title={maximized ? 'Restore' : 'Maximize'}
             onClick={() => void windowAction('toggleMaximize')}
           >
-            {maximized ? <Copy size={12} /> : <Square size={11} />}
+            {maximized ? (
+              // Windows-style restore: large frame behind, small frame in front.
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+              >
+                <rect x="4.5" y="0.5" width="7" height="7" rx="0.5" />
+                <rect x="0.5" y="4.5" width="7" height="7" rx="0.5" />
+              </svg>
+            ) : (
+              <Square size={11} />
+            )}
           </button>
           <button
             className="window-control window-control-close"
