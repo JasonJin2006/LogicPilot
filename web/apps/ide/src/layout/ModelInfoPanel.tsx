@@ -1,26 +1,22 @@
-// Side panel (Project view): the project's CODE structure, split across the
-// per-concern model files. The main model file renders as a model node with
-// its direct members; the model part fragments (resources/process/agents/
-// experiments) render as their block trees. Right-click adds/renames/deletes
-// elements in the owning file, rewriting the DSL text in place; the canvas is
-// best-effort reloaded from the merged source. Files that do not parse show
-// as orphan rows.
+// Side panel (Project view): the project's ELEMENT hierarchy, mirroring how
+// AnyLogic's Projects view organises a model - the model at the top level,
+// its elements (resources / processes / agents / experiments...) one level
+// down, and nested elements in branches below. The per-concern part files
+// are merged into the model tree; file names belong to the Explorer, not
+// here. Right-click adds/renames/deletes elements in their owning file;
+// files that do not parse as a model are listed as orphan rows at the end.
 
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Boxes,
   ChevronDown,
   ChevronRight,
-  FileCode2,
-  FileJson2,
   FileX2,
   FolderOpen,
 } from 'lucide-react';
 import { parseDsl } from '@logicpilot/editor';
-import {
-  DEFAULT_MODEL_PATH,
-  mergeModelSource,
-} from '../project/project';
+import { DEFAULT_MODEL_PATH, mergeModelSource } from '../project/project';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -37,11 +33,14 @@ import {
 } from '../project/projectTree';
 import type { ProjectMember, ProjectModel } from '../project/projectTree';
 
-type PanelFile =
-  | { type: 'model'; path: string; source: string; model: ProjectModel }
-  | { type: 'part'; path: string; source: string; members: ProjectMember[] }
-  | { type: 'orphan'; path: string; error: string }
-  | { type: 'other'; path: string };
+interface MergedMember {
+  file: string;
+  member: ProjectMember;
+}
+
+type PanelEntry =
+  | { type: 'model'; path: string; source: string; model: ProjectModel; members: MergedMember[] }
+  | { type: 'orphan'; path: string; error: string };
 
 interface MenuState {
   x: number;
@@ -49,19 +48,31 @@ interface MenuState {
   actions: ContextAction[];
 }
 
-const PART_KIND_BY_PATH: Record<string, string> = {
-  'model/resources.lp': 'resource',
-  'model/process.lp': 'process',
-  'model/agents.lp': 'agent',
-  'model/experiments.lp': 'experiment',
-};
-
 const PART_PATH_BY_KIND: Record<string, string> = {
   resource: 'model/resources.lp',
   process: 'model/process.lp',
   agent: 'model/agents.lp',
   experiment: 'model/experiments.lp',
 };
+
+function kindRank(kind: string): number {
+  switch (kind) {
+    case 'resource':
+      return 0;
+    case 'process':
+      return 1;
+    case 'agent':
+      return 2;
+    case 'experiment':
+      return 3;
+    case 'atomic':
+      return 4;
+    case 'continuous':
+      return 5;
+    default:
+      return 6;
+  }
+}
 
 function countBlocks(members: ProjectMember[], kind: string): number {
   return members.filter((member) => !member.isLeaf && member.kind === kind).length;
@@ -76,33 +87,57 @@ export function ModelInfoPanel() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
 
-  const mainPath = bundle?.manifest.model ?? DEFAULT_MODEL_PATH;
   const partPaths = bundle?.manifest.modelParts ?? [];
 
-  const entries = useMemo<PanelFile[]>(() => {
+  const entries = useMemo<PanelEntry[]>(() => {
     if (!bundle) {
       return [];
     }
-    return Object.keys(bundle.files)
-      .sort()
-      .map((path): PanelFile => {
-        const source = bundle.files[path]!;
-        if (!path.endsWith('.lp')) {
-          return { type: 'other', path };
+    const files = bundle.files;
+    const models: PanelEntry[] = [];
+    const orphans: PanelEntry[] = [];
+    for (const path of Object.keys(files).sort()) {
+      const source = files[path]!;
+      if (!path.endsWith('.lp')) {
+        continue; // data files (canvas layout, assets) belong to the Explorer
+      }
+      if (partPaths.includes(path)) {
+        // Fragments belong to their model; parse them lazily through the main
+        // file below. Report a broken fragment only if no model referenced it.
+        continue;
+      }
+      const parsed = parseProjectSource(source);
+      if (!parsed.ok) {
+        orphans.push({ type: 'orphan', path, error: parsed.error ?? 'invalid DSL' });
+        continue;
+      }
+      const members: MergedMember[] = parsed
+        .model!.members.filter((member) => !member.isLeaf)
+        .map((member) => ({ file: path, member }));
+      for (const part of partPaths) {
+        const partSource = files[part];
+        if (partSource === undefined) {
+          continue;
         }
-        if (partPaths.includes(path)) {
-          const parsed = parseProjectMembers(source);
-          if (!parsed.ok) {
-            return { type: 'orphan', path, error: parsed.error ?? 'invalid fragment' };
+        const partParsed = parseProjectMembers(partSource);
+        if (!partParsed.ok) {
+          orphans.push({ type: 'orphan', path: part, error: partParsed.error ?? 'invalid fragment' });
+          continue;
+        }
+        for (const member of partParsed.members ?? []) {
+          if (!member.isLeaf) {
+            members.push({ file: part, member });
           }
-          return { type: 'part', path, source, members: parsed.members ?? [] };
         }
-        const parsed = parseProjectSource(source);
-        if (!parsed.ok) {
-          return { type: 'orphan', path, error: parsed.error ?? 'invalid DSL' };
-        }
-        return { type: 'model', path, source, model: parsed.model! };
-      });
+      }
+      members.sort(
+        (a, b) =>
+          kindRank(a.member.kind) - kindRank(b.member.kind) ||
+          a.member.name.localeCompare(b.member.name),
+      );
+      models.push({ type: 'model', path, source, model: parsed.model!, members });
+    }
+    return [...models, ...orphans];
   }, [bundle, partPaths]);
 
   const toggle = (key: string) =>
@@ -210,21 +245,12 @@ export function ModelInfoPanel() {
     commitEdit(path, (src) => deleteSpan(src, span.start, span.end));
   };
 
-  const renderMembers = (
-    members: ProjectMember[],
-    path: string,
-    depth: number,
-  ): ReactNode =>
-    members
-      .filter((member) => !member.isLeaf)
-      .map((member) => renderMember(member, path, depth));
+  const renderMembers = (members: MergedMember[], depth: number): ReactNode =>
+    members.map((entry) => renderMember(entry, depth));
 
-  const renderMember = (
-    member: ProjectMember,
-    path: string,
-    depth: number,
-  ): ReactNode => {
-    const key = `${path}:${member.kind}:${member.name}`;
+  const renderMember = (entry: MergedMember, depth: number): ReactNode => {
+    const { file, member } = entry;
+    const key = `${file}:${member.kind}:${member.name}`;
     const open = !isCollapsed(key);
     const hasChildren = member.children.length > 0;
     const actions: ContextAction[] = [];
@@ -232,31 +258,31 @@ export function ModelInfoPanel() {
       for (const stage of STAGE_ADD_KINDS) {
         actions.push({
           label: `Add ${stage.kind}`,
-          onSelect: () => addBlock(path, member, depth, stage.kind, stage.template),
+          onSelect: () => addBlock(file, member, depth, stage.kind, stage.template),
         });
       }
     } else if (member.kind === 'agent') {
-      const agent = MODEL_ADD_KINDS.find((entry) => entry.kind === 'agent')!;
+      const agent = MODEL_ADD_KINDS.find((item) => item.kind === 'agent')!;
       actions.push({
         label: 'Add agent',
-        onSelect: () => addBlock(path, member, depth, 'agent', agent.template),
+        onSelect: () => addBlock(file, member, depth, 'agent', agent.template),
       });
     }
     actions.push({
       label: 'Rename',
-      onSelect: () => renameBlock(path, member.nameSpan!, member.name),
+      onSelect: () => renameBlock(file, member.nameSpan!, member.name),
     });
     actions.push({
       label: 'Delete',
       danger: true,
-      onSelect: () => deleteBlock(path, member.span),
+      onSelect: () => deleteBlock(file, member.span),
     });
     return (
       <div key={key}>
         <div
           className="tree-row tree-file"
           style={{ paddingLeft: (depth + 1) * 14 + 8 }}
-          title={`${member.kind} ${member.name}`}
+          title={`${member.kind} ${member.name} — ${file}`}
           onClick={hasChildren ? () => toggle(key) : undefined}
           onContextMenu={(event) => {
             event.preventDefault();
@@ -275,54 +301,13 @@ export function ModelInfoPanel() {
           <span className="outline-kind">{member.kind}</span>
           <span className="outline-name">{member.name}</span>
         </div>
-        {open && hasChildren && renderMembers(member.children, path, depth + 1)}
+        {open && hasChildren && renderMembers(childrenOf(entry), depth + 1)}
       </div>
     );
   };
 
-  const renderModelNode = (
-    path: string,
-    source: string,
-    model: ProjectModel,
-  ): ReactNode => {
-    const key = `${path}#model`;
-    const open = !isCollapsed(key);
-    const actions: ContextAction[] = [
-      ...MODEL_ADD_KINDS.map(({ kind, template }) => ({
-        label: `Add ${kind}`,
-        onSelect: () => addBlock(path, null, 0, kind, template),
-      })),
-      {
-        label: 'Rename model',
-        onSelect: () => renameBlock(path, model.nameSpan, model.name),
-      },
-      {
-        label: 'Delete file',
-        danger: true,
-        onSelect: () => deleteFile(path),
-      },
-    ];
-    return (
-      <div key={key}>
-        <div
-          className="tree-row tree-file"
-          style={{ paddingLeft: 22 }}
-          onClick={() => toggle(key)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            showMenu(event.clientX, event.clientY, actions);
-          }}
-        >
-          <span className="outline-kind">model</span>
-          <span className="outline-name">{model.name}</span>
-        </div>
-        {open && renderMembers(model.members, path, 1)}
-      </div>
-    );
-  };
-
-  const renderModelFile = (entry: Extract<PanelFile, { type: 'model' }>): ReactNode => {
-    const key = entry.path;
+  const renderModel = (entry: Extract<PanelEntry, { type: 'model' }>): ReactNode => {
+    const key = `${entry.path}#model`;
     const open = !isCollapsed(key);
     const actions: ContextAction[] = [
       ...MODEL_ADD_KINDS.map(({ kind, template }) => ({
@@ -333,17 +318,13 @@ export function ModelInfoPanel() {
         label: 'Rename model',
         onSelect: () => renameBlock(entry.path, entry.model.nameSpan, entry.model.name),
       },
-      {
-        label: 'Delete file',
-        danger: true,
-        onSelect: () => deleteFile(entry.path),
-      },
     ];
     return (
-      <div key={entry.path}>
+      <div key={key}>
         <div
           className="tree-row tree-folder"
           style={{ paddingLeft: 8 }}
+          title={entry.path}
           onClick={() => toggle(key)}
           onContextMenu={(event) => {
             event.preventDefault();
@@ -351,59 +332,22 @@ export function ModelInfoPanel() {
           }}
         >
           {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <FileCode2 size={12} />
-          <span className="tree-label">{entry.path}</span>
+          <Boxes size={12} />
+          <span className="outline-kind">Model</span>
+          <span className="outline-name">{entry.model.name}</span>
         </div>
-        {open && renderModelNode(entry.path, entry.source, entry.model)}
+        {open && renderMembers(entry.members, 1)}
       </div>
     );
   };
 
-  const renderPartFile = (entry: Extract<PanelFile, { type: 'part' }>): ReactNode => {
-    const key = entry.path;
-    const open = !isCollapsed(key);
-    const kind = PART_KIND_BY_PATH[entry.path] ?? 'resource';
-    const add = MODEL_ADD_KINDS.find((item) => item.kind === kind);
-    const actions: ContextAction[] = [];
-    if (add) {
-      actions.push({
-        label: `Add ${kind}`,
-        onSelect: () => addBlock(entry.path, null, 0, kind, add.template),
-      });
-    }
-    actions.push({
-      label: 'Delete file',
-      danger: true,
-      onSelect: () => deleteFile(entry.path),
-    });
-    return (
-      <div key={entry.path}>
-        <div
-          className="tree-row tree-folder"
-          style={{ paddingLeft: 8 }}
-          onClick={() => toggle(key)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            showMenu(event.clientX, event.clientY, actions);
-          }}
-        >
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <FileCode2 size={12} />
-          <span className="tree-label">{entry.path}</span>
-        </div>
-        {open && renderMembers(entry.members, entry.path, 1)}
-      </div>
-    );
-  };
-
-  const renderFileRow = (entry: Extract<PanelFile, { type: 'orphan' | 'other' }>): ReactNode => {
-    const Icon = entry.type === 'orphan' ? FileX2 : FileJson2;
+  const renderFileRow = (entry: Extract<PanelEntry, { type: 'orphan' }>): ReactNode => {
     return (
       <div
         key={entry.path}
-        className={`tree-row tree-file${entry.type === 'other' ? ' tree-muted' : ''}`}
+        className="tree-row tree-file"
         style={{ paddingLeft: 8 }}
-        title={entry.type === 'orphan' ? entry.error : entry.path}
+        title={entry.error}
         onContextMenu={(event) => {
           event.preventDefault();
           showMenu(event.clientX, event.clientY, [
@@ -412,10 +356,10 @@ export function ModelInfoPanel() {
         }}
       >
         <span className="tree-glyph">
-          <Icon size={12} />
+          <FileX2 size={12} />
         </span>
         <span className="tree-label">{entry.path}</span>
-        {entry.type === 'orphan' && <span className="tree-muted">(invalid)</span>}
+        <span className="tree-muted">(invalid)</span>
       </div>
     );
   };
@@ -428,7 +372,7 @@ export function ModelInfoPanel() {
           <span className="v">{document.name}</span>
         </div>
         <div className="side-hint">
-          创建或打开工程后，这里显示 DSL 代码结构（File &gt; New Project...）
+          创建或打开工程后，这里显示模型的元素层级（File &gt; New Project...）
         </div>
       </div>
     );
@@ -442,11 +386,9 @@ export function ModelInfoPanel() {
         </span>
         <span className="tree-label">{bundle.manifest.name}</span>
       </div>
-      {entries.map((entry) => {
-        if (entry.type === 'model') return renderModelFile(entry);
-        if (entry.type === 'part') return renderPartFile(entry);
-        return renderFileRow(entry);
-      })}
+      {entries.map((entry) =>
+        entry.type === 'model' ? renderModel(entry) : renderFileRow(entry),
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -457,6 +399,12 @@ export function ModelInfoPanel() {
       )}
     </div>
   );
+}
+
+function childrenOf(entry: MergedMember): MergedMember[] {
+  return entry.member.children
+    .filter((member) => !member.isLeaf)
+    .map((member) => ({ file: entry.file, member }));
 }
 
 // Find the children of the block whose closing brace is at `bodyClose`.
