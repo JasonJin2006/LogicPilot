@@ -71,6 +71,13 @@ export function BlockIcon({ kind }: { kind: string }) {
           </text>
         </Glyph>
       );
+    case 'process':
+      return (
+        <Glyph>
+          <path d="M7 11h9l3 3h14v15a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" />
+          <path d="M7 16h26" opacity="0.55" />
+        </Glyph>
+      );
     case 'delay':
       return (
         <Glyph>

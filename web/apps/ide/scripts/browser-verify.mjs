@@ -245,6 +245,24 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('canvas model ran with live block badges');
 
+  // Strict partitioning (node-scene step 3): the root canvas shows only
+  // model-level elements (resource + process container); stages stay inside
+  // their container and only appear when drilling into it.
+  await page.locator('.pill-root').click();
+  await page.waitForTimeout(150);
+  const rootKinds = await page.evaluate(() =>
+    [...document.querySelectorAll('.model-canvas .model-block')].map((el) => el.className),
+  );
+  if (!rootKinds.some((cls) => cls.includes('kind-process'))) {
+    throw new Error('root canvas missing the process container Node');
+  }
+  if (rootKinds.some((cls) => cls.includes('kind-source') || cls.includes('kind-queue'))) {
+    throw new Error('root canvas leaked process stages');
+  }
+  await page.locator('.model-block.kind-process').dblclick();
+  await page.waitForSelector('.model-block.kind-source', { timeout: 5_000 });
+  log('canvas strict partition: root hides stages, container drills in');
+
   // AI panel (right): generate / optimize / explain / trajectory.
   await page.locator('.tab-label', { hasText: 'AI' }).click();
   await page

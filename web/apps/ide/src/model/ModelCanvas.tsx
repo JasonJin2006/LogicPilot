@@ -188,7 +188,16 @@ export function ModelCanvas() {
   // Drag on empty space pans the plane; a plain click deselects.
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    if ((event.target as Element).closest('.model-block, .model-shape')) return;
+    // Blocks/shapes are dragged by their own handlers; the focus pill and
+    // canvas controls are plain buttons (pointer capture would swallow
+    // their click).
+    if (
+      (event.target as Element).closest(
+        '.model-block, .model-shape, .canvas-view-pill, .model-canvas button',
+      )
+    ) {
+      return;
+    }
     drag.current = {
       startX: event.clientX,
       startY: event.clientY,
@@ -258,6 +267,24 @@ export function ModelCanvas() {
     const y = (event.clientY - rect.top - view.panY) / view.scale;
     const isStage =
       kind !== 'resource' && (library === undefined || library === 'process');
+    let container: string | undefined;
+    if (isStage) {
+      if (focusView) {
+        container = focusView.name;
+      } else {
+        // Dropping a stage on the model root creates (or reuses) the 'Flow'
+        // process container at the drop point and focuses it, so the stage
+        // lands on its own canvas instead of an invisible root.
+        container = 'Flow';
+        const existing = document.nodes.some(
+          (node) => node.kind === 'process' && node.name === container,
+        );
+        if (!existing) {
+          addBlock({ kind: 'process', name: container, x, y, params: {}, library: 'process' });
+        }
+        setFocusView({ kind: 'process', name: container });
+      }
+    }
     addBlock({
       kind,
       name: kind,
@@ -265,9 +292,7 @@ export function ModelCanvas() {
       y,
       params: BLOCK_DEFAULTS[kind],
       library,
-      // Stages belong to a process container: the focused one, or the legacy
-      // single 'Flow' container at the model root.
-      container: isStage ? (focusView ? focusView.name : 'Flow') : undefined,
+      container,
     });
     recordUse(kind);
     select(null);
@@ -570,7 +595,15 @@ export function ModelCanvas() {
     >
       {focusView && (
         <div className="canvas-view-pill" title="Editing this container's subgraph">
-          <span>{focusView.name}</span>
+          <button
+            className="pill-root"
+            title="Back to the model root"
+            onClick={() => setFocusView(null)}
+          >
+            {document.name || 'Model'}
+          </button>
+          <span className="pill-sep">›</span>
+          <span className="pill-current">{focusView.name}</span>
           <button
             aria-label="Show the whole model"
             title="Back to the whole model"
@@ -619,6 +652,35 @@ export function ModelCanvas() {
       {visibleNodes.map((node) => {
           if (PRESENTATION_KINDS.has(node.kind)) {
             return null; // rendered as a real shape above
+          }
+          if (node.kind === 'process') {
+            // A container Node: shown on the root canvas as a folder card.
+            // Double-click drills into its subgraph canvas.
+            const childCount = document.nodes.filter(
+              (child) => child.container === node.name,
+            ).length;
+            return (
+              <div
+                key={node.id}
+                className={`model-block kind-process${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+                style={{ left: node.x, top: node.y }}
+                onPointerDown={(event) => onElementPointerDown(event, node)}
+                onPointerMove={(event) => onElementPointerMove(event, node)}
+                onPointerUp={(event) => onElementPointerUp(event, node)}
+                onPointerCancel={() => {
+                  elementDrag.current = null;
+                  setDraggingId(null);
+                }}
+                onDoubleClick={() => setFocusView({ kind: 'process', name: node.name })}
+                title={`Open ${node.name} (${childCount} blocks)`}
+              >
+                <span className="model-block-icon">
+                  <BlockIcon kind={node.kind} />
+                </span>
+                <span className="model-block-name">{node.name}</span>
+                {childCount > 0 && <span className="model-block-count">{childCount}</span>}
+              </div>
+            );
           }
           const ports = blockPorts(node.kind);
           return (

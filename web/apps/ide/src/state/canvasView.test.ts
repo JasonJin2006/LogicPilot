@@ -3,12 +3,12 @@ import { addNode, createDocument, generateDsl, parseDsl } from '@logicpilot/edit
 import { documentForView } from './canvasView';
 
 describe('canvas view', () => {
-  it('null view returns the whole document', () => {
+  it('null view shows only model-level elements (stages are hidden)', () => {
     const document = createDocument('M');
-    expect(documentForView(document, null)).toBe(document);
+    expect(documentForView(document, null)).toEqual({ name: 'M', nodes: [], edges: [] });
   });
 
-  it('a container view filters to its nodes and inner couplings', () => {
+  it('root view hides stages and shows resources and container Nodes', () => {
     let document = createDocument('M');
     document = addNode(document, {
       kind: 'resource',
@@ -17,6 +17,33 @@ describe('canvas view', () => {
       y: 60,
       params: { capacity: 1 },
     });
+    document = addNode(document, { kind: 'process', name: 'Flow', x: 120, y: 60, params: {} });
+    document = addNode(document, {
+      kind: 'source',
+      name: 'S',
+      x: 100,
+      y: 200,
+      params: {},
+      container: 'Flow',
+    });
+    document = addNode(document, {
+      kind: 'queue',
+      name: 'Q',
+      x: 300,
+      y: 200,
+      params: {},
+      container: 'Flow',
+    });
+    const root = documentForView(document, null);
+    expect(root.nodes).toHaveLength(2);
+    expect(root.nodes.every((node) => node.container === undefined)).toBe(true);
+    expect(root.nodes.map((node) => node.kind)).toEqual(['resource', 'process']);
+    expect(root.edges).toHaveLength(0);
+  });
+
+  it('a container view filters to its nodes and inner couplings', () => {
+    let document = createDocument('M');
+    document = addNode(document, { kind: 'process', name: 'Flow', x: 120, y: 60, params: {} });
     document = addNode(document, {
       kind: 'source',
       name: 'S',
@@ -42,6 +69,7 @@ describe('canvas view', () => {
     const flow = documentForView(document, { kind: 'process', name: 'Flow' });
     expect(flow.nodes).toHaveLength(2);
     expect(flow.nodes.every((node) => node.container === 'Flow')).toBe(true);
+    expect(flow.nodes.some((node) => node.kind === 'process')).toBe(false);
     expect(flow.edges).toHaveLength(1);
     const other = documentForView(document, { kind: 'process', name: 'Other' });
     expect(other.nodes).toHaveLength(0);
@@ -69,7 +97,7 @@ describe('canvas view', () => {
     const parsed = parseDsl(source);
     expect(parsed.ok).toBe(true);
     const stages = parsed.document.nodes.filter(
-      (node) => node.kind !== 'resource',
+      (node) => node.kind !== 'resource' && node.kind !== 'process',
     );
     expect(stages.every((node) => node.container === 'Flow' || node.container === 'Backup')).toBe(
       true,
@@ -83,7 +111,7 @@ describe('canvas view', () => {
     const reparsed = parseDsl(regenerated);
     expect(reparsed.ok).toBe(true);
     const reparsedStages = reparsed.document.nodes.filter(
-      (node) => node.kind !== 'resource',
+      (node) => node.kind !== 'resource' && node.kind !== 'process',
     );
     expect(reparsedStages.find((node) => node.name === 'S')?.container).toBe('Flow');
     expect(reparsedStages.find((node) => node.name === 'Done')?.container).toBe('Backup');

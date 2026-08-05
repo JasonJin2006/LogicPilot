@@ -30,9 +30,8 @@ import {
   Waves,
   Workflow,
 } from 'lucide-react';
-import { parseDsl } from '@logicpilot/editor';
-import { mergeModelSource } from '../project/project';
 import { MODEL_SCENE_DIR } from '../project/project';
+import { syncCanvasFromProject } from '../state/projectSync';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
@@ -121,7 +120,6 @@ export function ModelInfoPanel() {
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const document = useModelStore((state) => state.document);
-  const loadDocument = useModelStore((state) => state.loadDocument);
   const focusView = useCanvasView((state) => state.view);
   const setFocusView = useCanvasView((state) => state.setView);
   const selected = useModelStore((state) =>
@@ -226,22 +224,6 @@ export function ModelInfoPanel() {
   const showMenu = (x: number, y: number, actions: ContextAction[]) =>
     setMenu({ x, y, actions });
 
-  const syncCanvas = () => {
-    const current = useProjectStore.getState().bundle;
-    if (!current) {
-      return;
-    }
-    const merged = mergeModelSource(
-      current.files[current.manifest.model] ?? '',
-      current.files,
-      current.manifest.modelParts ?? [],
-    );
-    const canvas = parseDsl(merged);
-    if (canvas.ok) {
-      loadDocument(canvas.document);
-    }
-  };
-
   const commitEdit = (path: string, apply: (source: string) => string) => {
     const current = useProjectStore.getState().bundle;
     if (!current) {
@@ -250,7 +232,7 @@ export function ModelInfoPanel() {
     const source = current.files[path] ?? '';
     const next = apply(source);
     updateFiles((files) => ({ ...files, [path]: next }));
-    syncCanvas();
+    syncCanvasFromProject();
   };
 
   const deleteFile = (path: string) => {
@@ -283,7 +265,7 @@ export function ModelInfoPanel() {
       const name = `${kind}${countBlocks(siblings, kind) + 1}`;
       const block = insertMember(partSource, partSource.length, '  ', template(name));
       updateFiles((files) => ({ ...files, [targetPart]: block }));
-      syncCanvas();
+      syncCanvasFromProject();
       return;
     }
     // Insert into the model body (main file) or a block body.

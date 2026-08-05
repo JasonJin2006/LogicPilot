@@ -8,7 +8,7 @@ import { parseDsl } from '@logicpilot/editor';
 import { aiBuild, aiExplain, aiOptimize } from './api';
 import type { AiResult, ExplainResult, OptimizeResult } from './api';
 import { OptimizeChart, TrajectoryChart } from './charts';
-import { useModelStore } from '../state/modelStore';
+import { loadModelDocument } from '../state/projectSync';
 
 const EXAMPLE_PROMPT = 'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
 
@@ -19,8 +19,6 @@ export function AIPanel() {
   const [optimized, setOptimized] = useState<OptimizeResult | null>(null);
   const [explained, setExplained] = useState<ExplainResult | null>(null);
   const [error, setError] = useState('');
-  const loadDocument = useModelStore((state) => state.loadDocument);
-
   const loadToCanvas = () => {
     if (result === null) return;
     const parsed = parseDsl(result.dsl);
@@ -29,7 +27,9 @@ export function AIPanel() {
       return;
     }
     setError('');
-    loadDocument(parsed.document);
+    // A freshly loaded model shows its root canvas (containers + resources),
+    // not whatever container the user was drilling into.
+    loadModelDocument(parsed.document);
   };
 
   const run = async (kind: 'build' | 'optimize' | 'explain') => {

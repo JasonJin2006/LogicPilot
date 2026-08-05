@@ -5,7 +5,17 @@
 // the IDE can layer undo/redo and diagnostics on top without mutating
 // shared state.
 
-export type BlockKind = 'resource' | 'source' | 'queue' | 'service' | 'sink';
+export type BlockKind =
+  | 'resource'
+  | 'source'
+  | 'queue'
+  | 'service'
+  | 'sink'
+  | 'process';
+
+/** Block kinds that are containers: their children (nodes whose `container`
+ *  equals the container's name) form a subgraph edited on its own canvas. */
+export const CONTAINER_KINDS: readonly string[] = ['process'];
 
 /** One block instance on the canvas. `params` are field values keyed by
  *  the block's registered param name (see libraries/process.lplib). */
@@ -78,10 +88,24 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
 }
 
 export function removeNode(document: ModelDocument, id: string): ModelDocument {
+  const node = findNode(document, id);
+  const removed = new Set([id]);
+  if (node && CONTAINER_KINDS.includes(node.kind)) {
+    // Removing a container removes its whole subgraph (children + their
+    // couplings), matching the Node-tree semantics: a container Node is its
+    // scene file, so deleting it deletes the scene.
+    for (const child of document.nodes) {
+      if (child.container === node.name) {
+        removed.add(child.id);
+      }
+    }
+  }
   return {
     ...document,
-    nodes: document.nodes.filter((node) => node.id !== id),
-    edges: document.edges.filter((edge) => edge.from !== id && edge.to !== id),
+    nodes: document.nodes.filter((candidate) => !removed.has(candidate.id)),
+    edges: document.edges.filter(
+      (edge) => !removed.has(edge.from) && !removed.has(edge.to),
+    ),
   };
 }
 

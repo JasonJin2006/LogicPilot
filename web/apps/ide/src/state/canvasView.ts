@@ -10,13 +10,22 @@ export interface CanvasView {
   name: string;
 }
 
-/** Filter a document to one container Node's subgraph; null shows it whole. */
+/** Filter a document to one container Node's subgraph (its children); null
+ *  shows the model root: only model-level elements (nodes not owned by a
+ *  container - resources, container Nodes, canvas annotations). Stages of a
+ *  process container never leak onto the root canvas. */
 export function documentForView(
   document: ModelDocument,
   view: CanvasView | null,
 ): ModelDocument {
   if (!view) {
-    return document;
+    const nodes = document.nodes.filter((node) => !node.container);
+    const ids = new Set(nodes.map((node) => node.id));
+    return {
+      name: document.name,
+      nodes,
+      edges: document.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
+    };
   }
   const nodes = document.nodes.filter((node) => node.container === view.name);
   const ids = new Set(nodes.map((node) => node.id));

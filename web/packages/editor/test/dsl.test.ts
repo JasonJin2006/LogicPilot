@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNode, connect, createDocument, generateDsl } from '../src/index.js';
+import { addNode, connect, createDocument, generateDsl, parseDsl } from '../src/index.js';
 
 describe('DSL v2 generation', () => {
   it('renders a mm1-equivalent document to DSL v2', () => {
@@ -139,5 +139,24 @@ describe('DSL v2 generation', () => {
     const source = generateDsl(doc);
     expect(source).not.toContain('rect');
     expect(source).not.toContain('state');
+  });
+
+  it('emits container Nodes as process blocks in document order', () => {
+    let doc = createDocument('M');
+    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
+    doc = addNode(doc, { kind: 'source', name: 'S', x: 0, y: 40, container: 'Flow' });
+    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 0, y: 80, container: 'Flow' });
+    doc = addNode(doc, { kind: 'process', name: 'Empty', x: 0, y: 120 });
+    const source = generateDsl(doc);
+    expect(source.indexOf('process Flow {')).toBeLessThan(source.indexOf('process Empty {'));
+    expect(source).toContain('source S {');
+    expect(source).toContain('queue Q {');
+    // An empty container still emits so it survives the round trip.
+    expect(source).toContain('process Empty {');
+    const reparsed = parseDsl(source);
+    expect(reparsed.ok).toBe(true);
+    expect(
+      reparsed.document.nodes.filter((node) => node.kind === 'process').map((node) => node.name),
+    ).toEqual(['Flow', 'Empty']);
   });
 });

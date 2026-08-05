@@ -78,43 +78,57 @@ function orderStages(
 export function generateDsl(document: ModelDocument): string {
   const modelName = document.name || 'Model';
   const resources = document.nodes.filter((node) => node.kind === 'resource');
-  // Process-flow stages only: the single process container. Drawing and
-  // behavior elements (presentation/statechart/action libraries) are canvas
-  // annotations and do not emit. Custom-library kinds (library 'process')
-  // emit too: the compiler reports them as unknown (LP2004) until the
-  // matching library is registered in the kernel.
+  // Process-flow stages only. Drawing and behavior elements
+  // (presentation/statechart/action libraries) are canvas annotations and do
+  // not emit. Custom-library kinds (library 'process') emit too: the
+  // compiler reports them as unknown (LP2004) until the matching library is
+  // registered in the kernel. Container Nodes (kind 'process') emit as
+  // `process <name> { ... }` wrappers around their stages.
   const stages = document.nodes.filter(
     (node) =>
       node.kind !== 'resource' &&
+      node.kind !== 'process' &&
       (node.library === undefined || node.library === 'process'),
   );
+  const containers = document.nodes.filter((node) => node.kind === 'process');
 
   const lines: string[] = [];
   lines.push(`model ${modelName} {`);
   for (const resource of resources) {
     lines.push(renderBlock(resource, '  '));
   }
-  if (stages.length > 0) {
-    // Group stages by their container block (node.container, defaulting to
-    // the legacy single 'Flow' container) so multiple process containers
-    // round-trip through the DSL.
-    const byContainer = new Map<string, ModelNode[]>();
-    for (const stage of stages) {
-      const key = stage.container ?? 'Flow';
-      const group = byContainer.get(key);
-      if (group) {
-        group.push(stage);
-      } else {
-        byContainer.set(key, [stage]);
-      }
+  // Group stages by their container block (node.container, defaulting to the
+  // legacy single 'Flow' container) so multiple process containers round-trip
+  // through the DSL.
+  const byContainer = new Map<string, ModelNode[]>();
+  for (const stage of stages) {
+    const key = stage.container ?? 'Flow';
+    const group = byContainer.get(key);
+    if (group) {
+      group.push(stage);
+    } else {
+      byContainer.set(key, [stage]);
     }
-    for (const containerName of [...byContainer.keys()].sort()) {
-      lines.push(`  process ${containerName} {`);
-      for (const stage of orderStages(byContainer.get(containerName)!, document.edges, document)) {
+  }
+  const emitContainer = (containerName: string) => {
+    lines.push(`  process ${containerName} {`);
+    const group = byContainer.get(containerName);
+    if (group) {
+      for (const stage of orderStages(group, document.edges, document)) {
         lines.push(renderBlock(stage, '    '));
       }
-      lines.push('  }');
     }
+    lines.push('  }');
+  };
+  // Container Nodes first, in document order (empty containers emit too);
+  // then any orphan stage groups (legacy data without a container Node).
+  const emitted = new Set<string>();
+  for (const container of containers) {
+    emitContainer(container.name);
+    emitted.add(container.name);
+  }
+  for (const containerName of [...byContainer.keys()].filter((name) => !emitted.has(name)).sort()) {
+    emitContainer(containerName);
   }
   lines.push('}');
   return `${lines.join('\n')}\n`;

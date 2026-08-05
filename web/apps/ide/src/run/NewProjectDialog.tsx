@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { createProject, projectToDocument, projectToDiskFiles } from '../project/project';
-import { useModelStore } from '../state/modelStore';
+import { loadModelDocument } from '../state/projectSync';
 import { useProjectStore } from '../state/projectStore';
 import { createProjectDir, isTauri, pickProjectFolder } from '../state/tauriFs';
 import { useUiStore } from '../state/uiStore';
@@ -15,7 +15,6 @@ import { useUiStore } from '../state/uiStore';
 export function NewProjectDialog() {
   const open = useUiStore((state) => state.newProjectOpen);
   const closeNewProject = useUiStore((state) => state.closeNewProject);
-  const loadDocument = useModelStore((state) => state.loadDocument);
   const openBundle = useProjectStore((state) => state.openBundle);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
@@ -58,7 +57,7 @@ export function NewProjectDialog() {
       projectPath = result.path ?? null;
     }
     if (loaded.ok) {
-      loadDocument(loaded.document!);
+      loadModelDocument(loaded.document!);
     }
     openBundle(bundle);
     setPath(projectPath);

@@ -297,8 +297,9 @@ describe('project bundle', () => {
     delete bundle.files[bundle.manifest.presentation];
     const result = projectToDocument(bundle);
     expect(result.ok).toBe(true);
-    // parseDsl lays the five blocks out left to right and couples stages.
-    expect(result.document!.nodes).toHaveLength(5);
+    // parseDsl lays the blocks out (resource + process container + stages)
+    // and couples the stages left to right.
+    expect(result.document!.nodes).toHaveLength(6);
     expect(result.document!.name).toBe('MM1');
   });
 

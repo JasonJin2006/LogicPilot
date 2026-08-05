@@ -192,6 +192,7 @@ export function parseDsl(source: string): ParseResult {
   }
 
   const resources: Array<{ name: string; params: Record<string, string | number | boolean> }> = [];
+  const containers: Array<{ name: string }> = [];
   const stages: Array<{
     kind: BlockKind;
     name: string;
@@ -229,6 +230,9 @@ export function parseDsl(source: string): ParseResult {
       if (!parser.expectPunct('{')) {
         return fail("expected '{' after process name");
       }
+      if (processName !== null && !containers.some((entry) => entry.name === processName)) {
+        containers.push({ name: processName });
+      }
       while (!parser.atPunct('}')) {
         const kind = parser.expectWord();
         const name = parser.expectWord();
@@ -262,39 +266,47 @@ export function parseDsl(source: string): ParseResult {
     );
   }
 
-  if (stages.length === 0) {
-    return fail('the model has no process flow to load into the canvas');
+  if (resources.length === 0 && containers.length === 0 && stages.length === 0) {
+    return fail('the model has no elements to load into the canvas');
   }
 
   const document = createDocument(modelName);
-  const nodes: ModelNode[] = [];
-  resources.forEach((resource, index) => {
-    nodes.push({
-      id: freshId('resource'),
-      kind: 'resource',
-      name: resource.name,
-      x: 120,
-      y: 80 + index * 100,
-      params: { ...resource.params },
-    });
-  });
-  stages.forEach((stage, index) => {
-    nodes.push({
-      id: freshId(stage.kind),
-      kind: stage.kind,
-      name: stage.name,
-      x: 160 + index * 180,
-      y: 240,
-      params: { ...stage.params },
-      container: stage.container,
-    });
-  });
+  const resourceNodes: ModelNode[] = resources.map((resource, index) => ({
+    id: freshId('resource'),
+    kind: 'resource',
+    name: resource.name,
+    x: 120,
+    y: 80 + index * 100,
+    params: { ...resource.params },
+  }));
+  const containerNodes: ModelNode[] = containers.map((container, index) => ({
+    id: freshId('process'),
+    kind: 'process',
+    name: container.name,
+    x: 120,
+    y: 80 + (resources.length + index) * 100,
+    params: {},
+    library: 'process',
+  }));
+  const stageNodes: ModelNode[] = stages.map((stage, index) => ({
+    id: freshId(stage.kind),
+    kind: stage.kind,
+    name: stage.name,
+    x: 160 + index * 180,
+    y: 240,
+    params: { ...stage.params },
+    container: stage.container,
+  }));
 
-  let doc: ModelDocument = { ...document, nodes };
-  for (let i = 0; i + 1 < stages.length; i++) {
-    const from = nodes[resources.length + i]!;
-    const to = nodes[resources.length + i + 1]!;
-    doc = connect(doc, from.id, to.id).document;
+  let doc: ModelDocument = { ...document, nodes: [...resourceNodes, ...containerNodes, ...stageNodes] };
+  // Sequential couplings inside one process container (declaration order);
+  // the edge across two containers would be dropped by the per-container
+  // canvas filter anyway, so never emit it.
+  for (let i = 0; i + 1 < stageNodes.length; i++) {
+    if (stages[i]!.container !== stages[i + 1]!.container) {
+      continue;
+    }
+    doc = connect(doc, stageNodes[i]!.id, stageNodes[i + 1]!.id).document;
   }
   return { ok: true, document: doc };
 }

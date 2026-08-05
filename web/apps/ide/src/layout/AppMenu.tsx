@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { generateDsl, parseDsl } from '@logicpilot/editor';
-import type { BlockKind } from '@logicpilot/editor';
+import type { BlockKind, ModelDocument } from '@logicpilot/editor';
+import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
@@ -52,6 +53,7 @@ export function AppMenu() {
   const addBlock = useModelStore((state) => state.addBlock);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const loadDocument = useModelStore((state) => state.loadDocument);
+  const setCanvasView = useCanvasView((state) => state.setView);
   const undo = useModelStore((state) => state.undo);
   const redo = useModelStore((state) => state.redo);
   const canUndo = useModelStore((state) => state.canUndo);
@@ -69,6 +71,11 @@ export function AppMenu() {
 
   const selected = (modelDoc?.nodes ?? []).find((node) => node.id === selectedId) ?? null;
   const close = () => setOpen(null);
+  // Opening a different model shows its root canvas, not a stale container.
+  const openDocument = (document: ModelDocument) => {
+    loadDocument(document);
+    setCanvasView(null);
+  };
 
   const fileNewProject = () => {
     openNewProject();
@@ -108,7 +115,7 @@ export function AppMenu() {
       }
       openBundle(parsedBundle.bundle!);
       setPath(dir);
-      loadDocument(loaded.document!);
+      openDocument(loaded.document!);
       markClean();
       addRecent({
         name: parsedBundle.bundle!.manifest.name,
@@ -137,7 +144,7 @@ export function AppMenu() {
           return;
         }
         openBundle(parsedBundle.bundle!);
-        loadDocument(loaded.document!);
+        openDocument(loaded.document!);
         markClean();
         addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
         return;
@@ -155,7 +162,7 @@ export function AppMenu() {
             openInfo('Open failed', 'not a LogicPilot canvas document (.json)');
             return;
           }
-          loadDocument(parsed as never);
+          openDocument(parsed as never);
           markClean();
           const parsedName =
             typeof (parsed as { name?: unknown }).name === 'string'
@@ -170,7 +177,7 @@ export function AppMenu() {
       clearProject();
       const parsed = parseDsl(text);
       if (parsed.ok) {
-        loadDocument(parsed.document);
+        openDocument(parsed.document);
         markClean();
         addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });
       } else {
@@ -321,7 +328,7 @@ export function AppMenu() {
                     const loaded = projectToDocument(parsedBundle.bundle!);
                     if (loaded.ok) {
                       openBundle(parsedBundle.bundle!);
-                      loadDocument(loaded.document!);
+                      openDocument(loaded.document!);
                       markClean();
                     } else {
                       openInfo('Open failed', loaded.error ?? 'invalid project');
@@ -330,7 +337,7 @@ export function AppMenu() {
                 } else if (model.dsl) {
                   const parsed = parseDsl(model.dsl);
                   if (parsed.ok) {
-                    loadDocument(parsed.document);
+                    openDocument(parsed.document);
                     markClean();
                   } else {
                     openInfo('Open failed', parsed.error ?? 'invalid DSL');

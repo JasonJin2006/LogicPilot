@@ -31,8 +31,12 @@ describe('parseDsl', () => {
     expect(result.ok).toBe(true);
     const doc = result.document;
     expect(doc.name).toBe('MM1');
-    expect(doc.nodes).toHaveLength(5);
+    expect(doc.nodes).toHaveLength(6);
     expect(doc.edges).toHaveLength(3);
+
+    const container = doc.nodes.find((node) => node.kind === 'process')!;
+    expect(container.name).toBe('Flow');
+    expect(container.container).toBeUndefined();
 
     const resource = doc.nodes.find((node) => node.kind === 'resource')!;
     expect(resource.name).toBe('Server');
@@ -47,9 +51,10 @@ describe('parseDsl', () => {
     expect(service.params['resource']).toBe('Server');
     expect(service.params['time']).toBe('exponential(1.0)');
 
-    // Stages couple in declaration order.
+    // The container Node comes first, then stages coupled in declaration
+    // order inside it.
     const kinds = doc.nodes.filter((node) => node.kind !== 'resource').map((node) => node.kind);
-    expect(kinds).toEqual(['source', 'queue', 'service', 'sink']);
+    expect(kinds).toEqual(['process', 'source', 'queue', 'service', 'sink']);
   });
 
   it('round-trips through generateDsl', () => {
@@ -66,7 +71,17 @@ describe('parseDsl', () => {
   it('rejects models without a process flow', () => {
     const result = parseDsl('model Decay { continuous x { rate = 0.5 } }');
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('process');
+    expect(result.error).toContain('unsupported');
+  });
+
+  it('parses an empty process container into a canvas container node', () => {
+    const result = parseDsl('model M {\n  process Empty {\n  }\n}\n');
+    expect(result.ok).toBe(true);
+    const doc = result.document;
+    expect(doc.nodes).toHaveLength(1);
+    expect(doc.nodes[0]!.kind).toBe('process');
+    expect(doc.nodes[0]!.name).toBe('Empty');
+    expect(doc.edges).toHaveLength(0);
   });
 
   it('rejects malformed source', () => {

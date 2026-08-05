@@ -56,6 +56,19 @@ describe('graph document operations', () => {
     expect(doc.edges).toHaveLength(0);
   });
 
+  it('removes a container together with its children and couplings', () => {
+    let doc = createDocument('M');
+    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
+    doc = addNode(doc, { kind: 'source', name: 'S', x: 0, y: 40, container: 'Flow' });
+    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 0, y: 80, container: 'Flow' });
+    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[2]!.id).document;
+    doc = addNode(doc, { kind: 'resource', name: 'R', x: 0, y: 120 });
+    const next = removeNode(doc, doc.nodes[0]!.id);
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]!.kind).toBe('resource');
+    expect(next.edges).toHaveLength(0);
+  });
+
   it('moves, renames and edits params immutably', () => {
     let doc = createDocument();
     doc = addNode(doc, { kind: 'queue', name: 'Q', x: 1, y: 2 });

@@ -164,6 +164,7 @@ export const BLOCK_FIELDS: Record<string, BlockField[]> = {
  *  deliberately left empty so the user picks a resource reference. */
 export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boolean>> = {
   resource: { capacity: 1, failure_rate: 0 },
+  process: {},
   source: { arrival: 'poisson(10)' },
   queue: { capacity: 100 },
   delay: { time: 'exponential(1.0)', capacity: 10 },
