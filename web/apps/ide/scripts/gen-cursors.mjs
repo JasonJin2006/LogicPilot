@@ -28,9 +28,12 @@ function renderSvg(iconNode) {
       return `<${tag} ${props}/>`;
     })
     .join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
-  <g stroke="#ffffff" stroke-width="3.4">${shapes}</g>
-  <g stroke="#10151d" stroke-width="1.8">${shapes}</g>
+  // Render at 16px with a viewBox of 24 so the icon matches the native
+  // arrow's visual scale; the double stroke is thin (white outline under a
+  // dark core) to keep it subtle and legible on both themes.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <g stroke="#ffffff" stroke-width="2">${shapes}</g>
+  <g stroke="#10151d" stroke-width="1.2">${shapes}</g>
 </svg>
 `;
 }

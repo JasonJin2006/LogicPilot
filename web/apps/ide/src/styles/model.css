@@ -504,7 +504,6 @@
   gap: 4px;
   padding: 8px 4px 6px;
   border-radius: var(--r-sm);
-  cursor: var(--cursor-grab);
 }
 
 .palette-item.dragging {
@@ -513,10 +512,6 @@
 
 .palette-item:hover {
   background: var(--surface-2);
-}
-
-.palette-item:active {
-  cursor: var(--cursor-grabbing);
 }
 
 .palette-chip {
