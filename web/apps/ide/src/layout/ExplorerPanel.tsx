@@ -45,6 +45,43 @@ function isFolder(entry: TreeEntry): entry is TreeFolder {
   return 'children' in entry;
 }
 
+// Group flat project paths into a nested folder tree (model/main.lp ->
+// model/ > main.lp).
+function treeFromPaths(paths: string[]): TreeFolder[] {
+  const roots: TreeFolder[] = [];
+  for (const path of [...paths].sort()) {
+    const parts = path.split('/');
+    let level: TreeEntry[] = roots;
+    for (let i = 0; i < parts.length; ++i) {
+      const name = parts[i]!;
+      const isFile = i === parts.length - 1;
+      const existing = level.find((entry) => entry.name === name);
+      if (isFile) {
+        if (existing === undefined) {
+          level.push({
+            name,
+            path,
+            kind: path.endsWith('.lp') ? ('dsl' as const) : ('json' as const),
+          });
+        }
+        break;
+      }
+      if (existing !== undefined && isFolder(existing)) {
+        level = existing.children;
+        continue;
+      }
+      const folder: TreeFolder = {
+        name,
+        path: parts.slice(0, i + 1).join('/'),
+        children: [],
+      };
+      level.push(folder);
+      level = folder.children;
+    }
+  }
+  return roots;
+}
+
 function FileRow({ file, indent }: { file: TreeFile; indent: number }) {
   const Icon = file.kind === 'dsl' ? FileCode2 : FileJson2;
   const muted = file.kind === 'muted' || file.kind === 'ir';
@@ -93,29 +130,11 @@ export function ExplorerPanel() {
   const projectPath = useProjectStore((state) => state.path);
 
   const rootName = bundle ? bundle.manifest.name : `${modelDoc.name || 'Model'} (unsaved)`;
-  const sourceRows: TreeEntry[] = bundle
-    ? Object.keys(bundle.files)
-        .sort()
-        .map((path) => {
-          const name = path.slice(path.lastIndexOf('/') + 1);
-          return {
-            name,
-            path,
-            kind: path.endsWith('.lp') ? ('dsl' as const) : ('json' as const),
-          };
-        })
-    : [
-        {
-          name: 'main.lp',
-          path: 'model/main.lp',
-          kind: 'dsl' as const,
-        },
-        {
-          name: 'main.canvas.json',
-          path: 'presentation/main.canvas.json',
-          kind: 'json' as const,
-        },
-      ];
+  const sourceFolders = treeFromPaths(
+    bundle
+      ? Object.keys(bundle.files)
+      : ['model/main.lp', 'presentation/main.canvas.json'],
+  );
 
   return (
     <div className="side-panel-body explorer-panel">
@@ -128,13 +147,9 @@ export function ExplorerPanel() {
           <span className="tree-dirty-dot" title="unsaved changes" />
         )}
       </div>
-      {sourceRows.map((entry) =>
-        isFolder(entry) ? (
-          <FolderRow key={entry.path} folder={entry} indent={1} />
-        ) : (
-          <FileRow key={entry.path} file={entry} indent={1} />
-        ),
-      )}
+      {sourceFolders.map((entry) => (
+        <FolderRow key={entry.path} folder={entry} indent={1} />
+      ))}
       {ARTIFACT_ROWS.map((entry) => (
         <FolderRow key={entry.path} folder={entry} indent={1} />
       ))}

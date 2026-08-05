@@ -621,11 +621,20 @@
   align-items: center;
   gap: 6px;
   margin-top: 8px;
+  padding: 2px 0;
+  background: transparent;
+  border: none;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
+  cursor: var(--cursor-pointer);
+  text-align: left;
+}
+
+.outline-heading:hover {
+  color: var(--text);
 }
 
 .outline-item {
