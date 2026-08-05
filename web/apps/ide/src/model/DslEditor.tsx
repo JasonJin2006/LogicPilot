@@ -14,12 +14,12 @@ import { useUiStore } from '../state/uiStore';
 export function DslEditor() {
   const document = useModelStore((state) => state.document);
   const compile = useConnectionStore((state) => state.compile);
-  const dslEditorFile = useUiStore((state) => state.dslEditorFile);
-  const closeDslEditor = useUiStore((state) => state.closeDslEditor);
+  const activeFile = useUiStore((state) => state.activeFile);
+  const closeFile = useUiStore((state) => state.closeFile);
   const bundle = useProjectStore((state) => state.bundle);
   const updateFiles = useProjectStore((state) => state.updateFiles);
 
-  const fileSource = dslEditorFile !== null && bundle ? bundle.files[dslEditorFile] : undefined;
+  const fileSource = activeFile !== null && bundle ? bundle.files[activeFile] : undefined;
   const isFileEditor = fileSource !== undefined;
   const mergedSource = bundle
     ? mergeModelSource(
@@ -33,9 +33,13 @@ export function DslEditor() {
   return (
     <div className="dsl-editor">
       <div className="dsl-editor-header">
-        <span className="dsl-title">{isFileEditor ? dslEditorFile : 'DSL (canvas)'}</span>
+        <span className="dsl-title">{isFileEditor ? activeFile : 'DSL (canvas)'}</span>
         {isFileEditor && (
-          <button className="dsl-close-file" title="Close file" onClick={closeDslEditor}>
+          <button
+            className="dsl-close-file"
+            title="Close file"
+            onClick={() => activeFile !== null && closeFile(activeFile)}
+          >
             ×
           </button>
         )}
@@ -43,13 +47,13 @@ export function DslEditor() {
           Compile
         </button>
       </div>
-      {isFileEditor && dslEditorFile !== null ? (
+      {isFileEditor && activeFile !== null ? (
         <textarea
           className="dsl-source dsl-textarea"
           value={fileSource}
           spellCheck={false}
           onChange={(event) =>
-            updateFiles((files) => ({ ...files, [dslEditorFile]: event.target.value }))
+            updateFiles((files) => ({ ...files, [activeFile]: event.target.value }))
           }
         />
       ) : (

@@ -8,6 +8,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { useModelStore } from '../state/modelStore';
+import { useUiStore } from '../state/uiStore';
 import { useCanvasView } from '../state/canvasView';
 import { PANELS, type AreaId, type PanelId } from './panels';
 
@@ -85,9 +86,14 @@ function TabBar({ area }: { area: AreaId }) {
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
   const openPanel = useLayoutStore((s) => s.openPanel);
   const canvasViews = useCanvasView((s) => s.views);
+  const rootOpen = useCanvasView((s) => s.rootOpen);
   const activeView = useCanvasView((s) => s.view);
   const setCanvasView = useCanvasView((s) => s.setView);
   const closeView = useCanvasView((s) => s.closeView);
+  const openFiles = useUiStore((s) => s.openFiles);
+  const activeFile = useUiStore((s) => s.activeFile);
+  const openFile = useUiStore((s) => s.openFile);
+  const closeFile = useUiStore((s) => s.closeFile);
   // Right/bottom panels can be collapsed; the model workspace stays open.
   const closable = area !== 'center';
   const perTabClose = area === 'center';
@@ -117,33 +123,32 @@ function TabBar({ area }: { area: AreaId }) {
     <div className="tab-bar">
       {area === 'center' ? (
         <>
-          {/* The Model tab = the root canvas; the open container views are
-              tabs of the same canvas (VS Code style), kept right after it. */}
-          {state.panels
-            .filter((panel) => panel === 'model')
-            .map((panel) => (
-              <div
-                key={panel}
-                className={`tab${panel === state.activePanel && activeView === null ? ' active' : ''}`}
-                onClick={() => {
-                  setActive(area, panel);
-                  setCanvasView(null);
+          {/* Canvas tabs: the model root plus every open container view.
+              They exist only once opened - the empty center shows the
+              empty-state instead of a blank canvas. */}
+          {rootOpen && (
+            <div
+              className={`tab${state.activePanel === 'model' && activeView === null ? ' active' : ''}`}
+              title="Model root canvas"
+              onClick={() => {
+                openPanel('center', 'model');
+                setCanvasView(null);
+              }}
+            >
+              <span className="tab-label">Model</span>
+              <button
+                className="tab-x"
+                aria-label="Close Model tab"
+                title="Close tab"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeView(null);
                 }}
               >
-                <span className="tab-label">{PANELS[panel].title}</span>
-                <button
-                  className="tab-x"
-                  aria-label={`Close ${panel} tab`}
-                  title="Close tab"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    useLayoutStore.getState().removePanel(area, panel);
-                  }}
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ))}
+                <X size={11} />
+              </button>
+            </div>
+          )}
           {canvasViews.map((view) => {
             const active =
               state.activePanel === 'model' &&
@@ -175,7 +180,35 @@ function TabBar({ area }: { area: AreaId }) {
               </div>
             );
           })}
-          {state.panels.filter((panel) => panel !== 'model').map(renderTab)}
+          {/* Code tabs: one per open bundle file. */}
+          {openFiles.map((path) => {
+            const name = path.slice(path.lastIndexOf('/') + 1);
+            const active = state.activePanel === 'dsl' && path === activeFile;
+            return (
+              <div
+                key={`file:${path}`}
+                className={`tab tab-file${active ? ' active' : ''}`}
+                title={path}
+                onClick={() => {
+                  openPanel('center', 'dsl');
+                  openFile(path);
+                }}
+              >
+                <span className="tab-label">{name}</span>
+                <button
+                  className="tab-x"
+                  aria-label={`Close ${name} tab`}
+                  title="Close tab"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeFile(path);
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            );
+          })}
         </>
       ) : (
         state.panels.map(renderTab)
@@ -196,34 +229,55 @@ function TabBar({ area }: { area: AreaId }) {
 
 function PanelArea({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
+  const canvasOpen = useCanvasView((s) => s.rootOpen || s.views.length > 0);
+  const filesOpen = useUiStore((s) => s.openFiles.length > 0);
+  const centerEmpty = area === 'center' && !canvasOpen && !filesOpen;
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
       {!state.collapsed &&
         (area === 'left' ? (
           <div className="panel-title">{PANELS[state.activePanel].title}</div>
-        ) : (
+        ) : !centerEmpty ? (
           <TabBar area={area} />
-        ))}
+        ) : null)}
       {!state.collapsed && (
         <div className="panel-area-body">
-          {state.panels.map((panel) => {
-            const definition = PANELS[panel];
-            if (definition === undefined) {
-              return null; // stale persisted panel: skipped defensively
-            }
-            const PanelComponent = definition.component;
-            return (
-              <div
-                key={panel}
-                className={`panel-pane${panel === state.activePanel ? ' active' : ''}`}
-              >
-                <PanelComponent />
-              </div>
-            );
-          })}
+          {centerEmpty ? (
+            <CenterEmpty />
+          ) : (
+            state.panels.map((panel) => {
+              const definition = PANELS[panel];
+              if (definition === undefined) {
+                return null; // stale persisted panel: skipped defensively
+              }
+              const PanelComponent = definition.component;
+              return (
+                <div
+                  key={panel}
+                  className={`panel-pane${panel === state.activePanel ? ' active' : ''}`}
+                >
+                  <PanelComponent />
+                </div>
+              );
+            })
+          )}
         </div>
       )}
     </section>
+  );
+}
+
+// Center workspace empty state: no canvas and no file tab is open yet.
+function CenterEmpty() {
+  const openNewProject = useUiStore((s) => s.openNewProject);
+  return (
+    <div className="center-empty">
+      <img className="center-empty-logo" src="/logo.svg" alt="LogicPilot" />
+      <p>Nothing is open - open a project element or a file to start editing.</p>
+      <button className="btn-primary" onClick={openNewProject}>
+        New project
+      </button>
+    </div>
   );
 }
 

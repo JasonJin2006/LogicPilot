@@ -127,6 +127,7 @@ describe('canvas view store (parallel tabs)', () => {
     useCanvasView.getState().setView(FLOW);
     useCanvasView.getState().setView(BACKUP);
     useCanvasView.getState().setView(FLOW); // already open: re-activate only
+    expect(useCanvasView.getState().rootOpen).toBe(false);
     expect(useCanvasView.getState().views.map((view) => view.name)).toEqual([
       'Flow',
       'Backup',
@@ -134,12 +135,12 @@ describe('canvas view store (parallel tabs)', () => {
     expect(useCanvasView.getState().view).toEqual(FLOW);
   });
 
-  it('closing the active view falls back to the root', () => {
+  it('closing the active view falls back to the last open view', () => {
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView(FLOW);
     useCanvasView.getState().setView(BACKUP);
     useCanvasView.getState().closeView(BACKUP);
-    expect(useCanvasView.getState().view).toBeNull();
+    expect(useCanvasView.getState().view).toEqual(FLOW);
     expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Flow']);
   });
 
@@ -158,6 +159,7 @@ describe('canvas view store (parallel tabs)', () => {
     useCanvasView.getState().setView(FLOW);
     useCanvasView.getState().setView(null);
     expect(useCanvasView.getState().view).toBeNull();
+    expect(useCanvasView.getState().rootOpen).toBe(true);
     expect(useCanvasView.getState().views).toHaveLength(1);
   });
 
@@ -166,6 +168,26 @@ describe('canvas view store (parallel tabs)', () => {
     useCanvasView.getState().setView(BACKUP);
     useCanvasView.getState().resetCanvasViews();
     expect(useCanvasView.getState().views).toHaveLength(0);
+    expect(useCanvasView.getState().rootOpen).toBe(false);
+    expect(useCanvasView.getState().view).toBeNull();
+  });
+
+  it('closing the root falls back to the last open container', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().setView(BACKUP);
+    useCanvasView.getState().setView(null); // root in front
+    useCanvasView.getState().closeView(null);
+    expect(useCanvasView.getState().rootOpen).toBe(false);
+    expect(useCanvasView.getState().view).toEqual(BACKUP);
+  });
+
+  it('closing the only canvas view empties the center', () => {
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView(FLOW);
+    useCanvasView.getState().closeView(FLOW);
+    expect(useCanvasView.getState().views).toHaveLength(0);
+    expect(useCanvasView.getState().rootOpen).toBe(false);
     expect(useCanvasView.getState().view).toBeNull();
   });
 });

@@ -25,7 +25,7 @@ import { useEffect } from 'react';
 export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   const runDialogOpen = useUiStore((state) => state.runDialogOpen);
-  const dslEditorFile = useUiStore((state) => state.dslEditorFile);
+  const activeFile = useUiStore((state) => state.activeFile);
   const canvasView = useCanvasView((state) => state.view);
 
   // The gateway should just work: auto-connect on startup (the desktop
@@ -38,10 +38,10 @@ export default function App() {
 
   // Opening a file from the Explorer brings the DSL editor tab to the front.
   useEffect(() => {
-    if (dslEditorFile !== null) {
+    if (activeFile !== null) {
       useLayoutStore.getState().openPanel('center', 'dsl');
     }
-  }, [dslEditorFile]);
+  }, [activeFile]);
 
   // Focusing a container (canvas view) brings the canvas tab to the front.
   useEffect(() => {

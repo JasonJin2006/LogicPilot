@@ -183,9 +183,9 @@ export function ExplorerPanel() {
   const dirty = useProjectStore((state) => state.dirty);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
-  const openDslEditor = useUiStore((state) => state.openDslEditor);
+  const openFile = useUiStore((state) => state.openFile);
   const setCanvasView = useCanvasView((state) => state.setView);
-  const activePath = useUiStore((state) => state.dslEditorFile);
+  const activePath = useUiStore((state) => state.activeFile);
   const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -283,7 +283,7 @@ export function ExplorerPanel() {
       if (scene) {
         actions.push({
           label: 'Open in DSL',
-          onSelect: () => openDslEditor(path),
+          onSelect: () => openFile(path),
         });
       }
       actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
@@ -313,7 +313,7 @@ export function ExplorerPanel() {
         // A scene file IS a container Node: clicking it opens its canvas.
         setCanvasView(scene);
       } else {
-        openDslEditor(path);
+        openFile(path);
       }
     }
   };

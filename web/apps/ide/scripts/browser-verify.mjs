@@ -47,16 +47,23 @@ page.on('pageerror', (err) => consoleErrors.push(String(err)));
 try {
   log('loading http://localhost:5173 ...');
   await page.goto('http://localhost:5173', { waitUntil: 'networkidle', timeout: 30_000 });
+  // With nothing open the center shows its empty state, not a canvas tab.
+  await page.waitForSelector('.center-empty', { timeout: 20_000 });
+  log('page loaded: center empty state');
+  await page.screenshot({ path: join(OUT, '1-loaded.png') });
+
+  // New project opens the root canvas tab (canvas tabs are per-element).
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
   await page.waitForSelector('.model-canvas', { timeout: 20_000 });
-  log('page loaded: modeling canvas present');
   const canvasText = await page.evaluate(
     () => document.querySelector('.model-canvas')?.textContent ?? '',
   );
   if (!canvasText.includes('Drag blocks from the palette')) {
     throw new Error('modeling canvas missing the empty-state hint');
   }
-  log('modeling canvas mounted (empty state)');
-  await page.screenshot({ path: join(OUT, '1-loaded.png') });
+  log('root canvas open after new project');
 
   // Connection + run setup live in the settings dialog (activity bar gear).
   await page.getByRole('button', { name: 'Settings' }).click();
@@ -141,13 +148,28 @@ try {
     );
   });
   await page.waitForSelector('.model-block', { timeout: 5_000 });
-  // The DSL editor is its own center tab (no attached drawer).
-  await page.locator('.area-center .tab').filter({ hasText: 'DSL' }).click();
-  await page.waitForSelector('.dsl-source', { timeout: 5_000 });
-  const dslText = await page.locator('.dsl-source').textContent();
-  if (!dslText?.includes('process Flow')) {
-    throw new Error('DSL editor did not mirror the canvas document');
+  // Code tabs are per file: save the canvas back to the bundle (File > Save);
+  // splitModelSource rewrites main.lp to reference the scene, so opening
+  // model/main.lp shows the instance line and Compile builds the merged model.
+  await page.getByRole('button', { name: 'File' }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 5_000 }).catch(() => null),
+    page
+      .locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Save' })
+      .first()
+      .click(),
+  ]);
+  if (download) {
+    await download.cancel().catch(() => {});
   }
+  await page.getByRole('button', { name: 'Explorer' }).click();
+  await page.locator('.area-left .tree-row[data-path="model/main.lp"]').click();
+  await page.waitForSelector('.dsl-textarea', { timeout: 5_000 });
+  const dslText = await page.locator('.dsl-textarea').inputValue();
+  if (!dslText.includes('instance Flow')) {
+    throw new Error('DSL file editor did not show the split main.lp');
+  }
+  log('canvas model saved; main.lp opened as a file tab');
   await page.getByRole('button', { name: 'Compile' }).click();
   await page.waitForFunction(
     () => document.querySelector('.console-log')?.textContent?.includes('compile failed'),
@@ -296,7 +318,7 @@ try {
   log('canvas parallel tabs: switch + close container views');
 
   // AI panel (right): generate / optimize / explain / trajectory.
-  await page.locator('.tab-label', { hasText: 'AI' }).click();
+  await page.locator('.tab-label').filter({ hasText: /^AI$/ }).click();
   await page
     .locator('.ai-input')
     .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');

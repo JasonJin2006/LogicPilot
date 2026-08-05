@@ -290,6 +290,26 @@
   background: var(--surface-1);
 }
 
+/* Center workspace empty state: shown until a canvas or file tab opens. */
+.center-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.center-empty-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+}
+
 .panel-area.area-left {
   grid-area: left;
   border-right: 1px solid var(--border);
