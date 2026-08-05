@@ -558,6 +558,23 @@
   opacity: 0.4;
 }
 
+.palette-drag-ghost {
+  position: fixed;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: var(--bg-strong);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow, 0 2px 8px rgba(0, 0, 0, 0.25));
+  pointer-events: none;
+  z-index: 1000;
+}
+
 .palette-item:hover {
   background: var(--surface-2);
 }

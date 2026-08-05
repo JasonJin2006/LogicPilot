@@ -1,20 +1,21 @@
 // Side panel (Palette view): a library selector bar (All / Recent / the
 // process library / imported libraries + an import button, wheel-scrollable)
 // over the block grid. Custom libraries are imported from a JSON .lplib file.
-
+//
+// Blocks are added to the canvas two ways: double-click (insert at the
+// active canvas) and pointer-based drag (a custom ghost follows the cursor;
+// releasing over the canvas inserts at that point). Pointer events work in
+// every WebView2/Chromium host, unlike HTML5 drag-and-drop which WebView2
+// rejects with a no-drop cursor.
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, DragEvent } from 'react';
-import { GitBranch, Plus } from 'lucide-react';
-import { sceneContainerFromFile } from '../project/project';
-import { setDraggedKind, setDraggedScene } from '../model/paletteDnd';
+import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
+import { Plus } from 'lucide-react';
 import { BLOCK_DEFS, LIBRARIES } from '../model/blockDefs';
 import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
+import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
 import { useProjectStore } from '../state/projectStore';
-
-const DRAG_IMAGE_CLASS = 'palette-drag-image';
-const DRAG_IMAGE_SIZE = 34;
 
 interface PaletteBlock {
   kind: string;
@@ -28,28 +29,13 @@ interface PaletteBlock {
   outPorts?: string[];
 }
 
-interface PaletteScene {
-  path: string;
-  name: string;
+interface DragSession {
   kind: string;
-}
-
-// Browsers render the drag ghost from a live element: append an offscreen
-// clone of the icon (currentColor inherits, so it follows the theme) and
-// center it under the cursor.
-function installIconDragImage(event: DragEvent, svg: Element | null): void {
-  if (!svg) return;
-  const wrap = document.createElement('span');
-  wrap.className = DRAG_IMAGE_CLASS;
-  wrap.style.cssText =
-    'position:fixed;left:-9999px;top:-9999px;width:34px;height:34px;color:var(--text);display:block;';
-  wrap.appendChild(svg.cloneNode(true));
-  document.body.appendChild(wrap);
-  event.dataTransfer.setDragImage(wrap, DRAG_IMAGE_SIZE / 2, DRAG_IMAGE_SIZE / 2);
-}
-
-function removeDragImages(): void {
-  document.querySelectorAll(`.${DRAG_IMAGE_CLASS}`).forEach((element) => element.remove());
+  library: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  moved: boolean;
 }
 
 export function PalettePanel() {
@@ -63,6 +49,8 @@ export function PalettePanel() {
   const [importError, setImportError] = useState('');
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const dragRef = useRef<DragSession | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; kind: string } | null>(null);
 
   // The mouse wheel scrolls the library bar horizontally.
   useEffect(() => {
@@ -70,7 +58,7 @@ export function PalettePanel() {
     if (!bar) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      bar.scrollLeft += event.deltaY + event.deltaX;
+      bar.scrollLeft += event.deltaY;
     };
     bar.addEventListener('wheel', onWheel, { passive: false });
     return () => bar.removeEventListener('wheel', onWheel);
@@ -114,21 +102,6 @@ export function PalettePanel() {
     visible = customLibraries[library]?.blocks ?? [];
   }
 
-  const scenes: PaletteScene[] =
-    files === undefined
-      ? []
-      : Object.keys(files)
-          .filter((path) => path.startsWith('model/scenes/') && path.endsWith('.lp'))
-          .map((path) => {
-            const container = sceneContainerFromFile(path, files[path]!);
-            return {
-              path,
-              name: container?.name ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.lp$/, ''),
-              kind: container?.kind ?? 'process',
-            };
-          })
-          .sort((a, b) => a.name.localeCompare(b.name));
-
   const onImportFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -142,13 +115,40 @@ export function PalettePanel() {
   const tabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
-    { id: 'scenes', label: 'Scenes' },
     ...LIBRARIES.map((entry) => ({ id: entry.id, label: entry.name })),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
     id: custom.name,
     label: custom.name,
   }));
+
+  // Finish a pointer drag: if released over the model canvas, map the
+  // screen point to world coordinates (camera synced by ModelCanvas) and
+  // insert the block there.
+  const endDrag = (event: ReactPointerEvent<HTMLLIElement>) => {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setGhost(null);
+    if (!drag || !drag.moved) {
+      return;
+    }
+    const canvas = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest('.model-canvas');
+    if (!canvas) {
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const viewport = useCanvasView.getState().viewport;
+    const scale = viewport?.scale ?? 1;
+    const panX = viewport?.panX ?? 48;
+    const panY = viewport?.panY ?? 48;
+    insertBlockAt(drag.kind, drag.library, {
+      x: (event.clientX - rect.left - panX) / scale,
+      y: (event.clientY - rect.top - panY) / scale,
+    });
+    recordUse(drag.kind);
+  };
 
   return (
     <div className="side-panel-body palette-body">
@@ -173,53 +173,39 @@ export function PalettePanel() {
       </div>
       {importError !== '' && <p className="palette-import-error">{importError}</p>}
       <ul className="palette-list">
-        {library === 'scenes'
-          ? scenes.map((scene) => (
-              <li
-                key={scene.path}
-                className="palette-item"
-                draggable
-                title={`Instance scene ${scene.name} (${scene.path})`}
-                onDragStart={(event) => {
-                  event.dataTransfer.setData('text/plain', 'scene');
-                  event.dataTransfer.setData('application/x-logicpilot-scene', scene.path);
-                  event.dataTransfer.effectAllowed = 'copy';
-                  setDraggedScene(scene.path);
-                  event.currentTarget.classList.add('dragging');
-                  installIconDragImage(event, event.currentTarget.querySelector('.palette-chip-icon svg'));
-                }}
-                onDragEnd={(event) => {
-                  event.currentTarget.classList.remove('dragging');
-                  removeDragImages();
-                }}
-              >
-                <span className="palette-chip">
-                  <span className="palette-chip-icon">
-                    <GitBranch size={15} />
-                    <span className="palette-port port-in" aria-hidden />
-                    <span className="palette-port port-out" aria-hidden />
-                  </span>
-                </span>
-                <span className="palette-name">{scene.name}</span>
-              </li>
-            ))
-          : visible.map((block) => (
+        {visible.map((block) => (
           <li
             key={block.kind}
-            className="palette-item"
-            draggable
+            className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}`}
             title={block.hint ? `${block.kind} - ${block.hint}` : block.kind}
-            onDragStart={(event) => {
-              event.dataTransfer.setData('text/plain', block.kind);
-              event.dataTransfer.setData('application/x-logicpilot-library', block.library ?? 'process');
-              event.dataTransfer.effectAllowed = 'copy';
-              setDraggedKind(block.kind, block.library ?? 'process');
-              event.currentTarget.classList.add('dragging');
-              installIconDragImage(event, event.currentTarget.querySelector('.palette-chip-icon svg'));
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              dragRef.current = {
+                kind: block.kind,
+                library: block.library ?? 'process',
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                moved: false,
+              };
+              (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+              setGhost({ x: event.clientX, y: event.clientY, kind: block.kind });
             }}
-            onDragEnd={(event) => {
-              event.currentTarget.classList.remove('dragging');
-              removeDragImages();
+            onPointerMove={(event) => {
+              const drag = dragRef.current;
+              if (!drag || drag.pointerId !== event.pointerId) return;
+              if (!drag.moved &&
+                  Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) {
+                drag.moved = true;
+              }
+              if (drag.moved) {
+                setGhost({ x: event.clientX, y: event.clientY, kind: block.kind });
+              }
+            }}
+            onPointerUp={endDrag}
+            onPointerCancel={() => {
+              dragRef.current = null;
+              setGhost(null);
             }}
             onDoubleClick={() => {
               insertBlockAt(block.kind, block.library ?? 'process');
@@ -235,8 +221,13 @@ export function PalettePanel() {
             </span>
             <span className="palette-name">{block.name}</span>
           </li>
-            ))}
+        ))}
       </ul>
+      {ghost && (
+        <span className="palette-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>
+          <BlockIcon kind={ghost.kind} />
+        </span>
+      )}
     </div>
   );
 }

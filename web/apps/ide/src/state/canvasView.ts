@@ -54,6 +54,10 @@ interface CanvasViewState {
   closeView: (view: CanvasView | null) => void;
   /** Close every container view (a different model is being loaded). */
   resetCanvasViews: () => void;
+  /** The model canvas's current camera (synced by ModelCanvas) so the
+   *  palette's pointer-based drop can map screen -> world coordinates. */
+  viewport: { scale: number; panX: number; panY: number } | null;
+  setViewport: (viewport: { scale: number; panX: number; panY: number }) => void;
 }
 
 function sameView(a: CanvasView | null, b: CanvasView | null): boolean {
@@ -97,4 +101,6 @@ export const useCanvasView = create<CanvasViewState>((set) => ({
       return { views, view: fallback };
     }),
   resetCanvasViews: () => set({ views: [], rootOpen: false, view: null }),
+  viewport: null,
+  setViewport: (viewport) => set({ viewport }),
 }));

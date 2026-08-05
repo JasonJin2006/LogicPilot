@@ -95,6 +95,7 @@ export function ModelCanvas() {
   // Flow); null = the model root showing everything.
   const focusView = useCanvasView((state) => state.view);
   const setFocusView = useCanvasView((state) => state.setView);
+  const setViewport = useCanvasView((state) => state.setViewport);
   const visibleDocument = documentForView(document, focusView);
   const visibleNodes = visibleDocument.nodes;
   const visibleEdges = visibleDocument.edges;
@@ -131,6 +132,10 @@ export function ModelCanvas() {
       return next;
     });
   };
+  // Keep the palette's pointer-drag drop in sync with the current camera.
+  useEffect(() => {
+    setViewport({ scale: view.scale, panX: view.panX, panY: view.panY });
+  }, [view, setViewport]);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);

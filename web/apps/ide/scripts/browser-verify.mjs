@@ -141,24 +141,20 @@ try {
   // the gateway into the console.
   await page.getByRole('button', { name: 'Palette' }).click();
   await page.waitForSelector('.palette-item', { timeout: 5_000 });
-  await page.evaluate(() => {
-    const item = [...document.querySelectorAll('.palette-item')].find(
-      (el) => el.querySelector('.palette-name')?.textContent === 'source',
-    );
-    const canvas = document.querySelector('.model-canvas');
-    const rect = canvas.getBoundingClientRect();
-    const dt = new DataTransfer();
-    item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
-    canvas.dispatchEvent(
-      new DragEvent('drop', {
-        bubbles: true,
-        cancelable: true,
-        dataTransfer: dt,
-        clientX: rect.left + 200,
-        clientY: rect.top + 200,
-      }),
-    );
-  });
+  // The palette uses pointer-based drag (custom ghost), so drive a real
+  // mouse drag from the source item into the canvas (HTML5 DragEvent is not
+  // the transport anymore; WebView2 rejects it).
+  const sourceItem = page
+    .locator('.palette-item')
+    .filter({ has: page.locator('.palette-name', { hasText: /^source$/ }) })
+    .first();
+  await sourceItem.scrollIntoViewIfNeeded();
+  const sourceBox = await sourceItem.boundingBox();
+  const canvasBox = await page.locator('.model-canvas').boundingBox();
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(canvasBox.x + 200, canvasBox.y + 200, { steps: 8 });
+  await page.mouse.up();
   await page.waitForSelector('.model-block', { timeout: 5_000 });
   // Code tabs are per file: save the canvas back to the bundle (File > Save);
   // splitModelSource rewrites main.lp to reference the scene, so opening
@@ -203,26 +199,21 @@ try {
   // Canvas model -> Run -> live block badges (P1-7 run loop): finish the
   // mm1 shape on the canvas, run it with fast params, and assert the live
   // queue/service badges appear while the run streams.
+  await page.getByRole('button', { name: 'Palette' }).click();
+  await page.waitForSelector('.palette-item', { timeout: 5_000 });
   const dropBlock = async (kind, x, y) => {
-    await page.evaluate(({ kind, x, y }) => {
-      const item = [...document.querySelectorAll('.palette-item')].find(
-        (el) => el.querySelector('.palette-name')?.textContent === kind,
-      );
-      const canvas = document.querySelector('.model-canvas');
-      const rect = canvas.getBoundingClientRect();
-      const dt = new DataTransfer();
-      item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      canvas.dispatchEvent(
-        new DragEvent('drop', {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt,
-          clientX: rect.left + x,
-          clientY: rect.top + y,
-        }),
-      );
-    }, { kind, x, y });
-    await page.waitForTimeout(80);
+    const item = page
+      .locator('.palette-item')
+      .filter({ has: page.locator('.palette-name', { hasText: new RegExp(`^${kind}$`) }) })
+      .first();
+    await item.scrollIntoViewIfNeeded();
+    const itemBox = await item.boundingBox();
+    const canvasBox = await page.locator('.model-canvas').boundingBox();
+    await page.mouse.move(itemBox.x + itemBox.width / 2, itemBox.y + itemBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(canvasBox.x + x, canvasBox.y + y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
   };
   await dropBlock('resource', 100, 140);
   await dropBlock('queue', 340, 260);
