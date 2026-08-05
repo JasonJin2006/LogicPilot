@@ -15,6 +15,7 @@ const CURSORS = [
   // themed set to the whole app, not just the canvas.
   { name: 'cursor-arrow', icon: 'mouse-pointer-2' },
   { name: 'cursor-pointer', icon: 'pointer' },
+  { name: 'cursor-text', icon: 'text-cursor' },
   { name: 'cursor-grab', icon: 'hand-grab' },
   { name: 'cursor-grabbing', icon: 'move' },
   { name: 'cursor-crosshair', icon: 'crosshair' },
