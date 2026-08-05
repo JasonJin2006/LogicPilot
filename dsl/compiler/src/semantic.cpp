@@ -62,6 +62,10 @@ class Analyzer {
     for (const Node& member : model.members) {
       check_decl(member, true, model_scope_);
     }
+    // Agent-centric flows: process-library members may live directly in the
+    // model root (or an agent body); validate the root scope like a flow
+    // (source required, couplings checked against the block shapes).
+    check_flow_scope(model.members, model.couplings, "model", model.span);
     std::unordered_set<std::string> model_param_names;
     for (const VarDecl& param : model.params) {
       if (param.keyword == "param") {
@@ -211,17 +215,10 @@ class Analyzer {
       return;  // validated via the typed ExperimentDecl list below
     }
     if (registry_ != nullptr && registry_->has_block(kind)) {
-      if (kind == "resource") {
-        check_process_block(node, parent_scope);
-        return;
-      }
-      if (!top_level) {
-        // Process stages are validated by check_process.
-        return;
-      }
-      error("LP2004",
-            "process block '" + kind + "' must be declared inside a process",
-            node.span);
+      // Process-library blocks (source/queue/service/... and resource) are
+      // valid members of the model root and agent bodies (agent-centric
+      // structure); `process` containers remain supported for legacy models.
+      check_process_block(node, parent_scope);
       return;
     }
     error("LP2004",
@@ -591,6 +588,45 @@ class Analyzer {
     }
   }
 
+  // Validate a scope that holds process-library members (model root or an
+  // agent body): at least one source, and every coupling checked against the
+  // registered block shapes (port existence, direction, visibility).
+  void check_flow_scope(const std::vector<Node>& members,
+                        const std::vector<CoupleDecl>& couplings,
+                        const std::string& scope_name, const Span& span) {
+    if (registry_ == nullptr) {
+      return;
+    }
+    std::unordered_map<std::string, const Node*> stages;
+    int sources = 0;
+    for (const Node& member : members) {
+      if (!registry_->has_block(member.kind) ||
+          member.kind == "resource") {
+        continue;
+      }
+      stages.emplace(member.name, &member);
+      if (member.kind == "source") {
+        ++sources;
+      }
+    }
+    if (stages.empty()) {
+      return;  // no flow members in this scope
+    }
+    if (sources == 0) {
+      error("LP2002", scope_name + " has no source stage", span);
+    }
+    for (const CoupleDecl& couple : couplings) {
+      const auto from = stages.find(couple.from_model);
+      const auto to = stages.find(couple.to_model);
+      if (from == stages.end() || to == stages.end()) {
+        // Couplings to non-process members (atomics, agents) are validated
+        // by check_couplings; unknown names are reported there too.
+        continue;
+      }
+      check_process_coupling(*from->second, *to->second, couple);
+    }
+  }
+
   bool resource_declared(const std::string& name) const {
     return declared_resources_.count(name) > 0;
   }
@@ -779,6 +815,20 @@ class Analyzer {
         }
       }
     }
+    // Agent-centric members: process-library blocks (flows, resources) and
+    // nested agents live directly in the agent body. Register agent-level
+    // resources so service/seize references resolve, then validate the
+    // agent's flow scope (source + couplings).
+    for (const Node& child : node.children) {
+      if (child.kind == "resource") {
+        declared_resources_.insert(child.name);
+      }
+    }
+    for (const Node& child : node.children) {
+      check_decl(child, false, scope);
+    }
+    check_flow_scope(node.children, node.couplings,
+                     "agent '" + node.name + "'", node.span);
     for (const Behavior& behavior : node.behaviors) {
       if (behavior.trigger != "tick") {
         error("LP6001",
@@ -980,6 +1030,12 @@ class Analyzer {
     for (const Node& member : model.members) {
       if (member.kind == "atomic") {
         atomics.emplace(member.name, &member);
+      }
+      if (registry_ != nullptr && registry_->has_block(member.kind) &&
+          member.kind != "resource") {
+        // Agent-centric flows: process-library blocks directly under the
+        // model root are coupling endpoints in the root scope.
+        process_stages.emplace(member.name, &member);
       }
       if (member.kind == "process") {
         for (const Node& stage : member.children) {

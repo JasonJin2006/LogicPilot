@@ -27,6 +27,12 @@ namespace {
 
 namespace v2 = logicpilot::ir::v2;
 
+// Forward declaration: generic kind dispatch used for nested members.
+flatbuffers::Offset<v2::Node> v2_node(
+    flatbuffers::FlatBufferBuilder& builder, const Node& node,
+    const std::unordered_map<std::string, const Node*>& resources,
+    const ParamScope& scope, const std::string& source_file);
+
 flatbuffers::Offset<v2::Metadata> v2_metadata(
     flatbuffers::FlatBufferBuilder& builder, const std::string& name,
     const std::string& source_file) {
@@ -427,9 +433,11 @@ flatbuffers::Offset<v2::Node> v2_atomic(
       0, statechart, 0, 0);
 }
 
-// agent -> agent Node (typed state, count param, behavior bindings).
+// agent -> agent Node (typed state, count param, behavior bindings, and
+// agent-centric members: process-library blocks + couplings).
 flatbuffers::Offset<v2::Node> v2_agent(
     flatbuffers::FlatBufferBuilder& builder, const Node& agent,
+    const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : agent.vars) {
@@ -461,10 +469,32 @@ flatbuffers::Offset<v2::Node> v2_agent(
           builder.CreateVector(behavior_params)));
     }
   }
+  std::vector<flatbuffers::Offset<v2::Node>> children;
+  std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
+  for (const Node& child : agent.children) {
+    if (builtin_process_registry().has_block(child.kind)) {
+      children.push_back(
+          v2_process_block(builder, child, resources, scope, source_file));
+    } else {
+      const auto nested = v2_node(builder, child, resources, scope,
+                                  source_file);
+      if (nested.o != 0) {
+        children.push_back(nested);
+      }
+    }
+  }
+  for (const CoupleDecl& couple : agent.couplings) {
+    couplings.push_back(v2::CreateCoupling(
+        builder, builder.CreateString(couple.from_model),
+        builder.CreateString(couple.from_port),
+        builder.CreateString(couple.to_model),
+        builder.CreateString(couple.to_port)));
+  }
   return v2::CreateNode(
       builder, v2_metadata(builder, agent.name, source_file),
       builder.CreateVector(state), builder.CreateVector(params), 0,
-      v2_semantics(builder, "agent", "agent"), 0, 0, 0,
+      v2_semantics(builder, "agent", "agent"),
+      builder.CreateVector(children), builder.CreateVector(couplings), 0,
       builder.CreateVector(behaviors), 0);
 }
 
@@ -546,7 +576,7 @@ flatbuffers::Offset<v2::Node> v2_node(
     return v2_atomic(builder, node, scope, source_file);
   }
   if (node.kind == "agent") {
-    return v2_agent(builder, node, scope, source_file);
+    return v2_agent(builder, node, resources, scope, source_file);
   }
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);

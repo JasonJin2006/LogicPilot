@@ -40,6 +40,21 @@ set_tests_properties(lpcli_run_compiled_mm1 PROPERTIES
   DEPENDS lpcli_compile_mm1
   PASS_REGULAR_EXPRESSION "summary: 2 replications")
 
+# Agent-centric flat flow: process blocks + couplings directly under the
+# model root compile and run (M/M/1 equivalent).
+add_test(NAME lpcli_compile_flat_mm1
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/flat_mm1.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/flat_mm1.ir.bin")
+set_tests_properties(lpcli_compile_flat_mm1 PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_flat_mm1
+  COMMAND lpcli run --model-file "${CMAKE_CURRENT_BINARY_DIR}/flat_mm1.ir.bin"
+          --seed=42 --reps=2 --arrivals=1000 --warmup=100)
+set_tests_properties(lpcli_run_flat_mm1 PROPERTIES
+  DEPENDS lpcli_compile_flat_mm1
+  PASS_REGULAR_EXPRESSION "summary: 2 replications")
+
 # Milestone 1: the failure model must survive the full DSL -> IR -> runtime
 # chain (multi-server + breakdown wiring in build_replication_model).
 add_test(NAME lpcli_compile_mm1_failure

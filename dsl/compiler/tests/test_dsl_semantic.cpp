@@ -139,6 +139,60 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
   REQUIRE(bad_port_diags.front().code == "LP5003");
 }
 
+TEST_CASE("semantic: agent-centric flows live in the model root or agent",
+          "[dsl][semantic]") {
+  // A flat model: process-library blocks + couplings directly under the
+  // model root (no `process` wrapper).
+  const ParseOutput flat = parse_source(
+      "model M {\n"
+      "  use process\n"
+      "  param rate: float = 0.8\n"
+      "  resource Server { capacity = 1 }\n"
+      "  source In { arrival = rate(rate) }\n"
+      "  queue Q { capacity = 100 }\n"
+      "  service S { resource = Server; time = exponential(1.0) }\n"
+      "  sink K { }\n"
+      "  couple In.out -> Q.in\n"
+      "  couple Q.out -> S.in\n"
+      "  couple S.out -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(flat.ok());
+  REQUIRE(analyze_model(*flat.model).empty());
+
+  // An agent body can hold its own flow members + couplings.
+  const ParseOutput agent = parse_source(
+      "model M {\n"
+      "  use process\n"
+      "  agent Worker {\n"
+      "    count = 1\n"
+      "    resource Tool { capacity = 1 }\n"
+      "    source In { arrival = rate(1.0) }\n"
+      "    service S { resource = Tool; time = exponential(1.0) }\n"
+      "    sink K { }\n"
+      "    couple In.out -> S.in\n"
+      "    couple S.out -> K.in\n"
+      "  }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(agent.ok());
+  REQUIRE(analyze_model(*agent.model).empty());
+
+  // A flat model without a source is rejected (LP2002).
+  const ParseOutput no_source = parse_source(
+      "model M {\n"
+      "  use process\n"
+      "  queue Q { capacity = 1 }\n"
+      "  sink K { }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(no_source.ok());
+  const std::vector<Diagnostic> no_source_diags =
+      analyze_model(*no_source.model);
+  REQUIRE(!no_source_diags.empty());
+  REQUIRE(no_source_diags.front().code == "LP2002");
+}
+
 TEST_CASE("semantic snapshot: duplicate declarations", "[dsl][semantic]") {
   expect_diagnostic_snapshot(
       "model M {\n"

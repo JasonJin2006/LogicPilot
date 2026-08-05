@@ -197,6 +197,82 @@ TEST_CASE("v2 process model lowers to a runnable queueing flow", "[ir]") {
   REQUIRE(metrics.throughput < 1.0);
 }
 
+TEST_CASE("agent-centric root flow: process blocks + couplings directly "
+          "under the model root run as a queueing flow", "[ir]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto resource = v2::CreateNode(
+      builder,
+      v2::CreateMetadata(builder, builder.CreateString("Server"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{
+          var_int(builder, "capacity", 1)}),
+      0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("process"),
+                             builder.CreateString("resource"), 0, 0),
+      0, 0, 0, 0, 0);
+  const auto arrival = distribution(builder, 4, {0.8});
+  const auto service_time = distribution(builder, 3, {1.0});
+  const auto source = stage(
+      builder, "In", "source",
+      {var_distribution(builder, "arrival", arrival)});
+  const auto queue = stage(builder, "Q", "queue",
+                           {var_int(builder, "capacity", 1000000)});
+  const auto service = stage(
+      builder, "S", "service",
+      {var_distribution(builder, "time", service_time),
+       var_string(builder, "resource", "Server")});
+  const auto sink = stage(builder, "K", "sink", {});
+
+  std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
+  const auto port_out = builder.CreateString("out");
+  const auto port_in = builder.CreateString("in");
+  const auto couple = [&](flatbuffers::Offset<flatbuffers::String> from,
+                          flatbuffers::Offset<flatbuffers::String> to) {
+    couplings.push_back(
+        v2::CreateCoupling(builder, from, port_out, to, port_in));
+  };
+  const auto in_name = builder.CreateString("In");
+  const auto q_name = builder.CreateString("Q");
+  const auto s_name = builder.CreateString("S");
+  const auto k_name = builder.CreateString("K");
+  couple(in_name, q_name);
+  couple(q_name, s_name);
+  couple(s_name, k_name);
+
+  const auto root = v2::CreateNode(
+      builder,
+      v2::CreateMetadata(builder, builder.CreateString("Flat"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("core"),
+                             builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Node>>{
+          resource, source, queue, service, sink}),
+      builder.CreateVector(couplings), 0, 0, 0);
+  const auto file = v2::CreateModelFile(
+      builder, 2, root,
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Experiment>>{}),
+      0);
+  builder.Finish(file, "LP2R");
+  IrLoadResult loaded =
+      load_model_buffer(builder.GetBufferPointer(), builder.GetSize());
+  REQUIRE(loaded.ok());
+
+  std::string error;
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 3000;
+  config.warmup_arrivals = 300;
+  const ReplicationMetrics metrics = model->run(config, nullptr);
+  REQUIRE(metrics.departures == 3000);
+  REQUIRE(metrics.mean_sojourn > 3.0);
+  REQUIRE(metrics.mean_sojourn < 8.0);
+}
+
 TEST_CASE("IR loader survives malformed buffers without crashing",
           "[ir][fuzz][smoke]") {
   const std::vector<std::uint8_t> valid = build_mm1_ir();

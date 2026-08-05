@@ -72,3 +72,71 @@ model MM1 {
               (value_literal
                 (integer)))))))))
 
+
+
+==================
+Agent-centric flat model: flow blocks + couplings in the model root
+==================
+
+model Flat {
+  use process
+  resource Server { capacity = 1 }
+  source In { arrival = rate(0.8) }
+  queue Q { capacity = 100 }
+  sink K { }
+  couple In.out -> Q.in
+  couple Q.out -> K.in
+}
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (use_declaration
+        library: (identifier))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (call
+                name: (identifier)
+                args: (argument_list
+                  (value
+                    (value_literal
+                      (float)))))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body))
+      (couple_declaration
+        from_model: (identifier)
+        from_port: (identifier)
+        to_model: (identifier)
+        to_port: (identifier))
+      (couple_declaration
+        from_model: (identifier)
+        from_port: (identifier)
+        to_model: (identifier)
+        to_port: (identifier)))))

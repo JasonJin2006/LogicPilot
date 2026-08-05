@@ -180,8 +180,10 @@ struct Block {
 
 class Engine {
  public:
-  Engine(const Node* flow, const Node* root, std::string* error) {
-    if (flow == nullptr || flow->children() == nullptr) {
+  Engine(const std::vector<const Node*>& stages,
+         const std::vector<const ir::v2::Coupling*>& couplings,
+         const Node* root, std::string* error) {
+    if (stages.empty()) {
       fail(error, "process flow has no blocks");
       return;
     }
@@ -204,7 +206,7 @@ class Engine {
         }
       }
     }
-    for (const Node* stage : *flow->children()) {
+    for (const Node* stage : stages) {
       if (stage == nullptr || stage->semantics() == nullptr ||
           stage->semantics()->block() == nullptr ||
           stage->metadata() == nullptr ||
@@ -274,8 +276,8 @@ class Engine {
       return;
     }
     // Port-aware couplings.
-    if (flow->couplings() != nullptr) {
-      for (const ir::v2::Coupling* coupling : *flow->couplings()) {
+    if (!couplings.empty()) {
+      for (const ir::v2::Coupling* coupling : couplings) {
         if (coupling == nullptr || coupling->from_model() == nullptr ||
             coupling->to_model() == nullptr) {
           continue;
@@ -709,15 +711,54 @@ class Engine {
 
 }  // namespace
 
+namespace {
+
+std::vector<const Node*> collect_stages(const Node* flow) {
+  std::vector<const Node*> stages;
+  if (flow != nullptr && flow->children() != nullptr) {
+    for (const Node* stage : *flow->children()) {
+      stages.push_back(stage);
+    }
+  }
+  return stages;
+}
+
+std::vector<const ir::v2::Coupling*> collect_couplings(const Node* flow) {
+  std::vector<const ir::v2::Coupling*> couplings;
+  if (flow != nullptr && flow->couplings() != nullptr) {
+    for (const ir::v2::Coupling* coupling : *flow->couplings()) {
+      couplings.push_back(coupling);
+    }
+  }
+  return couplings;
+}
+
+}  // namespace
+
 struct ProcessFlowSim::Impl {
-  Impl(const Node* flow, const Node* root, std::string* error)
-      : engine(flow, root, error) {}
+  Impl(const std::vector<const Node*>& stages,
+       const std::vector<const ir::v2::Coupling*>& couplings,
+       const Node* root, std::string* error)
+      : engine(stages, couplings, root, error) {}
   Engine engine;
 };
 
+ProcessFlowSim::ProcessFlowSim(
+    const std::vector<const Node*>& stages,
+    const std::vector<const ir::v2::Coupling*>& couplings, const Node* root,
+    std::string* error)
+    : impl_(std::make_unique<Impl>(stages, couplings, root, error)) {
+  if (error != nullptr && !error->empty()) {
+    impl_.reset();
+  }
+}
+
+// Legacy constructor: keep a flow-node entry point for callers that have a
+// process/flow container.
 ProcessFlowSim::ProcessFlowSim(const Node* flow, const Node* root,
                                std::string* error)
-    : impl_(std::make_unique<Impl>(flow, root, error)) {
+    : ProcessFlowSim(collect_stages(flow), collect_couplings(flow), root,
+                     error) {
   if (error != nullptr && !error->empty()) {
     impl_.reset();
   }

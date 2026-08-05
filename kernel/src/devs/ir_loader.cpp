@@ -226,10 +226,13 @@ TimeSampler make_sampler(const Distribution* dist, std::string* error) {
   }
 }
 
-// v2-native process lowering. The DSL lowers a `model` to a core/model root
-// Node whose children include resource blocks ({process, resource}) and
-// process flow blocks ({process, flow}); the flow node carries
-// source/queue/service stage children + chain couplings.
+// v2-native process lowering (agent-centric + legacy).
+//
+// The flow's stages come from either:
+//   * a legacy {process, flow} container child (its children + couplings), or
+//   * process-library blocks declared directly under the model root (agent-
+//     centric structure), connected by the root's own couplings.
+// Resource pools come from the model root's {process, resource} children.
 std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
                                                       std::string* error) {
   const auto fail = [&](const std::string& msg) {
@@ -243,6 +246,8 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   }
 
   std::unordered_map<std::string, const Node*> resources;
+  std::vector<const Node*> flow_stages;
+  std::vector<const ir::v2::Coupling*> flow_couplings;
   const Node* flow = nullptr;
   int flow_count = 0;
   for (const Node* child : *model_root->children()) {
@@ -255,12 +260,36 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
     } else if (block == "flow") {
       flow = child;
       ++flow_count;
+    } else {
+      // Agent-centric: a process-library block directly under the root is a
+      // flow stage connected by the root's couplings.
+      flow_stages.push_back(child);
     }
   }
-  if (flow_count != 1) {
-    return fail(flow_count == 0
-                    ? "no process flow node to execute"
-                    : "multiple process flow nodes; single-flow lowering only");
+  if (flow_count > 1) {
+    return fail("multiple process flow nodes; single-flow lowering only");
+  }
+  if (flow != nullptr) {
+    if (flow->children() != nullptr) {
+      flow_stages.clear();
+      for (const Node* stage : *flow->children()) {
+        flow_stages.push_back(stage);
+      }
+    }
+    if (flow->couplings() != nullptr) {
+      for (const ir::v2::Coupling* coupling : *flow->couplings()) {
+        flow_couplings.push_back(coupling);
+      }
+    }
+  } else {
+    if (model_root->couplings() != nullptr) {
+      for (const ir::v2::Coupling* coupling : *model_root->couplings()) {
+        flow_couplings.push_back(coupling);
+      }
+    }
+  }
+  if (flow_stages.empty()) {
+    return fail("no process flow to execute");
   }
 
   // Generic topology check: the specialized M/M/1 path handles exactly
@@ -268,19 +297,19 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   // selectOutput, ...) goes to the generic ProcessFlowSim engine.
   bool generic_flow = false;
   int source_count = 0;
-  if (flow->children() != nullptr) {
-    for (const Node* stage : *flow->children()) {
-      const std::string block = node_block(stage);
-      if (block == "source") {
-        ++source_count;
-      } else if (block != "queue" && block != "service" &&
-                 block != "sink") {
-        generic_flow = true;
-      }
+  for (const Node* stage : flow_stages) {
+    const std::string block = node_block(stage);
+    if (block == "source") {
+      ++source_count;
+    } else if (block != "queue" && block != "service" &&
+               block != "sink") {
+      generic_flow = true;
     }
   }
   if (generic_flow || source_count > 1) {
-    auto generic = std::make_unique<ProcessFlowSim>(flow, model_root, error);
+    auto generic =
+        std::make_unique<ProcessFlowSim>(flow_stages, flow_couplings,
+                                         model_root, error);
     if (generic == nullptr || (error != nullptr && !error->empty())) {
       return fail(error != nullptr && !error->empty()
                       ? *error
@@ -294,16 +323,14 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   const Node* source = nullptr;
   const Node* queue = nullptr;
   const Node* service = nullptr;
-  if (flow->children() != nullptr) {
-    for (const Node* stage : *flow->children()) {
-      const std::string block = node_block(stage);
-      if (block == "source" && source == nullptr) {
-        source = stage;
-      } else if (block == "queue" && queue == nullptr) {
-        queue = stage;
-      } else if (block == "service" && service == nullptr) {
-        service = stage;
-      }
+  for (const Node* stage : flow_stages) {
+    const std::string block = node_block(stage);
+    if (block == "source" && source == nullptr) {
+      source = stage;
+    } else if (block == "queue" && queue == nullptr) {
+      queue = stage;
+    } else if (block == "service" && service == nullptr) {
+      service = stage;
     }
   }
   if (source == nullptr) {
@@ -315,9 +342,9 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
 
   // Walk the flow couplings to validate connectivity source -> ... ->
   // service (declaration order is the fallback when no couplings exist).
-  if (flow->couplings() != nullptr && !flow->couplings()->empty()) {
+  if (!flow_couplings.empty()) {
     std::unordered_map<std::string, std::string> next;
-    for (const ir::v2::Coupling* c : *flow->couplings()) {
+    for (const ir::v2::Coupling* c : flow_couplings) {
       if (c->from_model() != nullptr && c->to_model() != nullptr) {
         next[c->from_model()->str()] = c->to_model()->str();
       }
@@ -325,7 +352,7 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
     std::string cursor = node_name(source);
     const std::string service_name = node_name(service);
     bool reached_service = cursor == service_name;
-    for (std::size_t hops = 0; hops < flow->children()->size() && !reached_service;
+    for (std::size_t hops = 0; hops < flow_stages.size() && !reached_service;
          ++hops) {
       const auto it = next.find(cursor);
       if (it == next.end()) {
@@ -452,14 +479,18 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   bool has_atomic = false;
   bool has_agent = false;
   bool has_equation = false;
-  int process_count = 0;
+  int flow_node_count = 0;
   if (root->children() != nullptr) {
     for (const Node* child : *root->children()) {
       const std::string library = node_library(child);
       const std::string block = node_block(child);
-      if (library == "process" && block == "flow") {
+      if (library == "process" && block != "resource") {
+        // A legacy {process, flow} container or agent-centric process-library
+        // blocks declared directly under the model root.
         has_process = true;
-        ++process_count;
+        if (block == "flow") {
+          ++flow_node_count;
+        }
       } else if (library == "devs") {
         has_atomic = true;
       } else if (library == "agent") {
@@ -470,7 +501,7 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     }
   }
   if (has_process) {
-    if (process_count != 1) {
+    if (flow_node_count > 1) {
       return fail("multiple process flow nodes; single-flow lowering only");
     }
     return build_process_model(root, error);
@@ -504,6 +535,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
   }
 
   const Node* flow = nullptr;
+  std::vector<const Node*> flow_stages;
   std::unordered_map<std::string, const Node*> resources;
   for (const Node* child : *root->children()) {
     if (std::strcmp(node_library(child), "process") != 0) {
@@ -517,23 +549,32 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
       flow = child;
     } else if (block == "resource") {
       resources.emplace(node_name(child), child);
+    } else {
+      flow_stages.push_back(child);
     }
   }
   if (flow == nullptr) {
-    return fail("no process flow to stream");
+    // Agent-centric flows: process-library blocks directly under the root.
+    if (flow_stages.empty()) {
+      return fail("no process flow to stream");
+    }
+  } else {
+    flow_stages.clear();
+    if (flow->children() != nullptr) {
+      for (const Node* stage : *flow->children()) {
+        flow_stages.push_back(stage);
+      }
+    }
   }
-
   const Node* source = nullptr;
   const Node* service = nullptr;
-  if (flow->children() != nullptr) {
-    for (const Node* stage : *flow->children()) {
+  for (const Node* stage : flow_stages) {
       const std::string block = node_block(stage);
       if (block == "source") {
         source = stage;
       } else if (block == "service") {
         service = stage;
       }
-    }
   }
   if (source == nullptr || service == nullptr) {
     return fail("process flow requires a source and a service stage");

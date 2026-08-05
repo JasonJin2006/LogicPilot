@@ -14,18 +14,27 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
 namespace ir::v2 {
 struct Node;
+struct Coupling;
 }
 
 class ProcessFlowSim : public ReplicationModel {
  public:
-  // `flow` is the process/flow block node; `resources` are the model-level
-  // process/resource nodes referenced by service/seize/release blocks.
+  // `stages` are the flow's process-library block nodes and `couplings`
+  // their connections (either from a legacy process/flow container or
+  // directly from the model root / an agent body); `root` supplies the
+  // model-level process/resource nodes referenced by service/seize/release.
+  ProcessFlowSim(const std::vector<const ir::v2::Node*>& stages,
+                 const std::vector<const ir::v2::Coupling*>& couplings,
+                 const ir::v2::Node* root, std::string* error);
+  // Legacy entry point: a process/flow container node (its children and
+  // couplings become the stages/connections).
   ProcessFlowSim(const ir::v2::Node* flow, const ir::v2::Node* root,
                  std::string* error);
   ~ProcessFlowSim() override;
