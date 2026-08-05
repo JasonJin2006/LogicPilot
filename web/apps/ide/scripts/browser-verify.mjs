@@ -371,8 +371,8 @@ try {
   log('AI panel charted a continuous-model trajectory');
   await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
-  // View menu: the trailing check mark means "panel open", and clicking an
-  // open panel collapses it (AI toggles the right area).
+  // View menu: the trailing check mark means "panel open". In the right area
+  // each panel is a tab, so clicking an open one removes just that tab.
   await page.getByRole('button', { name: 'View' }).click();
   const aiChecked = await page
     .locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' })
@@ -382,14 +382,25 @@ try {
   }
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' }).click();
   await page.waitForFunction(
-    () => document.querySelector('.area-right')?.classList.contains('collapsed') ?? false,
+    () =>
+      [...document.querySelectorAll('.area-right .tab .tab-label')].every(
+        (label) => label.textContent !== 'AI',
+      ),
     undefined,
     { timeout: 5_000 },
   );
+  const rightTabs = await page.evaluate(() =>
+    [...document.querySelectorAll('.area-right .tab .tab-label')].map(
+      (label) => label.textContent,
+    ),
+  );
+  if (!rightTabs.includes('Properties')) {
+    throw new Error('removing AI should keep the Properties tab');
+  }
   await page.getByRole('button', { name: 'View' }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' }).click();
-  await page.waitForSelector('.area-right:not(.collapsed)', { timeout: 5_000 });
-  log('View menu toggles open panels via the check mark');
+  await page.locator('.area-right .tab', { hasText: 'AI' }).waitFor({ timeout: 5_000 });
+  log('View menu removes and re-adds right-area tabs via the check mark');
 
   // File > Close: the AI load left unsaved changes, so Close asks first and
   // Don't Save returns to the empty center.

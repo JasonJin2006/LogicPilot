@@ -62,6 +62,7 @@ export function AppMenu() {
   const reopenArea = useLayoutStore((state) => state.reopenArea);
   const toggleCollapse = useLayoutStore((state) => state.toggleCollapse);
   const openPanel = useLayoutStore((state) => state.openPanel);
+  const removePanel = useLayoutStore((state) => state.removePanel);
   const openInfo = useUiStore((state) => state.openInfo);
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openFiles = useUiStore((state) => state.openFiles);
@@ -263,19 +264,36 @@ export function AppMenu() {
     panel: 'explorer' | 'modelInfo' | 'palette' | 'properties' | 'ai',
   ) => {
     const areaState = areas[area];
-    // The check mark means "this panel is open", not "focused": clicking an
-    // open panel collapses its area; clicking a closed one opens it.
-    const isOpen =
-      area === 'left'
-        ? !areaState.collapsed && areaState.activePanel === panel
-        : !areaState.collapsed && areaState.panels.includes(panel);
+    // The check mark means "this panel is open", not "focused". The left area
+    // shows one panel at a time, so clicking the open one collapses the whole
+    // area; the right area is a tab strip, so clicking an open tab removes
+    // just that panel (AI and Properties can stay side by side in tabs).
+    if (area === 'left') {
+      const isOpen = !areaState.collapsed && areaState.activePanel === panel;
+      if (isOpen) {
+        toggleCollapse('left');
+      } else {
+        if (areaState.collapsed) {
+          reopenArea('left', areaState.size || 280);
+        }
+        openPanel('left', panel);
+      }
+      close();
+      return;
+    }
+    const isOpen = !areaState.collapsed && areaState.panels.includes(panel);
     if (isOpen) {
-      toggleCollapse(area);
+      const remaining = areaState.panels.filter((entry) => entry !== panel);
+      if (remaining.length === 0) {
+        toggleCollapse('right');
+      } else {
+        removePanel('right', panel);
+      }
     } else {
       if (areaState.collapsed) {
-        reopenArea(area, areaState.size || (area === 'left' ? 280 : 360));
+        reopenArea('right', areaState.size || 360);
       }
-      openPanel(area, panel);
+      openPanel('right', panel);
     }
     close();
   };
