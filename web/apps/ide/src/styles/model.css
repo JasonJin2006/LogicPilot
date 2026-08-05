@@ -125,6 +125,22 @@
   white-space: pre;
 }
 
+.dsl-textarea {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  white-space: pre;
+}
+
+.dsl-close-file {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* The edge tab is a drawer handle attached to the DSL area's leading (left)
    edge at title-bar height. Collapsed it sits on the model / right-sidebar
    boundary; open it rides the DSL editor's left edge over the splitter. */

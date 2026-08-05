@@ -42,7 +42,8 @@ interface ConnectionStore {
   step: () => void;
   stop: () => void;
   setSpeed: (speed: number) => void;
-  compile: () => void;
+  /** Compile the canvas model, or `source` when given (file editor). */
+  compile: (source?: string) => void;
   runCanvasModel: () => void;
 }
 
@@ -245,9 +246,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   setSpeed: (speed) => {
     client?.setSpeed(speed);
   },
-  compile: () => {
-    const source = generateDsl(useModelStore.getState().document);
-    const sent = client?.compile(source) ?? false;
+  compile: (source?: string) => {
+    const compiled =
+      source ?? generateDsl(useModelStore.getState().document);
+    const sent = client?.compile(compiled) ?? false;
     if (!sent) {
       set((state) => ({ events: appendEvent(state, 'error', 'compile: not connected') }));
     }

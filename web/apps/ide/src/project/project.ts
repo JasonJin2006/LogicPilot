@@ -131,6 +131,27 @@ export function mergeModelSource(
   return insertMember(mainSource, parsed.model.bodyClose, '', `${chunks.trimEnd()}\n`);
 }
 
+/** Combine a fresh canvas-derived bundle with the current one on Save: the
+ *  canvas owns resources/process (via `split`), while existing part files it
+ *  does not write (agents/experiments) are preserved from `current`. */
+export function mergeCanvasSplit(
+  base: ProjectBundle,
+  split: Record<string, string>,
+  current: ProjectBundle | null,
+): ProjectBundle {
+  const files = { ...base.files, ...split };
+  for (const part of MODEL_PART_PATHS) {
+    if (files[part] === undefined && current?.files[part] !== undefined) {
+      files[part] = current.files[part];
+    }
+  }
+  return {
+    ...base,
+    files,
+    manifest: { ...base.manifest, modelParts: [...MODEL_PART_PATHS] },
+  };
+}
+
 /** Serialize the current canvas document into a project bundle. The DSL is
  *  derived from the document (positions are kept in the canvas file). */
 export function createProjectBundle(document: ModelDocument): ProjectBundle {

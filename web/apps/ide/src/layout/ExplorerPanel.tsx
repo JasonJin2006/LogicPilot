@@ -148,7 +148,12 @@ function FolderRow({
             dataDir={child.muted ? undefined : child.path}
           />
         ) : (
-          <FileRow key={child.path} file={child} indent={indent + 1} />
+          <FileRow
+            key={child.path}
+            file={child}
+            indent={indent + 1}
+            dataPath={child.kind === 'muted' || child.kind === 'ir' ? undefined : child.path}
+          />
         ),
       )}
     </>
@@ -162,6 +167,7 @@ export function ExplorerPanel() {
   const projectPath = useProjectStore((state) => state.path);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
+  const openDslEditor = useUiStore((state) => state.openDslEditor);
   const [menu, setMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(
     null,
   );
@@ -240,8 +246,23 @@ export function ExplorerPanel() {
     }
   };
 
+  const onFileOpen = (event: MouseEvent<HTMLDivElement>) => {
+    if (!bundle) {
+      return;
+    }
+    const row = (event.target as Element).closest('.tree-row');
+    const path = row?.getAttribute('data-path');
+    if (path !== null && path !== undefined) {
+      openDslEditor(path);
+    }
+  };
+
   return (
-    <div className="side-panel-body explorer-panel" onContextMenu={onContextMenu}>
+    <div
+      className="side-panel-body explorer-panel"
+      onClick={onFileOpen}
+      onContextMenu={onContextMenu}
+    >
       <div className="tree-row tree-root">
         <span className="tree-glyph">
           {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}

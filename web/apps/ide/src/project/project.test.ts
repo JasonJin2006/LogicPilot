@@ -4,9 +4,11 @@ import type { ModelDocument } from '@logicpilot/editor';
 import { parseProjectSource } from './projectTree';
 import {
   PROJECT_SCHEMA,
+  DEFAULT_MODEL_PATH,
   bundleToJson,
   createProject,
   createProjectBundle,
+  mergeCanvasSplit,
   mergeModelSource,
   parseProjectBundle,
   projectToDocument,
@@ -154,6 +156,19 @@ describe('project bundle', () => {
       original.model!.members.map((m) => m.kind),
     );
     expect(merged).toContain('arrival = rate(0.8)');
+  });
+
+  it('mergeCanvasSplit preserves part files the canvas does not own', () => {
+    const base = createProjectBundle(buildSample());
+    const split = splitModelSource(base.files[DEFAULT_MODEL_PATH]!);
+    const current = createProject('Keep');
+    current.files['model/experiments.lp'] =
+      '  experiment Tune {\n    budget = 20\n  }\n';
+    const merged = mergeCanvasSplit(base, split, current);
+    expect(merged.files['model/experiments.lp']).toContain('experiment Tune');
+    expect(merged.files['model/resources.lp']).toContain('resource');
+    expect(merged.files['model/process.lp']).toBeDefined();
+    expect(merged.manifest.modelParts).toHaveLength(4);
   });
 
   it('round-trips the canvas layout (positions, ids and edges survive)', () => {

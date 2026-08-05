@@ -11,9 +11,9 @@ import { addRecent, loadRecent } from '../state/recentStore';
 import { useProjectStore } from '../state/projectStore';
 import {
   DEFAULT_MODEL_PATH,
-  MODEL_PART_PATHS,
   bundleToJson,
   createProjectBundle,
+  mergeCanvasSplit,
   parseProjectBundle,
   projectToDiskFiles,
   projectToDocument,
@@ -131,11 +131,8 @@ export function AppMenu() {
     const base = createProjectBundle(modelDoc);
     // Split the canvas-generated DSL into per-concern part files.
     const split = splitModelSource(base.files[DEFAULT_MODEL_PATH] ?? '');
-    const project = {
-      ...base,
-      files: { ...base.files, ...split },
-      manifest: { ...base.manifest, modelParts: [...MODEL_PART_PATHS] },
-    };
+    const current = useProjectStore.getState().bundle;
+    const project = mergeCanvasSplit(base, split, current);
     const bundle = bundleToJson(project);
     const projectPath = useProjectStore.getState().path;
     if (projectPath) {
