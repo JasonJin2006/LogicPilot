@@ -10,15 +10,14 @@ import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent, loadRecent, removeRecent } from '../state/recentStore';
 import { useProjectStore } from '../state/projectStore';
+import { logConsoleEvent } from '../state/connectionStore';
+import { saveProject } from '../project/syncEngine';
 import {
   DEFAULT_MODEL_PATH,
   bundleToJson,
-  createProjectBundle,
-  mergeCanvasSplit,
   parseProjectBundle,
   projectToDiskFiles,
   projectToDocument,
-  splitModelSource,
 } from '../project/project';
 import { openProjectFromFile } from '../project/openProject';
 import {
@@ -148,11 +147,22 @@ export function AppMenu() {
   };
   const fileSave = async () => {
     const name = modelDoc.name || 'Model';
-    const base = createProjectBundle(modelDoc);
-    // Split the canvas-generated DSL into per-concern part files.
-    const split = splitModelSource(base.files[DEFAULT_MODEL_PATH] ?? '');
     const current = useProjectStore.getState().bundle;
-    const project = mergeCanvasSplit(base, split, current);
+    const saved = saveProject(modelDoc, current);
+    for (const diagnostic of saved.diagnostics) {
+      logConsoleEvent(
+        diagnostic.severity === 'error' ? 'error' : 'warn',
+        `${diagnostic.code}: ${diagnostic.message}`,
+      );
+    }
+    if (saved.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
+      openInfo(
+        'Save blocked',
+        'saving would drop model members or emit unparseable DSL; fix the model first',
+      );
+      return;
+    }
+    const project = saved.bundle;
     const bundle = bundleToJson(project);
     const projectPath = useProjectStore.getState().path;
     if (projectPath) {

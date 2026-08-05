@@ -11,10 +11,19 @@
 import type { BlockKind, ModelDocument, ModelNode } from './graph.js';
 import { connect, createDocument, freshId } from './graph.js';
 
+/** One structured DSL/project diagnostic. Error families follow
+ *  project-format-v2: LP2xxx structure parsing, LP3xxx references. */
+export interface DslDiagnostic {
+  code: string;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
 export interface ParseResult {
   ok: boolean;
   document: ModelDocument;
   error?: string;
+  diagnostics?: DslDiagnostic[];
 }
 
 type Token =
@@ -388,6 +397,7 @@ export function parseDsl(source: string): ParseResult {
     ok: false,
     document: createDocument('Model'),
     error,
+    diagnostics: [{ code: 'LP2101', severity: 'error', message: error }],
   });
 
   const tokens = tokenize(source);

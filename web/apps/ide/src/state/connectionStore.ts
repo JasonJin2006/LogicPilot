@@ -107,6 +107,14 @@ function makeEvent(kind: LogEvent['kind'], text: string): LogEvent {
   };
 }
 
+/** Append a line to the console (project diagnostics, sync conflicts, ...)
+ *  from outside the connection lifecycle. */
+export function logConsoleEvent(kind: LogEvent['kind'], text: string): void {
+  useConnectionStore.setState((state) => ({
+    events: appendEvent(state, kind, text),
+  }));
+}
+
 function appendEvent(state: ConnectionStore, kind: LogEvent['kind'], text: string): LogEvent[] {
   const event = makeEvent(kind, text);
   const events = [...state.events, event];

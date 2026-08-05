@@ -228,9 +228,30 @@ export function mergeModelSource(
   files: Record<string, string>,
   partPaths?: string[],
 ): string {
+  return mergeModelSourceChecked(mainSource, files, partPaths).source;
+}
+
+/** One structured load/save diagnostic (project-format-v2 error families:
+ *  LP2xxx structure, LP3xxx references, LP4xxx layout, LP5xxx sync). */
+export interface SyncDiagnostic {
+  code: string;
+  severity: 'error' | 'warning';
+  message: string;
+  path?: string;
+}
+
+/** Merge the model source like mergeModelSource, additionally collecting
+ *  reference diagnostics: LP3100 unresolved instance, LP3101 cyclic
+ *  instance. */
+export function mergeModelSourceChecked(
+  mainSource: string,
+  files: Record<string, string>,
+  partPaths?: string[],
+): { source: string; diagnostics: SyncDiagnostic[] } {
+  const diagnostics: SyncDiagnostic[] = [];
   const parsed = parseProjectSource(mainSource);
   if (!parsed.ok || !parsed.model) {
-    return mainSource;
+    return { source: mainSource, diagnostics };
   }
   const chunks = (partPaths ?? collectModelParts(files))
     .map((path) => files[path])
@@ -243,27 +264,52 @@ export function mergeModelSource(
 
   // Expand `instance` members: replace each instance line with the referenced
   // scene's container. Done after part insertion so spans are re-parsed.
-  const reparsed = parseProjectSource(merged);
-  if (reparsed.ok && reparsed.model) {
-    // Replace instances from the last to the first so earlier spans stay
-    // valid while later lines are rewritten.
-    const instances = reparsed.model.members.filter(
+  const seen = new Set<string>();
+  let guard = 0;
+  while (guard++ < 64) {
+    const reparsed = parseProjectSource(merged);
+    if (!reparsed.ok || !reparsed.model) {
+      break;
+    }
+    const instance = reparsed.model.members.find(
       (member) => member.kind === 'instance' && member.path !== undefined,
     );
-    for (const member of [...instances].reverse()) {
-      if (member.kind === 'instance' && member.path !== undefined) {
-        const scene = files[member.path];
-        if (scene === undefined) {
-          continue;
-        }
-        const containerText = instanceContainerText(scene, member.name);
-        if (containerText !== '') {
-          merged = replaceSpan(merged, member.span.start, member.span.end, containerText);
-        }
-      }
+    if (!instance || instance.kind !== 'instance' || instance.path === undefined) {
+      break;
     }
+    if (seen.has(instance.path)) {
+      diagnostics.push({
+        code: 'LP3101',
+        severity: 'error',
+        message: `cyclic instance reference '${instance.path}'`,
+        path: instance.path,
+      });
+      break;
+    }
+    seen.add(instance.path);
+    const scene = files[instance.path];
+    if (scene === undefined) {
+      diagnostics.push({
+        code: 'LP3100',
+        severity: 'error',
+        message: `instance '${instance.name}' references missing scene '${instance.path}'`,
+        path: instance.path,
+      });
+      break;
+    }
+    const containerText = instanceContainerText(scene, instance.name);
+    if (containerText === '') {
+      diagnostics.push({
+        code: 'LP3100',
+        severity: 'error',
+        message: `scene '${instance.path}' has no container to expand`,
+        path: instance.path,
+      });
+      break;
+    }
+    merged = replaceSpan(merged, instance.span.start, instance.span.end, containerText);
   }
-  return merged;
+  return { source: merged, diagnostics };
 }
 
 /** Serialize the current canvas document into a project bundle. The DSL is
@@ -400,6 +446,7 @@ export interface DocumentLoadResult {
   ok: boolean;
   document?: ModelDocument;
   error?: string;
+  diagnostics?: SyncDiagnostic[];
 }
 
 /** Open a project bundle: prefer the canvas presentation (layout + ids +
@@ -415,14 +462,27 @@ export function projectToDocument(bundle: ProjectBundle): DocumentLoadResult {
     }
   }
   if (source !== undefined) {
-    const parsed = parseDsl(source);
+    const merged = mergeModelSourceChecked(
+      source,
+      bundle.files,
+      bundle.manifest.modelParts ?? [],
+    );
+    const parsed = parseDsl(merged.source);
     if (parsed.ok) {
       if (canvasText !== undefined) {
         applyCanvasLayout(parsed.document, canvasText);
       }
-      return { ok: true, document: parsed.document };
+      return {
+        ok: true,
+        document: parsed.document,
+        diagnostics: [...(parsed.diagnostics ?? []), ...merged.diagnostics],
+      };
     }
-    return { ok: false, error: parsed.error ?? 'invalid model source' };
+    return {
+      ok: false,
+      error: parsed.error ?? 'invalid model source',
+      diagnostics: [...(parsed.diagnostics ?? []), ...merged.diagnostics],
+    };
   }
   return { ok: false, error: `project is missing '${bundle.manifest.model}'` };
 }
