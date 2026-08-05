@@ -566,6 +566,29 @@ class Analyzer {
       error("LP2002",
             "process '" + node.name + "' has no source stage", node.span);
     }
+    // Validate process-internal `couple` declarations against the block
+    // shapes (port existence, direction, conditional visibility).
+    for (const CoupleDecl& couple : node.couplings) {
+      const Node* from = nullptr;
+      const Node* to = nullptr;
+      for (const Node& stage : node.children) {
+        if (stage.name == couple.from_model) {
+          from = &stage;
+        }
+        if (stage.name == couple.to_model) {
+          to = &stage;
+        }
+      }
+      if (from == nullptr || to == nullptr) {
+        error("LP5002",
+              "coupling references undeclared stage '" +
+                  (from == nullptr ? couple.from_model : couple.to_model) +
+                  "' in process '" + node.name + "'",
+              couple.span);
+        continue;
+      }
+      check_process_coupling(*from, *to, couple);
+    }
   }
 
   bool resource_declared(const std::string& name) const {

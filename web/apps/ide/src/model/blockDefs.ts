@@ -1,18 +1,62 @@
 // Palette block libraries: metadata shared by the Palette panel and the
-// modeling canvas. The process library mirrors libraries/process.lplib
-// (flow blocks carry in/out ports); presentation/statechart/action mirror
+// modeling canvas. The process library is driven by
+// libraries/pml-catalog.json (the AnyLogic-derived single source of truth):
+// every block carries its full port list (with conditional visibility) and
+// the full AnyLogic property list. Presentation/statechart/action mirror
 // AnyLogic's drawing and behavior elements (canvas annotations, not DSL).
+import { BLOCK_CATALOG } from './blockCatalog';
 
 export type LibraryId = 'process' | 'presentation' | 'statechart' | 'action';
+
+export type PortDirection = 'in' | 'out' | 'inout';
+
+export interface BlockPortDef {
+  name: string;
+  direction: PortDirection;
+  conditionalOn: string | null;
+  description: string;
+}
+
+export type CatalogFieldType =
+  | 'int'
+  | 'float'
+  | 'bool'
+  | 'string'
+  | 'enum'
+  | 'distribution'
+  | 'ref'
+  | 'expression';
+
+export interface BlockPropertyDef {
+  name: string;
+  displayName: string;
+  type: CatalogFieldType;
+  default: string | number | boolean | null;
+  validValues: string[] | null;
+  visibleWhen: string | null;
+  section: string;
+  required: boolean;
+  runtimeSettable: boolean;
+  description: string;
+}
 
 export interface BlockDef {
   kind: string;
   library: LibraryId;
   name: string;
   hint?: string;
-  in?: boolean;
-  out?: boolean;
+  ports: BlockPortDef[];
+  properties: BlockPropertyDef[];
 }
+
+interface CatalogBlock {
+  kind: string;
+  friendlyName: string;
+  ports: BlockPortDef[];
+  properties: BlockPropertyDef[];
+}
+
+const catalogBlocks = BLOCK_CATALOG;
 
 /** Built-in libraries shown as tabs in the palette selector bar. */
 export const LIBRARIES: Array<{ id: LibraryId; name: string }> = [
@@ -22,68 +66,108 @@ export const LIBRARIES: Array<{ id: LibraryId; name: string }> = [
   { id: 'action', name: 'action' },
 ];
 
+function catalogDef(kind: string): CatalogBlock | undefined {
+  return catalogBlocks.find((block) => block.kind === kind);
+}
+
+function processDef(kind: string, hint: string): BlockDef {
+  const catalog = catalogDef(kind);
+  return {
+    kind,
+    library: 'process',
+    name: kind,
+    hint,
+    ports: catalog?.ports ?? [],
+    properties: catalog?.properties ?? [],
+  };
+}
+
 const PROCESS_DEFS: BlockDef[] = [
-  { kind: 'resource', library: 'process', name: 'resource', hint: 'capacity / failure_rate' },
-  { kind: 'source', library: 'process', name: 'source', hint: 'arrival rate', out: true },
-  { kind: 'queue', library: 'process', name: 'queue', hint: 'buffer capacity', in: true, out: true },
-  { kind: 'delay', library: 'process', name: 'delay', hint: 'hold agents for a time', in: true, out: true },
-  { kind: 'service', library: 'process', name: 'service', hint: 'resource + time', in: true, out: true },
-  { kind: 'split', library: 'process', name: 'split', hint: 'clone each agent', in: true, out: true },
-  { kind: 'combine', library: 'process', name: 'combine', hint: 'merge agents into one', in: true, out: true },
-  { kind: 'batch', library: 'process', name: 'batch', hint: 'accumulate agents', in: true, out: true },
-  { kind: 'unbatch', library: 'process', name: 'unbatch', hint: 'release a batch', in: true, out: true },
-  { kind: 'seize', library: 'process', name: 'seize', hint: 'grab a resource unit', in: true, out: true },
-  { kind: 'release', library: 'process', name: 'release', hint: 'return a resource unit', in: true, out: true },
-  { kind: 'wait', library: 'process', name: 'wait', hint: 'buffer with capacity', in: true, out: true },
-  { kind: 'hold', library: 'process', name: 'hold', hint: 'hold/resume the flow', in: true, out: true },
-  { kind: 'match', library: 'process', name: 'match', hint: 'pair agents', in: true, out: true },
-  { kind: 'selectOutput', library: 'process', name: 'selectOutput', hint: 'route by condition', in: true, out: true },
-  { kind: 'enter', library: 'process', name: 'enter', hint: 'enter the process', out: true },
-  { kind: 'exit', library: 'process', name: 'exit', hint: 'leave the process', in: true },
-  { kind: 'moveTo', library: 'process', name: 'moveTo', hint: 'move agents to a node', in: true, out: true },
-  { kind: 'timeMeasureStart', library: 'process', name: 'timeMeasureStart', hint: 'start timing', out: true },
-  { kind: 'timeMeasureEnd', library: 'process', name: 'timeMeasureEnd', hint: 'end timing', in: true },
-  { kind: 'assembler', library: 'process', name: 'assembler', hint: 'assemble from parts', in: true, out: true },
-  { kind: 'count', library: 'process', name: 'count', hint: 'count passed agents', in: true, out: true },
-  { kind: 'sink', library: 'process', name: 'sink', hint: 'terminal stage', in: true },
+  processDef('resource', 'capacity / failure_rate'),
+  processDef('source', 'arrival rate'),
+  processDef('queue', 'buffer capacity'),
+  processDef('delay', 'hold agents for a time'),
+  processDef('service', 'resource + time'),
+  processDef('split', 'clone each agent'),
+  processDef('combine', 'merge agents into one'),
+  processDef('batch', 'accumulate agents'),
+  processDef('unbatch', 'release a batch'),
+  processDef('seize', 'grab a resource unit'),
+  processDef('release', 'return a resource unit'),
+  processDef('wait', 'buffer with capacity'),
+  processDef('hold', 'hold/resume the flow'),
+  processDef('match', 'pair agents'),
+  processDef('selectOutput', 'route by condition'),
+  processDef('enter', 'enter the process'),
+  processDef('exit', 'leave the process'),
+  processDef('moveTo', 'move agents to a node'),
+  processDef('timeMeasureStart', 'start timing'),
+  processDef('timeMeasureEnd', 'end timing'),
+  processDef('assembler', 'assemble from parts'),
+  processDef('count', 'count passed agents'),
+  processDef('sink', 'terminal stage'),
 ];
 
 // Presentation library: basic shapes for auxiliary drawing (AnyLogic
 // presentation shapes). Rendered as real shapes on the canvas.
-const PRESENTATION_DEFS: BlockDef[] = [
-  { kind: 'rect', library: 'presentation', name: 'Rectangle' },
-  { kind: 'roundedRect', library: 'presentation', name: 'Rounded Rectangle' },
-  { kind: 'oval', library: 'presentation', name: 'Oval' },
-  { kind: 'line', library: 'presentation', name: 'Line' },
-  { kind: 'polyline', library: 'presentation', name: 'Polyline' },
-  { kind: 'arc', library: 'presentation', name: 'Arc' },
-  { kind: 'curve', library: 'presentation', name: 'Curve' },
-  { kind: 'text', library: 'presentation', name: 'Text' },
-  { kind: 'image', library: 'presentation', name: 'Image' },
-  { kind: 'group', library: 'presentation', name: 'Group' },
-];
+const PRESENTATION_DEFS: BlockDef[] = (
+  [
+    ['rect', 'Rectangle'],
+    ['roundedRect', 'Rounded Rectangle'],
+    ['oval', 'Oval'],
+    ['line', 'Line'],
+    ['polyline', 'Polyline'],
+    ['arc', 'Arc'],
+    ['curve', 'Curve'],
+    ['text', 'Text'],
+    ['image', 'Image'],
+    ['group', 'Group'],
+  ] as const
+).map(([kind, name]) => ({
+  kind,
+  library: 'presentation',
+  name,
+  ports: [],
+  properties: [],
+}));
 
 // Statechart library (AnyLogic statecharts).
-const STATECHART_DEFS: BlockDef[] = [
-  { kind: 'state', library: 'statechart', name: 'State' },
-  { kind: 'initialState', library: 'statechart', name: 'Initial State' },
-  { kind: 'finalState', library: 'statechart', name: 'Final State' },
-  { kind: 'transition', library: 'statechart', name: 'Transition' },
-  { kind: 'historyState', library: 'statechart', name: 'History State' },
-  { kind: 'branch', library: 'statechart', name: 'Branch' },
-];
+const STATECHART_DEFS: BlockDef[] = (
+  [
+    ['state', 'State'],
+    ['initialState', 'Initial State'],
+    ['finalState', 'Final State'],
+    ['transition', 'Transition'],
+    ['historyState', 'History State'],
+    ['branch', 'Branch'],
+  ] as const
+).map(([kind, name]) => ({
+  kind,
+  library: 'statechart',
+  name,
+  ports: [],
+  properties: [],
+}));
 
 // Action chart library (AnyLogic action charts).
-const ACTION_DEFS: BlockDef[] = [
-  { kind: 'action', library: 'action', name: 'Action' },
-  { kind: 'decision', library: 'action', name: 'Decision' },
-  { kind: 'whileLoop', library: 'action', name: 'While Loop' },
-  { kind: 'forLoop', library: 'action', name: 'For Loop' },
-  { kind: 'doWhileLoop', library: 'action', name: 'Do-While Loop' },
-  { kind: 'break', library: 'action', name: 'Break' },
-  { kind: 'return', library: 'action', name: 'Return' },
-  { kind: 'localVariable', library: 'action', name: 'Local Variable' },
-];
+const ACTION_DEFS: BlockDef[] = (
+  [
+    ['action', 'Action'],
+    ['decision', 'Decision'],
+    ['whileLoop', 'While Loop'],
+    ['forLoop', 'For Loop'],
+    ['doWhileLoop', 'Do-While Loop'],
+    ['break', 'Break'],
+    ['return', 'Return'],
+    ['localVariable', 'Local Variable'],
+  ] as const
+).map(([kind, name]) => ({
+  kind,
+  library: 'action',
+  name,
+  ports: [],
+  properties: [],
+}));
 
 export const BLOCK_DEFS: BlockDef[] = [
   ...PROCESS_DEFS,
@@ -97,104 +181,61 @@ export const PRESENTATION_KINDS: ReadonlySet<string> = new Set(
   PRESENTATION_DEFS.map((def) => def.kind),
 );
 
-export function blockPorts(kind: string): { in?: boolean; out?: boolean } {
-  const def = BLOCK_DEFS.find((entry) => entry.kind === kind);
-  return { in: def?.in, out: def?.out };
+/** The block's full port list (direction + conditional visibility). */
+export function blockPorts(kind: string): BlockPortDef[] {
+  return BLOCK_DEFS.find((entry) => entry.kind === kind)?.ports ?? [];
 }
 
-export type FieldType = 'int' | 'float' | 'distribution' | 'ref' | 'bool';
+export type FieldType = CatalogFieldType;
 
+/** Keep the narrow BlockField alias for callers that only need key/type. */
 export interface BlockField {
   key: string;
   type: FieldType;
 }
 
-/** Library field shapes. The five kernel blocks (resource/source/queue/
- *  service/sink) stay bound to libraries/process.lplib so they keep
- *  compiling; the extended PML blocks carry AnyLogic-faithful properties
- *  (they compile with LP2004 until their kernel lowering lands). */
-export const BLOCK_FIELDS: Record<string, BlockField[]> = {
-  resource: [
-    { key: 'capacity', type: 'int' },
-    { key: 'failure_rate', type: 'float' },
-  ],
-  source: [{ key: 'arrival', type: 'distribution' }],
-  queue: [{ key: 'capacity', type: 'int' }],
-  delay: [
-    { key: 'time', type: 'distribution' },
-    { key: 'capacity', type: 'int' },
-  ],
-  service: [
-    { key: 'resource', type: 'ref' },
-    { key: 'time', type: 'distribution' },
-  ],
-  split: [{ key: 'copies', type: 'int' }],
-  combine: [{ key: 'agents', type: 'int' }],
-  batch: [
-    { key: 'size', type: 'int' },
-    { key: 'permanent', type: 'bool' },
-  ],
-  unbatch: [],
-  seize: [
-    { key: 'resource', type: 'ref' },
-    { key: 'quantity', type: 'int' },
-  ],
-  release: [
-    { key: 'resource', type: 'ref' },
-    { key: 'quantity', type: 'int' },
-  ],
-  wait: [
-    { key: 'capacity', type: 'int' },
-    { key: 'maximumCapacity', type: 'bool' },
-  ],
-  hold: [{ key: 'freeze', type: 'bool' }],
-  match: [],
-  selectOutput: [{ key: 'probability', type: 'float' }],
-  enter: [],
-  exit: [],
-  moveTo: [{ key: 'node', type: 'ref' }],
-  timeMeasureStart: [{ key: 'measurement', type: 'ref' }],
-  timeMeasureEnd: [{ key: 'measurement', type: 'ref' }],
-  assembler: [{ key: 'parts', type: 'int' }],
-  count: [],
-  sink: [],
-};
+/** The block's full property list (the AnyLogic catalog is authoritative). */
+export function blockProperties(kind: string): BlockPropertyDef[] {
+  return BLOCK_DEFS.find((entry) => entry.kind === kind)?.properties ?? [];
+}
 
-/** Friendly defaults applied when a block is dropped. service.resource is
- *  deliberately left empty so the user picks a resource reference. */
-export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boolean>> = {
-  resource: { capacity: 1, failure_rate: 0 },
-  process: {},
-  source: { arrival: 'poisson(10)' },
-  queue: { capacity: 100 },
-  delay: { time: 'exponential(1.0)', capacity: 10 },
-  service: { time: 'exponential(1)' },
-  split: { copies: 2 },
-  combine: { agents: 2 },
-  batch: { size: 2, permanent: false },
-  seize: { resource: '', quantity: 1 },
-  release: { resource: '', quantity: 1 },
-  wait: { capacity: 100, maximumCapacity: false },
-  hold: { freeze: false },
-  selectOutput: { probability: 0.5 },
-  moveTo: { node: '' },
-  timeMeasureStart: { measurement: 'time' },
-  timeMeasureEnd: { measurement: 'time' },
-  assembler: { parts: 2 },
-  sink: {},
-};
+/** Friendly defaults applied when a block is dropped (catalog defaults). */
+export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boolean>> =
+  Object.fromEntries(
+    BLOCK_DEFS.map((def) => [
+      def.kind,
+      Object.fromEntries(
+        def.properties
+          .filter((property) => property.default !== null)
+          .map((property) => [property.name, property.default as string | number | boolean]),
+      ),
+    ]),
+  );
 
 // Canvas card geometry (must match styles/model.css): the block card is a
 // centered flex column (34px icon + 4px gap + 15px name line). Port dots are
-// drawn on the icon's left/right midpoints, so their anchors are fixed world
-// offsets from the block center. The x offset is width-independent (the icon
-// is centered in the card); the y offset only depends on the fixed heights.
+// drawn on the icon's left/right midpoints. With multiple ports of the same
+// direction they stack vertically around the midpoint (24px apart).
 export const PORT_X = 17;
 export const PORT_Y = -9.5;
+const PORT_STACK_SPACING = 16;
 
 export function portAnchor(
-  node: { x: number; y: number },
-  port: 'in' | 'out',
+  node: { x: number; y: number; kind?: string },
+  port: string,
 ): { x: number; y: number } {
-  return { x: node.x + (port === 'in' ? -PORT_X : PORT_X), y: node.y + PORT_Y };
+  const ports = node.kind ? blockPorts(node.kind) : [];
+  const spec = ports.find((entry) => entry.name === port);
+  if (spec?.direction === 'in' || spec?.direction === 'inout') {
+    const ins = ports.filter(
+      (entry) => entry.direction === 'in' || entry.direction === 'inout',
+    );
+    const index = Math.max(0, ins.findIndex((entry) => entry.name === port));
+    return { x: node.x - PORT_X, y: node.y + PORT_Y + (index - (ins.length - 1) / 2) * PORT_STACK_SPACING };
+  }
+  const outs = ports.filter(
+    (entry) => entry.direction === 'out' || entry.direction === 'inout',
+  );
+  const index = Math.max(0, outs.findIndex((entry) => entry.name === port));
+  return { x: node.x + PORT_X, y: node.y + PORT_Y + (index - (outs.length - 1) / 2) * PORT_STACK_SPACING };
 }

@@ -36,11 +36,15 @@ export interface ModelNode {
   placeholder?: boolean;
 }
 
-/** A sequential coupling between two block instances (process flow). */
+/** A coupling between two block instances (process flow). `fromPort` /
+ *  `toPort` name the connecting ports; undefined means the block's default
+ *  output (`out`) / input (`in`) port. */
 export interface ModelEdge {
   id: string;
   from: string;
   to: string;
+  fromPort?: string;
+  toPort?: string;
 }
 
 export interface ModelDocument {
@@ -144,17 +148,37 @@ export interface ConnectResult {
   error?: string;
 }
 
-export function connect(document: ModelDocument, from: string, to: string): ConnectResult {
+export function connect(
+  document: ModelDocument,
+  from: string,
+  to: string,
+  fromPort?: string,
+  toPort?: string,
+): ConnectResult {
   if (from === to) {
     return { document, error: 'a block cannot connect to itself' };
   }
   if (!findNode(document, from) || !findNode(document, to)) {
     return { document, error: 'connection references an unknown block' };
   }
-  if (document.edges.some((edge) => edge.from === from && edge.to === to)) {
+  // Normalize the default ports away so linear flows stay compact and
+  // legacy edges (without ports) remain valid.
+  const normalizedFrom = fromPort === 'out' ? undefined : fromPort;
+  const normalizedTo = toPort === 'in' ? undefined : toPort;
+  if (
+    document.edges.some(
+      (edge) =>
+        edge.from === from &&
+        edge.to === to &&
+        (edge.fromPort ?? 'out') === (normalizedFrom ?? 'out') &&
+        (edge.toPort ?? 'in') === (normalizedTo ?? 'in'),
+    )
+  ) {
     return { document, error: 'connection already exists' };
   }
-  const edge = { id: freshId('edge'), from, to };
+  const edge: ModelEdge = { id: freshId('edge'), from, to };
+  if (normalizedFrom !== undefined) edge.fromPort = normalizedFrom;
+  if (normalizedTo !== undefined) edge.toPort = normalizedTo;
   return { document: { ...document, edges: [...document.edges, edge] } };
 }
 

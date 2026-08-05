@@ -7,7 +7,7 @@
 // inside a process container follows the coupling edges when present
 // (topological flow order), falling back to canvas x position.
 
-import type { ModelDocument, ModelEdge, ModelNode } from './graph.js';
+import { findNode, type ModelDocument, type ModelEdge, type ModelNode } from './graph.js';
 
 /** Container kinds emit as nested `kind name { ... }` blocks. */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
@@ -94,6 +94,33 @@ export function generateDsl(document: ModelDocument): string {
   const childrenOf = (name: string): ModelNode[] =>
     document.nodes.filter((node) => node.container === name && emitCandidate(node));
 
+  // Explicit couplings for a container's subgraph: every edge whose
+  // endpoints live in the container. When the topology is non-trivial
+  // (multi-output blocks, conditional ports, branches) the compiler needs
+  // the explicit `couple` lines; emitting them for every edge keeps the
+  // canvas graph identical to the compiled IR.
+  const emitCouplings = (container: string | undefined, indent: string) => {
+    const members = new Set(
+      document.nodes
+        .filter((node) => node.container === container && emitCandidate(node))
+        .map((node) => node.name),
+    );
+    for (const edge of document.edges) {
+      const from = findNode(document, edge.from);
+      const to = findNode(document, edge.to);
+      if (!from || !to || from.container !== container || to.container !== container) {
+        continue;
+      }
+      if (!members.has(from.name) || !members.has(to.name)) {
+        continue;
+      }
+      lines.push(
+        `${indent}couple ${from.name}.${edge.fromPort ?? 'out'} -> ` +
+          `${to.name}.${edge.toPort ?? 'in'}`,
+      );
+    }
+  };
+
   const emitNode = (node: ModelNode, indent: string) => {
     if (node.kind === 'use') {
       lines.push(`${indent}use ${node.name}`);
@@ -135,6 +162,9 @@ export function generateDsl(document: ModelDocument): string {
     for (const child of children) {
       emitNode(child, `${indent}  `);
     }
+    if (CONTAINER_KINDS.has(node.kind)) {
+      emitCouplings(node.name, `${indent}  `);
+    }
     lines.push(`${indent}}`);
   };
 
@@ -160,6 +190,7 @@ export function generateDsl(document: ModelDocument): string {
     for (const stage of orderStages(orphanLeaves, document.edges, document)) {
       emitNode(stage, '    ');
     }
+    emitCouplings(undefined, '    ');
     lines.push('  }');
   }
   lines.push('}');

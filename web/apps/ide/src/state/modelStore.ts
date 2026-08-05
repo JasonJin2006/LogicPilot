@@ -17,6 +17,7 @@ import {
   type AddNodeInput,
   type ModelDocument,
 } from '@logicpilot/editor';
+import { blockPorts } from '../model/blockDefs';
 
 const MAX_HISTORY = 100;
 // Rapid successive edits (drag moves, typing) within this window collapse
@@ -52,7 +53,7 @@ interface ModelState {
   lastCommitAt: number;
   addBlock: (input: AddNodeInput) => void;
   moveBlock: (id: string, x: number, y: number) => void;
-  connectBlocks: (from: string, to: string) => void;
+  connectBlocks: (from: string, to: string, fromPort?: string, toPort?: string) => void;
   disconnectEdge: (id: string) => void;
   removeBlock: (id: string) => void;
   select: (id: string | null) => void;
@@ -87,9 +88,24 @@ export const useModelStore = create<ModelState>()((set) => ({
   lastCommitAt: 0,
   addBlock: (input) => set((state) => commit(state, addNode(state.document, input))),
   moveBlock: (id, x, y) => set((state) => commit(state, moveNode(state.document, id, x, y))),
-  connectBlocks: (from, to) =>
+  connectBlocks: (from, to, fromPort, toPort) =>
     set((state) => {
-      const result = connect(state.document, from, to);
+      const fromNode = state.document.nodes.find((node) => node.id === from);
+      const toNode = state.document.nodes.find((node) => node.id === to);
+      const fromSpec = fromNode
+        ? blockPorts(fromNode.kind).find(
+            (port) => port.name === (fromPort ?? 'out') && port.direction !== 'in',
+          )
+        : undefined;
+      const toSpec = toNode
+        ? blockPorts(toNode.kind).find(
+            (port) => port.name === (toPort ?? 'in') && port.direction !== 'out',
+          )
+        : undefined;
+      if (!fromSpec || !toSpec) {
+        return {};
+      }
+      const result = connect(state.document, from, to, fromPort, toPort);
       return result.error ? {} : commit(state, result.document);
     }),
   disconnectEdge: (id) => set((state) => commit(state, disconnect(state.document, id))),

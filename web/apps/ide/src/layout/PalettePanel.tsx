@@ -22,6 +22,9 @@ interface PaletteBlock {
   hint?: string;
   in?: boolean;
   out?: boolean;
+  /** Port names by direction, for the palette grid's connection dots. */
+  inPorts?: string[];
+  outPorts?: string[];
 }
 
 interface PaletteScene {
@@ -78,8 +81,14 @@ export function PalettePanel() {
       library: block.library,
       name: block.name,
       hint: block.hint,
-      in: block.in,
-      out: block.out,
+      in: block.ports.some((port) => port.direction === 'in'),
+      out: block.ports.some((port) => port.direction === 'out'),
+      inPorts: block.ports
+        .filter((port) => port.direction === 'in')
+        .map((port) => port.name),
+      outPorts: block.ports
+        .filter((port) => port.direction === 'out')
+        .map((port) => port.name),
     });
   }
   for (const custom of Object.values(customLibraries)) {

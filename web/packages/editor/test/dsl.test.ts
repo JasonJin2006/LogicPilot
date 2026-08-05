@@ -58,6 +58,51 @@ describe('DSL v2 generation', () => {
     expect(source.indexOf('source A')).toBeLessThan(source.indexOf('queue Q'));
   });
 
+  it('emits explicit couple lines for non-default ports', () => {
+    let doc = createDocument();
+    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
+    doc = addNode(doc, {
+      kind: 'source',
+      name: 'In',
+      x: 0,
+      y: 0,
+      container: 'Flow',
+      library: 'process',
+    });
+    doc = addNode(doc, {
+      kind: 'selectOutput',
+      name: 'Route',
+      x: 200,
+      y: 0,
+      container: 'Flow',
+      library: 'process',
+    });
+    doc = addNode(doc, {
+      kind: 'sink',
+      name: 'Yes',
+      x: 400,
+      y: -100,
+      container: 'Flow',
+      library: 'process',
+    });
+    doc = addNode(doc, {
+      kind: 'sink',
+      name: 'No',
+      x: 400,
+      y: 100,
+      container: 'Flow',
+      library: 'process',
+    });
+    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[2]!.id).document;
+    doc = connect(doc, doc.nodes[2]!.id, doc.nodes[3]!.id, 'outT', 'in').document;
+    doc = connect(doc, doc.nodes[2]!.id, doc.nodes[4]!.id, 'outF', 'in').document;
+
+    const source = generateDsl(doc);
+    expect(source).toContain("couple In.out -> Route.in");
+    expect(source).toContain("couple Route.outT -> Yes.in");
+    expect(source).toContain("couple Route.outF -> No.in");
+  });
+
   it('orders process stages by coupling edges (topological, x fallback)', () => {
     let doc = createDocument();
     doc = addNode(doc, { kind: 'service', name: 'S', x: 0, y: 0 });

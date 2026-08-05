@@ -85,6 +85,60 @@ TEST_CASE("semantic: empty process blocks pass with registry defaults",
   REQUIRE(analyze_model(*parsed.model).empty());
 }
 
+TEST_CASE("semantic: process coupling validates ports and conditions",
+          "[dsl][semantic]") {
+  // A valid couple compiles; a missing/conditional port is rejected.
+  const ParseOutput valid = parse_source(
+      "model M {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(1) }\n"
+      "    queue Q { capacity = 4 enableTimeout = true }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "    couple A.out -> Q.in\n"
+      "    couple Q.outTimeout -> R.in\n"
+      "  }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(valid.ok());
+  REQUIRE(analyze_model(*valid.model).empty());
+
+  // Conditional port used without enabling its field -> LP5003.
+  const ParseOutput conditional = parse_source(
+      "model M {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(1) }\n"
+      "    queue Q { capacity = 4 }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "    couple Q.outTimeout -> R.in\n"
+      "  }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(conditional.ok());
+  const std::vector<Diagnostic> conditional_diags =
+      analyze_model(*conditional.model);
+  REQUIRE(conditional_diags.size() == 1);
+  REQUIRE(conditional_diags.front().code == "LP5003");
+
+  // Unknown port / wrong direction -> LP5003.
+  const ParseOutput bad_port = parse_source(
+      "model M {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  process P {\n"
+      "    source A { arrival = rate(1) }\n"
+      "    queue Q { capacity = 4 }\n"
+      "    service R { resource = Server; time = exponential(1) }\n"
+      "    couple A.nope -> Q.in\n"
+      "  }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(bad_port.ok());
+  const std::vector<Diagnostic> bad_port_diags = analyze_model(*bad_port.model);
+  REQUIRE(bad_port_diags.size() == 1);
+  REQUIRE(bad_port_diags.front().code == "LP5003");
+}
+
 TEST_CASE("semantic snapshot: duplicate declarations", "[dsl][semantic]") {
   expect_diagnostic_snapshot(
       "model M {\n"

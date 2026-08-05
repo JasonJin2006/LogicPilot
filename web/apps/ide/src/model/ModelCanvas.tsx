@@ -23,6 +23,7 @@ import { BlockIcon } from './BlockIcon';
 import { PresentationShape } from './PresentationShape';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
+import type { BlockPortDef } from './blockDefs';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -33,6 +34,26 @@ const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
 // Default view margin: the origin sits this far in from the canvas edges so
 // the axes, arrowheads and tick labels are fully visible on first load.
 const VIEW_MARGIN = 48;
+
+// Ports the canvas shows for a node: conditional ports (e.g. outTimeout)
+// are only present when their gating field is set to true on the node.
+function visiblePorts(node: ModelNode): BlockPortDef[] {
+  return blockPorts(node.kind).filter(
+    (port) => !port.conditionalOn || node.params[port.conditionalOn] === true,
+  );
+}
+
+function firstOutPort(node: ModelNode): string {
+  return visiblePorts(node).find((port) => port.direction === 'out')?.name ?? 'out';
+}
+
+function firstInPort(node: ModelNode): string {
+  return (
+    visiblePorts(node).find(
+      (port) => port.direction === 'in' || port.direction === 'inout',
+    )?.name ?? 'in'
+  );
+}
 
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
@@ -114,8 +135,16 @@ export function ModelCanvas() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Port-to-port wiring: a live wire from an out port to the cursor, plus
   // the in-port currently under it (highlighted as the drop target).
-  const [draftWire, setDraftWire] = useState<{ fromId: string; x: number; y: number } | null>(null);
-  const [wireTarget, setWireTarget] = useState<string | null>(null);
+  const [draftWire, setDraftWire] = useState<{
+    fromId: string;
+    fromPort: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [wireTarget, setWireTarget] = useState<{
+    id: string;
+    port: string;
+  } | null>(null);
   const wireStart = useRef<{ x: number; y: number } | null>(null);
 
   // Delete/Backspace removes the selected block (unless typing in a field).
@@ -329,27 +358,37 @@ export function ModelCanvas() {
 
   // Nearest valid in-port (a different block) within a screen-space
   // tolerance, used as the wire's drop target.
-  const findWireTarget = (world: { x: number; y: number }, fromId: string): string | null => {
+  const findWireTarget = (
+    world: { x: number; y: number },
+    fromId: string,
+  ): { id: string; port: string } | null => {
     const tolerance = 12 / view.scale;
-    let best: string | null = null;
+    let best: { id: string; port: string } | null = null;
     let bestDistance = tolerance;
     for (const node of visibleNodes) {
-      if (node.id === fromId || !blockPorts(node.kind).in) continue;
-      const anchor = portAnchor(node, 'in');
-      const distance = Math.hypot(anchor.x - world.x, anchor.y - world.y);
-      if (distance <= bestDistance) {
-        bestDistance = distance;
-        best = node.id;
+      if (node.id === fromId) continue;
+      for (const port of visiblePorts(node)) {
+        if (port.direction === 'out') continue;
+        const anchor = portAnchor(node, port.name);
+        const distance = Math.hypot(anchor.x - world.x, anchor.y - world.y);
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = { id: node.id, port: port.name };
+        }
       }
     }
     return best;
   };
 
-  const startWire = (event: ReactPointerEvent<HTMLSpanElement>, node: ModelNode) => {
+  const startWire = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    node: ModelNode,
+    port: string,
+  ) => {
     event.stopPropagation();
-    const anchor = portAnchor(node, 'out');
+    const anchor = portAnchor(node, port);
     wireStart.current = { x: event.clientX, y: event.clientY };
-    setDraftWire({ fromId: node.id, x: anchor.x, y: anchor.y });
+    setDraftWire({ fromId: node.id, fromPort: port, x: anchor.x, y: anchor.y });
     setWireTarget(null);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -368,7 +407,7 @@ export function ModelCanvas() {
     if (moved) {
       const world = clientToWorld(event.clientX, event.clientY);
       const target = findWireTarget(world, draftWire.fromId);
-      if (target) connectBlocks(draftWire.fromId, target);
+      if (target) connectBlocks(draftWire.fromId, target.id, draftWire.fromPort, target.port);
     }
     wireStart.current = null;
     setDraftWire(null);
@@ -504,13 +543,15 @@ export function ModelCanvas() {
     const from = visibleNodes.find((node) => node.id === edge.from);
     const to = visibleNodes.find((node) => node.id === edge.to);
     if (!from || !to) return [];
-    return [{ id: edge.id, a: portAnchor(from, 'out'), b: portAnchor(to, 'in') }];
+    const fromPort = edge.fromPort ?? firstOutPort(from);
+    const toPort = edge.toPort ?? firstInPort(to);
+    return [{ id: edge.id, a: portAnchor(from, fromPort), b: portAnchor(to, toPort) }];
   });
   const wirePoints: Array<{ x: number; y: number }> = [];
   if (draftWire) {
-  const fromNode = visibleNodes.find((node) => node.id === draftWire.fromId);
+    const fromNode = visibleNodes.find((node) => node.id === draftWire.fromId);
     if (fromNode) {
-      wirePoints.push(portAnchor(fromNode, 'out'), { x: draftWire.x, y: draftWire.y });
+      wirePoints.push(portAnchor(fromNode, draftWire.fromPort), { x: draftWire.x, y: draftWire.y });
     }
   }
   const allPoints = [...edgeSegments.flatMap((segment) => [segment.a, segment.b]), ...wirePoints];
@@ -702,7 +743,7 @@ export function ModelCanvas() {
               </div>
             );
           }
-          const ports = blockPorts(node.kind);
+          const ports = visiblePorts(node);
           return (
             <div
               key={node.id}
@@ -718,25 +759,34 @@ export function ModelCanvas() {
             >
               <span className="model-block-icon">
                 <BlockIcon kind={node.kind} />
-                {ports.in && (
-                  <span
-                    className={`model-port port-in${wireTarget === node.id ? ' wire-target' : ''}`}
-                    data-port="in"
-                    title="in"
-                    onPointerDown={(event) => event.stopPropagation()}
-                  />
-                )}
-                {ports.out && (
-                  <span
-                    className="model-port port-out"
-                    data-port="out"
-                    title="out"
-                    onPointerDown={(event) => startWire(event, node)}
-                    onPointerMove={moveWire}
-                    onPointerUp={endWire}
-                    onPointerCancel={cancelWire}
-                  />
-                )}
+                {ports.map((port) => {
+                  const anchor = portAnchor(node, port.name);
+                  const isIn = port.direction === 'in' || port.direction === 'inout';
+                  const targeted =
+                    isIn && wireTarget !== null && wireTarget.id === node.id &&
+                    wireTarget.port === port.name;
+                  return (
+                    <span
+                      key={port.name}
+                      className={`model-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
+                      data-port={port.name}
+                      title={port.name}
+                      style={{
+                        left: anchor.x - node.x,
+                        top: anchor.y - node.y,
+                        transform: 'translate(-50%, -50%)',
+                      }}
+                      onPointerDown={
+                        isIn
+                          ? (event) => event.stopPropagation()
+                          : (event) => startWire(event, node, port.name)
+                      }
+                      onPointerMove={moveWire}
+                      onPointerUp={endWire}
+                      onPointerCancel={cancelWire}
+                    />
+                  );
+                })}
               </span>
               <span className="model-block-name">{node.name}</span>
               {live && node.kind === 'queue' && queueLength > 0 && (

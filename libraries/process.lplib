@@ -172,7 +172,7 @@ library process {
     out outTimeout: entity when enableTimeout
     out outPreempted: entity when enablePreemption
 
-    seizeFromOnePool: bool = false
+    seizeFromOnePool: bool = true
     resourceSetsAlternatives: expression = ""
     resource: ref = ""
     numberOfUnits: int = 1
@@ -335,7 +335,7 @@ library process {
     out out: entity
     out preparedUnits: entity
 
-    seizeFromOnePool: bool = false
+    seizeFromOnePool: bool = true
     resourceSets: ref = ""
     resource: ref = ""
     numberOfUnits: int = 0

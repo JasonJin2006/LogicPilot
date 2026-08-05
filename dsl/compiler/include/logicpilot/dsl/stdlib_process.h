@@ -183,7 +183,7 @@ library process {
     out outTimeout: entity when enableTimeout
     out outPreempted: entity when enablePreemption
 
-    seizeFromOnePool: bool = false
+    seizeFromOnePool: bool = true
     resourceSetsAlternatives: expression = ""
     resource: ref = ""
     numberOfUnits: int = 1
@@ -269,8 +269,8 @@ library process {
     changeDimensions: bool = false
     length: float = 0
     width: float = 0
- )lp",
-    R"lp(   height: float = 0
+  )lp",
+    R"lp(  height: float = 0
     entityLocation1: expression = ""
     entityLocation2: expression = ""
     entityLocation: expression = ""
@@ -347,7 +347,7 @@ library process {
     out out: entity
     out preparedUnits: entity
 
-    seizeFromOnePool: bool = false
+    seizeFromOnePool: bool = true
     resourceSets: ref = ""
     resource: ref = ""
     numberOfUnits: int = 0
@@ -555,8 +555,8 @@ library process {
     attractor: expression = ""
     resource: ref = ""
     agent: ref = ""
-    xYZ: floa)lp",
-    R"lp(t = 0
+    xYZ: float )lp",
+    R"lp(= 0
     latitudeLongitude: float = 0
     nameOfPlace: string = ""
     destinationUseRotation: bool = false

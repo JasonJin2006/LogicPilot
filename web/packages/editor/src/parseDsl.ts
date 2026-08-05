@@ -313,6 +313,27 @@ class Parser {
         });
         continue;
       }
+      if (this.expectWord('couple') !== null) {
+        const fromModel = this.expectWord();
+        this.expectPunct('.');
+        const fromPort = this.expectWord();
+        this.expectPunct('-');
+        this.expectPunct('>');
+        const toModel = this.expectWord();
+        this.expectPunct('.');
+        const toPort = this.expectWord();
+        members.push({
+          kind: 'couple',
+          name: fromModel ?? '',
+          params: {
+            fromPort: fromPort ?? 'out',
+            toModel: toModel ?? '',
+            toPort: toPort ?? 'in',
+          },
+          children: [],
+        });
+        continue;
+      }
       const member = this.parseMember();
       if (typeof member === 'string') {
         return member;
@@ -439,6 +460,13 @@ export function parseDsl(source: string): ParseResult {
   const seenNames = new Map<string, Set<string>>();
   // Sequential stage order per process container (declaration order).
   const processStages = new Map<string, ModelNode[]>();
+  // Explicit `couple A.out -> B.in` declarations (inside a process body).
+  const couples: Array<{
+    from: string;
+    fromPort: string;
+    to: string;
+    toPort: string;
+  }> = [];
   let order = 0;
 
   const position = () => {
@@ -467,6 +495,15 @@ export function parseDsl(source: string): ParseResult {
       seenNames.set(scope, seen);
     }
     const pos = position();
+    if (member.kind === 'couple') {
+      couples.push({
+        from: member.name,
+        fromPort: String(member.params['fromPort'] ?? 'out'),
+        to: String(member.params['toModel'] ?? ''),
+        toPort: String(member.params['toPort'] ?? 'in'),
+      });
+      return;
+    }
     if (member.kind === 'field' || member.kind === 'effect') {
       nodes.push({
         id: freshId('member'),
@@ -549,7 +586,29 @@ export function parseDsl(source: string): ParseResult {
   }
 
   let doc: ModelDocument = { ...document, nodes };
+  // Explicit couples win; processes without couples fall back to
+  // declaration-order chaining.
+  const nameToId = new Map(nodes.map((node) => [node.name, node.id]));
+  const coupledProcesses = new Set(
+    couples.map((couple) => {
+      const from = nodes.find((node) => node.name === couple.from);
+      return from?.container ?? '';
+    }),
+  );
+  for (const couple of couples) {
+    const from = nameToId.get(couple.from);
+    const to = nameToId.get(couple.to);
+    if (from === undefined || to === undefined) {
+      continue;  // unresolved stages (e.g. external) stay warnings-free
+    }
+    doc = connect(doc, from, to, couple.fromPort, couple.toPort).document;
+  }
   for (const group of processStages.values()) {
+    if (group.length === 0) continue;
+    const container = group[0]!.container ?? '';
+    if (coupledProcesses.has(container)) {
+      continue;  // explicit couples already define the topology
+    }
     for (let i = 0; i + 1 < group.length; i++) {
       doc = connect(doc, group[i]!.id, group[i + 1]!.id).document;
     }

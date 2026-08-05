@@ -360,6 +360,8 @@ const TYPE_OVERRIDES = {
  *  AnyLogic's "Arrival rate" double onto a rate() distribution). */
 const DEFAULT_OVERRIDES = {
   source: { arrival: 'rate(1)' },
+  service: { seizeFromOnePool: true },
+  seize: { seizeFromOnePool: true },
 };
 
 /** Map AnyLogic property-section h3 ids to our panel sections. */

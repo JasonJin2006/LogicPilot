@@ -136,8 +136,9 @@ try {
   await page.screenshot({ path: join(OUT, '2-running.png') });
 
   // Modeling canvas -> generated DSL -> compile diagnostics round-trip
-  // (P1-7): dropping a lone source yields an invalid model, so the gateway
-  // must echo the compiler's diagnostics into the console.
+  // (P1-7): the canvas model compiles (generic topology), so the editor
+  // injects an invalid line into the DSL to force LP diagnostics echoed by
+  // the gateway into the console.
   await page.getByRole('button', { name: 'Palette' }).click();
   await page.waitForSelector('.palette-item', { timeout: 5_000 });
   await page.evaluate(() => {
@@ -181,6 +182,9 @@ try {
     throw new Error('DSL file editor did not show the split main.lp');
   }
   log('canvas model saved; main.lp opened as a file tab');
+  await page
+    .locator('.dsl-textarea')
+    .fill(dslText + '\nbogusBlock Mystery { }\n');
   await page.getByRole('button', { name: 'Compile' }).click();
   await page.waitForFunction(
     () => document.querySelector('.console-log')?.textContent?.includes('compile failed'),
@@ -248,7 +252,11 @@ try {
     serviceBox.y + serviceBox.height / 2,
   );
   await page.waitForTimeout(120);
-  await page.locator('.props-field').filter({ hasText: 'resource' }).locator('input').fill('resource');
+  await page
+    .locator('.props-field')
+    .filter({ hasText: 'Resource pool' })
+    .locator('input')
+    .fill('resource');
   await page.evaluate(() =>
     document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null,
   );

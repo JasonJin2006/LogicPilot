@@ -68,6 +68,37 @@ describe('parseDsl', () => {
     expect(regenerated).toContain('sink Done { }');
   });
 
+  it('parses explicit couple declarations with ports', () => {
+    const source = `model Demo {
+  process Flow {
+    source In { arrival = rate(1) }
+    selectOutput Route { probability = 0.5 }
+    sink Yes { }
+    sink No { }
+    couple In.out -> Route.in
+    couple Route.outT -> Yes.in
+    couple Route.outF -> No.in
+  }
+}`;
+    const result = parseDsl(source);
+    expect(result.ok).toBe(true);
+    const doc = result.document;
+    expect(doc.edges).toHaveLength(3);
+    const routeEdge = doc.edges.find(
+      (edge) => edge.fromPort === 'outT' || edge.fromPort === 'outF',
+    );
+    expect(routeEdge).toBeDefined();
+    const byName = new Map(doc.nodes.map((node) => [node.name, node.id]));
+    const route = doc.nodes.find((node) => node.kind === 'selectOutput')!;
+    const yes = doc.nodes.find((node) => node.name === 'Yes')!;
+    const edge = doc.edges.find(
+      (entry) => entry.from === route.id && entry.to === yes.id,
+    );
+    expect(edge?.fromPort).toBe('outT');
+    expect(edge?.toPort).toBeUndefined();  // default 'in' normalized away
+    expect(byName.has('In')).toBe(true);
+  });
+
   it('parses the full grammar: continuous/agent/experiment with placeholders', () => {
     const source = `model Swarm {
   param seed: int = 7
