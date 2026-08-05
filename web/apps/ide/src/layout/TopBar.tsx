@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
+import { AppMenu } from './AppMenu';
 
 // Standard Windows title-bar glyphs (Segoe Fluent Icons / Segoe MDL2 Assets).
 const GLYPHS = {
@@ -89,15 +90,10 @@ export function TopBar() {
       <div className="top-bar-drag" onMouseDown={(event) => void startDrag(event)}>
         <img className="top-logo" src="/logo.svg" alt="LogicPilot" />
       </div>
-      <nav className="app-menu" aria-label="Application menu">
-        {['File', 'Edit', 'View', 'Help'].map((item) => (
-          <button key={item} className="app-menu-item" type="button">
-            {item}
-          </button>
-        ))}
-      </nav>
+      <AppMenu />
       <div className="top-bar-fill" onMouseDown={(event) => void startDrag(event)} />
       <input
+        id="lp-search"
         className="search-box"
         type="search"
         placeholder="Search models, blocks, commands"

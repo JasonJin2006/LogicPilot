@@ -1,0 +1,357 @@
+// Desktop-style application menu (File / Edit / View / Help) with dropdowns.
+
+import { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
+import { generateDsl, parseDsl } from '@logicpilot/editor';
+import type { BlockKind } from '@logicpilot/editor';
+import { useModelStore } from '../state/modelStore';
+import { useLayoutStore } from '../state/layoutStore';
+import { useUiStore } from '../state/uiStore';
+import { addRecent, loadRecent } from '../state/recentStore';
+
+interface MenuEntry {
+  label: string;
+  shortcut?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  action?: () => void;
+}
+
+type MenuEntryOrBreak =
+  | MenuEntry
+  | { kind: 'separator' }
+  | { kind: 'sectionLabel'; label: string };
+
+// Clipboard for Edit > Cut/Copy/Paste (a block, not canvas text).
+let clipboard: {
+  kind: BlockKind;
+  name: string;
+  params: Record<string, string | number | boolean>;
+  library?: string;
+} | null = null;
+
+export function AppMenu() {
+  const [open, setOpen] = useState<string | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const modelDoc = useModelStore((state) => state.document);
+  const selectedId = useModelStore((state) => state.selectedId);
+  const reset = useModelStore((state) => state.reset);
+  const addBlock = useModelStore((state) => state.addBlock);
+  const removeBlock = useModelStore((state) => state.removeBlock);
+  const loadDocument = useModelStore((state) => state.loadDocument);
+  const undo = useModelStore((state) => state.undo);
+  const redo = useModelStore((state) => state.redo);
+  const canUndo = useModelStore((state) => state.canUndo);
+  const canRedo = useModelStore((state) => state.canRedo);
+  const areas = useLayoutStore((state) => state.areas);
+  const setActive = useLayoutStore((state) => state.setActive);
+  const reopenArea = useLayoutStore((state) => state.reopenArea);
+  const toggleCollapse = useLayoutStore((state) => state.toggleCollapse);
+  const openInfo = useUiStore((state) => state.openInfo);
+
+  const selected = modelDoc.nodes.find((node) => node.id === selectedId) ?? null;
+  const close = () => setOpen(null);
+
+  const fileNew = () => {
+    reset();
+    close();
+  };
+  const fileOpen = () => {
+    fileRef.current?.click();
+    close();
+  };
+  const onFileChosen = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    void file.text().then((text) => {
+      if (file.name.toLowerCase().endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(text) as unknown;
+          loadDocument(parsed as never);
+          const parsedName =
+            typeof (parsed as { name?: unknown }).name === 'string'
+              ? (parsed as { name: string }).name
+              : modelDoc.name || 'Model';
+          addRecent({ name: parsedName, dsl: generateDsl(parsed as never), at: Date.now() });
+        } catch (error) {
+          openInfo('Open failed', String(error));
+        }
+        return;
+      }
+      const parsed = parseDsl(text);
+      if (parsed.ok) {
+        loadDocument(parsed.document);
+        addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });
+      } else {
+        openInfo('Open failed', parsed.error ?? 'invalid DSL');
+      }
+    });
+  };
+  const fileSave = () => {
+    const dsl = generateDsl(modelDoc);
+    const name = modelDoc.name || 'Model';
+    const blob = new Blob([dsl], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${name}.lp`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    addRecent({ name, dsl, at: Date.now() });
+    close();
+  };
+  const exitApp = () => {
+    close();
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+        return;
+      } catch {
+        // not in Tauri: fall through to the browser close
+      }
+      window.close();
+    })();
+  };
+
+  const copyBlock = () => {
+    if (selected) {
+      clipboard = {
+        kind: selected.kind,
+        name: selected.name,
+        params: { ...selected.params },
+        library: selected.library,
+      };
+    }
+    close();
+  };
+  const cutBlock = () => {
+    if (selected) {
+      clipboard = {
+        kind: selected.kind,
+        name: selected.name,
+        params: { ...selected.params },
+        library: selected.library,
+      };
+      removeBlock(selected.id);
+    }
+    close();
+  };
+  const pasteBlock = () => {
+    if (!clipboard) {
+      close();
+      return;
+    }
+    const base = selected ?? { x: 160, y: 160 };
+    addBlock({
+      kind: clipboard.kind,
+      name: clipboard.name,
+      x: base.x + 32,
+      y: base.y + 32,
+      params: { ...clipboard.params },
+      library: clipboard.library,
+    });
+    close();
+  };
+  const find = () => {
+    document.getElementById('lp-search')?.focus();
+    close();
+  };
+
+  const showPanel = (area: 'left' | 'right', panel: 'modelInfo' | 'palette' | 'properties' | 'ai') => {
+    if (areas[area].collapsed) {
+      reopenArea(area, areas[area].size || (area === 'left' ? 280 : 360));
+    }
+    setActive(area, panel);
+    close();
+  };
+  const showConsole = () => {
+    toggleCollapse('bottom');
+    close();
+  };
+
+  const recent = loadRecent();
+  const renderEntry = (entry: MenuEntry, key: string) => (
+    <button
+      key={key}
+      className={`app-menu-entry${entry.checked ? ' checked' : ''}`}
+      disabled={entry.disabled}
+      onClick={entry.action}
+    >
+      <span className="app-menu-entry-label">{entry.label}</span>
+      {entry.shortcut && <span className="app-menu-entry-shortcut">{entry.shortcut}</span>}
+    </button>
+  );
+
+  const menus: Array<{ label: string; entries: MenuEntryOrBreak[] }> = [
+    {
+      label: 'File',
+      entries: [
+        { label: 'New', shortcut: 'Ctrl+N', action: fileNew },
+        { label: 'Open...', shortcut: 'Ctrl+O', action: fileOpen },
+        { kind: 'separator' },
+        { kind: 'sectionLabel', label: 'Open Recent' },
+        ...(recent.length > 0
+          ? recent.map((model) => ({
+              label: model.name,
+              action: () => {
+                const parsed = parseDsl(model.dsl);
+                if (parsed.ok) {
+                  loadDocument(parsed.document);
+                } else {
+                  openInfo('Open failed', parsed.error ?? 'invalid DSL');
+                }
+                close();
+              },
+            }))
+          : [{ label: 'No recent models', disabled: true as const, action: undefined }]),
+        { kind: 'separator' },
+        { label: 'Save', shortcut: 'Ctrl+S', action: fileSave },
+        { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: fileSave },
+        { kind: 'separator' },
+        { label: 'Exit', action: exitApp },
+      ],
+    },
+    {
+      label: 'Edit',
+      entries: [
+        { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !canUndo, action: () => { undo(); close(); } },
+        { label: 'Redo', shortcut: 'Ctrl+Shift+Z', disabled: !canRedo, action: () => { redo(); close(); } },
+        { kind: 'separator' },
+        { label: 'Cut', shortcut: 'Ctrl+X', disabled: !selected, action: cutBlock },
+        { label: 'Copy', shortcut: 'Ctrl+C', disabled: !selected, action: copyBlock },
+        { label: 'Paste', shortcut: 'Ctrl+V', disabled: !clipboard, action: pasteBlock },
+        { kind: 'separator' },
+        { label: 'Find', shortcut: 'Ctrl+F', action: find },
+      ],
+    },
+    {
+      label: 'View',
+      entries: [
+        {
+          label: 'Project',
+          checked: areas.left.activePanel === 'modelInfo',
+          action: () => showPanel('left', 'modelInfo'),
+        },
+        {
+          label: 'Palette',
+          checked: areas.left.activePanel === 'palette',
+          action: () => showPanel('left', 'palette'),
+        },
+        {
+          label: 'Properties',
+          checked: areas.right.activePanel === 'properties',
+          action: () => showPanel('right', 'properties'),
+        },
+        {
+          label: 'AI',
+          checked: areas.right.activePanel === 'ai',
+          action: () => showPanel('right', 'ai'),
+        },
+        {
+          label: 'Console',
+          checked: !areas.bottom.collapsed,
+          action: showConsole,
+        },
+      ],
+    },
+    {
+      label: 'Help',
+      entries: [
+        {
+          label: 'Welcome',
+          action: () => {
+            openInfo(
+              'Welcome to LogicPilot',
+              'AI-native simulation platform: drag-and-drop modeling, DSL v2, a C++ kernel and live visualization. Build a model from the Palette, wire the ports, compile in the DSL editor and press Run.',
+            );
+            close();
+          },
+        },
+        {
+          label: 'Documentation',
+          action: () => {
+            window.open('http://localhost:5174/', '_blank', 'noopener');
+            close();
+          },
+        },
+        {
+          label: 'Check for Updates',
+          action: () => {
+            openInfo(
+              'Check for Updates',
+              'This is a development build; no update channel is configured.',
+            );
+            close();
+          },
+        },
+        {
+          label: 'About',
+          action: () => {
+            openInfo(
+              'About LogicPilot',
+              'LogicPilot v0.1.0 - AI-native simulation platform (C++ kernel, DSL v2, Web IDE / desktop client).',
+            );
+            close();
+          },
+        },
+      ],
+    },
+  ];
+
+  // Close the dropdown on outside clicks or Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (barRef.current && !barRef.current.contains(event.target as Node)) {
+        setOpen(null);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <nav className="app-menu" ref={barRef} aria-label="Application menu">
+      {menus.map((menu) => (
+        <div key={menu.label} className="app-menu-root">
+          <button
+            className={`app-menu-item${open === menu.label ? ' active' : ''}`}
+            type="button"
+            onClick={() => setOpen(open === menu.label ? null : menu.label)}
+          >
+            {menu.label}
+          </button>
+          {open === menu.label && (
+            <div className="app-menu-dropdown" role="menu">
+              {menu.entries.map((entry, index) => {
+                if ('kind' in entry && entry.kind === 'separator') {
+                  return <div key={`section-${index}`} className="app-menu-separator" />;
+                }
+                if ('kind' in entry && entry.kind === 'sectionLabel') {
+                  return (
+                    <div key={`label-${index}`} className="app-menu-section-label">
+                      {entry.label}
+                    </div>
+                  );
+                }
+                return renderEntry(entry, `${menu.label}-${index}`);
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+      <input ref={fileRef} type="file" accept=".lp,.json" hidden onChange={onFileChosen} />
+    </nav>
+  );
+}

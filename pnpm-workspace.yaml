@@ -1,3 +1,5 @@
 packages:
   - 'web/apps/*'
   - 'web/packages/*'
+allowBuilds:
+  esbuild: true

@@ -6,6 +6,7 @@
 import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';
 import { Workspace } from './layout/Workspace';
+import { InfoDialog } from './layout/InfoDialog';
 import { RunDialog } from './run/RunDialog';
 import { SettingsDialog } from './run/SettingsDialog';
 import { StatusBar } from './run/StatusBar';
@@ -27,6 +28,7 @@ export default function App() {
         <StatusBar />
         {settingsOpen && <SettingsDialog />}
         {runDialogOpen && <RunDialog />}
+        <InfoDialog />
       </div>
     </>
   );
