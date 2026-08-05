@@ -275,11 +275,6 @@ export function ExplorerPanel() {
       {ARTIFACT_ROWS.map((entry) => (
         <FolderRow key={entry.path} folder={entry} indent={1} />
       ))}
-      <div className="side-hint">
-        {bundle
-          ? `已保存工程（${Object.keys(bundle.files).length} 个源文件）`
-          : '尚未保存为工程；File > Save 生成 .lpproj'}
-      </div>
       {menu && (
         <ContextMenu
           x={menu.x}
