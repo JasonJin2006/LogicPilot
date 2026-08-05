@@ -431,6 +431,15 @@
   margin: 0;
   padding: 6px;
   list-style: none;
+  /* Only the block grid scrolls; the library bar above stays fixed. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Fill the pane so the pane itself never scrolls for the palette. */
+.palette-body {
+  min-height: 0;
 }
 
 /* Library selector bar above the palette grid. */
