@@ -576,6 +576,14 @@
   padding-bottom: 4px;
 }
 
+.tree-dirty-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .tree-folder {
   margin-top: 2px;
 }

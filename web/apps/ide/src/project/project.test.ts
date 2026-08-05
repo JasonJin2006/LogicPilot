@@ -4,6 +4,7 @@ import type { ModelDocument } from '@logicpilot/editor';
 import {
   PROJECT_SCHEMA,
   bundleToJson,
+  createProject,
   createProjectBundle,
   parseProjectBundle,
   projectToDocument,
@@ -51,6 +52,23 @@ function buildSample(): ModelDocument {
 }
 
 describe('project bundle', () => {
+  it('createProject builds an empty bundle with the given name and seed', () => {
+    const bundle = createProject('MyFactory', 7);
+    expect(bundle.manifest.name).toBe('MyFactory');
+    expect(bundle.manifest.defaults.seed).toBe(7);
+    expect(bundle.manifest.defaults.schemaVersion).toBe(2);
+    expect(bundle.files['model/main.lp']).toContain('model MyFactory');
+    const loaded = projectToDocument(bundle);
+    expect(loaded.ok).toBe(true);
+    expect(loaded.document!.name).toBe('MyFactory');
+    expect(loaded.document!.nodes).toHaveLength(0);
+    expect(loaded.document!.edges).toHaveLength(0);
+  });
+
+  it('createProject defaults the seed when omitted', () => {
+    expect(createProject('Plain').manifest.defaults.seed).toBe(42);
+  });
+
   it('round-trips the canvas layout (positions, ids and edges survive)', () => {
     const original = buildSample();
     const result = projectToDocument(createProjectBundle(original));

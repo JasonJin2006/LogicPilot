@@ -89,6 +89,7 @@ function FolderRow({ folder, indent }: { folder: TreeFolder; indent: number }) {
 export function ExplorerPanel() {
   const modelDoc = useModelStore((state) => state.document);
   const bundle = useProjectStore((state) => state.bundle);
+  const dirty = useProjectStore((state) => state.dirty);
 
   const rootName = bundle ? bundle.manifest.name : `${modelDoc.name || 'Model'} (unsaved)`;
   const sourceRows: TreeEntry[] = bundle
@@ -122,6 +123,9 @@ export function ExplorerPanel() {
           {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}
         </span>
         <span className="tree-label">{rootName}</span>
+        {bundle && dirty && (
+          <span className="tree-dirty-dot" title="unsaved changes" />
+        )}
       </div>
       {sourceRows.map((entry) =>
         isFolder(entry) ? (

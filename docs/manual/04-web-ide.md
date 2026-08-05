@@ -37,6 +37,7 @@ lp-server 地址）。连接状态显示在底部状态栏（圆点 + FPS + 通�
 ## 工程保存 / 打开
 
 工程是工作单元（`*.lpproj` 单文件打包，格式见[工程格式](../specs/project-format)）：
+- **File > New Project...**：创建空工程（名称 + 默认种子），画布归零；编辑后 Explorer 根部显示脏点，Save 生成 `.lpproj`
 - **File > Save**：把画布模型（含坐标/连线/参数）与生成的 DSL 一起存成
   `*.lpproj`，重新打开时布局完整还原。
 - **File > Open... / Open Recent**：打开 `*.lpproj` 工程；旧 `.lp` / `.json`

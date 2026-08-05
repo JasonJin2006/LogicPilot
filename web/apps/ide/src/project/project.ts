@@ -4,7 +4,7 @@
 // (docs/specs/project-format.md) so it can later be unpacked to disk without
 // data loss.
 
-import { generateDsl, parseDsl } from '@logicpilot/editor';
+import { createDocument, generateDsl, parseDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
 
 export const PROJECT_SCHEMA = 'logicpilot.project';
@@ -28,6 +28,13 @@ export interface ProjectBundle {
   version: typeof PROJECT_VERSION;
   manifest: ProjectManifest;
   files: Record<string, string>;
+}
+
+/** Create a fresh, empty project bundle (File > New Project). */
+export function createProject(name: string, seed = DEFAULT_SEED): ProjectBundle {
+  const bundle = createProjectBundle(createDocument(name));
+  bundle.manifest.defaults.seed = seed;
+  return bundle;
 }
 
 /** Serialize the current canvas document into a project bundle. The DSL is

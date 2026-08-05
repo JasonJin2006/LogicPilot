@@ -44,7 +44,6 @@ export function AppMenu() {
 
   const modelDoc = useModelStore((state) => state.document);
   const selectedId = useModelStore((state) => state.selectedId);
-  const reset = useModelStore((state) => state.reset);
   const addBlock = useModelStore((state) => state.addBlock);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const loadDocument = useModelStore((state) => state.loadDocument);
@@ -57,15 +56,16 @@ export function AppMenu() {
   const reopenArea = useLayoutStore((state) => state.reopenArea);
   const toggleCollapse = useLayoutStore((state) => state.toggleCollapse);
   const openInfo = useUiStore((state) => state.openInfo);
+  const openNewProject = useUiStore((state) => state.openNewProject);
   const openBundle = useProjectStore((state) => state.openBundle);
   const clearProject = useProjectStore((state) => state.clearProject);
+  const markClean = useProjectStore((state) => state.markClean);
 
   const selected = modelDoc.nodes.find((node) => node.id === selectedId) ?? null;
   const close = () => setOpen(null);
 
-  const fileNew = () => {
-    clearProject();
-    reset();
+  const fileNewProject = () => {
+    openNewProject();
     close();
   };
   const fileOpen = () => {
@@ -90,6 +90,7 @@ export function AppMenu() {
         }
         openBundle(parsedBundle.bundle!);
         loadDocument(loaded.document!);
+        markClean();
         addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
         return;
       }
@@ -98,6 +99,7 @@ export function AppMenu() {
         try {
           const parsed = JSON.parse(text) as unknown;
           loadDocument(parsed as never);
+          markClean();
           const parsedName =
             typeof (parsed as { name?: unknown }).name === 'string'
               ? (parsed as { name: string }).name
@@ -112,6 +114,7 @@ export function AppMenu() {
       const parsed = parseDsl(text);
       if (parsed.ok) {
         loadDocument(parsed.document);
+        markClean();
         addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });
       } else {
         openInfo('Open failed', parsed.error ?? 'invalid DSL');
@@ -123,6 +126,7 @@ export function AppMenu() {
     const project = createProjectBundle(modelDoc);
     const bundle = bundleToJson(project);
     openBundle(project);
+    markClean();
     const blob = new Blob([bundle], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -223,7 +227,7 @@ export function AppMenu() {
     {
       label: 'File',
       entries: [
-        { label: 'New', shortcut: 'Ctrl+N', action: fileNew },
+        { label: 'New Project...', shortcut: 'Ctrl+N', action: fileNewProject },
         { label: 'Open...', shortcut: 'Ctrl+O', action: fileOpen },
         { kind: 'separator' },
         { kind: 'sectionLabel', label: 'Open Recent' },
@@ -240,6 +244,7 @@ export function AppMenu() {
                     if (loaded.ok) {
                       openBundle(parsedBundle.bundle!);
                       loadDocument(loaded.document!);
+                      markClean();
                     } else {
                       openInfo('Open failed', loaded.error ?? 'invalid project');
                     }
@@ -248,6 +253,7 @@ export function AppMenu() {
                   const parsed = parseDsl(model.dsl);
                   if (parsed.ok) {
                     loadDocument(parsed.document);
+                    markClean();
                   } else {
                     openInfo('Open failed', parsed.error ?? 'invalid DSL');
                   }
