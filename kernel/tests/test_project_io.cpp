@@ -180,3 +180,50 @@ TEST_CASE("project bundle: resolves instance members from scene files") {
   // The instance line itself is expanded away.
   CHECK(info.model_source.find("instance Flow") == std::string::npos);
 }
+
+TEST_CASE("project dir: everything-is-a-container layout expands instances") {
+  // project-format-v2: leaf members live in main.lp, every container is a
+  // scene file referenced by an instance member, and there are no kind-based
+  // part files.
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("lpcli_project_v2_test_" +
+                    std::to_string(std::chrono::steady_clock::now()
+                                       .time_since_epoch()
+                                       .count()));
+  std::filesystem::create_directories(dir / "model" / "scenes");
+  {
+    std::ofstream out(dir / "logicpilot.json");
+    out << R"({"schema":"logicpilot.project","name":"MM1",)"
+           R"("model":"model/main.lp","modelParts":[])";
+  }
+  {
+    std::ofstream out(dir / "model/main.lp");
+    out << "model MM1 {\n"
+           "  resource Server {\n    capacity = 1\n  }\n"
+           "  instance Flow = \"model/scenes/Flow.lp\"\n"
+           "  instance Tune = \"model/scenes/Tune.lp\"\n"
+           "}\n";
+  }
+  {
+    std::ofstream out(dir / "model/scenes/Flow.lp");
+    out << "  process Flow {\n"
+           "    source S {\n      arrival = rate(0.8)\n    }\n"
+           "    queue Q {\n      capacity = 10\n    }\n"
+           "  }\n";
+  }
+  {
+    std::ofstream out(dir / "model/scenes/Tune.lp");
+    out << "  experiment Tune {\n    budget = 20\n  }\n";
+  }
+
+  ProjectBundleInfo info;
+  std::string error;
+  REQUIRE(read_project_dir(dir.string(), info, error));
+  CHECK(info.name == "MM1");
+  CHECK(info.part_paths.empty());
+  CHECK(info.model_source.find("resource Server") != std::string::npos);
+  CHECK(info.model_source.find("process Flow") != std::string::npos);
+  CHECK(info.model_source.find("queue Q") != std::string::npos);
+  CHECK(info.model_source.find("experiment Tune") != std::string::npos);
+  CHECK(info.model_source.find("instance Flow") == std::string::npos);
+}
