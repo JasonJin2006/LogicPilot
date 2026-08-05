@@ -4,14 +4,13 @@
 // process library blocks). Every node is emitted - use/param members,
 // field/effect lines, behavior blocks, nested containers and placeholder
 // kinds - so generate(parse(x)) is semantically lossless. Stage ordering
-// inside a process container follows the coupling edges when present
-// (topological flow order), falling back to canvas x position.
+// follows the coupling edges when present (topological flow order), falling
+// back to canvas x position.
 
 import { findNode, type ModelDocument, type ModelEdge, type ModelNode } from './graph.js';
 
 /** Container kinds emit as nested `kind name { ... }` blocks. */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
-  'process',
   'agent',
   'atomic',
   'continuous',
@@ -180,8 +179,7 @@ export function generateDsl(document: ModelDocument): string {
   const topLevel = document.nodes.filter((node) => !node.container && emitCandidate(node));
   // Agent-centric emission: process-library blocks at the model root are
   // emitted directly (no `process Flow` wrapper) with their model-level
-  // couplings. Documents that still carry a `process` container node keep
-  // the legacy nested form via emitNode.
+  // couplings.
   const orphanLeaves = topLevel.filter(isDeclarationLeaf);
   const direct = topLevel.filter((node) => !isDeclarationLeaf(node));
   for (const node of direct) {

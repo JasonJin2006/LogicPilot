@@ -226,13 +226,13 @@ TimeSampler make_sampler(const Distribution* dist, std::string* error) {
   }
 }
 
-// v2-native process lowering (agent-centric + legacy).
+// v2-native process lowering (agent-centric).
 //
-// The flow's stages come from either:
-//   * a legacy {process, flow} container child (its children + couplings), or
-//   * process-library blocks declared directly under the model root (agent-
-//     centric structure), connected by the root's own couplings.
-// Resource pools come from the model root's {process, resource} children.
+// The flow's stages come from process-library blocks declared directly under
+// the model root (agent-centric structure), connected by the root's own
+// couplings; alternatively an agent body may hold the flow (its members +
+// couplings). Resource pools come from the model root's
+// {process, resource} children.
 std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
                                                       std::string* error) {
   const auto fail = [&](const std::string& msg) {
@@ -248,8 +248,6 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   std::unordered_map<std::string, const Node*> resources;
   std::vector<const Node*> flow_stages;
   std::vector<const ir::v2::Coupling*> flow_couplings;
-  const Node* flow = nullptr;
-  int flow_count = 0;
   bool agent_body_flow = false;
   for (const Node* child : *model_root->children()) {
     if (std::strcmp(node_library(child), "process") != 0) {
@@ -258,9 +256,6 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
     const std::string block = node_block(child);
     if (block == "resource") {
       resources.emplace(node_name(child), child);
-    } else if (block == "flow") {
-      flow = child;
-      ++flow_count;
     } else {
       // Agent-centric: a process-library block directly under the root is a
       // flow stage connected by the root's couplings.
@@ -269,7 +264,7 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
   }
   // Agent-centric: an agent body may hold the process flow (agent Main {
   // source ...; couple ... }). Use that agent's members + couplings.
-  if (flow == nullptr && flow_stages.empty()) {
+  if (flow_stages.empty()) {
     for (const Node* child : *model_root->children()) {
       if (std::strcmp(node_library(child), "agent") != 0 ||
           child->children() == nullptr) {
@@ -297,22 +292,7 @@ std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
       }
     }
   }
-  if (flow_count > 1) {
-    return fail("multiple process flow nodes; single-flow lowering only");
-  }
-  if (flow != nullptr) {
-    if (flow->children() != nullptr) {
-      flow_stages.clear();
-      for (const Node* stage : *flow->children()) {
-        flow_stages.push_back(stage);
-      }
-    }
-    if (flow->couplings() != nullptr) {
-      for (const ir::v2::Coupling* coupling : *flow->couplings()) {
-        flow_couplings.push_back(coupling);
-      }
-    }
-  } else if (flow_couplings.empty() && !agent_body_flow) {
+  if (flow_couplings.empty() && !agent_body_flow) {
     if (model_root->couplings() != nullptr) {
       for (const ir::v2::Coupling* coupling : *model_root->couplings()) {
         flow_couplings.push_back(coupling);
@@ -510,18 +490,14 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   bool has_atomic = false;
   bool has_agent = false;
   bool has_equation = false;
-  int flow_node_count = 0;
   if (root->children() != nullptr) {
     for (const Node* child : *root->children()) {
       const std::string library = node_library(child);
       const std::string block = node_block(child);
       if (library == "process" && block != "resource") {
-        // A legacy {process, flow} container or agent-centric process-library
-        // blocks declared directly under the model root.
+        // Agent-centric process-library blocks declared directly under the
+        // model root.
         has_process = true;
-        if (block == "flow") {
-          ++flow_node_count;
-        }
       } else if (library == "devs") {
         has_atomic = true;
       } else if (library == "agent") {
@@ -542,9 +518,6 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     }
   }
   if (has_process) {
-    if (flow_node_count > 1) {
-      return fail("multiple process flow nodes; single-flow lowering only");
-    }
     return build_process_model(root, error);
   }
   if (has_agent && !has_atomic && !has_equation) {
@@ -576,7 +549,6 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     return fail("no process model to stream");
   }
 
-  const Node* flow = nullptr;
   std::vector<const Node*> flow_stages;
   std::unordered_map<std::string, const Node*> resources;
   for (const Node* child : *root->children()) {
@@ -584,51 +556,37 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
       continue;
     }
     const std::string block = node_block(child);
-    if (block == "flow") {
-      if (flow != nullptr) {
-        return fail("multiple process flow nodes; streaming supports one");
-      }
-      flow = child;
-    } else if (block == "resource") {
+    if (block == "resource") {
       resources.emplace(node_name(child), child);
     } else {
       flow_stages.push_back(child);
     }
   }
-  if (flow == nullptr) {
-    // Agent-centric flows: process-library blocks directly under the root, or
-    // inside a root-level agent body (agent Main { source ...; couple ... }).
-    if (flow_stages.empty()) {
-      for (const Node* child : *root->children()) {
-        if (std::strcmp(node_library(child), "agent") != 0 ||
-            child->children() == nullptr) {
+  // Agent-centric flows: process-library blocks directly under the root, or
+  // inside a root-level agent body (agent Main { source ...; couple ... }).
+  if (flow_stages.empty()) {
+    for (const Node* child : *root->children()) {
+      if (std::strcmp(node_library(child), "agent") != 0 ||
+          child->children() == nullptr) {
+        continue;
+      }
+      for (const Node* member : *child->children()) {
+        if (std::strcmp(node_library(member), "process") != 0) {
           continue;
         }
-        for (const Node* member : *child->children()) {
-          if (std::strcmp(node_library(member), "process") != 0) {
-            continue;
-          }
-          const std::string block = node_block(member);
-          if (block == "resource") {
-            resources.emplace(node_name(member), member);
-          } else {
-            flow_stages.push_back(member);
-          }
-        }
-        if (!flow_stages.empty()) {
-          break;
+        const std::string block = node_block(member);
+        if (block == "resource") {
+          resources.emplace(node_name(member), member);
+        } else {
+          flow_stages.push_back(member);
         }
       }
-      if (flow_stages.empty()) {
-        return fail("no process flow to stream");
+      if (!flow_stages.empty()) {
+        break;
       }
     }
-  } else {
-    flow_stages.clear();
-    if (flow->children() != nullptr) {
-      for (const Node* stage : *flow->children()) {
-        flow_stages.push_back(stage);
-      }
+    if (flow_stages.empty()) {
+      return fail("no process flow to stream");
     }
   }
   const Node* source = nullptr;

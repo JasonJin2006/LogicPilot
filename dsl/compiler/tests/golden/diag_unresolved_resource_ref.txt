@@ -1,1 +1,1 @@
-input.lp:5:33: error[LP4001]: service 'Worker' references undeclared resource 'Missing'
+input.lp:4:31: error[LP4001]: service 'Worker' references undeclared resource 'Missing'

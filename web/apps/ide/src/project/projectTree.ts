@@ -349,7 +349,6 @@ export function replaceSpan(source: string, start: number, end: number, newText:
 export const MODEL_ADD_KINDS: Array<{ kind: string; template: (name: string) => string }> = [
   { kind: 'param', template: (n) => `param ${n}: float = 0.0` },
   { kind: 'resource', template: (n) => `resource ${n} {\n  capacity = 1\n}` },
-  { kind: 'process', template: (n) => `process ${n} {\n}` },
   { kind: 'agent', template: (n) => `agent ${n} {\n  count = 1\n}` },
   {
     kind: 'atomic',
@@ -360,16 +359,4 @@ export const MODEL_ADD_KINDS: Array<{ kind: string; template: (name: string) => 
     kind: 'experiment',
     template: (n) => `experiment ${n} {\n  objective = minimize Wq\n  budget = 20\n}`,
   },
-];
-
-export const STAGE_ADD_KINDS: Array<{ kind: string; template: (name: string) => string }> = [
-  { kind: 'source', template: (n) => `source ${n} {\n  arrival = rate(1.0)\n}` },
-  { kind: 'queue', template: (n) => `queue ${n} {\n  capacity = 100\n}` },
-  { kind: 'service', template: (n) => `service ${n} {\n  time = exponential(1.0)\n}` },
-  { kind: 'delay', template: (n) => `delay ${n} {\n  delayTime = exponential(1.0)\n}` },
-  { kind: 'split', template: (n) => `split ${n} {\n}` },
-  { kind: 'batch', template: (n) => `batch ${n} {\n  size = 2\n}` },
-  { kind: 'seize', template: (n) => `seize ${n} {\n  resource = R\n}` },
-  { kind: 'release', template: (n) => `release ${n} {\n  resource = R\n}` },
-  { kind: 'sink', template: (n) => `sink ${n} {\n}` },
 ];

@@ -1,1 +1,1 @@
-input.lp:10:16: error[LP7001]: experiment 'Tune' variable 'missing_param' must reference a declared model param or 'servers'
+input.lp:8:16: error[LP7001]: experiment 'Tune' variable 'missing_param' must reference a declared model param or 'servers'

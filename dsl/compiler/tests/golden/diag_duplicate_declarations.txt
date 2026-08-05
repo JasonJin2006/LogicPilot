@@ -1,2 +1,3 @@
 input.lp:3:12: error[LP1001]: duplicate declaration of resource 'R' (previously declared at line 2)
-input.lp:8:12: error[LP1001]: duplicate stage 'A' in process 'P' (previously declared at line 5)
+input.lp:6:11: error[LP1001]: duplicate declaration of service 'R' (previously declared at line 2)
+input.lp:7:10: error[LP1001]: duplicate declaration of source 'A' (previously declared at line 4)

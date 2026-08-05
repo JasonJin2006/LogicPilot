@@ -67,13 +67,11 @@ describe('DSL v2 generation', () => {
 
   it('emits explicit couple lines for non-default ports', () => {
     let doc = createDocument();
-    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
     doc = addNode(doc, {
       kind: 'source',
       name: 'In',
       x: 0,
       y: 0,
-      container: 'Flow',
       library: 'process',
     });
     doc = addNode(doc, {
@@ -81,7 +79,6 @@ describe('DSL v2 generation', () => {
       name: 'Route',
       x: 200,
       y: 0,
-      container: 'Flow',
       library: 'process',
     });
     doc = addNode(doc, {
@@ -89,7 +86,6 @@ describe('DSL v2 generation', () => {
       name: 'Yes',
       x: 400,
       y: -100,
-      container: 'Flow',
       library: 'process',
     });
     doc = addNode(doc, {
@@ -97,12 +93,11 @@ describe('DSL v2 generation', () => {
       name: 'No',
       x: 400,
       y: 100,
-      container: 'Flow',
       library: 'process',
     });
-    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[2]!.id).document;
-    doc = connect(doc, doc.nodes[2]!.id, doc.nodes[3]!.id, 'outT', 'in').document;
-    doc = connect(doc, doc.nodes[2]!.id, doc.nodes[4]!.id, 'outF', 'in').document;
+    doc = connect(doc, doc.nodes[0]!.id, doc.nodes[1]!.id).document;
+    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[2]!.id, 'outT', 'in').document;
+    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[3]!.id, 'outF', 'in').document;
 
     const source = generateDsl(doc);
     expect(source).toContain("couple In.out -> Route.in");
@@ -158,7 +153,7 @@ describe('DSL v2 generation', () => {
     expect(source).not.toContain('"poisson');
   });
 
-  it('emits custom-library block kinds into the process container', () => {
+  it('emits custom-library block kinds as model members', () => {
     let doc = createDocument();
     doc = addNode(doc, {
       kind: 'myblock' as Parameters<typeof addNode>[1]['kind'],
@@ -193,22 +188,4 @@ describe('DSL v2 generation', () => {
     expect(source).not.toContain('state');
   });
 
-  it('emits container Nodes as process blocks in document order', () => {
-    let doc = createDocument('M');
-    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
-    doc = addNode(doc, { kind: 'source', name: 'S', x: 0, y: 40, container: 'Flow' });
-    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 0, y: 80, container: 'Flow' });
-    doc = addNode(doc, { kind: 'process', name: 'Empty', x: 0, y: 120 });
-    const source = generateDsl(doc);
-    expect(source.indexOf('process Flow {')).toBeLessThan(source.indexOf('process Empty {'));
-    expect(source).toContain('source S {');
-    expect(source).toContain('queue Q {');
-    // An empty container still emits so it survives the round trip.
-    expect(source).toContain('process Empty {');
-    const reparsed = parseDsl(source);
-    expect(reparsed.ok).toBe(true);
-    expect(
-      reparsed.document.nodes.filter((node) => node.kind === 'process').map((node) => node.name),
-    ).toEqual(['Flow', 'Empty']);
-  });
 });

@@ -36,11 +36,9 @@ TEST_CASE("semantic: well-formed model passes analysis", "[dsl][semantic]") {
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource Machine { capacity = 3 failure_rate = 0.01 }\n"
-      "  process Production {\n"
-      "    source Orders { arrival = poisson(5) }\n"
-      "    queue Buffer { capacity = 50 }\n"
-      "    service Machine { time = normal(10, 2) }\n"
-      "  }\n"
+      "  source Orders { arrival = poisson(5) }\n"
+      "  queue Buffer { capacity = 50 }\n"
+      "  service Handle { resource = Machine; time = normal(10, 2) }\n"
       "}\n",
       "ok.lp");
   REQUIRE(parsed.ok());
@@ -52,11 +50,9 @@ TEST_CASE("semantic: queue capacity 0 is legal (no buffering)",
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource R { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    queue Q { capacity = 0 }\n"
-      "    service R { time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  queue Q { capacity = 0 }\n"
+      "  service S { resource = R; time = exponential(1) }\n"
       "}\n",
       "ok.lp");
   REQUIRE(parsed.ok());
@@ -71,13 +67,12 @@ TEST_CASE("semantic: empty process blocks pass with registry defaults",
       "model M {\n"
       "  resource Server {\n"
       "  }\n"
-      "  process Flow {\n"
-      "    source Arrivals {\n"
-      "    }\n"
-      "    queue WaitLine {\n"
-      "    }\n"
-      "    service Server {\n"
-      "    }\n"
+      "  source Arrivals {\n"
+      "  }\n"
+      "  queue WaitLine {\n"
+      "  }\n"
+      "  service Handle {\n"
+      "    resource = Server\n"
       "  }\n"
       "}\n",
       "input.lp");
@@ -91,13 +86,11 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
   const ParseOutput valid = parse_source(
       "model M {\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(1) }\n"
-      "    queue Q { capacity = 4 enableTimeout = true }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "    couple A.out -> Q.in\n"
-      "    couple Q.outTimeout -> R.in\n"
-      "  }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  queue Q { capacity = 4 enableTimeout = true }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
+      "  couple A.out -> Q.in\n"
+      "  couple Q.outTimeout -> R.in\n"
       "}\n",
       "input.lp");
   REQUIRE(valid.ok());
@@ -107,12 +100,10 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
   const ParseOutput conditional = parse_source(
       "model M {\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(1) }\n"
-      "    queue Q { capacity = 4 }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "    couple Q.outTimeout -> R.in\n"
-      "  }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  queue Q { capacity = 4 }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
+      "  couple Q.outTimeout -> R.in\n"
       "}\n",
       "input.lp");
   REQUIRE(conditional.ok());
@@ -125,12 +116,10 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
   const ParseOutput bad_port = parse_source(
       "model M {\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(1) }\n"
-      "    queue Q { capacity = 4 }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "    couple A.nope -> Q.in\n"
-      "  }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  queue Q { capacity = 4 }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
+      "  couple A.nope -> Q.in\n"
       "}\n",
       "input.lp");
   REQUIRE(bad_port.ok());
@@ -198,12 +187,10 @@ TEST_CASE("semantic snapshot: duplicate declarations", "[dsl][semantic]") {
       "model M {\n"
       "  resource R { capacity = 1 }\n"
       "  resource R { capacity = 2 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    queue B { capacity = 4 }\n"
-      "    service R { time = exponential(1) }\n"
-      "    source A { arrival = poisson(2) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  queue B { capacity = 4 }\n"
+      "  service R { time = exponential(1) }\n"
+      "  source A { arrival = poisson(2) }\n"
       "}\n",
       "diag_duplicate_declarations.txt");
 }
@@ -217,11 +204,9 @@ TEST_CASE("semantic snapshot: duplicate fields", "[dsl][semantic]") {
       "    failure_rate = 0.1\n"
       "    failure_rate = 0.2\n"
       "  }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) arrival = poisson(2) }\n"
-      "    queue B { capacity = 1 capacity = 2 }\n"
-      "    service R { time = exponential(1) time = exponential(2) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) arrival = poisson(2) }\n"
+      "  queue B { capacity = 1 capacity = 2 }\n"
+      "  service R { time = exponential(1) time = exponential(2) }\n"
       "}\n",
       "diag_duplicate_fields.txt");
 }
@@ -231,10 +216,8 @@ TEST_CASE("semantic snapshot: unresolved resource reference",
   expect_diagnostic_snapshot(
       "model M {\n"
       "  resource Machine { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    service Worker { time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  service Worker { time = exponential(1) }\n"
       "}\n",
       "diag_unresolved_resource.txt");
 }
@@ -244,10 +227,8 @@ TEST_CASE("semantic snapshot: unresolved explicit resource reference",
   expect_diagnostic_snapshot(
       "model M {\n"
       "  resource Machine { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    service Worker { resource = Missing; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  service Worker { resource = Missing; time = exponential(1) }\n"
       "}\n",
       "diag_unresolved_resource_ref.txt");
 }
@@ -257,10 +238,8 @@ TEST_CASE("semantic: explicit resource reference resolves to a declared "
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource Machine { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    service Worker { resource = Machine; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  service Worker { resource = Machine; time = exponential(1) }\n"
       "}\n",
       "ok.lp");
   REQUIRE(parsed.ok());
@@ -273,11 +252,9 @@ TEST_CASE("semantic: parameter references and constant folding",
       "model M {\n"
       "  param arrival_rate: float = 0.4\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(arrival_rate * 2) }\n"
-      "    queue Q { capacity = 100 + 1 }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = rate(arrival_rate * 2) }\n"
+      "  queue Q { capacity = 100 + 1 }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
       "}\n",
       "ok.lp");
   REQUIRE(parsed.ok());
@@ -290,11 +267,9 @@ TEST_CASE("semantic snapshot: undeclared identifier in an expression",
       "model M {\n"
       "  param k = 1\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(missing) }\n"
-      "    queue Q { capacity = 100 }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = rate(missing) }\n"
+      "  queue Q { capacity = 100 }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
       "}\n",
       "diag_undeclared_identifier.txt");
 }
@@ -305,10 +280,8 @@ TEST_CASE("semantic: experiment variable references a declared model param",
       "model M {\n"
       "  param arrival_rate = 0.8\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
       "  experiment Tune {\n"
       "    objective = minimize\n"
       "    metric = Wq\n"
@@ -326,10 +299,8 @@ TEST_CASE("semantic snapshot: experiment variable must be a declared param",
   expect_diagnostic_snapshot(
       "model M {\n"
       "  resource Server { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(1) }\n"
-      "    service R { resource = Server; time = exponential(1) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(1) }\n"
+      "  service R { resource = Server; time = exponential(1) }\n"
       "  experiment Tune {\n"
       "    objective = minimize\n"
       "    metric = Wq\n"
@@ -347,29 +318,28 @@ TEST_CASE("semantic snapshot: numeric ranges", "[dsl][semantic]") {
       "    capacity = 0\n"
       "    failure_rate = 1.5\n"
       "  }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(0) }\n"
-      "    queue B { capacity = 3 }\n"
-      "    service R { time = normal(0, 2) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(0) }\n"
+      "  queue B { capacity = 3 }\n"
+      "  service R { time = normal(0, 2) }\n"
       "}\n",
       "diag_numeric_ranges.txt");
 }
 
-TEST_CASE("semantic snapshot: process structure", "[dsl][semantic]") {
-  expect_diagnostic_snapshot(
+TEST_CASE("semantic: process containers are rejected", "[dsl][semantic]") {
+  const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource R { capacity = 1 }\n"
-      "  process Empty {\n"
-      "  }\n"
-      "  process TwoSources {\n"
+      "  process Flow {\n"
       "    source A { arrival = poisson(1) }\n"
-      "    source B { arrival = poisson(1) }\n"
-      "    queue C { capacity = 2 }\n"
-      "    service R { time = exponential(1) }\n"
       "  }\n"
       "}\n",
-      "diag_process_structure.txt");
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  REQUIRE(diags.size() == 1);
+  REQUIRE(diags.front().code == "LP2004");
+  REQUIRE(diags.front().message.find("process containers were removed") !=
+          std::string::npos);
 }
 
 TEST_CASE("semantic: diagnostics carry spans and machine-readable codes",

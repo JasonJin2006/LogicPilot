@@ -95,17 +95,17 @@ model MM1 {
     capacity = 1
     failure_rate = 0.0
   }
-  process Flow {
-    source Jobs {
-      arrival = poisson(1)
-    }
-    queue WaitingLine {
-      capacity = 100
-    }
-    service Server {
-      time = exponential(2)
-    }
+  source Jobs {
+    arrival = poisson(1)
   }
+  queue WaitingLine {
+    capacity = 100
+  }
+  service Server {
+    time = exponential(2)
+  }
+  couple Jobs.out -> WaitingLine.in
+  couple WaitingLine.out -> Server.in
 }
 ---
 
@@ -132,41 +132,47 @@ model MM1 {
         kind: (identifier)
         name: (identifier)
         body: (declaration_body
-          (declaration
-            kind: (identifier)
+          (field
             name: (identifier)
-            body: (declaration_body
-              (field
+            value: (value
+              (call
                 name: (identifier)
-                value: (value
-                  (call
-                    name: (identifier)
-                    args: (argument_list
-                      (value
-                        (value_literal
-                          (integer)))))))))
-          (declaration
-            kind: (identifier)
+                args: (argument_list
+                  (value
+                    (value_literal
+                      (integer)))))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
             name: (identifier)
-            body: (declaration_body
-              (field
-                name: (identifier)
-                value: (value
-                  (value_literal
-                    (integer))))))
-          (declaration
-            kind: (identifier)
+            value: (value
+              (value_literal
+                (integer))))))
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
             name: (identifier)
-            body: (declaration_body
-              (field
+            value: (value
+              (call
                 name: (identifier)
-                value: (value
-                  (call
-                    name: (identifier)
-                    args: (argument_list
-                      (value
-                        (value_literal
-                          (integer))))))))))))))
+                args: (argument_list
+                  (value
+                    (value_literal
+                      (integer)))))))))
+      (couple_declaration
+        from_model: (identifier)
+        from_port: (identifier)
+        to_model: (identifier)
+        to_port: (identifier))
+      (couple_declaration
+        from_model: (identifier)
+        from_port: (identifier)
+        to_model: (identifier)
+        to_port: (identifier)))))
 
 ==================
 End-to-end QueueDemo with exponential service
@@ -234,4 +240,3 @@ model QueueDemo {
                       (value
                         (value_literal
                           (integer))))))))))))))
-

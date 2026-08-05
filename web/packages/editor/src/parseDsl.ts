@@ -36,7 +36,6 @@ type Token =
 /** Container kinds: their members are nested children (one scene file per
  *  container in the on-disk layout). */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
-  'process',
   'agent',
   'atomic',
   'continuous',
@@ -458,9 +457,7 @@ export function parseDsl(source: string): ParseResult {
   // container. Behavior blocks (on_*) are exempt - a container may hold
   // several behaviors with the same trigger.
   const seenNames = new Map<string, Set<string>>();
-  // Sequential stage order per process container (declaration order).
-  const processStages = new Map<string, ModelNode[]>();
-  // Explicit `couple A.out -> B.in` declarations (inside a process body).
+  // Explicit `couple A.out -> B.in` declarations.
   const couples: Array<{
     from: string;
     fromPort: string;
@@ -479,7 +476,6 @@ export function parseDsl(source: string): ParseResult {
   const flatten = (
     member: BodyMember,
     parent: string | undefined,
-    parentKind: string | undefined,
   ): void => {
     if (!member.kind.startsWith('on_')) {
       const scope = parent ?? '';
@@ -542,7 +538,7 @@ export function parseDsl(source: string): ParseResult {
         placeholder: true,
       });
       for (const child of member.children) {
-        flatten(child, member.name, member.kind);
+        flatten(child, member.name);
       }
       return;
     }
@@ -569,32 +565,16 @@ export function parseDsl(source: string): ParseResult {
     };
     nodes.push(node);
     for (const child of nested) {
-      flatten(child, member.name, member.kind);
-    }
-    if (parentKind === 'process' && !CONTAINER_KINDS.has(member.kind)) {
-      const group = processStages.get(parent ?? '');
-      if (group) {
-        group.push(node);
-      } else {
-        processStages.set(parent ?? '', [node]);
-      }
+      flatten(child, member.name);
     }
   };
 
   for (const member of members) {
-    flatten(member, undefined, undefined);
+    flatten(member, undefined);
   }
 
   let doc: ModelDocument = { ...document, nodes };
-  // Explicit couples win; processes without couples fall back to
-  // declaration-order chaining.
   const nameToId = new Map(nodes.map((node) => [node.name, node.id]));
-  const coupledProcesses = new Set(
-    couples.map((couple) => {
-      const from = nodes.find((node) => node.name === couple.from);
-      return from?.container ?? '';
-    }),
-  );
   for (const couple of couples) {
     const from = nameToId.get(couple.from);
     const to = nameToId.get(couple.to);
@@ -602,16 +582,6 @@ export function parseDsl(source: string): ParseResult {
       continue;  // unresolved stages (e.g. external) stay warnings-free
     }
     doc = connect(doc, from, to, couple.fromPort, couple.toPort).document;
-  }
-  for (const group of processStages.values()) {
-    if (group.length === 0) continue;
-    const container = group[0]!.container ?? '';
-    if (coupledProcesses.has(container)) {
-      continue;  // explicit couples already define the topology
-    }
-    for (let i = 0; i + 1 < group.length; i++) {
-      doc = connect(doc, group[i]!.id, group[i + 1]!.id).document;
-    }
   }
   return { ok: true, document: doc, diagnostics };
 }

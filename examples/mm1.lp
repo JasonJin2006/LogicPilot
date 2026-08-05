@@ -8,7 +8,7 @@
 //
 // Agent-centric structure: process-library blocks are direct members of the
 // model root (no `process` container), connected by model-level `couple`
-// lines. Semantics identical to the legacy `process Flow { ... }` form.
+// lines.
 model MM1 {
   use process
   param arrival_rate: float = 0.8

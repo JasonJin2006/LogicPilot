@@ -2,7 +2,7 @@
 // see semantic.h for the check catalogue and diagnostic codes).
 //
 // Kind resolution drives everything: `kind` is resolved against the core
-// kinds (agent/atomic/process/continuous/experiment) and the builtin
+// kinds (agent/atomic/continuous/experiment) and the builtin
 // process library registry (resource/source/queue/service/sink); block
 // instances are then validated against their registered shape (required
 // fields, duplicates, ranges, references). Numeric fields are
@@ -190,13 +190,10 @@ class Analyzer {
                   const ParamScope& parent_scope) {
     const std::string& kind = node.kind;
     if (kind == "process") {
-      if (!top_level) {
-        error("LP2004",
-              "process '" + node.name + "' must be declared at model level",
-              node.span);
-        return;
-      }
-      check_process(node);
+      error("LP2004",
+            "process containers were removed; write process library blocks "
+            "directly under the model/agent scope",
+            node.name_span);
       return;
     }
     if (kind == "atomic") {
@@ -217,13 +214,13 @@ class Analyzer {
     if (registry_ != nullptr && registry_->has_block(kind)) {
       // Process-library blocks (source/queue/service/... and resource) are
       // valid members of the model root and agent bodies (agent-centric
-      // structure); `process` containers remain supported for legacy models.
+      // structure).
       check_process_block(node, parent_scope);
       return;
     }
     error("LP2004",
           "unknown declaration kind '" + kind + "' (core kinds: "
-              "agent/atomic/process/continuous/experiment; process library: "
+              "agent/atomic/continuous/experiment; process library: "
               "resource/source/queue/service/sink)",
           node.name_span);
   }
@@ -532,60 +529,6 @@ class Analyzer {
       return;
     }
     check_distribution(dist, context);
-  }
-
-  void check_process(const Node& node) {
-    std::unordered_map<std::string, Span> stage_names;
-    int sources = 0;
-    for (const Node& stage : node.children) {
-      const auto [it, inserted] =
-          stage_names.emplace(stage.name, stage.name_span);
-      if (!inserted) {
-        error("LP1001",
-              "duplicate stage '" + stage.name + "' in process '" +
-                  node.name + "' (previously declared at line " +
-                  std::to_string(it->second.line) + ")",
-              stage.name_span);
-      }
-      if (registry_ == nullptr || !registry_->has_block(stage.kind)) {
-        error("LP2004",
-              "block '" + stage.kind +
-                  "' is not a registered process library block",
-              stage.name_span);
-        continue;
-      }
-      if (stage.kind == "source") {
-        ++sources;
-      }
-      check_process_block(stage, model_scope_);
-    }
-    if (sources == 0) {
-      error("LP2002",
-            "process '" + node.name + "' has no source stage", node.span);
-    }
-    // Validate process-internal `couple` declarations against the block
-    // shapes (port existence, direction, conditional visibility).
-    for (const CoupleDecl& couple : node.couplings) {
-      const Node* from = nullptr;
-      const Node* to = nullptr;
-      for (const Node& stage : node.children) {
-        if (stage.name == couple.from_model) {
-          from = &stage;
-        }
-        if (stage.name == couple.to_model) {
-          to = &stage;
-        }
-      }
-      if (from == nullptr || to == nullptr) {
-        error("LP5002",
-              "coupling references undeclared stage '" +
-                  (from == nullptr ? couple.from_model : couple.to_model) +
-                  "' in process '" + node.name + "'",
-              couple.span);
-        continue;
-      }
-      check_process_coupling(*from, *to, couple);
-    }
   }
 
   // Validate a scope that holds process-library members (model root or an
@@ -1053,6 +996,9 @@ class Analyzer {
         continue;
       }
       // Process flow coupling: both ends must be registered process stages.
+      // Port/shape validation (LP5003, conditional gating) is done once by
+      // check_flow_scope on the model root; here we only report unknown
+      // endpoints so the diagnostics stay single-source.
       const auto from_stage = process_stages.find(couple.from_model);
       const auto to_stage = process_stages.find(couple.to_model);
       if (from_stage == process_stages.end()) {
@@ -1069,7 +1015,6 @@ class Analyzer {
               couple.span);
         continue;
       }
-      check_process_coupling(*from_stage->second, *to_stage->second, couple);
     }
   }
 

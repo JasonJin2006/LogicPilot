@@ -14,13 +14,14 @@ const MM1 = `model MM1 {
     capacity = 1
   }
 
-  process Flow {
+  agent Worker {
     source Arrivals {
       arrival = rate(arrival_rate)
     }
     queue WaitLine {
       capacity = 1000000
     }
+    couple Arrivals.out -> WaitLine.in
   }
 
   experiment Tune {
@@ -37,15 +38,15 @@ describe('projectTree', () => {
     const model = result.model!;
     expect(model.name).toBe('MM1');
     const kinds = model.members.map((member) => member.kind);
-    expect(kinds).toEqual(['use', 'leaf', 'resource', 'process', 'experiment']);
+    expect(kinds).toEqual(['use', 'leaf', 'resource', 'agent', 'experiment']);
 
     const resource = model.members.find((member) => member.kind === 'resource')!;
     expect(resource.name).toBe('Server');
     expect(resource.isLeaf).toBe(false);
 
-    const process = model.members.find((member) => member.kind === 'process')!;
-    expect(process.children.map((child) => child.kind)).toEqual(['source', 'queue']);
-    expect(process.children[0]!.name).toBe('Arrivals');
+    const agent = model.members.find((member) => member.kind === 'agent')!;
+    expect(agent.children.map((child) => child.kind)).toEqual(['source', 'queue', 'leaf']);
+    expect(agent.children[0]!.name).toBe('Arrivals');
 
     const experiment = model.members.find((member) => member.kind === 'experiment')!;
     expect(experiment.name).toBe('Tune');
@@ -78,13 +79,13 @@ describe('projectTree', () => {
 
   it('deleteSpan removes a member line range', () => {
     const result = parseProjectSource(MM1);
-    const process = result.model!.members.find((member) => member.kind === 'process')!;
-    const queue = process.children.find((child) => child.kind === 'queue')!;
+    const agent = result.model!.members.find((member) => member.kind === 'agent')!;
+    const queue = agent.children.find((child) => child.kind === 'queue')!;
     const next = deleteSpan(MM1, queue.span.start, queue.span.end);
     const reparsed = parseProjectSource(next);
     expect(reparsed.ok).toBe(true);
-    const processAgain = reparsed.model!.members.find((m) => m.kind === 'process')!;
-    expect(processAgain.children.map((c) => c.kind)).toEqual(['source']);
+    const agentAgain = reparsed.model!.members.find((m) => m.kind === 'agent')!;
+    expect(agentAgain.children.map((c) => c.kind)).toEqual(['source', 'leaf']);
     expect(next).not.toContain('queue WaitLine');
   });
 
@@ -103,7 +104,7 @@ describe('projectTree', () => {
       '  resource resource {\n' +
       '    capacity = 1\n' +
       '  }\n' +
-      '  process Flow {\n' +
+      '  agent Worker {\n' +
       '    queue queue {\n' +
       '      capacity = 100\n' +
       '    }\n' +
@@ -122,10 +123,10 @@ describe('projectTree', () => {
     parsed = parseProjectSource(source);
     expect(parsed.ok).toBe(true);
 
-    const process = parsed.model!.members.find((m) => m.kind === 'process')!;
+    const agent = parsed.model!.members.find((m) => m.kind === 'agent')!;
     source = insertMember(
       source,
-      process.bodyClose,
+      agent.bodyClose,
       '    ',
       'queue Queue2 {\n  capacity = 100\n}',
     );
@@ -138,7 +139,7 @@ describe('projectTree', () => {
     expect(final.ok).toBe(true);
     expect(final.model!.members.map((m) => m.kind)).toEqual([
       'resource',
-      'process',
+      'agent',
     ]);
   });
 });

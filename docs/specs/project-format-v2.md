@@ -53,7 +53,7 @@ factory/                          # 工程根
   `experiment` 拆到 `model/scenes/<Name>.lp`，父文件用
   `instance <Name> = "model/scenes/<Name>.lp"` 引用（可复用 = 复用/预制体）。
 - **不产生 process 容器文件**：新工程不再为流程生成
-  `model/scenes/<Process>.lp`；历史工程的此类文件**兼容读取**。
+  `model/scenes/<Process>.lp`；历史工程的此类文件已不支持（无法编译）。
 - 布局文件与容器文件一一对应：`presentation/<dir>/<name>.canvas.json`。
 
 ## 4. 结构 vs 表现分离
@@ -94,9 +94,9 @@ save(canonical):
 
 ## 7. 兼容与迁移
 
-- 旧 DSL（`process Flow { ... }`）与旧工程文件
-  （`instance Flow = "model/scenes/Flow.lp"`）继续编译/运行/打开
-  （兼容读取，见 [agent-centric](./agent-centric) §4）。
+- **旧格式完全舍弃**（2026-08-06）：`process` 容器不再编译，不再生成
+  `model/scenes/<Process>.lp`；历史工程的此类文件成为孤立文件（可编辑，
+  无法运行）。嵌套 agent/experiment 等 scene + `instance` 引用保留。
 - 新工程与保存一律产出 agent-centric 布局；`generateDsl` 平铺根级流程块，
   `nodePath` 根级成员直接用名字（无 `Flow/` 前缀）。
 - 迁移顺序：编译器 → 内核 → 工程格式 → IDE → 示例/测试/E2E，每阶段保持

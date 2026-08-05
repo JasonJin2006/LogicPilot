@@ -82,18 +82,21 @@ model ${spec.model} {
     capacity = ${spec.servers}${failure}
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = rate(${number(spec.lambda)})
-    }
-    queue WaitLine {
-      capacity = ${spec.queueCapacity}
-    }
-    service Service {
-      resource = ${spec.resourceName}
-      time = exponential(${number(spec.mu)})
-    }
+  source Arrivals {
+    arrival = rate(${number(spec.lambda)})
   }
+  queue WaitLine {
+    capacity = ${spec.queueCapacity}
+  }
+  service Service {
+    resource = ${spec.resourceName}
+    time = exponential(${number(spec.mu)})
+  }
+  sink Done { }
+
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Service.in
+  couple Service.out -> Done.in
 }
 `;
 }

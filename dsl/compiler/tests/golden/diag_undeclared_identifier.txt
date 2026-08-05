@@ -1,1 +1,1 @@
-input.lp:5:16: error[LP2006]: source 'A' arrival must be a compile-time constant (literals, params, arithmetic)
+input.lp:4:14: error[LP2006]: source 'A' arrival must be a compile-time constant (literals, params, arithmetic)

@@ -97,15 +97,15 @@ TEST_CASE("project bundle: merges model part fragments before compiling") {
       "\"files\":{"
       "\"model/main.lp\":\"model M {\\n}\\n\","
       "\"model/resources.lp\":\"  resource Server {\\n    capacity = 1\\n  }\\n\","
-      "\"model/process.lp\":\"  process Flow {\\n    queue Q {\\n      "
-      "capacity = 10\\n    }\\n  }\\n\""
+      "\"model/process.lp\":\"  queue Q {\\n      "
+      "capacity = 10\\n    }\\n\""
       "}}";
   ProjectBundleInfo info;
   std::string error;
   REQUIRE(read_project_bundle(bundle, info, error));
   CHECK(info.model_source.find("model M {") != std::string::npos);
   CHECK(info.model_source.find("resource Server") != std::string::npos);
-  CHECK(info.model_source.find("process Flow") != std::string::npos);
+  CHECK(info.model_source.find("queue Q") != std::string::npos);
   CHECK(info.part_paths.size() == 2);
 }
 
@@ -144,7 +144,7 @@ TEST_CASE("project dir: reads logicpilot.json, files and merges the parts") {
   }
   {
     std::ofstream out(dir / "model/process.lp");
-    out << "  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n";
+    out << "  queue Q {\n    capacity = 10\n  }\n";
   }
 
   ProjectBundleInfo info;
@@ -166,25 +166,23 @@ TEST_CASE("project bundle: resolves instance members from scene files") {
       "\"model\":\"model/main.lp\","
       "\"modelParts\":[\"model/resources.lp\"]},"
       "\"files\":{"
-      "\"model/main.lp\":\"model M {\\n  instance Flow = \\\"model/scenes/Flow.lp\\\"\\n}\\n\","
+      "\"model/main.lp\":\"model M {\\n  instance Drone = \\\"model/scenes/Drone.lp\\\"\\n}\\n\","
       "\"model/resources.lp\":\"  resource Server {\\n    capacity = 1\\n  }\\n\","
-      "\"model/scenes/Flow.lp\":\"  process Flow {\\n    queue Q {\\n      "
-      "capacity = 10\\n    }\\n  }\\n\""
+      "\"model/scenes/Drone.lp\":\"  agent Drone {\\n    count = 2\\n  }\\n\""
       "}}";
   ProjectBundleInfo info;
   std::string error;
   REQUIRE(read_project_bundle(bundle, info, error));
   CHECK(info.model_source.find("resource Server") != std::string::npos);
-  CHECK(info.model_source.find("process Flow") != std::string::npos);
-  CHECK(info.model_source.find("queue Q") != std::string::npos);
+  CHECK(info.model_source.find("agent Drone") != std::string::npos);
+  CHECK(info.model_source.find("count = 2") != std::string::npos);
   // The instance line itself is expanded away.
-  CHECK(info.model_source.find("instance Flow") == std::string::npos);
+  CHECK(info.model_source.find("instance Drone") == std::string::npos);
 }
 
-TEST_CASE("project dir: everything-is-a-container layout expands instances") {
-  // project-format-v2: leaf members live in main.lp, every container is a
-  // scene file referenced by an instance member, and there are no kind-based
-  // part files.
+TEST_CASE("project dir: agent-centric layout expands nested containers") {
+  // Agent-centric: process blocks live flat in main.lp; nested containers
+  // (agent/experiment) are scene files referenced by instance members.
   const auto dir = std::filesystem::temp_directory_path() /
                    ("lpcli_project_v2_test_" +
                     std::to_string(std::chrono::steady_clock::now()
@@ -199,17 +197,14 @@ TEST_CASE("project dir: everything-is-a-container layout expands instances") {
   {
     std::ofstream out(dir / "model/main.lp");
     out << "model MM1 {\n"
-           "  resource Server {\n    capacity = 1\n  }\n"
-           "  instance Flow = \"model/scenes/Flow.lp\"\n"
+           "  queue Q {\n    capacity = 10\n  }\n"
+           "  instance Drone = \"model/scenes/Drone.lp\"\n"
            "  instance Tune = \"model/scenes/Tune.lp\"\n"
            "}\n";
   }
   {
-    std::ofstream out(dir / "model/scenes/Flow.lp");
-    out << "  process Flow {\n"
-           "    source S {\n      arrival = rate(0.8)\n    }\n"
-           "    queue Q {\n      capacity = 10\n    }\n"
-           "  }\n";
+    std::ofstream out(dir / "model/scenes/Drone.lp");
+    out << "  agent Drone {\n    count = 2\n  }\n";
   }
   {
     std::ofstream out(dir / "model/scenes/Tune.lp");
@@ -221,9 +216,9 @@ TEST_CASE("project dir: everything-is-a-container layout expands instances") {
   REQUIRE(read_project_dir(dir.string(), info, error));
   CHECK(info.name == "MM1");
   CHECK(info.part_paths.empty());
-  CHECK(info.model_source.find("resource Server") != std::string::npos);
-  CHECK(info.model_source.find("process Flow") != std::string::npos);
   CHECK(info.model_source.find("queue Q") != std::string::npos);
+  CHECK(info.model_source.find("agent Drone") != std::string::npos);
+  CHECK(info.model_source.find("count = 2") != std::string::npos);
   CHECK(info.model_source.find("experiment Tune") != std::string::npos);
-  CHECK(info.model_source.find("instance Flow") == std::string::npos);
+  CHECK(info.model_source.find("instance Drone") == std::string::npos);
 }

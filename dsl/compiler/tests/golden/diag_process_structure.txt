@@ -1,1 +1,0 @@
-input.lp:3:3: error[LP2002]: process 'Empty' has no source stage

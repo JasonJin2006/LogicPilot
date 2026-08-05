@@ -105,15 +105,19 @@ describe('project bundle', () => {
     expect(loaded.ok).toBe(true);
   });
 
-  it('splitModelSource keeps leaf members in main.lp and containers in scenes', () => {
+  it('splitModelSource keeps process blocks in main.lp and nested containers in scenes', () => {
     const source = `model M {
   resource Server {
     capacity = 1
   }
-  process Flow {
-    queue Q {
-      capacity = 10
-    }
+  source In {
+    arrival = rate(0.8)
+  }
+  queue Q {
+    capacity = 10
+  }
+  agent Drone {
+    count = 2
   }
   experiment Tune {
     budget = 20
@@ -123,46 +127,46 @@ describe('project bundle', () => {
     const split = splitModelSource(source);
     expect(split['model/main.lp']).toContain('model M');
     expect(split['model/main.lp']).toContain('resource Server');
+    expect(split['model/main.lp']).toContain('source In');
+    expect(split['model/main.lp']).toContain('queue Q');
+    expect(split['model/main.lp']).toContain('instance Drone = "model/scenes/Drone.lp"');
     expect(split['model/main.lp']).toContain('instance Tune = "model/scenes/Tune.lp"');
-    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
+    expect(split['model/scenes/Flow.lp']).toBeUndefined();
+    expect(split['model/scenes/Drone.lp']).toContain('agent Drone');
     expect(split['model/scenes/Tune.lp']).toContain('experiment Tune');
     expect(split['model/resources.lp']).toBeUndefined();
     expect(split['model/experiments.lp']).toBeUndefined();
-    expect(split['model/scenes/Drone.lp']).toBeUndefined();
     // Members keep their model-body indentation so the merged model stays tidy.
     expect(split['model/main.lp']).toMatch(/  resource Server/);
-    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
-    expect(split['model/scenes/Flow.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
+    expect(split['model/scenes/Drone.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
   });
 
   it('mergeModelSource reconstructs the full model from parts', () => {
-    const main = 'model M {\n  instance Flow = "model/scenes/Flow.lp"\n}\n';
+    const main = 'model M {\n  instance Drone = "model/scenes/Drone.lp"\n}\n';
     const files = {
       'model/main.lp': main,
       'model/resources.lp': '  resource Server {\n    capacity = 1\n  }\n',
-      'model/scenes/Flow.lp': '  process Flow {\n    queue Q {\n      capacity = 10\n    }\n  }\n',
+      'model/scenes/Drone.lp': '  agent Drone {\n    count = 2\n  }\n',
       'model/experiments.lp': '  experiment Tune {\n    budget = 20\n  }\n',
     };
     const merged = mergeModelSource(main, files);
     expect(merged).toContain('resource Server');
-    expect(merged).toContain('queue Q');
+    expect(merged).toContain('agent Drone');
     expect(merged).toContain('experiment Tune');
     const parsed = parseProjectSource(merged);
     expect(parsed.ok).toBe(true);
     expect(new Set(parsed.model!.members.map((member) => member.kind))).toEqual(
-      new Set(['resource', 'process', 'experiment']),
+      new Set(['resource', 'agent', 'experiment']),
     );
   });
 
-  it('split then merge is lossless for resources/process/experiments', () => {
+  it('split then merge is lossless for flat flows and nested containers', () => {
     const source = `model M {
   resource Server {
     capacity = 1
   }
-  process Flow {
-    source S {
-      arrival = rate(0.8)
-    }
+  source S {
+    arrival = rate(0.8)
   }
 }
 `;
@@ -190,41 +194,41 @@ describe('project bundle', () => {
 
   it('sceneContainerFromFile identifies the container of a scene file', () => {
     expect(
-      sceneContainerFromFile('model/scenes/Flow.lp', '  process Flow {\n    queue Q { }\n  }\n'),
-    ).toEqual({ kind: 'process', name: 'Flow' });
+      sceneContainerFromFile('model/scenes/Drone.lp', '  agent Drone {\n    count = 2\n  }\n'),
+    ).toEqual({ kind: 'agent', name: 'Drone' });
     expect(sceneContainerFromFile('model/main.lp', 'model M {\n}\n')).toBeNull();
     expect(sceneContainerFromFile('model/scenes/Bad.lp', 'not a fragment')).toBeNull();
   });
 
   it('projectTree parses instance members', () => {
     const parsed = parseProjectSource(
-      'model M {\n  instance Flow = "model/scenes/Flow.lp"\n}\n',
+      'model M {\n  instance Drone = "model/scenes/Drone.lp"\n}\n',
     );
     expect(parsed.ok).toBe(true);
     const instance = parsed.model!.members.find((member) => member.kind === 'instance')!;
-    expect(instance.name).toBe('Flow');
-    expect(instance.path).toBe('model/scenes/Flow.lp');
+    expect(instance.name).toBe('Drone');
+    expect(instance.path).toBe('model/scenes/Drone.lp');
   });
 
   it('addInstanceLine inserts an instance member into the model body', () => {
     const source = 'model M {\n  resource Server { }\n}\n';
-    const next = addInstanceLine(source, 'model/scenes/Flow.lp', 'Flow');
-    expect(next).toContain('instance Flow = "model/scenes/Flow.lp"');
+    const next = addInstanceLine(source, 'model/scenes/Drone.lp', 'Drone');
+    expect(next).toContain('instance Drone = "model/scenes/Drone.lp"');
     const reparsed = parseProjectSource(next);
     expect(reparsed.ok).toBe(true);
     const instance = reparsed.model!.members.find((member) => member.kind === 'instance')!;
-    expect(instance.name).toBe('Flow');
-    expect(instance.path).toBe('model/scenes/Flow.lp');
+    expect(instance.name).toBe('Drone');
+    expect(instance.path).toBe('model/scenes/Drone.lp');
     // The inserted member lives inside the model body, before the closing brace.
-    expect(next.indexOf('instance Flow')).toBeLessThan(next.indexOf('\n}\n'));
+    expect(next.indexOf('instance Drone')).toBeLessThan(next.indexOf('\n}\n'));
   });
 
   it('nextInstanceName avoids collisions with existing members', () => {
     const source =
-      'model M {\n  instance Flow = "model/scenes/Flow.lp"\n  instance Flow2 = "model/scenes/Flow2.lp"\n}\n';
-    expect(nextInstanceName(source, 'Flow')).toBe('Flow3');
+      'model M {\n  instance Drone = "model/scenes/Drone.lp"\n  instance Drone2 = "model/scenes/Drone2.lp"\n}\n';
+    expect(nextInstanceName(source, 'Drone')).toBe('Drone3');
     expect(nextInstanceName(source, 'New')).toBe('New');
-    expect(nextInstanceName('model M {\n}\n', 'Flow')).toBe('Flow');
+    expect(nextInstanceName('model M {\n}\n', 'Drone')).toBe('Drone');
   });
 
   it('split emits instances and merge resolves them back to inline containers', () => {
@@ -232,28 +236,26 @@ describe('project bundle', () => {
   resource Server {
     capacity = 1
   }
-  process Flow {
-    queue Q {
-      capacity = 10
-    }
+  agent Drone {
+    count = 2
   }
 }
 `;
     const split = splitModelSource(source);
     expect(split['model/main.lp']).toContain(
-      'instance Flow = "model/scenes/Flow.lp"',
+      'instance Drone = "model/scenes/Drone.lp"',
     );
-    expect(split['model/scenes/Flow.lp']).toContain('process Flow');
+    expect(split['model/scenes/Drone.lp']).toContain('agent Drone');
     expect(split['model/main.lp']).toContain('resource Server');
 
     const merged = mergeModelSource(split['model/main.lp']!, split);
-    expect(merged).not.toContain('instance Flow');
-    expect(merged).toContain('process Flow');
-    expect(merged).toContain('queue Q');
+    expect(merged).not.toContain('instance Drone');
+    expect(merged).toContain('agent Drone');
+    expect(merged).toContain('count = 2');
     const reparsed = parseProjectSource(merged);
     expect(reparsed.ok).toBe(true);
     expect(new Set(reparsed.model!.members.map((member) => member.kind))).toEqual(
-      new Set(['resource', 'process']),
+      new Set(['resource', 'agent']),
     );
   });
 

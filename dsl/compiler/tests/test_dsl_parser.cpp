@@ -20,17 +20,15 @@ model MM1 {
     capacity = 1
   }
 
-  process Flow {
-    source Arrivals {
-      arrival = poisson(0.8)
-    }
-    queue WaitLine {
-      capacity = 1000000
-    }
-    service Handle {
-      resource = Server
-      time = exponential(1.0)
-    }
+  source Arrivals {
+    arrival = poisson(0.8)
+  }
+  queue WaitLine {
+    capacity = 1000000
+  }
+  service Handle {
+    resource = Server
+    time = exponential(1.0)
   }
 }
 )";
@@ -63,7 +61,7 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
 
   const ModelAst& model = *parsed.model;
   REQUIRE(model.name == "MM1");
-  REQUIRE(model.members.size() == 2);  // resource + process
+  REQUIRE(model.members.size() == 4);  // resource + source + queue + service
 
   const Node* server = member_of(model, "resource");
   REQUIRE(server != nullptr);
@@ -74,12 +72,9 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
   REQUIRE(capacity->value.int_value == 1);
   REQUIRE(field_of(*server, "failure_rate") == nullptr);
 
-  const Node* flow = member_of(model, "process");
-  REQUIRE(flow != nullptr);
-  REQUIRE(flow->name == "Flow");
-  REQUIRE(flow->children.size() == 3);
-
-  const Node& arrivals = flow->children[0];
+  const Node* arrivals_ptr = member_of(model, "source");
+  REQUIRE(arrivals_ptr != nullptr);
+  const Node& arrivals = *arrivals_ptr;
   REQUIRE(arrivals.kind == "source");
   REQUIRE(arrivals.name == "Arrivals");
   Distribution arrival;
@@ -89,11 +84,11 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
   REQUIRE(arrival.params.size() == 1);
   REQUIRE(arrival.params[0] == 0.8);
 
-  const Node& wait_line = flow->children[1];
+  const Node& wait_line = *member_of(model, "queue");
   REQUIRE(wait_line.kind == "queue");
   REQUIRE(field_of(wait_line, "capacity")->value.int_value == 1000000);
 
-  const Node& service = flow->children[2];
+  const Node& service = *member_of(model, "service");
   REQUIRE(service.kind == "service");
   REQUIRE(field_of(service, "resource") != nullptr);
   REQUIRE(field_of(service, "resource")->value.kind == ValueKind::kIdentifier);
@@ -136,15 +131,13 @@ TEST_CASE("parser: all service-time distributions extract", "[dsl][parser]") {
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  resource R { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(2.5) }\n"
-      "    queue Q { capacity = 0 }\n"
-      "    service R { time = normal(10, 0.5) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(2.5) }\n"
+      "  queue Q { capacity = 0 }\n"
+      "  service R { time = normal(10, 0.5) }\n"
       "}\n",
       "inline.lp");
   REQUIRE(parsed.ok());
-  const Node& service = member_of(*parsed.model, "process")->children[2];
+  const Node& service = *member_of(*parsed.model, "service");
   Distribution normal;
   REQUIRE(distribution_from_value(field_of(service, "time")->value, normal));
   REQUIRE(normal.kind == DistKind::kNormal);
@@ -155,15 +148,12 @@ TEST_CASE("parser: all service-time distributions extract", "[dsl][parser]") {
   const ParseOutput constant = parse_source(
       "model M {\n"
       "  resource R { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(1) }\n"
-      "    service R { time = constant(3.25) }\n"
-      "  }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  service R { time = constant(3.25) }\n"
       "}\n",
       "inline.lp");
   REQUIRE(constant.ok());
-  const Node& fixed_service =
-      member_of(*constant.model, "process")->children[1];
+  const Node& fixed_service = *member_of(*constant.model, "service");
   Distribution fixed;
   REQUIRE(distribution_from_value(field_of(fixed_service, "time")->value,
                                   fixed));
@@ -218,10 +208,8 @@ TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  param k: float = 2.0\n"
-      "  process P {\n"
-      "    source A { arrival = rate(k * 2) }\n"
-      "    queue Q { capacity = 100 + 1 }\n"
-      "  }\n"
+      "  source A { arrival = rate(k * 2) }\n"
+      "  queue Q { capacity = 100 + 1 }\n"
       "}\n",
       "inline.lp");
   REQUIRE(parsed.ok());
@@ -231,10 +219,9 @@ TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
   REQUIRE(parsed.model->params[0].value.kind == ValueKind::kFloat);
   REQUIRE(parsed.model->params[0].value.float_value == 2.0);
 
-  const Node* process = member_of(*parsed.model, "process");
+  const Node* source = member_of(*parsed.model, "source");
   // rate(k * 2): call arg is a kMul expression (k * 2).
-  const Value& arrival =
-      field_of(process->children[0], "arrival")->value;
+  const Value& arrival = field_of(*source, "arrival")->value;
   REQUIRE(arrival.kind == ValueKind::kCall);
   REQUIRE(arrival.call_name == "rate");
   REQUIRE(arrival.call_args.size() == 1);
@@ -246,7 +233,8 @@ TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
   REQUIRE(arrival.call_args[0].operands[1].int_value == 2);
 
   // capacity = 100 + 1: kAdd with two int operands.
-  const Value& capacity = field_of(process->children[1], "capacity")->value;
+  const Value& capacity =
+      field_of(*member_of(*parsed.model, "queue"), "capacity")->value;
   REQUIRE(capacity.kind == ValueKind::kAdd);
   REQUIRE(capacity.operands.size() == 2);
   REQUIRE(capacity.operands[0].int_value == 100);

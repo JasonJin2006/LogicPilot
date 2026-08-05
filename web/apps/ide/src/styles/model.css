@@ -301,16 +301,8 @@
   transition: color 0.1s;
 }
 
-/* Container Nodes (process Flow, ...): a dashed folder card on the root
-   canvas; double-click drills into the container's subgraph canvas. */
-.model-block.kind-process {
-  padding: 5px 8px;
-  gap: 3px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-sm);
-  background: var(--bg-strong);
-}
-
+/* Container Nodes (agent/atomic/continuous): a dashed folder card on the
+   root canvas; double-click drills into the container's subgraph canvas. */
 .model-block.kind-agent,
 .model-block.kind-atomic,
 .model-block.kind-continuous {
@@ -321,20 +313,10 @@
   background: var(--bg-strong);
 }
 
-.model-block.kind-process .model-block-icon {
-  color: var(--accent);
-}
-
 .model-block.kind-agent .model-block-icon,
 .model-block.kind-atomic .model-block-icon,
 .model-block.kind-continuous .model-block-icon {
   color: var(--accent);
-}
-
-.model-block.kind-process .model-block-name {
-  max-width: 88px;
-  color: var(--text-secondary);
-  font-weight: 600;
 }
 
 .model-block.kind-agent .model-block-name,
@@ -343,10 +325,6 @@
   max-width: 88px;
   color: var(--text-secondary);
   font-weight: 600;
-}
-
-.model-block.kind-process:hover .model-block-name {
-  color: var(--accent);
 }
 
 .model-block-count {

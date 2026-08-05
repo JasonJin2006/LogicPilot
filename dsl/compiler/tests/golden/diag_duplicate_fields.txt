@@ -1,5 +1,6 @@
 input.lp:4:5: error[LP1002]: duplicate field 'capacity' in resource 'R'
 input.lp:6:5: error[LP1002]: duplicate field 'failure_rate' in resource 'R'
-input.lp:9:37: error[LP1002]: duplicate field 'arrival' in source 'A'
-input.lp:10:28: error[LP1002]: duplicate field 'capacity' in queue 'B'
-input.lp:11:39: error[LP1002]: duplicate field 'time' in service 'R'
+input.lp:8:35: error[LP1002]: duplicate field 'arrival' in source 'A'
+input.lp:9:26: error[LP1002]: duplicate field 'capacity' in queue 'B'
+input.lp:10:11: error[LP1001]: duplicate declaration of service 'R' (previously declared at line 2)
+input.lp:10:37: error[LP1002]: duplicate field 'time' in service 'R'

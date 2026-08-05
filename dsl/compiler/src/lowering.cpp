@@ -3,9 +3,10 @@
 // Generic kind dispatch: every DSL Node lowers 1:1 to an IR v2 Node with a
 // SemanticsRef{library, block}; process library blocks become
 // {process, <block>} nodes with typed params, method containers become
-// {devs,atomic} / {agent,agent} / {sd,equation} / {process,flow}. Numeric
-// fields are constant-folded (Phase D): expressions reduce to literals via
-// parameter references and arithmetic before they reach the IR.
+// {devs,atomic} / {agent,agent} / {sd,equation}. The legacy {process, flow}
+// container was removed. Numeric fields are constant-folded (Phase D):
+// expressions reduce to literals via parameter references and arithmetic
+// before they reach the IR.
 #include "logicpilot/dsl/lowering.h"
 
 #include "logicpilot/dsl/registry.h"
@@ -262,47 +263,6 @@ flatbuffers::Offset<v2::Node> v2_process_block(
       builder.CreateVector(params), builder.CreateVector(ports),
       v2_semantics(builder, "process", stage.kind.c_str()),
       0, 0, 0, 0, 0);
-}
-
-// process -> process/flow Node (block children + chain couplings).
-flatbuffers::Offset<v2::Node> v2_process(
-    flatbuffers::FlatBufferBuilder& builder, const Node& process,
-    const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file) {
-  std::vector<flatbuffers::Offset<v2::Node>> children;
-  for (const Node& stage : process.children) {
-    children.push_back(
-        v2_process_block(builder, stage, resources, scope, source_file));
-  }
-  std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
-  if (!process.couplings.empty()) {
-    // Explicit `couple A.out -> B.in` declarations carry the real
-    // topology (multi-output blocks, conditional ports, branches).
-    for (const CoupleDecl& couple : process.couplings) {
-      couplings.push_back(v2::CreateCoupling(
-          builder, builder.CreateString(couple.from_model),
-          builder.CreateString(couple.from_port),
-          builder.CreateString(couple.to_model),
-          builder.CreateString(couple.to_port)));
-    }
-  } else {
-    // Legacy chain fallback: stages couple in declaration order
-    // (out -> in), matching the v0 implicit-flow semantics.
-    for (std::size_t i = 0; i + 1 < process.children.size(); ++i) {
-      couplings.push_back(v2::CreateCoupling(
-          builder, builder.CreateString(process.children[i].name),
-          builder.CreateString("out"),
-          builder.CreateString(process.children[i + 1].name),
-          builder.CreateString("in")));
-    }
-  }
-  return v2::CreateNode(
-      builder, v2_metadata(builder, process.name, source_file),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
-      v2_semantics(builder, "process", "flow"),
-      builder.CreateVector(children), builder.CreateVector(couplings), 0, 0,
-      0);
 }
 
 // ---------------------------------------------------------------------------
@@ -568,9 +528,6 @@ flatbuffers::Offset<v2::Node> v2_node(
     const ParamScope& scope, const std::string& source_file) {
   if (node.kind == "resource") {
     return v2_resource(builder, node, scope, source_file);
-  }
-  if (node.kind == "process") {
-    return v2_process(builder, node, resources, scope, source_file);
   }
   if (node.kind == "atomic") {
     return v2_atomic(builder, node, scope, source_file);

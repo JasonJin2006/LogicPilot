@@ -71,58 +71,59 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
                          dump_ir(loaded.file));
 }
 
-TEST_CASE("lowering: process nodes keep declaration order and chain",
+TEST_CASE("lowering: flat process blocks keep declaration order and couples",
           "[dsl][lowering]") {
   const IrLoadResult loaded = compile_and_load(
       "model Demo {\n"
       "  resource Server { capacity = 2 failure_rate = 0.25 }\n"
-      "  process Flow {\n"
-      "    source In { arrival = poisson(1.5) }\n"
-      "    queue Buf { capacity = 7 }\n"
-      "    service Server { time = normal(3, 0.5) }\n"
-      "  }\n"
+      "  source In { arrival = poisson(1.5) }\n"
+      "  queue Buf { capacity = 7 }\n"
+      "  service Handle { resource = Server; time = normal(3, 0.5) }\n"
+      "  couple In.out -> Buf.in\n"
+      "  couple Buf.out -> Handle.in\n"
       "}\n",
       "demo.lp");
 
   const v2::Node* root = loaded.file.v2_root->root();
-  const v2::Node* flow = root->children()->Get(1);
-  REQUIRE(flow->children() != nullptr);
-  REQUIRE(flow->children()->size() == 3);
-  REQUIRE(flow->children()->Get(0)->metadata()->name()->str() == "In");
-  REQUIRE(flow->children()->Get(1)->metadata()->name()->str() == "Buf");
-  REQUIRE(flow->children()->Get(2)->metadata()->name()->str() == "Server");
-  REQUIRE(flow->children()->Get(0)->semantics()->block()->str() == "source");
-  REQUIRE(flow->children()->Get(1)->semantics()->block()->str() == "queue");
-  REQUIRE(flow->children()->Get(2)->semantics()->block()->str() ==
+  REQUIRE(root->children() != nullptr);
+  REQUIRE(root->children()->size() == 4);
+  REQUIRE(root->children()->Get(1)->metadata()->name()->str() == "In");
+  REQUIRE(root->children()->Get(2)->metadata()->name()->str() == "Buf");
+  REQUIRE(root->children()->Get(3)->metadata()->name()->str() == "Handle");
+  REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "source");
+  REQUIRE(root->children()->Get(2)->semantics()->block()->str() == "queue");
+  REQUIRE(root->children()->Get(3)->semantics()->block()->str() ==
           "service");
 
   // Source arrival distribution (Poisson = kind 4).
-  const v2::Var* arrival = flow->children()->Get(0)->params()->Get(0);
+  const v2::Var* arrival = root->children()->Get(1)->params()->Get(0);
   REQUIRE(arrival->name()->str() == "arrival");
   REQUIRE(arrival->distribution()->kind() == 4);
   // Queue capacity.
-  const v2::Var* capacity = flow->children()->Get(1)->params()->Get(0);
+  const v2::Var* capacity = root->children()->Get(2)->params()->Get(0);
   REQUIRE(capacity->name()->str() == "capacity");
   REQUIRE(capacity->int_value() == 7);
-  // Service params: the written field `time` (Normal = kind 2); the
-  // resource reference and servers are resolved by the kernel from the
+  // Service params: the explicit `resource` reference + the written field
+  // `time` (Normal = kind 2); servers are resolved by the kernel from the
   // referenced resource node (no synthetic `servers` param anymore).
-  const v2::Node* service = flow->children()->Get(2);
-  REQUIRE(service->params()->size() == 1);
-  REQUIRE(service->params()->Get(0)->name()->str() == "time");
-  REQUIRE(service->params()->Get(0)->distribution()->kind() == 2);
+  const v2::Node* service = root->children()->Get(3);
+  REQUIRE(service->params()->size() == 2);
+  REQUIRE(service->params()->Get(0)->name()->str() == "resource");
+  REQUIRE(service->params()->Get(0)->string_value()->str() == "Server");
+  REQUIRE(service->params()->Get(1)->name()->str() == "time");
+  REQUIRE(service->params()->Get(1)->distribution()->kind() == 2);
 
   // Registered ports land on the IR nodes (queue has outTimeout etc).
-  REQUIRE(flow->children()->Get(0)->ports()->size() == 1);
-  REQUIRE(flow->children()->Get(1)->ports()->size() == 4);
+  REQUIRE(root->children()->Get(1)->ports()->size() == 1);
+  REQUIRE(root->children()->Get(2)->ports()->size() == 4);
 
-  // Chain couplings: In.out -> Buf.in, Buf.out -> Server.in.
-  REQUIRE(flow->couplings() != nullptr);
-  REQUIRE(flow->couplings()->size() == 2);
-  REQUIRE(flow->couplings()->Get(0)->from_model()->str() == "In");
-  REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Buf");
-  REQUIRE(flow->couplings()->Get(1)->from_model()->str() == "Buf");
-  REQUIRE(flow->couplings()->Get(1)->to_model()->str() == "Server");
+  // Root couplings: In.out -> Buf.in, Buf.out -> Server.in.
+  REQUIRE(root->couplings() != nullptr);
+  REQUIRE(root->couplings()->size() == 2);
+  REQUIRE(root->couplings()->Get(0)->from_model()->str() == "In");
+  REQUIRE(root->couplings()->Get(0)->to_model()->str() == "Buf");
+  REQUIRE(root->couplings()->Get(1)->from_model()->str() == "Buf");
+  REQUIRE(root->couplings()->Get(1)->to_model()->str() == "Handle");
 
   // Resource block carries the typed capacity/failure_rate params.
   const v2::Node* resource = root->children()->Get(0);
@@ -135,10 +136,8 @@ TEST_CASE("lowering: constant service time maps to Constant distribution",
   const IrLoadResult loaded = compile_and_load(
       "model C {\n"
       "  resource R { capacity = 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = poisson(2) }\n"
-      "    service R { time = constant(1.25) }\n"
-      "  }\n"
+      "  source A { arrival = poisson(2) }\n"
+      "  service S { resource = R; time = constant(1.25) }\n"
       "}\n",
       "const.lp");
   REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/const_ir_dump.txt",
@@ -150,17 +149,14 @@ TEST_CASE("lowering: explicit resource reference decouples the service "
   const IrLoadResult loaded = compile_and_load(
       "model Demo {\n"
       "  resource Server { capacity = 3 failure_rate = 0.1 }\n"
-      "  process Flow {\n"
-      "    source In { arrival = poisson(1.5) }\n"
-      "    service Handle { resource = Server; time = exponential(2) }\n"
-      "  }\n"
+      "  source In { arrival = poisson(1.5) }\n"
+      "  service Handle { resource = Server; time = exponential(2) }\n"
+      "  couple In.out -> Handle.in\n"
       "}\n",
       "demo.lp");
 
   const v2::Node* root = loaded.file.v2_root->root();
-  const v2::Node* flow = root->children()->Get(1);
-  REQUIRE(flow->children()->size() == 2);
-  const v2::Node* service = flow->children()->Get(1);
+  const v2::Node* service = root->children()->Get(2);
   REQUIRE(service->metadata()->name()->str() == "Handle");
   // Written fields land in order: resource (ref), time (distribution).
   REQUIRE(service->params()->size() == 2);
@@ -171,7 +167,7 @@ TEST_CASE("lowering: explicit resource reference decouples the service "
   // capacity (3), not from a synthetic `servers` param.
   const v2::Node* resource = root->children()->Get(0);
   REQUIRE(resource->params()->Get(0)->int_value() == 3);
-  REQUIRE(flow->couplings()->Get(0)->to_model()->str() == "Handle");
+  REQUIRE(root->couplings()->Get(0)->to_model()->str() == "Handle");
 }
 
 TEST_CASE("lowering: expressions and parameter references fold before the "
@@ -181,11 +177,11 @@ TEST_CASE("lowering: expressions and parameter references fold before the "
       "  param arrival_rate: float = 0.4\n"
       "  param service_rate: float = 2.0\n"
       "  resource Server { capacity = 1 + 1 }\n"
-      "  process P {\n"
-      "    source A { arrival = rate(arrival_rate * 2) }\n"
-      "    queue Q { capacity = 100 + 1 }\n"
-      "    service R { resource = Server; time = exponential(service_rate) }\n"
-      "  }\n"
+      "  source A { arrival = rate(arrival_rate * 2) }\n"
+      "  queue Q { capacity = 100 + 1 }\n"
+      "  service R { resource = Server; time = exponential(service_rate) }\n"
+      "  couple A.out -> Q.in\n"
+      "  couple Q.out -> R.in\n"
       "}\n",
       "fold.lp");
 

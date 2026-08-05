@@ -132,7 +132,7 @@ exp_field        := 'objective' '=' ('minimize'|'maximize') metric
 | `model` | 根 Node | 根容器：param、容器、库块实例、experiment |
 | `agent` | `{agent, agent}` | ABM 容器：`count`、`state`、`on_tick`、内嵌 agent |
 | `atomic` | `{devs, atomic}` | DEVS 容器：`state`、`time_advance`、`on_timeout/on_input`、端口 |
-| `process` | `{process, flow}` | 兼容容器（旧写法）：新模型直接把流程块写在 model/agent 作用域，用 `couple` 连线 |
+| `process` | —（已移除） | 旧容器写法已舍弃：编译报 LP2004；流程块直接写在 model/agent 作用域，用 `couple` 连线 |
 | `continuous` | `{sd, equation}` | 连续容器：`state`、`param`、`d x/dt = ...` |
 | `experiment` | `ModelFile.experiments[]` | 实验（核心配置块） |
 

@@ -15,17 +15,20 @@ const MM_TEMPLATE = `model Opt {
   resource Server {
     capacity = {{servers}}
   }
-  process Flow {
-    source Arrivals {
-      arrival = poisson(0.8)
-    }
-    queue WaitLine {
-      capacity = 1000000
-    }
-    service Server {
-      time = exponential(1.0)
-    }
+  source Arrivals {
+    arrival = poisson(0.8)
   }
+  queue WaitLine {
+    capacity = 1000000
+  }
+  service Handle {
+    resource = Server
+    time = exponential(1.0)
+  }
+  sink Done { }
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }
 `;
 

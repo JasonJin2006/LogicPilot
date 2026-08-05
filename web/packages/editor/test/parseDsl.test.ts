@@ -8,20 +8,21 @@ const MM1_DSL = `model MM1 {
     capacity = 1
     failure_rate = 0.05
   }
-  process Flow {
-    source Arrivals {
-      arrival = rate(0.8)
-    }
-    queue WaitLine {
-      capacity = 100
-    }
-    service Handle {
-      resource = Server
-      time = exponential(1.0)
-    }
-    sink Done {
-    }
+  source Arrivals {
+    arrival = rate(0.8)
   }
+  queue WaitLine {
+    capacity = 100
+  }
+  service Handle {
+    resource = Server
+    time = exponential(1.0)
+  }
+  sink Done {
+  }
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }
 `;
 
@@ -33,20 +34,21 @@ describe('parseDsl', () => {
     expect(doc.name).toBe('MM1');
     // use/param are now kept as model members (placeholder nodes), so the
     // full grammar round-trips losslessly.
-    expect(doc.nodes).toHaveLength(8);
+    expect(doc.nodes).toHaveLength(7);
     expect(doc.edges).toHaveLength(3);
 
-    const container = doc.nodes.find((node) => node.kind === 'process')!;
-    expect(container.name).toBe('Flow');
-    expect(container.container).toBeUndefined();
+    // Agent-centric: the flow blocks are direct model members (no `process`
+    // container node).
+    expect(doc.nodes.find((node) => node.kind === 'process')).toBeUndefined();
+    const source = doc.nodes.find((node) => node.kind === 'source')!;
+    expect(source.name).toBe('Arrivals');
+    expect(source.container).toBeUndefined();
 
     const resource = doc.nodes.find((node) => node.kind === 'resource')!;
     expect(resource.name).toBe('Server');
     expect(resource.params['capacity']).toBe(1);
     expect(resource.params['failure_rate']).toBe(0.05);
 
-    const source = doc.nodes.find((node) => node.kind === 'source')!;
-    expect(source.name).toBe('Arrivals');
     expect(source.params['arrival']).toBe('rate(0.8)');
 
     const service = doc.nodes.find((node) => node.kind === 'service')!;
@@ -70,15 +72,13 @@ describe('parseDsl', () => {
 
   it('parses explicit couple declarations with ports', () => {
     const source = `model Demo {
-  process Flow {
-    source In { arrival = rate(1) }
-    selectOutput Route { probability = 0.5 }
-    sink Yes { }
-    sink No { }
-    couple In.out -> Route.in
-    couple Route.outT -> Yes.in
-    couple Route.outF -> No.in
-  }
+  source In { arrival = rate(1) }
+  selectOutput Route { probability = 0.5 }
+  sink Yes { }
+  sink No { }
+  couple In.out -> Route.in
+  couple Route.outT -> Yes.in
+  couple Route.outF -> No.in
 }`;
     const result = parseDsl(source);
     expect(result.ok).toBe(true);
@@ -148,13 +148,14 @@ describe('parseDsl', () => {
     expect(regenerated).toContain('experiment Tune');
   });
 
-  it('parses an empty process container into a canvas container node', () => {
+  it('parses a process block as a placeholder (container format abandoned)', () => {
     const result = parseDsl('model M {\n  process Empty {\n  }\n}\n');
     expect(result.ok).toBe(true);
     const doc = result.document;
     expect(doc.nodes).toHaveLength(1);
     expect(doc.nodes[0]!.kind).toBe('process');
     expect(doc.nodes[0]!.name).toBe('Empty');
+    expect(doc.nodes[0]!.placeholder).toBe(true);
     expect(doc.edges).toHaveLength(0);
   });
 

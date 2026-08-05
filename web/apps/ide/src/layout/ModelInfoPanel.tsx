@@ -28,7 +28,6 @@ import {
   Unlock,
   Users,
   Waves,
-  Workflow,
 } from 'lucide-react';
 import { MODEL_SCENE_DIR } from '../project/project';
 import { syncCanvasFromProject } from '../state/projectSync';
@@ -41,7 +40,6 @@ import { ContextMenu } from './ContextMenu';
 import type { ContextAction } from './ContextMenu';
 import {
   MODEL_ADD_KINDS,
-  STAGE_ADD_KINDS,
   deleteSpan,
   insertMember,
   parseProjectMembers,
@@ -78,7 +76,6 @@ const KIND_ICONS: Record<string, ComponentType<{ size?: number }>> = {
   batch: Layers,
   seize: Lock,
   release: Unlock,
-  process: Workflow,
   agent: Users,
   atomic: Atom,
   continuous: Waves,
@@ -91,18 +88,16 @@ function kindRank(kind: string): number {
   switch (kind) {
     case 'resource':
       return 0;
-    case 'process':
-      return 1;
     case 'agent':
-      return 2;
+      return 1;
     case 'experiment':
-      return 3;
+      return 2;
     case 'atomic':
-      return 4;
+      return 3;
     case 'continuous':
-      return 5;
+      return 4;
     default:
-      return 6;
+      return 5;
   }
 }
 
@@ -308,14 +303,7 @@ export function ModelInfoPanel() {
       focusView !== null && focusView.kind === kind && focusView.name === member.name;
     const KindIcon = KIND_ICONS[kind] ?? Boxes;
     const actions: ContextAction[] = [];
-    if (!isInstance && kind === 'process') {
-      for (const stage of STAGE_ADD_KINDS) {
-        actions.push({
-          label: `Add ${stage.kind}`,
-          onSelect: () => addBlock(file, member, depth, stage.kind, stage.template),
-        });
-      }
-    } else if (!isInstance && kind === 'agent') {
+    if (!isInstance && kind === 'agent') {
       const agent = MODEL_ADD_KINDS.find((item) => item.kind === 'agent')!;
       actions.push({
         label: 'Add agent',

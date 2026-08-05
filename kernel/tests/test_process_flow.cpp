@@ -63,20 +63,6 @@ flatbuffers::Offset<Node> block(flatbuffers::FlatBufferBuilder& b,
                     0, 0, 0, 0, 0);
 }
 
-flatbuffers::Offset<Node> flow(
-    flatbuffers::FlatBufferBuilder& b,
-    std::vector<flatbuffers::Offset<Node>> children,
-    std::vector<flatbuffers::Offset<Coupling>> couplings) {
-  return CreateNode(b, CreateMetadata(b, b.CreateString("Flow"), 0, 0, 0),
-                    b.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
-                    b.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
-                    0,
-                    CreateSemanticsRef(b, b.CreateString("process"),
-                                       b.CreateString("flow"), 0, 0),
-                    b.CreateVector(children), b.CreateVector(couplings), 0, 0,
-                    0);
-}
-
 flatbuffers::Offset<Coupling> couple(flatbuffers::FlatBufferBuilder& b,
                                      const char* from, const char* from_port,
                                      const char* to, const char* to_port) {
@@ -86,16 +72,25 @@ flatbuffers::Offset<Coupling> couple(flatbuffers::FlatBufferBuilder& b,
 
 std::unique_ptr<logicpilot::ProcessFlowSim> build(
     flatbuffers::FlatBufferBuilder& builder,
-    flatbuffers::Offset<Node> flow_offset,
+    std::vector<flatbuffers::Offset<Node>> stages,
+    std::vector<flatbuffers::Offset<Coupling>> couplings,
     flatbuffers::Offset<Node> root_offset, std::string* error) {
-  builder.Finish(flow_offset);
-  const Node* flow =
-      flatbuffers::GetTemporaryPointer(builder, flow_offset);
+  builder.Finish(stages.empty() ? flatbuffers::Offset<Node>{} : stages[0]);
+  std::vector<const Node*> stage_ptrs;
+  for (const auto& offset : stages) {
+    stage_ptrs.push_back(flatbuffers::GetTemporaryPointer(builder, offset));
+  }
+  std::vector<const Coupling*> coupling_ptrs;
+  for (const auto& offset : couplings) {
+    coupling_ptrs.push_back(
+        flatbuffers::GetTemporaryPointer(builder, offset));
+  }
   const Node* root =
       root_offset.IsNull()
           ? nullptr
           : flatbuffers::GetTemporaryPointer(builder, root_offset);
-  return std::make_unique<logicpilot::ProcessFlowSim>(flow, root, error);
+  return std::make_unique<logicpilot::ProcessFlowSim>(
+      stage_ptrs, coupling_ptrs, root, error);
 }
 
 ReplicationMetrics run_once(logicpilot::ProcessFlowSim& model,
@@ -122,12 +117,12 @@ TEST_CASE("process flow: source -> delay -> sink holds tokens for the delay",
        var_int(builder, "capacity", 1)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
-  const auto flow_node = flow(
+  std::string error;
+  auto model = build(
       builder, {source, delay, sink},
       {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")});
-  std::string error;
-  auto model = build(builder, flow_node, flatbuffers::Offset<Node>{}, &error);
+       couple(builder, "D", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 2000, 0);
@@ -152,13 +147,13 @@ TEST_CASE("process flow: split clones each agent", "[process_flow]") {
       {var_int(builder, "copies", 3), var_float(builder, "probability", 1.0)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
-  const auto flow_node = flow(
+  std::string error;
+  auto model = build(
       builder, {source, split, sink},
       {couple(builder, "In", "out", "S", "in"),
        couple(builder, "S", "out", "K", "in"),
-       couple(builder, "S", "outCopy", "K", "in")});
-  std::string error;
-  auto model = build(builder, flow_node, flatbuffers::Offset<Node>{}, &error);
+       couple(builder, "S", "outCopy", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 3, 1000, 0);
   // Original + 2 copies per arrival.
@@ -175,13 +170,13 @@ TEST_CASE("process flow: selectOutput routes by probability", "[process_flow]") 
       {var_float(builder, "probability", 0.5)}, {});
   const auto yes = block(builder, "Yes", "sink", {}, {});
   const auto no = block(builder, "No", "sink", {}, {});
-  const auto flow_node = flow(
+  std::string error;
+  auto model = build(
       builder, {source, route, yes, no},
       {couple(builder, "In", "out", "R", "in"),
        couple(builder, "R", "outT", "Yes", "in"),
-       couple(builder, "R", "outF", "No", "in")});
-  std::string error;
-  auto model = build(builder, flow_node, flatbuffers::Offset<Node>{}, &error);
+       couple(builder, "R", "outF", "No", "in")},
+      flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   // Route 5000 agents; both sinks should receive a healthy share.
   const ReplicationMetrics metrics = run_once(*model, 11, 5000, 0);
@@ -211,12 +206,6 @@ TEST_CASE("process flow: generic M/M/1 (with count) matches theory loosely",
       {});
   const auto count = block(builder, "C", "count", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
-  const auto flow_node = flow(
-      builder, {source, queue, service, count, sink},
-      {couple(builder, "In", "out", "Q", "in"),
-       couple(builder, "Q", "out", "S", "in"),
-       couple(builder, "S", "out", "C", "in"),
-       couple(builder, "C", "out", "K", "in")});
   // Root with the resource pool.
   const auto root = CreateNode(
       builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
@@ -228,7 +217,13 @@ TEST_CASE("process flow: generic M/M/1 (with count) matches theory loosely",
           std::vector<flatbuffers::Offset<Node>>{resource}),
       0, 0, 0, 0);
   std::string error;
-  auto model = build(builder, flow_node, root, &error);
+  auto model = build(
+      builder, {source, queue, service, count, sink},
+      {couple(builder, "In", "out", "Q", "in"),
+       couple(builder, "Q", "out", "S", "in"),
+       couple(builder, "S", "out", "C", "in"),
+       couple(builder, "C", "out", "K", "in")},
+      root, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 7, 8000, 800);
   // M/M/1 with rho = 0.8: mean sojourn W = 5.0 (loose band).
@@ -251,12 +246,12 @@ TEST_CASE("process flow: same seed reproduces the exact trace",
        var_int(builder, "capacity", -1)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
-  const auto flow_node = flow(
+  std::string error;
+  auto model = build(
       builder, {source, delay, sink},
       {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")});
-  std::string error;
-  auto model = build(builder, flow_node, flatbuffers::Offset<Node>{}, &error);
+       couple(builder, "D", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   ReplicationConfig config;
   config.seed = 42;

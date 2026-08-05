@@ -699,20 +699,21 @@ TEST_CASE("lp-server compiles DSL via the compile control command",
   resource Server {
     capacity = 1
   }
-  process Flow {
-    source Arrivals {
-      arrival = rate(0.8)
-    }
-    queue WaitLine {
-      capacity = 100
-    }
-    service Handle {
-      resource = Server
-      time = exponential(1.0)
-    }
-    sink Done {
-    }
+  source Arrivals {
+    arrival = rate(0.8)
   }
+  queue WaitLine {
+    capacity = 100
+  }
+  service Handle {
+    resource = Server
+    time = exponential(1.0)
+  }
+  sink Done {
+  }
+  couple Arrivals.out -> WaitLine.in
+  couple WaitLine.out -> Handle.in
+  couple Handle.out -> Done.in
 }
 )";
   client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +

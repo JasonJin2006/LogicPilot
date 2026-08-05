@@ -128,7 +128,7 @@ export function splitModelSource(source: string): Record<string, string> {
     // token, so slice from the start of its line).
     const lineStart = source.lastIndexOf('\n', member.span.start - 1) + 1;
     const text = source.slice(lineStart, member.span.end).trimEnd();
-    if (['process', 'agent', 'atomic', 'continuous', 'experiment'].includes(member.kind)) {
+    if (['agent', 'atomic', 'continuous', 'experiment'].includes(member.kind)) {
       // One scene file per container node (the file is that node's subgraph).
       const blocks = scenes.get(member.name) ?? [];
       blocks.push(text);
@@ -151,8 +151,8 @@ export function splitModelSource(source: string): Record<string, string> {
   return out;
 }
 
-/** Identify the container a scene file holds (process Flow in
- *  model/scenes/Flow.lp); null for non-scene files. */
+/** Identify the container a scene file holds (agent Drone in
+ *  model/scenes/Drone.lp); null for non-scene files. */
 export function sceneContainerFromFile(
   path: string,
   source: string,

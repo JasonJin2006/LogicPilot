@@ -11,8 +11,8 @@
 - **每个 agent 有一张画布（presentation）**，画布上**平铺它的全部成员**：
   参数、变量、资源、流程块（source/queue/service/...）、状态机、统计、装饰形状。
 - **流程块是 agent 的成员**，不是另一个嵌套层级；块之间用 `couple` 连线。
-- **`process` 不再是必需容器**：保留兼容（旧模型仍可写 `process Flow { }`），
-  但新模型直接把流程块放在 model/agent 作用域。
+- **`process` 不再是容器**：旧 `process Flow { }` 写法已完全舍弃（2026-08-06），
+  新模型直接把流程块放在 model/agent 作用域。
 - **复用**：嵌套 agent 通过 `instance` 引用独立文件（Godot scene / AnyLogic 种群）。
 - **语义分发**：每种成员由 `semantics {library, block}` 交给引擎注册表
   （process 引擎 / statechart 引擎 / 方程引擎 ...），对应 IR v2 的
@@ -73,7 +73,8 @@ model CallCenter {
   嵌套 agent 的 instance 引用）——不再为 `process` 生成 `model/scenes/*.lp`。
 - 嵌套 agent 每个一个文件（`model/scenes/<Agent>.lp`），经 `instance` 引用。
 - `presentation/*.canvas.json` 按作用域存布局（根 + 每个 agent）。
-- 旧的 `model/scenes/<Process>.lp`（历史工程）继续可打开（兼容读取）。
+- 旧格式不再兼容：`model/scenes/<Process>.lp`（历史工程）中的 `process`
+  容器无法编译（LP2004），文件成为孤立文件。
 
 ### 3.4 IDE（`web/apps/ide`）
 
@@ -85,7 +86,10 @@ model CallCenter {
 
 ## 4. 兼容与迁移
 
-- 旧 DSL（`process Flow { ... }`）与旧工程文件继续编译/运行/打开。
+- **旧格式完全舍弃**（2026-08-06）：`process Flow { ... }` 容器不再被 DSL
+  编译器接受（LP2004 明确报错）、不再有 `{process, flow}` IR、不再产生
+  `model/scenes/<Process>.lp` 工程文件；旧工程中的此类文件成为孤立/不可编译
+  文件（可编辑但无法运行）。嵌套 agent 的 `instance` 引用与 scene 文件保留。
 - 迁移顺序：编译器（A）→ 内核（B）→ 工程格式（C）→ IDE（D）→ 示例/测试/E2E（E）。
 - 每个阶段保持 ctest / vitest / browser-verify 全绿。
 
@@ -94,7 +98,7 @@ model CallCenter {
 - `model` 根直接写流程块 + `couple` 可编译、可运行（M/M/1 统计对拍）。
 - agent 体内可写流程块 + `couple`，编译与内核可执行。
 - 根画布平铺显示全部成员；拖 resource 与拖流程块行为一致（都在根作用域）。
-- 旧 `process` 模型与工程仍通过现有测试与 E2E。
+- 旧 `process` 容器格式不再可编译（`process` kind → LP2004）。
 
 ## 6. 实施记录
 
@@ -106,7 +110,7 @@ model CallCenter {
 - 阶段 C（工程格式）✅：`generateDsl` 平铺根级流程块 + 模型级 couple；
   `nodePath` 去掉 `Flow/` 前缀；嵌套 agent 仍按 instance/独立文件组织。
 - 阶段 D（IDE）✅：`insertBlockAt` 不再自动建 `process Flow` 容器；
-  根画布平铺 resource 与全部流程块；旧 process 容器文档仍可下钻（兼容）。
+  根画布平铺 resource 与全部流程块。
 - 阶段 E（内核·嵌套 agent 体）✅：`build_replication_model` /
   `extract_flow_params` 检测 agent 子节点体内的 process 库成员与其 couplings，
   将其作为流程作用域执行（M/M/1 快路径 + ProcessFlowSim）；与根级扁平放置

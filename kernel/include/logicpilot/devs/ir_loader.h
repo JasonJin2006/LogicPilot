@@ -5,7 +5,7 @@
 // `logicpilot::ir::v2::ModelFile` view (zero-copy, no mutation).
 // build_replication_model() lowers an executable model for the kinds the
 // kernel can run (all v2-native):
-//   * process/flow node tree -> QueueingFlowSim
+//   * process flow (stages + couplings) -> QueueingFlowSim / ProcessFlowSim
 //   * devs/atomic tree       -> DevsReplicationModel
 //   * agent tree             -> AgentReplicationModel
 //   * sd/equation node       -> ContinuousReplicationModel

@@ -50,8 +50,8 @@ model MM1Failure {
 ```
 
 流程块直接是 model 根（或 agent 体）的成员，用 `couple` 连线，不再需要
-`process` 容器（旧 `process Flow { ... }` 写法仍兼容读取）。实体按声明顺序
-流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`service` 通过
+`process` 容器（旧 `process Flow { ... }` 写法已移除，写它会在编译时报错）。
+实体按声明顺序流动：`source` 生成 → `queue` 缓冲 → `service` 占用资源处理。`service` 通过
 `resource = R` 显式引用资源（不写则回退为按服务块名匹配）；`resource` 的
 `capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模
 （可用性 `a = r/(f+r)`）。
