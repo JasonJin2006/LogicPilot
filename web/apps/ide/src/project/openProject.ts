@@ -36,18 +36,43 @@ export async function openProjectFromFile(file: File): Promise<void> {
   }
 
   if (lowerName.endsWith('.json')) {
-    useProjectStore.getState().clearProject();
     try {
       const parsed = JSON.parse(text) as unknown;
+      const object = parsed as Record<string, unknown> | null;
+      // A project manifest (logicpilot.json): guide to opening the directory.
+      if (object !== null && object.schema === 'logicpilot.project') {
+        openInfo(
+          'Open a project',
+          `${file.name} is the project manifest. Open the project directory with File > Open Project Folder (or a .lpproj bundle) - the manifest alone has no model files.`,
+        );
+        return;
+      }
+      // A v2 layout file (presentation/*.canvas.json): needs the structure.
+      if (
+        object !== null &&
+        typeof object === 'object' &&
+        'layout' in object &&
+        'edges' in object
+      ) {
+        openInfo(
+          'Open a project',
+          `${file.name} is a layout file (.canvas.json). Layout only makes sense together with the model structure - open the project (File > Open Project Folder or a .lpproj bundle) instead.`,
+        );
+        return;
+      }
       const documentLike =
         parsed !== null &&
         typeof parsed === 'object' &&
         Array.isArray((parsed as { nodes?: unknown }).nodes) &&
         Array.isArray((parsed as { edges?: unknown }).edges);
       if (!documentLike) {
-        openInfo('Open failed', 'not a LogicPilot canvas document (.json)');
+        openInfo(
+          'Open failed',
+          'not a LogicPilot canvas document (.json). Open a .lpproj bundle or a project folder instead.',
+        );
         return;
       }
+      useProjectStore.getState().clearProject();
       loadModelDocument(parsed as never);
       useProjectStore.getState().markClean();
       const parsedName =
