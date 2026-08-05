@@ -137,6 +137,11 @@ fn delete_project_entry(project_dir: String, rel: String) -> Result<(), String> 
     project_fs::delete_project_entry_impl(&PathBuf::from(&project_dir), &rel)
 }
 
+#[tauri::command]
+fn read_project_hashes(project_dir: String) -> Result<HashMap<String, String>, String> {
+    project_fs::collect_project_hashes(&PathBuf::from(&project_dir))
+}
+
 fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
         return PathBuf::from(root);
@@ -235,7 +240,8 @@ fn main() {
             write_project_file,
             create_directory,
             rename_project_entry,
-            delete_project_entry
+            delete_project_entry,
+            read_project_hashes
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(

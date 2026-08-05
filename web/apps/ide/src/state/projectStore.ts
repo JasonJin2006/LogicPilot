@@ -16,10 +16,16 @@ interface ProjectState {
   /** The real on-disk file tree (relative paths) for the Explorer, or null
    *  when there is no on-disk project (browser mode shows the bundle). */
   diskFiles: string[] | null;
+  /** Content fingerprints of the on-disk files at last load/save, used to
+   *  detect external edits before Save (LP5xxx conflicts). */
+  diskHashes: Record<string, string> | null;
   dirty: boolean;
   openBundle: (bundle: ProjectBundle) => void;
   setPath: (path: string | null) => void;
   setDiskFiles: (files: string[] | null) => void;
+  setDiskHashes: (hashes: Record<string, string> | null) => void;
+  /** Re-read the disk fingerprints (after save / Explorer mutations). */
+  refreshDiskHashes: () => Promise<void>;
   /** Re-read the on-disk tree (Explorer refresh / after disk mutations). */
   refreshDiskTree: () => Promise<void>;
   /** Apply an edit to the bundle's files and mark the project dirty. */
@@ -34,19 +40,36 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   bundle: null,
   path: null,
   diskFiles: null,
+  diskHashes: null,
   dirty: false,
   openBundle: (bundle) => set({ bundle, dirty: false }),
   setPath: (path) => set({ path }),
   setDiskFiles: (files) => set({ diskFiles: files }),
+  setDiskHashes: (hashes) => set({ diskHashes: hashes }),
+  refreshDiskHashes: async () => {
+    const { path: dir } = useProjectStore.getState();
+    if (!dir) {
+      return;
+    }
+    const { readProjectHashes } = await import('../state/tauriFs');
+    const result = await readProjectHashes(dir);
+    if (result.ok && result.hashes) {
+      useProjectStore.getState().setDiskHashes(result.hashes);
+    }
+  },
   refreshDiskTree: async () => {
     const { path: dir } = useProjectStore.getState();
     if (!dir) {
       return;
     }
-    const { readProjectTree } = await import('../state/tauriFs');
+    const { readProjectHashes, readProjectTree } = await import('../state/tauriFs');
     const tree = await readProjectTree(dir);
     if (tree.ok && tree.files) {
       useProjectStore.getState().setDiskFiles(tree.files);
+    }
+    const hashes = await readProjectHashes(dir);
+    if (hashes.ok && hashes.hashes) {
+      useProjectStore.getState().setDiskHashes(hashes.hashes);
     }
   },
   updateFiles: (updater) =>
@@ -60,5 +83,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   markDirty: () => set({ dirty: true }),
   markClean: () => set({ dirty: false }),
   setDirty: (dirty) => set({ dirty }),
-  clearProject: () => set({ bundle: null, dirty: false, diskFiles: null }),
+  clearProject: () =>
+    set({ bundle: null, dirty: false, diskFiles: null, diskHashes: null }),
 }));

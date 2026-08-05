@@ -202,6 +202,59 @@ pub fn delete_project_entry_impl(root: &Path, rel: &str) -> Result<(), String> {
     }
 }
 
+// Cheap per-file content fingerprint (FNV-1a of the bytes) used to detect
+// external edits before Save, so the IDE never silently overwrites a file
+// that changed on disk (project-format-v2 LP5xxx sync conflicts). Content is
+// used instead of mtime because filesystem timestamp granularity varies.
+pub fn collect_project_hashes(root: &Path) -> Result<HashMap<String, String>, String> {
+    if !root.is_dir() {
+        return Err(format!("'{}' is not a folder", root.display()));
+    }
+    let mut hashes = HashMap::new();
+    collect_hashes_in(root, root, &mut hashes)?;
+    Ok(hashes)
+}
+
+fn content_hash(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+fn collect_hashes_in(
+    root: &Path,
+    dir: &Path,
+    hashes: &mut HashMap<String, String>,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(dir)
+        .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_dir() {
+            if matches!(name.as_str(), ".git" | "node_modules" | "target") {
+                continue;
+            }
+            collect_hashes_in(root, &path, hashes)?;
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|_| format!("path outside project: {}", path.display()))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if let Ok(content) = std::fs::read(&path) {
+            hashes.insert(rel, format!("{:016x}", content_hash(&content)));
+        }
+    }
+    Ok(())
+}
+
 fn collect_project_files(
     root: &Path,
     dir: &Path,
@@ -404,6 +457,32 @@ mod tests {
         // Escaping paths are rejected before touching the filesystem.
         assert!(write_project_file_impl(&dir, "../escape.txt", "x").is_err());
         assert!(delete_project_entry_impl(&dir, "../outside").is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn hashes_change_when_a_file_is_edited() {
+        let dir = std::env::temp_dir().join(format!(
+            "lp_hashes_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("model")).unwrap();
+        std::fs::write(dir.join("model/main.lp"), "model M {\n}\n").unwrap();
+
+        let before = collect_project_hashes(&dir).unwrap();
+        assert!(before.contains_key("model/main.lp"));
+        let first = before["model/main.lp"].clone();
+        // Same content keeps the fingerprint stable (mtime may be equal).
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.join("model/main.lp"), "model M {\n}\n").unwrap();
+        let after = collect_project_hashes(&dir).unwrap();
+        assert_eq!(after["model/main.lp"], first);
+        // A real edit changes it.
+        std::fs::write(dir.join("model/main.lp"), "model N {\n}\n").unwrap();
+        let edited = collect_project_hashes(&dir).unwrap();
+        assert_ne!(edited["model/main.lp"], first);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

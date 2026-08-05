@@ -127,6 +127,7 @@ export function AppMenu() {
       if (tree.ok && tree.files) {
         useProjectStore.getState().setDiskFiles(tree.files);
       }
+      await useProjectStore.getState().refreshDiskHashes();
       openDocument(loaded.document!);
       markClean();
       addRecent({
@@ -166,11 +167,42 @@ export function AppMenu() {
     const bundle = bundleToJson(project);
     const projectPath = useProjectStore.getState().path;
     if (projectPath) {
+      // Detect external edits since the project was opened (LP5xxx): never
+      // silently overwrite a file that changed on disk.
+      const { readProjectHashes } = await import('../state/tauriFs');
+      const baseline = useProjectStore.getState().diskHashes;
+      const currentHashes = await readProjectHashes(projectPath);
+      if (currentHashes.ok && currentHashes.hashes && baseline) {
+        const changed = Object.keys(baseline).filter(
+          (path) => baseline[path] !== currentHashes.hashes![path],
+        );
+        if (changed.length > 0) {
+          for (const path of changed.slice(0, 3)) {
+            logConsoleEvent('warn', `LP5001: '${path}' changed on disk`);
+          }
+          const proceed = await new Promise<boolean>((resolve) => {
+            useUiStore.getState().openConfirm({
+              title: 'Files changed on disk',
+              body: `${changed.length} file(s) changed outside the IDE (${changed
+                .slice(0, 3)
+                .join(', ')}...). Saving will overwrite them. Continue?`,
+              actions: [
+                { label: 'Overwrite', primary: true, onSelect: () => resolve(true) },
+                { label: 'Cancel', onSelect: () => resolve(false) },
+              ],
+            });
+          });
+          if (!proceed) {
+            return;
+          }
+        }
+      }
       const result = await writeProjectFiles(projectPath, projectToDiskFiles(project));
       if (!result.ok) {
         openInfo('Save failed', result.error ?? 'cannot write the project folder');
         return;
       }
+      await useProjectStore.getState().refreshDiskHashes();
     } else {
       const blob = new Blob([bundle], { type: 'application/json' });
       const url = URL.createObjectURL(blob);

@@ -208,3 +208,25 @@ export function deleteProjectEntry(
     )
     .catch((error) => ({ ok: false, error: String(error) }));
 }
+
+export interface ProjectHashesResult {
+  ok: boolean;
+  hashes?: Record<string, string>;
+  error?: string;
+}
+
+/** Per-file content fingerprints, for detecting external edits before Save
+ *  (project-format-v2 LP5xxx sync conflicts). */
+export function readProjectHashes(projectDir: string): Promise<ProjectHashesResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<Record<string, string>>('read_project_hashes', { projectDir }).then(
+        (hashes) => ({ ok: true, hashes }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}
