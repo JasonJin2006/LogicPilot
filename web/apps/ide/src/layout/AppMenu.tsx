@@ -21,7 +21,13 @@ import {
   splitModelSource,
 } from '../project/project';
 import { openProjectFromFile } from '../project/openProject';
-import { isTauri, pickProjectFolder, readProjectDir, writeProjectFiles } from '../state/tauriFs';
+import {
+  isTauri,
+  pickProjectFolder,
+  readProjectDir,
+  readProjectTree,
+  writeProjectFiles,
+} from '../state/tauriFs';
 
 interface MenuEntry {
   label: string;
@@ -118,6 +124,10 @@ export function AppMenu() {
       }
       openBundle(parsedBundle.bundle!);
       setPath(dir);
+      const tree = await readProjectTree(dir);
+      if (tree.ok && tree.files) {
+        useProjectStore.getState().setDiskFiles(tree.files);
+      }
       openDocument(loaded.document!);
       markClean();
       addRecent({
@@ -176,6 +186,7 @@ export function AppMenu() {
       useModelStore.getState().reset();
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(null);
+      useProjectStore.getState().setDiskFiles(null);
       close();
     };
     if (current && isDirty) {

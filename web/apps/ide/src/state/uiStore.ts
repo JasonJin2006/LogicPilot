@@ -11,6 +11,9 @@ interface UiState {
   openFiles: string[];
   /** The file tab currently in front. */
   activeFile: string | null;
+  /** Read-only contents of on-disk files opened from the Explorer (files
+   *  that are not part of the bundle, e.g. build artifacts). */
+  diskFiles: Record<string, string>;
   /** Multi-action confirm dialog (e.g. Close project with unsaved work). */
   confirm: {
     title: string;
@@ -32,6 +35,7 @@ interface UiState {
   openNewProject: () => void;
   closeNewProject: () => void;
   openFile: (path: string) => void;
+  openDiskFile: (path: string, content: string) => void;
   closeFile: (path: string) => void;
   closeAllFiles: () => void;
   openPrompt: (prompt: UiState['prompt']) => void;
@@ -48,6 +52,7 @@ export const useUiStore = create<UiState>((set) => ({
   newProjectOpen: false,
   openFiles: [],
   activeFile: null,
+  diskFiles: {},
   confirm: null,
   prompt: null,
   info: null,
@@ -73,7 +78,15 @@ export const useUiStore = create<UiState>((set) => ({
           : state.activeFile;
       return { openFiles, activeFile };
     }),
-  closeAllFiles: () => set({ openFiles: [], activeFile: null }),
+  openDiskFile: (path, content) =>
+    set((state) => ({
+      diskFiles: { ...state.diskFiles, [path]: content },
+      openFiles: state.openFiles.includes(path)
+        ? state.openFiles
+        : [...state.openFiles, path],
+      activeFile: path,
+    })),
+  closeAllFiles: () => set({ openFiles: [], activeFile: null, diskFiles: {} }),
   openPrompt: (prompt) => set({ prompt }),
   closePrompt: () => set({ prompt: null }),
   openConfirm: (confirm) => set({ confirm }),

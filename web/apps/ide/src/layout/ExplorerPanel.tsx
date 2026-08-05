@@ -12,6 +12,7 @@ import { openProjectFromFile } from '../project/openProject';
 import { useCanvasView } from '../state/canvasView';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
+import { readProjectFile } from '../state/tauriFs';
 import { ContextMenu } from './ContextMenu';
 import type { ContextAction } from './ContextMenu';
 
@@ -180,6 +181,8 @@ function FolderRow({
 
 export function ExplorerPanel() {
   const bundle = useProjectStore((state) => state.bundle);
+  const projectPath = useProjectStore((state) => state.path);
+  const diskFiles = useProjectStore((state) => state.diskFiles);
   const dirty = useProjectStore((state) => state.dirty);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
@@ -223,7 +226,12 @@ export function ExplorerPanel() {
   }
 
   const rootName = bundle.manifest.name;
-  const sourceFolders = treeFromPaths(Object.keys(bundle.files));
+  // With an on-disk project the Explorer is a real workspace file browser
+  // (the disk tree, including derived folders); otherwise it shows the
+  // in-memory bundle files.
+  const sourceFolders = diskFiles
+    ? treeFromPaths(diskFiles)
+    : treeFromPaths(Object.keys(bundle.files));
 
   const newFile = (dir: string) => {
     openPrompt({
@@ -286,12 +294,14 @@ export function ExplorerPanel() {
           onSelect: () => openFile(path),
         });
       }
-      actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
-      actions.push({
-        label: 'Delete',
-        danger: true,
-        onSelect: () => deleteFileRow(path),
-      });
+      if (source !== undefined) {
+        actions.push({ label: 'Rename...', onSelect: () => renameFile(path, name) });
+        actions.push({
+          label: 'Delete',
+          danger: true,
+          onSelect: () => deleteFileRow(path),
+        });
+      }
     } else if (dir !== null) {
       actions.push({ label: 'New file...', onSelect: () => newFile(dir) });
     }
@@ -301,19 +311,27 @@ export function ExplorerPanel() {
   };
 
   const onFileOpen = (event: MouseEvent<HTMLDivElement>) => {
-    if (!bundle) {
-      return;
-    }
     const row = (event.target as Element).closest('.tree-row');
     const path = row?.getAttribute('data-path');
     if (path !== null && path !== undefined) {
-      const source = bundle.files[path];
+      const source = bundle?.files[path];
       const scene = source !== undefined ? sceneContainerFromFile(path, source) : null;
       if (scene) {
         // A scene file IS a container Node: clicking it opens its canvas.
         setCanvasView(scene);
-      } else {
+      } else if (source !== undefined) {
         openFile(path);
+      } else {
+        // A disk file outside the bundle: view it read-only from disk.
+        if (projectPath) {
+          void readProjectFile(projectPath, path).then((result) => {
+            if (result.ok && result.content !== undefined) {
+              useUiStore.getState().openDiskFile(path, result.content);
+            }
+          });
+        } else {
+          openFile(path);
+        }
       }
     }
   };
@@ -342,16 +360,17 @@ export function ExplorerPanel() {
           onToggle={toggleFolder}
         />
       ))}
-      {ARTIFACT_ROWS.map((entry) => (
-        <FolderRow
-          key={entry.path}
-          folder={entry}
-          indent={1}
-          collapsed={collapsed}
-          activePath={activePath}
-          onToggle={toggleFolder}
-        />
-      ))}
+      {!diskFiles &&
+        ARTIFACT_ROWS.map((entry) => (
+          <FolderRow
+            key={entry.path}
+            folder={entry}
+            indent={1}
+            collapsed={collapsed}
+            activePath={activePath}
+            onToggle={toggleFolder}
+          />
+        ))}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />
       )}

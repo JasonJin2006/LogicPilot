@@ -87,3 +87,50 @@ export function readProjectDir(projectDir: string): Promise<ProjectDirReadResult
     )
     .catch((error) => ({ ok: false, error: String(error) }));
 }
+
+export interface ProjectTreeResult {
+  ok: boolean;
+  files?: string[];
+  error?: string;
+}
+
+/** The real on-disk file tree of a project (relative paths, incl. derived
+ *  folders like build/ and results/). Used by the Explorer as a workspace
+ *  browser, VS Code style. */
+export function readProjectTree(projectDir: string): Promise<ProjectTreeResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<string[]>('read_project_tree', { projectDir }).then(
+        (files) => ({ ok: true, files }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}
+
+export interface ProjectFileReadResult {
+  ok: boolean;
+  content?: string;
+  error?: string;
+}
+
+/** Read one project file as text (viewing files outside the bundle). */
+export function readProjectFile(
+  projectDir: string,
+  rel: string,
+): Promise<ProjectFileReadResult> {
+  if (!isTauri()) {
+    return Promise.resolve({ ok: false, error: 'desktop client required' });
+  }
+  return import('@tauri-apps/api/core')
+    .then(({ invoke }) =>
+      invoke<string>('read_project_file', { projectDir, rel }).then(
+        (content) => ({ ok: true, content }),
+        (error) => ({ ok: false, error: String(error) }),
+      ),
+    )
+    .catch((error) => ({ ok: false, error: String(error) }));
+}

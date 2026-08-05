@@ -13,9 +13,13 @@ interface ProjectState {
   bundle: ProjectBundle | null;
   /** Absolute directory of the on-disk project (desktop client). */
   path: string | null;
+  /** The real on-disk file tree (relative paths) for the Explorer, or null
+   *  when there is no on-disk project (browser mode shows the bundle). */
+  diskFiles: string[] | null;
   dirty: boolean;
   openBundle: (bundle: ProjectBundle) => void;
   setPath: (path: string | null) => void;
+  setDiskFiles: (files: string[] | null) => void;
   /** Apply an edit to the bundle's files and mark the project dirty. */
   updateFiles: (updater: (files: Record<string, string>) => Record<string, string>) => void;
   markDirty: () => void;
@@ -27,9 +31,11 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()((set) => ({
   bundle: null,
   path: null,
+  diskFiles: null,
   dirty: false,
   openBundle: (bundle) => set({ bundle, dirty: false }),
   setPath: (path) => set({ path }),
+  setDiskFiles: (files) => set({ diskFiles: files }),
   updateFiles: (updater) =>
     set((state) => {
       if (!state.bundle) return {};
@@ -41,5 +47,5 @@ export const useProjectStore = create<ProjectState>()((set) => ({
   markDirty: () => set({ dirty: true }),
   markClean: () => set({ dirty: false }),
   setDirty: (dirty) => set({ dirty }),
-  clearProject: () => set({ bundle: null, dirty: false }),
+  clearProject: () => set({ bundle: null, dirty: false, diskFiles: null }),
 }));

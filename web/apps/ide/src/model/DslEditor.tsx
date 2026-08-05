@@ -16,11 +16,15 @@ export function DslEditor() {
   const compile = useConnectionStore((state) => state.compile);
   const activeFile = useUiStore((state) => state.activeFile);
   const closeFile = useUiStore((state) => state.closeFile);
+  const diskContent = useUiStore((state) =>
+    activeFile ? state.diskFiles[activeFile] : undefined,
+  );
   const bundle = useProjectStore((state) => state.bundle);
   const updateFiles = useProjectStore((state) => state.updateFiles);
 
   const fileSource = activeFile !== null && bundle ? bundle.files[activeFile] : undefined;
-  const isFileEditor = fileSource !== undefined;
+  const isDiskFile = diskContent !== undefined;
+  const isFileEditor = isDiskFile || fileSource !== undefined;
   const mergedSource = bundle
     ? mergeModelSource(
         bundle.files[bundle.manifest.model] ?? '',
@@ -33,7 +37,9 @@ export function DslEditor() {
   return (
     <div className="dsl-editor">
       <div className="dsl-editor-header">
-        <span className="dsl-title">{isFileEditor ? activeFile : 'DSL (canvas)'}</span>
+        <span className="dsl-title">
+          {isDiskFile ? `${activeFile} (read-only)` : isFileEditor ? activeFile : 'DSL (canvas)'}
+        </span>
         {isFileEditor && (
           <button
             className="dsl-close-file"
@@ -47,7 +53,9 @@ export function DslEditor() {
           Compile
         </button>
       </div>
-      {isFileEditor && activeFile !== null ? (
+      {isDiskFile ? (
+        <pre className="dsl-source">{diskContent}</pre>
+      ) : isFileEditor && activeFile !== null ? (
         <textarea
           className="dsl-source dsl-textarea"
           value={fileSource}

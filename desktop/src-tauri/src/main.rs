@@ -105,6 +105,18 @@ fn read_project_dir(project_dir: String) -> Result<ProjectDirRead, String> {
     })
 }
 
+// The Explorer's real file tree: every project file as a relative path.
+#[tauri::command]
+fn read_project_tree(project_dir: String) -> Result<Vec<String>, String> {
+    project_fs::collect_project_tree(&PathBuf::from(&project_dir))
+}
+
+// Read one on-disk file as text (viewing disk files outside the bundle).
+#[tauri::command]
+fn read_project_file(project_dir: String, rel: String) -> Result<String, String> {
+    project_fs::read_project_file(&PathBuf::from(&project_dir), &rel)
+}
+
 fn repo_root() -> PathBuf {
     if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
         return PathBuf::from(root);
@@ -197,7 +209,9 @@ fn main() {
             app_config,
             create_project_dir,
             write_project_files,
-            read_project_dir
+            read_project_dir,
+            read_project_tree,
+            read_project_file
         ])
         .setup(move |app| {
             WebviewWindowBuilder::new(
