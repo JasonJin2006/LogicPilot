@@ -120,6 +120,10 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   实体属性 `priority`（无则回退块字段 `agentPriority`，越大越靠前）。
   `enablePreemption = true` 时：`queue` 满队且新 agent 优先级更高 → 踢出
   最弱等待者到 `outPreempted`；`wait`/`seize` 在每次到达时抢占最弱等待者。
+  也支持 **`queuing_comparison`**：`queue` 用
+  `agent1IsPreferredToAgent2 = <表达式>`（wait 用 `agent1MayPreemptAgent2`）
+  按双 agent 表达式排序/准入（`agent1` 为新到达者，`agent2` 为队列中的
+  agent）。
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
@@ -271,5 +275,6 @@ use manufacturing
 | `examples/flow_exit.lp` | exit 从流程移除 agent（sojourn 保留） |
 | `examples/assembler_line.lp` | assembler 等待部件 → 装配延时 → 输出 |
 | `examples/move_route.lp` | moveTo 行程时间（tripTime） |
+| `examples/comparison_queue.lp` | 比较式排队（agent1IsPreferredToAgent2） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

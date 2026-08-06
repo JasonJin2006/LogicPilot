@@ -91,6 +91,40 @@ inline double entity_priority(const Entity& entity, double fallback) {
   return it != entity.attributes.end() ? it->second : fallback;
 }
 
+// Evaluate an AnyLogic two-agent expression (`agent1.<attr>` / `agent2.<attr>`
+// referencing the two entities) via the single-scope evaluator after
+// rewriting the scoped identifiers. Returns true when the value is nonzero.
+inline bool evaluate_pair_condition(const std::string& condition_text,
+                                    const Entity& first,
+                                    const Entity& second) {
+  std::string text = condition_text;
+  for (const char* scope : {"agent1.", "agent2."}) {
+    std::string needle = scope;
+    std::string replacement = needle.substr(0, needle.size() - 1) + "_";
+    std::size_t pos = 0;
+    while ((pos = text.find(needle, pos)) != std::string::npos) {
+      text.replace(pos, needle.size(), replacement);
+      pos += replacement.size();
+    }
+  }
+  ExpressionEvaluator evaluator{text};
+  if (!evaluator.ok()) {
+    return false;
+  }
+  const auto lookup = [&first, &second](const std::string& id) -> double {
+    if (id.rfind("agent1_", 0) == 0) {
+      const auto it = first.attributes.find(id.substr(7));
+      return it != first.attributes.end() ? it->second : 0.0;
+    }
+    if (id.rfind("agent2_", 0) == 0) {
+      const auto it = second.attributes.find(id.substr(7));
+      return it != second.attributes.end() ? it->second : 0.0;
+    }
+    return 0.0;
+  };
+  return evaluator.eval(lookup) != 0.0;
+}
+
 // Queue / Wait: FIFO (or LIFO / priority) buffer with optional exit-on-
 // timeout and priority preemption (AnyLogic Queue/Wait semantics).
 //   - queuing: "queuing_fifo" (default) / "queuing_lifo" / "queuing_priority";
@@ -103,16 +137,17 @@ inline double entity_priority(const Entity& entity, double fallback) {
 //     wait-kind blocks preempt on every arrival.
 class WaitBlock final : public BufferedBlock {
  public:
-  WaitBlock(std::string kind, std::string name, std::int64_t capacity,
-            std::int64_t timeout_ns, bool enable_timeout,
-            std::string queuing, double agent_priority,
-            bool enable_preemption)
-      : BufferedBlock(std::move(kind), std::move(name), capacity),
-        timeout_ns_(timeout_ns),
-        enable_timeout_(enable_timeout),
-        queuing_(std::move(queuing)),
-        agent_priority_(agent_priority),
-        enable_preemption_(enable_preemption) {}
+    WaitBlock(std::string kind, std::string name, std::int64_t capacity,
+              std::int64_t timeout_ns, bool enable_timeout,
+              std::string queuing, double agent_priority,
+              bool enable_preemption, std::string comparison_text)
+        : BufferedBlock(std::move(kind), std::move(name), capacity),
+          timeout_ns_(timeout_ns),
+          enable_timeout_(enable_timeout),
+          queuing_(std::move(queuing)),
+          agent_priority_(agent_priority),
+          enable_preemption_(enable_preemption),
+          comparison_text_(std::move(comparison_text)) {}
 
   bool can_accept(const Entity& entity) override {
     if (capacity_ < 0 ||
@@ -122,10 +157,14 @@ class WaitBlock final : public BufferedBlock {
     // Full preempting queue: admit only a newcomer that outranks the agent
     // that would be ejected (lowest-priority waiter for priority queuing,
     // otherwise the most recent one).
-    if (!enable_preemption_ || kind_ != "queue") {
-      return false;
-    }
-    return priority_of(entity) > ejection_victim_priority();
+      if (!enable_preemption_ || kind_ != "queue") {
+        return false;
+      }
+      if (queuing_ == "queuing_comparison") {
+        return !input_.empty() &&
+               preferred(entity, input_.back());
+      }
+      return priority_of(entity) > ejection_victim_priority();
   }
 
   void receive(const Entity& entity) override {
@@ -144,12 +183,25 @@ class WaitBlock final : public BufferedBlock {
     if (enable_preemption_ && kind_ == "wait") {
       preempt_new_arrivals(ctx);
     }
-    if (queuing_ == "queuing_priority") {
-      std::stable_sort(input_.begin(), input_.end(),
-                       [this](const Entity& a, const Entity& b) {
-                         return priority_of(a) > priority_of(b);
-                       });
-    }
+      if (queuing_ == "queuing_priority") {
+        std::stable_sort(input_.begin(), input_.end(),
+                         [this](const Entity& a, const Entity& b) {
+                           return priority_of(a) > priority_of(b);
+                         });
+      } else if (queuing_ == "queuing_comparison" && input_.size() > 1) {
+        // Reposition the most recent arrival by the comparison (AnyLogic
+        // agent-comparison queuing: place the newcomer before the first
+        // waiter it is preferred over).
+        Entity newcomer = input_.back();
+        input_.pop_back();
+        auto it = input_.begin();
+        for (; it != input_.end(); ++it) {
+          if (preferred(newcomer, *it)) {
+            break;
+          }
+        }
+        input_.insert(it, newcomer);
+      }
     if (kind_ == "queue" && enable_preemption_ && capacity_ >= 0 &&
         static_cast<std::int64_t>(input_.size()) > capacity_) {
       eject_victim(ctx);  // can_accept admitted the outranking newcomer
@@ -209,6 +261,13 @@ class WaitBlock final : public BufferedBlock {
   }
 
  private:
+  bool preferred(const Entity& newcomer, const Entity& waiter) const {
+    if (comparison_text_.empty()) {
+      return false;
+    }
+    return evaluate_pair_condition(comparison_text_, newcomer, waiter);
+  }
+
   double priority_of(const Entity& entity) const {
     return entity_priority(entity, agent_priority_);
   }
@@ -325,6 +384,7 @@ class WaitBlock final : public BufferedBlock {
   std::string queuing_;
   double agent_priority_{0.0};
   bool enable_preemption_{false};
+  std::string comparison_text_;
   std::unordered_set<std::uint64_t> timed_;
   std::unordered_set<std::uint64_t> queued_;
   std::deque<std::pair<Entity, std::string>> alt_outgoing_;
@@ -1257,38 +1317,7 @@ class MatchBlock final : public BufferedBlock {
       // Bare attribute name: equality pairing.
       return attribute_value(first) == attribute_value(second);
     }
-    const std::string text = rewrite_scopes(condition_);
-    ExpressionEvaluator evaluator{text};
-    if (!evaluator.ok()) {
-      return false;
-    }
-    const auto lookup = [&first, &second](const std::string& id) -> double {
-      if (id.rfind("agent1_", 0) == 0) {
-        const auto it = first.attributes.find(id.substr(7));
-        return it != first.attributes.end() ? it->second : 0.0;
-      }
-      if (id.rfind("agent2_", 0) == 0) {
-        const auto it = second.attributes.find(id.substr(7));
-        return it != second.attributes.end() ? it->second : 0.0;
-      }
-      return 0.0;
-    };
-    return evaluator.eval(lookup) != 0.0;
-  }
-
-  // `agent1.kind` -> `agent1_kind` so the single-scope evaluator can resolve
-  // each side against its own entity's attributes.
-  static std::string rewrite_scopes(std::string text) {
-    for (const char* scope : {"agent1.", "agent2."}) {
-      std::string needle = scope;
-      std::string replacement = needle.substr(0, needle.size() - 1) + "_";
-      std::size_t pos = 0;
-      while ((pos = text.find(needle, pos)) != std::string::npos) {
-        text.replace(pos, needle.size(), replacement);
-        pos += replacement.size();
-      }
-    }
-    return text;
+    return evaluate_pair_condition(condition_, first, second);
   }
 
   std::string condition_;

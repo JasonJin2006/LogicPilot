@@ -233,7 +233,9 @@ flatbuffers::Offset<v2::Node> v2_process_block(
         if (source_text != nullptr &&
             (field.name == "condition" ||
              field.name == "blockingCondition" ||
-             field.name == "matchCondition") &&
+             field.name == "matchCondition" ||
+             field.name == "agent1IsPreferredToAgent2" ||
+             field.name == "agent1MayPreemptAgent2") &&
             field.value.span.byte_length > 0 &&
             field.value.span.byte_offset + field.value.span.byte_length <=
                 source_text->size()) {

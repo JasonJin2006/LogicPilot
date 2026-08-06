@@ -111,6 +111,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `agent1.X == agent2.Y` 双作用域求值（重写为 agent1_X 后经
   ExpressionEvaluator 计算）；corpus 50/50，`examples/match_attr.lp`
   改用标准写法。
+- **queuing_comparison 已落地（2026-08-07）**：queue 的
+  `agent1IsPreferredToAgent2` / wait 的 `agent1MayPreemptAgent2` 表达式
+  驱动比较式排序与满队准入（复用双作用域求值）；新增内核差分测试与
+  `examples/comparison_queue.lp` 冒烟。至此 queuing 四种模式
+  （fifo/lifo/priority/comparison）全部实现。
 - **seize 池故障已落地（2026-08-06）**：被 seize 持有的资源单元服从池的
   忙时故障/修复律（引擎级忙周期跟踪 + 代际计数防止过期 TTF 误触发）；
   故障期新 seize 不放行，`availability` 计入池停机面积；新增内核测试

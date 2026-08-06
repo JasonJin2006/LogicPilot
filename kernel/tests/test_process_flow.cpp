@@ -1211,6 +1211,114 @@ TEST_CASE("process flow: match pairs via agent1/agent2 field expressions",
   REQUIRE(not_equal.departures == 6);
 }
 
+TEST_CASE("process flow: queuing_comparison orders and preempts by expression",
+          "[process_flow][queuing][des_blocks]") {
+  const auto run_comparison = [&](const char* comparison) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "size", 1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+        {var_int(builder, "size", 5)}, {});
+    const auto queue = block(
+        builder, "Q", "queue",
+        {var_int(builder, "capacity", 1),
+         var_string(builder, "queuing", "queuing_comparison"),
+         var_string(builder, "agent1IsPreferredToAgent2", comparison),
+         var_bool(builder, "enablePreemption", true)},
+        {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto preempted = block(builder, "Out", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, queue, service, sink, preempted},
+        {couple(builder, "S1", "out", "Q", "in"),
+         couple(builder, "S2", "out", "Q", "in"),
+         couple(builder, "Q", "out", "S", "in"),
+         couple(builder, "Q", "outPreempted", "Out", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // Capacity-1 queue: a size-5 newcomer ejects the size-1 waiter when the
+  // comparison says "bigger first"; the reversed comparison never admits it.
+  const ReplicationMetrics bigger_first =
+      run_comparison("agent1.size > agent2.size");
+  REQUIRE(bigger_first.departures == 1);
+
+  const ReplicationMetrics smaller_first =
+      run_comparison("agent1.size < agent2.size");
+  REQUIRE(smaller_first.departures == 0);
+
+  // Insertion path: comparison ordering with an accepting downstream keeps
+  // every agent (conservation through the repositioning code).
+  flatbuffers::FlatBufferBuilder builder;
+  const auto s1 = block_with_state(
+      builder, "S1", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+      {var_int(builder, "size", 1)}, {});
+  const auto s2 = block_with_state(
+      builder, "S2", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+      {var_int(builder, "size", 5)}, {});
+  const auto queue = block(
+      builder, "Q", "queue",
+      {var_int(builder, "capacity", 100),
+       var_string(builder, "queuing", "queuing_comparison"),
+       var_string(builder, "agent1IsPreferredToAgent2",
+                  "agent1.size > agent2.size")},
+      {});
+  const auto service = block(
+      builder, "S", "service",
+      {var_dist(builder, "time", dist(builder, 0, {1.0})),
+       var_string(builder, "resource", "Server")},
+      {});
+  const auto resource = block(
+      builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error2;
+  auto model = build(
+      builder, {s1, s2, queue, service, sink},
+      {couple(builder, "S1", "out", "Q", "in"),
+       couple(builder, "S2", "out", "Q", "in"),
+       couple(builder, "Q", "out", "S", "in"),
+       couple(builder, "S", "out", "K", "in")},
+      root, &error2);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics conserved = run_once(*model, 7, 6, 0);
+  REQUIRE(conserved.departures == 6);
+}
+
 TEST_CASE("process flow: equality comparison drives condition routing",
           "[process_flow][condition][attributes]") {
   const auto run_route = [](const char* condition) {

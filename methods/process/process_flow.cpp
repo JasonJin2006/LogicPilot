@@ -206,7 +206,8 @@ std::unique_ptr<ProcessBlock> make_block(
         node_bool_param(stage, "enableTimeout", false),
         queuing.empty() ? "queuing_fifo" : queuing,
         node_float_param(stage, "agentPriority", 0.0),
-        node_bool_param(stage, "enablePreemption", false));
+        node_bool_param(stage, "enablePreemption", false),
+        block_string_param(stage, "agent1IsPreferredToAgent2"));
   }
   if (kind == "wait") {
     std::int64_t capacity = node_int_param(stage, "capacity", 100);
@@ -220,7 +221,8 @@ std::unique_ptr<ProcessBlock> make_block(
         node_bool_param(stage, "enableTimeout", false),
         queuing.empty() ? "queuing_fifo" : queuing,
         node_float_param(stage, "agentPriority", 0.0),
-        node_bool_param(stage, "enablePreemption", false));
+        node_bool_param(stage, "enablePreemption", false),
+        block_string_param(stage, "agent1MayPreemptAgent2"));
   }
   if (kind == "sink") {
     return std::make_unique<SinkBlock>(name);
