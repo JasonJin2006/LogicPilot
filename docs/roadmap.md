@@ -219,6 +219,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **exit/enter ✅ 已完成**（2026-08-06）：exit 从流程移除 agent（sojourn
    保留）；enter 为无输入的入口点（无外部注入 API 时空闲）；
    `examples/flow_exit.lp` 冒烟；moveTo/assembler 仍为直通占位。
+   **assembler ✅ 已完成**（2026-08-06）：in+p1 到齐（quantity125）→
+   delayTime 装配 → 输出，多装配并行；`examples/assembler_line.lp` 冒烟；
+   装配期资源占用为后续项。process 库仅剩 moveTo 为直通占位（依赖位置
+   模型）。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

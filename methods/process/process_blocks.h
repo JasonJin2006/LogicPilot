@@ -586,6 +586,86 @@ class EnterBlock final : public BufferedBlock {
   bool update(BlockContext&) override { return false; }
 };
 
+// Assembler (AnyLogic): waits until the main agent (in) and the required
+// number of parts (p1, quantity `quantity125`) are present, then assembles
+// for `delayTime` seconds and outputs the main agent. Multiple assemblies
+// may run concurrently (unbounded delay-like capacity). Resource use during
+// assembly is not modeled yet.
+class AssemblerBlock final : public BufferedBlock {
+ public:
+  AssemblerBlock(std::string name, std::int64_t delay_ns,
+                 std::int64_t parts_needed)
+      : BufferedBlock("assembler", std::move(name), -1),
+        delay_ns_(delay_ns),
+        parts_needed_(parts_needed > 0 ? parts_needed : 1) {}
+
+  void receive(const Entity& entity, std::string_view port) override {
+    ++arrived_;
+    if (port == "in") {
+      main_.push_back(entity);
+    } else {
+      parts_.push_back(entity);
+    }
+  }
+
+  bool update(BlockContext& ctx) override {
+    if (main_.empty() ||
+        parts_.size() < static_cast<std::size_t>(parts_needed_)) {
+      return false;
+    }
+    Entity assembled = main_.front();
+    main_.pop_front();
+    for (std::int64_t i = 0; i < parts_needed_; ++i) {
+      parts_.pop_front();
+    }
+    assembled.service_start_ns = ctx.now().as_ns();
+    in_service_.push_back(assembled);
+    ctx.schedule_depart(delay_ns_, assembled.id);
+    return true;
+  }
+
+  void complete(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it =
+        std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == in_service_.end()) {
+      return;
+    }
+    Entity entity = *it;
+    in_service_.erase(it);
+    ++departed_;
+    if (!ctx.emit(entity, "out")) {
+      outgoing_.push_back(entity);
+    }
+  }
+
+  [[nodiscard]] bool has_in_service() const override {
+    return !in_service_.empty();
+  }
+
+  void accumulate_areas(std::int64_t dt_ns) override {
+    BufferedBlock::accumulate_areas(dt_ns);
+    area_occupancy_ += static_cast<double>(dt_ns) *
+                       static_cast<double>(main_.size() + parts_.size());
+  }
+
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    main_.clear();
+    parts_.clear();
+    in_service_.clear();
+  }
+
+ private:
+  std::int64_t delay_ns_{0};
+  std::int64_t parts_needed_{1};
+  std::deque<Entity> main_;
+  std::deque<Entity> parts_;
+  std::deque<Entity> in_service_;
+};
+
 // Remaining kinds with their existing semantics: selectOutput (RNG routing),
 // split (clone to outCopy), hold (frozen = blocked), count/release/pass-
 // through (immediate forward).

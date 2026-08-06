@@ -1314,3 +1314,42 @@ TEST_CASE("process flow: enter is an inert entry point without a trigger",
   // Only the source produces agents; enter contributes nothing.
   REQUIRE(metrics.departures == 5);
 }
+
+TEST_CASE("process flow: assembler waits for parts, delays, then outputs",
+          "[process_flow][assembler][des_blocks]") {
+  const auto run_assembler = [&](double parts_rate, std::int64_t parts_needed,
+                                 double delay_seconds) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto kits = block(
+        builder, "Kits", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
+    const auto parts = block(
+        builder, "Parts", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {parts_rate}))}, {});
+    const auto assembler = block(
+        builder, "Build", "assembler",
+        {var_int(builder, "quantity125", parts_needed),
+         var_float(builder, "delayTime", delay_seconds)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {kits, parts, assembler, sink},
+        {couple(builder, "Kits", "out", "Build", "in"),
+         couple(builder, "Parts", "out", "Build", "p1"),
+         couple(builder, "Build", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // Kits at t=2,4; parts at t=1,2,3,4 (rate 1.0). Assemblies form at t=2
+  // (kit 1 + two parts) and t=4 (kit 2 + two parts), each taking 2.0s.
+  const ReplicationMetrics built = run_assembler(1.0, 2, 2.0);
+  REQUIRE(built.departures == 2);
+  REQUIRE(built.mean_sojourn == 2.0);
+
+  // Only one part ever arrives: no assembly can start.
+  const ReplicationMetrics starved = run_assembler(10.0, 2, 1.0);
+  REQUIRE(starved.departures == 0);
+}

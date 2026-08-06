@@ -114,6 +114,10 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   （sojourn 保留，AnyLogic Exit）；`enter` 为无输入的入口点，无外部注入
   API 时空闲（AnyLogic 需程序化 enter() 触发）；新增内核测试与
   `examples/flow_exit.lp` 冒烟。moveTo/assembler 仍为直通占位。
+- **assembler 语义已落地（2026-08-06）**：等待 in（主件）+ p1（部件，
+  quantity125 数量）到齐后装配 delayTime 秒输出主件（多装配并行）；
+  新增内核测试（正常装配/部件不足）与 `examples/assembler_line.lp` 冒烟；
+  装配期资源占用为后续项。至此 process 库仅剩 moveTo 为直通占位。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

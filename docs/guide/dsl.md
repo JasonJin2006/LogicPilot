@@ -129,6 +129,11 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外部注入 API，
 保持空闲（不产生 agent）。示例：`examples/flow_exit.lp`。
 
+`assembler` 已实现 AnyLogic 语义：等待 `in`（主件）+ `p1`（部件，
+`quantity125` 指定数量）到齐后装配 `delayTime` 秒，再输出主件；多个装配
+可并行。装配期资源占用（resourcePool）暂未建模。示例：
+`examples/assembler_line.lp`。
+
 `service` 现在在**通用流程引擎**（`ProcessFlowSim`）里也遵守资源池的故障语义：
 `resource` 的 `failure_rate` / `repair_rate` 按「忙时故障 + 修复」建模
 （抢占式重启服务，与专用 M/M/1 路径一致）；`availability` 指标输出到
@@ -258,5 +263,6 @@ use manufacturing
 | `examples/match_attr.lp` | match 按实体属性等值配对 |
 | `examples/seize_failure.lp` | seize 持有单元的池故障（availability） |
 | `examples/flow_exit.lp` | exit 从流程移除 agent（sojourn 保留） |
+| `examples/assembler_line.lp` | assembler 等待部件 → 装配延时 → 输出 |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。
