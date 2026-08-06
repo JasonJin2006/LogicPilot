@@ -39,8 +39,6 @@ jobs:
 
       - name: Setup Ninja
         uses: ashutoshvarma/setup-ninja@master
-        with:
-          ninja-version: latest
 
       - name: Setup MSVC environment (Windows)
         if: runner.os == 'Windows'
@@ -130,8 +128,6 @@ jobs:
 
       - name: Setup Ninja
         uses: ashutoshvarma/setup-ninja@master
-        with:
-          ninja-version: latest
 
       - name: Install clang (Linux)
         run: sudo apt-get update && sudo apt-get install -y clang

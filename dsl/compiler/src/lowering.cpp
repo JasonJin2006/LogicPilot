@@ -171,17 +171,6 @@ double float_field(const Node& node, const char* name,
   return fallback;
 }
 
-Distribution distribution_field(const Node& node, const char* name,
-                                const ParamScope& scope) {
-  Distribution dist;
-  const Field* field = field_of(node, name);
-  if (field == nullptr) {
-    return dist;
-  }
-  (void)distribution_from_value(fold_or_raw(field->value, scope), dist);
-  return dist;
-}
-
 // ---------------------------------------------------------------------------
 // Process library blocks
 // ---------------------------------------------------------------------------
