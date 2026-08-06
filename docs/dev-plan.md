@@ -105,6 +105,12 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   同步，corpus 49/49）；`matchCondition = <属性名>` 让 match 按实体属性
   等值配对（新到达者与对侧队列从前到后找首个同值配对）；新增内核
   match 配对/等值路由测试与 `examples/match_attr.lp` 冒烟。
+- **字段访问表达式已落地（2026-08-07）**：文法新增成员访问
+  （`agent1.kind`），编译器提取为 kField，语义层对 matchCondition 做
+  LP5006 校验（agent1/agent2 + 属性名/t/time）；内核 match 支持
+  `agent1.X == agent2.Y` 双作用域求值（重写为 agent1_X 后经
+  ExpressionEvaluator 计算）；corpus 50/50，`examples/match_attr.lp`
+  改用标准写法。
 - **seize 池故障已落地（2026-08-06）**：被 seize 持有的资源单元服从池的
   忙时故障/修复律（引擎级忙周期跟踪 + 代际计数防止过期 TTF 误触发）；
   故障期新 seize 不放行，`availability` 计入池停机面积；新增内核测试

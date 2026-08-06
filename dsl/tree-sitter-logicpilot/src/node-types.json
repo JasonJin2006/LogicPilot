@@ -457,6 +457,32 @@
     }
   },
   {
+    "type": "field_access",
+    "named": true,
+    "fields": {
+      "base": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "field": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "float",
     "named": true,
     "fields": {}
@@ -774,6 +800,10 @@
         },
         {
           "type": "call",
+          "named": true
+        },
+        {
+          "type": "field_access",
           "named": true
         },
         {

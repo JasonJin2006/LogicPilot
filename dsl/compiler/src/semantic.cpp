@@ -526,6 +526,27 @@ class Analyzer {
         }
       }
     }
+    if (node.kind == "match") {
+      const Field* condition = field_of(node, "matchCondition");
+      if (condition != nullptr && !value_is_constant(condition->value)) {
+        // Match conditions may reference `agent1`/`agent2` attribute fields
+        // (`agent1.kind == agent2.kind`) or a bare attribute name.
+        std::unordered_set<std::string> known = {"t", "time", "agent1", "agent2"};
+        for (const std::string& attribute : entity_attribute_names_) {
+          known.insert(attribute);
+        }
+        std::vector<std::string> unknown;
+        collect_unknown_identifiers(condition->value, known, unknown);
+        for (const std::string& id : unknown) {
+          error("LP5006",
+                "matchCondition in match '" + node.name +
+                    "' references unknown identifier '" + id +
+                    "' (expected agent1/agent2 attribute fields, an "
+                    "entity attribute, or t/time)",
+                condition->span);
+        }
+      }
+    }
     if (node.kind == "resource") {
       const Field* capacity = field_of(node, "capacity");
       if (capacity) {

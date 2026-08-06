@@ -103,7 +103,9 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - `match`：同步两条流，双方都到齐时成对从 `out1`/`out2` 同时输出。
 - `match` 的**属性配对**：`matchCondition = <属性名>` 时按该实体属性等值
   配对（新到达的 agent 与对侧队列从前到后找第一个同值配对），缺省
-  （不写或 `true`）保持纯同步器。
+  （不写或 `true`）保持纯同步器；也支持 AnyLogic 标准写法
+  `matchCondition = agent1.kind == agent2.kind`（`agent1`/`agent2`
+  引用两侧 agent 的属性字段，可组合 `==`/`!=`/比较运算符）。
 - `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
 - **被 seize 持有的单元同样服从池故障**：资源池的 `failure_rate` /

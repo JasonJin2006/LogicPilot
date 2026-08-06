@@ -596,3 +596,49 @@ TEST_CASE("semantic: equality comparisons and match attribute pairing compile",
   }
   REQUIRE(lp5006 >= 1);
 }
+
+TEST_CASE("semantic: match field expressions validate agent1/agent2 attributes",
+          "[dsl][semantic][match]") {
+  const ParseOutput valid = parse_source(
+      "model M {\n"
+      "  source In {\n"
+      "    arrival = rate(1)\n"
+      "    state kind: int = 1\n"
+      "  }\n"
+      "  match Sync { matchCondition = agent1.kind == agent2.kind }\n"
+      "  sink K { }\n"
+      "  couple In.out -> Sync.in1\n"
+      "  couple In.out -> Sync.in2\n"
+      "  couple Sync.out1 -> K.in\n"
+      "  couple Sync.out2 -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(valid.ok());
+  const std::vector<Diagnostic> valid_diags = analyze_model(*valid.model);
+  for (const Diagnostic& diagnostic : valid_diags) {
+    REQUIRE_FALSE(diagnostic.code == "LP5006");
+  }
+
+  const ParseOutput unknown = parse_source(
+      "model M {\n"
+      "  source In {\n"
+      "    arrival = rate(1)\n"
+      "    state kind: int = 1\n"
+      "  }\n"
+      "  match Sync { matchCondition = agent1.mystery == agent2.kind }\n"
+      "  sink K { }\n"
+      "  couple In.out -> Sync.in1\n"
+      "  couple In.out -> Sync.in2\n"
+      "  couple Sync.out1 -> K.in\n"
+      "  couple Sync.out2 -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(unknown.ok());
+  int lp5006 = 0;
+  for (const Diagnostic& diagnostic : analyze_model(*unknown.model)) {
+    if (diagnostic.code == "LP5006") {
+      ++lp5006;
+    }
+  }
+  REQUIRE(lp5006 >= 1);
+}

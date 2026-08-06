@@ -237,6 +237,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **moveTo ✅ 已完成**（2026-08-07）：tripTime / speed+xYZ（距离/速度）/
    缺省零时跳转；Entity 增加位置字段；`examples/move_route.lp` 冒烟。
    **process 库 23 块全部有内核语义**（node/path 空间建模为后续项）。
+   **字段访问表达式 ✅ 已完成**（2026-08-07）：文法成员访问
+   （`agent1.kind`）+ 编译器 kField + matchCondition LP5006 + 内核
+   `agent1.X == agent2.Y` 双作用域求值；corpus 50/50；
+   `examples/match_attr.lp` 用标准 AnyLogic 写法。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

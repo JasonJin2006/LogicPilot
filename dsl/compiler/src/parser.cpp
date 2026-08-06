@@ -324,6 +324,16 @@ class Extractor {
     } else if (node_is(child, "unary_expression")) {
       value.kind = ValueKind::kNegate;
       value.operands.push_back(extract_value(field(child, "operand")));
+    } else if (node_is(child, "field_access")) {
+      value.kind = ValueKind::kField;
+      Value base;
+      base.kind = ValueKind::kIdentifier;
+      base.string_value = text_of(field(child, "base"));
+      Value field_value;
+      field_value.kind = ValueKind::kIdentifier;
+      field_value.string_value = text_of(field(child, "field"));
+      value.operands.push_back(std::move(base));
+      value.operands.push_back(std::move(field_value));
     } else if (node_is(child, "parenthesized_expression")) {
       value.kind = ValueKind::kParen;
       value.operands.push_back(extract_value(field(child, "value")));

@@ -245,6 +245,40 @@ model M {
                     (integer)))))))))))
 
 ====================
+Field access in a match condition
+====================
+
+model M {
+  match Sync {
+    matchCondition = agent1.kind == agent2.kind
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (binary_expression
+                left: (value
+                  (field_access
+                    base: (identifier)
+                    field: (identifier)))
+                op: (binary_op)
+                right: (value
+                  (field_access
+                    base: (identifier)
+                    field: (identifier)))))))))))
+
+====================
 Equality comparison in a condition
 ====================
 

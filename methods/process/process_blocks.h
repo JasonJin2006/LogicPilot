@@ -1189,10 +1189,11 @@ class MatchBlock final : public BufferedBlock {
     return true;
   }
 
-  // Pairing on an entity attribute (AnyLogic `matchCondition`: here the
-  // field names the attribute; agents pair when their values are equal).
-  // The arriving agent is checked against the opposite queue front-to-back,
-  // matching AnyLogic's "checked against all agents in the other queue".
+    // Pairing on entity attributes (AnyLogic matchCondition): a bare
+    // attribute name means equality, while `agent1.X == agent2.Y` (or any
+    // expression over the two agents' attributes) is evaluated pairwise.
+    // The arriving agent is checked against the opposite queue front-to-back,
+    // matching AnyLogic's "checked against all agents in the other queue".
   bool update_conditioned(BlockContext& ctx) {
     if (pending_new_.id == std::numeric_limits<std::uint64_t>::max()) {
       return false;
@@ -1211,11 +1212,10 @@ class MatchBlock final : public BufferedBlock {
     if (newcomer == own_queue.end() || other_queue.empty()) {
       return false;
     }
-    const double own_value = attribute_value(*newcomer);
-    for (auto it = other_queue.begin(); it != other_queue.end(); ++it) {
-      if (attribute_value(*it) != own_value) {
-        continue;
-      }
+      for (auto it = other_queue.begin(); it != other_queue.end(); ++it) {
+        if (!pair_matches(*newcomer, *it)) {
+          continue;
+        }
       if (!ctx.downstream_accepts(*newcomer, "out1") ||
           !ctx.downstream_accepts(*it, "out2")) {
         return false;
@@ -1248,6 +1248,47 @@ class MatchBlock final : public BufferedBlock {
   double attribute_value(const Entity& entity) const {
     const auto it = entity.attributes.find(condition_);
     return it != entity.attributes.end() ? it->second : 0.0;
+  }
+
+  bool pair_matches(const Entity& first, const Entity& second) const {
+    const bool is_expression =
+        condition_.find_first_of(" .+-*/<>=!") != std::string::npos;
+    if (!is_expression) {
+      // Bare attribute name: equality pairing.
+      return attribute_value(first) == attribute_value(second);
+    }
+    const std::string text = rewrite_scopes(condition_);
+    ExpressionEvaluator evaluator{text};
+    if (!evaluator.ok()) {
+      return false;
+    }
+    const auto lookup = [&first, &second](const std::string& id) -> double {
+      if (id.rfind("agent1_", 0) == 0) {
+        const auto it = first.attributes.find(id.substr(7));
+        return it != first.attributes.end() ? it->second : 0.0;
+      }
+      if (id.rfind("agent2_", 0) == 0) {
+        const auto it = second.attributes.find(id.substr(7));
+        return it != second.attributes.end() ? it->second : 0.0;
+      }
+      return 0.0;
+    };
+    return evaluator.eval(lookup) != 0.0;
+  }
+
+  // `agent1.kind` -> `agent1_kind` so the single-scope evaluator can resolve
+  // each side against its own entity's attributes.
+  static std::string rewrite_scopes(std::string text) {
+    for (const char* scope : {"agent1.", "agent2."}) {
+      std::string needle = scope;
+      std::string replacement = needle.substr(0, needle.size() - 1) + "_";
+      std::size_t pos = 0;
+      while ((pos = text.find(needle, pos)) != std::string::npos) {
+        text.replace(pos, needle.size(), replacement);
+        pos += replacement.size();
+      }
+    }
+    return text;
   }
 
   std::string condition_;

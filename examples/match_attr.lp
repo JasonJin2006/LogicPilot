@@ -1,5 +1,5 @@
-// Match pairing on an entity attribute (AnyLogic matchCondition): the
-// field names the attribute, and agents pair when their values are equal.
+// Match pairing via the canonical AnyLogic matchCondition form
+// `agent1.kind == agent2.kind`: agents pair when the attribute matches.
 model MatchAttr {
   source A {
     arrival = rate(1.0)
@@ -10,7 +10,7 @@ model MatchAttr {
     state kind: int = 1
   }
   match Sync {
-    matchCondition = kind
+    matchCondition = agent1.kind == agent2.kind
   }
   sink K1 { }
   sink K2 { }

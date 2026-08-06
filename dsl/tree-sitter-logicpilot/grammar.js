@@ -251,9 +251,17 @@ module.exports = grammar({
       $.binary_expression,
       $.unary_expression,
       $.parenthesized_expression,
+      $.field_access,
       $.value_literal,
       $.identifier,
       $.call,
+    ),
+
+    // `agent1.kind` — member access over a named scope (match conditions).
+    field_access: $ => seq(
+      field('base', $.identifier),
+      '.',
+      field('field', $.identifier),
     ),
 
     binary_expression: $ => choice(

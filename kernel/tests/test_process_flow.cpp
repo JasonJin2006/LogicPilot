@@ -1170,6 +1170,47 @@ TEST_CASE("process flow: match pairs agents on an equal attribute",
   REQUIRE(synchronizer.departures == 6);
 }
 
+TEST_CASE("process flow: match pairs via agent1/agent2 field expressions",
+          "[process_flow][match][des_blocks]") {
+  const auto run_match = [&](int kind1, int kind2, const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "kind", kind1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "kind", kind2)}, {});
+    const auto match = block(
+        builder, "M", "match",
+        {var_string(builder, "matchCondition", condition)}, {});
+    const auto sink1 = block(builder, "K1", "sink", {}, {});
+    const auto sink2 = block(builder, "K2", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, match, sink1, sink2},
+        {couple(builder, "S1", "out", "M", "in1"),
+         couple(builder, "S2", "out", "M", "in2"),
+         couple(builder, "M", "out1", "K1", "in"),
+         couple(builder, "M", "out2", "K2", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // The canonical AnyLogic form `agent1.kind == agent2.kind` pairs equal
+  // attributes and blocks unequal ones; `!=` pairs unequal ones.
+  const ReplicationMetrics equal = run_match(1, 1, "agent1.kind == agent2.kind");
+  REQUIRE(equal.departures == 6);
+
+  const ReplicationMetrics mismatched = run_match(1, 2, "agent1.kind == agent2.kind");
+  REQUIRE(mismatched.departures == 0);
+
+  const ReplicationMetrics not_equal = run_match(1, 2, "agent1.kind != agent2.kind");
+  REQUIRE(not_equal.departures == 6);
+}
+
 TEST_CASE("process flow: equality comparison drives condition routing",
           "[process_flow][condition][attributes]") {
   const auto run_route = [](const char* condition) {
