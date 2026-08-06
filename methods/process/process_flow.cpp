@@ -49,6 +49,8 @@ constexpr EventType kDepartEvent = 21;
 constexpr EventType kFailureEvent = 22;
 constexpr EventType kRepairEvent = 23;
 constexpr EventType kTimeoutEvent = 24;
+constexpr EventType kPoolFailureEvent = 25;
+constexpr EventType kPoolRepairEvent = 26;
 
 // ResourcePool spec: capacity plus the milestone-1 busy-time failure law.
 struct PoolSpec {
@@ -391,13 +393,36 @@ class Engine final : public BlockContext {
     measure_count_ = 0;
     servers_total_ = 0;
     available_.clear();
+    pool_busy_.clear();
+    pool_down_.clear();
+    pool_gen_.clear();
+    pool_down_area_.clear();
+    pool_order_.clear();
+    pool_index_.clear();
     for (auto& block : blocks_) {
       block->clear_buffers();
       block->reset_stats();
       servers_total_ += block->pool_capacity();
     }
+    // Seized resource pools count toward the utilization/availability
+    // denominators (SeizeBlock exposes no pool capacity of its own).
+    std::unordered_set<std::string> seized_pools;
+    for (const std::size_t seizer : resource_seizers_) {
+      const std::string resource = blocks_[seizer]->pool_resource();
+      if (!resource.empty()) {
+        seized_pools.insert(resource);
+      }
+    }
+    for (const std::string& resource : seized_pools) {
+      const auto it = resource_pools_.find(resource);
+      if (it != resource_pools_.end()) {
+        servers_total_ += it->second.capacity;
+      }
+    }
     for (const auto& [resource, spec] : resource_pools_) {
       available_[resource] = spec.capacity;
+      pool_order_.push_back(resource);
+      pool_index_[resource] = pool_order_.size() - 1;
     }
     depart_handler_ =
         handlers().add([this](const Event& event) { on_depart(event); });
@@ -407,6 +432,10 @@ class Engine final : public BlockContext {
         handlers().add([this](const Event& event) { on_repair(event); });
     timeout_handler_ =
         handlers().add([this](const Event& event) { on_timeout(event); });
+    pool_failure_handler_ =
+        handlers().add([this](const Event& event) { on_pool_failure(event); });
+    pool_repair_handler_ =
+        handlers().add([this](const Event& event) { on_pool_repair(event); });
     arrive_handler_ =
         handlers().add([this](const Event& event) { on_arrive(event); });
     for (const std::size_t source : sources_) {
@@ -468,6 +497,9 @@ class Engine final : public BlockContext {
       double down_area = 0.0;
       for (const auto& block : blocks_) {
         down_area += block->area_down();
+      }
+      for (const auto& [resource, area] : pool_down_area_) {
+        down_area += area;
       }
       metrics.availability =
           1.0 - down_area / static_cast<double>(horizon_ns) /
@@ -552,6 +584,9 @@ class Engine final : public BlockContext {
 
   bool try_seize(const std::string& resource,
                  std::int64_t quantity) override {
+    if (pool_down_[resource]) {
+      return false;  // the pool is down for repair
+    }
     const auto it = available_.find(resource);
     if (it == available_.end()) {
       // No declared pool: default to a single unit (mirrors the service
@@ -563,12 +598,20 @@ class Engine final : public BlockContext {
       return false;
     }
     units -= quantity;
+    const std::int64_t before = pool_busy_[resource];
+    pool_busy_[resource] = before + quantity;
+    if (before == 0 && pool_failure_rate(resource) > 0.0) {
+      pool_gen_[resource] += 1;
+      schedule_pool_failure(resource);
+    }
     return true;
   }
 
   void release_resources(const std::string& resource,
                          std::int64_t quantity) override {
     available_[resource] += quantity;
+    const std::int64_t busy = pool_busy_[resource] - quantity;
+    pool_busy_[resource] = busy > 0 ? busy : 0;
     // A freed unit may unblock waiting Seize blocks; re-process them in this
     // pump pass (blocked updates simply return false).
     for (const std::size_t seizer : resource_seizers_) {
@@ -614,6 +657,11 @@ class Engine final : public BlockContext {
     area_system_ns_ += dt * static_cast<std::int64_t>(in_system_);
     for (auto& block : blocks_) {
       block->accumulate_areas(dt);
+    }
+    for (const auto& [resource, spec] : resource_pools_) {
+      if (spec.failure_rate > 0.0 && pool_down_[resource]) {
+        pool_down_area_[resource] += static_cast<double>(dt);
+      }
     }
     last_ns_ = now_ns;
   }
@@ -675,6 +723,68 @@ class Engine final : public BlockContext {
     current_ = block;
     blocks_[block]->on_timeout(*this, entity_id);
     pump(block);
+  }
+
+  // Seized-pool failures (AnyLogic ResourcePool busy-time failure): while
+  // the pool has units held by Seize, it alternates up/down with exponential
+  // time-to-failure / repair; while down, no new seizes are granted and the
+  // downtime is reflected in availability. Held agents are not interrupted
+  // (documented simplification).
+  double pool_failure_rate(const std::string& resource) const {
+    const auto it = resource_pools_.find(resource);
+    return it != resource_pools_.end() ? it->second.failure_rate : 0.0;
+  }
+
+  void schedule_pool_failure(const std::string& resource) {
+    const auto index = pool_index_.find(resource);
+    if (index == pool_index_.end()) {
+      return;
+    }
+    const PoolSpec& spec = resource_pools_[resource];
+    Exponential<Xoshiro256PlusPlus> ttf{spec.failure_rate};
+    const std::uint64_t payload =
+        (static_cast<std::uint64_t>(index->second) << 32) |
+        (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu);
+    scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(ttf(engine_))),
+                         kPoolFailureEvent, pool_failure_handler_, payload);
+  }
+
+  void on_pool_failure(const Event& event) {
+    const std::size_t index = static_cast<std::size_t>(event.payload >> 32);
+    if (index >= pool_order_.size()) {
+      return;
+    }
+    const std::string& resource = pool_order_[index];
+    accumulate_areas(clock().now().as_ns());
+    const std::uint64_t generation = event.payload & 0xFFFFFFFFu;
+    if (generation != static_cast<std::uint64_t>(pool_gen_[resource])) {
+      return;  // stale TTF from an ended busy period
+    }
+    if (pool_busy_[resource] > 0 && !pool_down_[resource]) {
+      pool_down_[resource] = true;
+      const PoolSpec& spec = resource_pools_[resource];
+      Exponential<Xoshiro256PlusPlus> repair{spec.repair_rate};
+      scheduler().schedule(
+          clock().now() + SimTime::from_ns(to_ns(repair(engine_))),
+          kPoolRepairEvent, pool_repair_handler_,
+          static_cast<std::uint64_t>(index));
+    }
+  }
+
+  void on_pool_repair(const Event& event) {
+    const std::size_t index = static_cast<std::size_t>(event.payload);
+    if (index >= pool_order_.size()) {
+      return;
+    }
+    const std::string& resource = pool_order_[index];
+    accumulate_areas(clock().now().as_ns());
+    pool_down_[resource] = false;
+    if (pool_busy_[resource] > 0 && pool_failure_rate(resource) > 0.0) {
+      schedule_pool_failure(resource);
+    }
+    for (const std::size_t seizer : resource_seizers_) {
+      pump(seizer);  // handler wake-up: the worklist needs a pump run
+    }
   }
 
   static std::uint64_t self_payload(std::size_t block,
@@ -779,6 +889,12 @@ class Engine final : public BlockContext {
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   std::unordered_map<std::string, PoolSpec> resource_pools_;
   std::unordered_map<std::string, std::int64_t> available_;
+  std::unordered_map<std::string, std::int64_t> pool_busy_;
+  std::unordered_map<std::string, bool> pool_down_;
+  std::unordered_map<std::string, std::int64_t> pool_gen_;
+  std::unordered_map<std::string, double> pool_down_area_;
+  std::vector<std::string> pool_order_;
+  std::unordered_map<std::string, std::size_t> pool_index_;
   std::vector<std::size_t> resource_seizers_;
   Xoshiro256PlusPlus engine_{0};
   HandlerId arrive_handler_{0};
@@ -786,6 +902,8 @@ class Engine final : public BlockContext {
   HandlerId failure_handler_{0};
   HandlerId repair_handler_{0};
   HandlerId timeout_handler_{0};
+  HandlerId pool_failure_handler_{0};
+  HandlerId pool_repair_handler_{0};
   std::vector<std::size_t> work_;
   std::uint64_t emitted_{0};
   std::uint64_t departures_{0};

@@ -733,6 +733,10 @@ class SeizeBlock final : public BufferedBlock {
       alt_outgoing_.clear();
     }
 
+    [[nodiscard]] std::string pool_resource() const override {
+      return resource_;
+    }
+
    private:
     // Preemption on arrival (AnyLogic Seize embedded queue): a newcomer
     // with higher priority than the weakest established waiter ejects it

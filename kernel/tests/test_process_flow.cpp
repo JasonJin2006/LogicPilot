@@ -1206,3 +1206,67 @@ TEST_CASE("process flow: equality comparison drives condition routing",
   REQUIRE(equals.mean_sojourn > 0.5);
   REQUIRE(not_equals.mean_sojourn < 0.1);
 }
+
+TEST_CASE("process flow: seized resource units honor pool failures",
+          "[process_flow][failure][des_blocks]") {
+  const auto run_seize_pool = [&](double failure_rate) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource = block(
+        builder, "Server", "resource",
+        {var_int(builder, "capacity", 1),
+         var_float(builder, "failure_rate", failure_rate),
+         var_float(builder, "repair_rate", 1.0)},
+        {});
+    const auto seize = block(
+        builder, "Grab", "seize",
+        {var_string(builder, "resource", "Server"),
+         var_int(builder, "numberOfUnits", 1)},
+        {});
+    const auto delay = block(
+        builder, "Work", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+    const auto release = block(builder, "Drop", "release", {}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, seize, delay, release, sink},
+        {couple(builder, "In", "out", "Grab", "in"),
+         couple(builder, "Grab", "out", "Work", "in"),
+         couple(builder, "Work", "out", "Drop", "in"),
+         couple(builder, "Drop", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  // The pool fails while units are held by seize (busy-time failure law);
+  // every agent still completes, the pool's downtime shows up in
+  // availability, and no failures means availability == 1.
+  const ReplicationMetrics failing = run_seize_pool(0.1);
+  REQUIRE(failing.departures == 2000);
+  REQUIRE(failing.availability > 0.85);
+  REQUIRE(failing.availability < 0.99);
+  REQUIRE(failing.mean_in_queue > 0.0);  // agents wait while the pool is down
+
+  const ReplicationMetrics clean = run_seize_pool(0.0);
+  REQUIRE(clean.departures == 2000);
+  REQUIRE(clean.availability == 1.0);
+
+  // Determinism: identical config reproduces identical metrics.
+  const ReplicationMetrics again = run_seize_pool(0.1);
+  REQUIRE(again.departures == failing.departures);
+  REQUIRE(again.availability == failing.availability);
+  REQUIRE(again.mean_in_queue == failing.mean_in_queue);
+}

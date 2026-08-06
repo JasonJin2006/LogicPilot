@@ -106,6 +106,10 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   （不写或 `true`）保持纯同步器。
 - `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
+- **被 seize 持有的单元同样服从池故障**：资源池的 `failure_rate` /
+  `repair_rate` 在单元被持有期间生效——池进入故障后不再放行新的 seize，
+  修复后恢复；`availability` 反映停机占比（故障期间已持有的 agent 不被
+  中断，为简化语义）。
 - `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
   `timeout` 秒的 agent 从 `outTimeout` 出口离开（AnyLogic 语义；couple 到
   `outTimeout` 时编译器要求 `enableTimeout` 为 true）。
@@ -248,5 +252,6 @@ use manufacturing
 | `examples/wait_timeout.lp` | wait 退出超时（outTimeout 出口） |
 | `examples/priority_preempt.lp` | 优先级排队 + 满队抢占（outPreempted） |
 | `examples/match_attr.lp` | match 按实体属性等值配对 |
+| `examples/seize_failure.lp` | seize 持有单元的池故障（availability） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

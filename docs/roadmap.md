@@ -213,6 +213,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    `matchCondition = <属性名>` 按实体属性等值配对；
    `examples/match_attr.lp` 冒烟。任意字段访问表达式
    （`agent1.attr == agent2.attr`）为后续项。
+   **seize 池故障 ✅ 已完成**（2026-08-06）：被 seize 持有的单元服从池的
+   failure/repair（忙周期代际计数防过期事件），availability 计入停机面积；
+   `examples/seize_failure.lp` 冒烟；故障期已持有 agent 不中断为简化语义。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

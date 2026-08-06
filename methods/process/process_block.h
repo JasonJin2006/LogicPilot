@@ -159,6 +159,9 @@ class ProcessBlock {
     static const std::unordered_map<std::string, double> kEmpty;
     return kEmpty;
   }
+
+  // The ResourcePool this block draws units from ("" for non-pool blocks).
+  [[nodiscard]] virtual std::string pool_resource() const { return ""; }
 };
 
 // Shared buffering/counter state for the common input -> forward model.
