@@ -80,8 +80,10 @@ class SimulationMethod {
 kernel 只通过这个接口驱动方法，完全不认识 Queue / Service / Stock / State。
 
 - `RuntimeContext`：kernel 提供给方法运行时的设施（clock、scheduler、
-  VariableStore）。Phase 1 的既有引擎仍在内部自建 scheduler/clock；引擎接入
-  外部设施随 Phase 3 模块化一起完成。
+  VariableStore）。方法运行时通过它读写共享状态；**Phase 1–4 的既有引擎
+  仍在内部自建 scheduler/clock**（自包含、逐位确定），把引擎改为消费
+  RuntimeContext 的外部调度器/时钟（kernel 统一调度、跨方法共享同一事件
+  队列）是下一里程碑（SimulationKernel 驱动），见 §7。
 - `RuntimeManager`：一次 replication 内持有多个方法 runtime，统一驱动
   initialize → advance* → shutdown。
 - `MethodRegistry`：`method name -> factory` 的插件注册表。第三方法可直接
@@ -196,3 +198,24 @@ agent / system dynamics 拆成独立方法库；多方法模型通过 `VariableS
 `cmake --build ... --target clean`）；否则会残留旧头文件编译的对象，导致
 类布局 ABI 不一致（曾因此出现仅在测试二进制中复现的崩溃）。CI 全新检出，
 不受此影响。
+
+## 7. 剩余工作（下一里程碑：SimulationKernel 驱动）
+
+四阶段迁移（抽象隔离 → IR 解耦 → Process 模块化 → 第二种方法接入）已完成，
+架构骨架（MethodRegistry / RuntimeManager / SimulationMethod /
+VariableStore / methods/process + methods/statechart）可运行、187 ctest 全绿。
+尚未完成的是方案 §八「执行流程」的深度接线：
+
+1. **统一调度**：让 ProcessFlowSim / QueueingFlowSim 不再自建
+   scheduler/clock，而是把事件排进 kernel 的 `RuntimeContext` 设施，kernel
+   一个事件队列同时驱动多个方法运行时（Process + Statechart + Agent + SD
+   共享同一时钟，确定性由 kernel 统一保证）。
+2. **SimulationKernel 驱动**：`kernel/runtime/simulation_kernel` 拥有
+   clock/scheduler/VariableStore + RuntimeManager，`load()` 按 IR 解析并
+   装配方法，`run(config)` 走 initialize → advance* → shutdown，汇总各方法
+   的 `replication_metrics()`；替代 lpcli/lp-server 的批量适配路径。
+3. **多方法模型组合**：同一模型根下混合 process/statechart/agent 子块，
+   经 VariableStore 共享变量互联（Process += produced、Agent -= consumed、
+   SD 积分），端到端验证。
+4. agent / system_dynamics 拆成独立方法库（目前仍是 kernel 原生方法，
+   已走同一注册表）。
