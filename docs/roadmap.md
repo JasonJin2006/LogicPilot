@@ -227,6 +227,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    通过；新增 `examples/des_shop.lp`（属性+优先级队列+seize 池故障+
    batch/unbatch+条件路由+timeMeasure+exit 组合）与内核组合守恒测试
    （1000 进 1000 出）；README 更新 DES 块语义清单。
+   **AI 模板适配 DES ✅ 已完成**（2026-08-07）：规则 provider 按关键词生成
+   priority/measure/seize/batch/assembly/timeout 模板（8 种组合全部编译
+   通过），`test-ai-build.mjs` 新增特征断言，`ai_build_smoke` ctest 覆盖。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

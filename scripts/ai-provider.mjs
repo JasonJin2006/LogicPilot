@@ -69,36 +69,115 @@ function repairSpec(spec, diagnostics) {
   return spec;
 }
 
-function renderDsl(spec) {
+// Detect DES features the user asked for; each adds/rewires process-library
+// blocks so the generated model exercises the corresponding semantics.
+function advancedFeatures(prompt) {
+  const text = prompt.toLowerCase();
+  const features = new Set();
+  if (/assembl|parts|kit/.test(text)) features.add('assembly');
+  if (/batch|group every|group of|bundle/.test(text)) features.add('batch');
+  if (/priorit/.test(text)) features.add('priority');
+  if (/seize|held resource|resource-constrained/.test(text)) {
+    features.add('seize');
+  }
+  if (/measur|time in (the )?system|waiting time/.test(text)) {
+    features.add('measure');
+  }
+  if (/timeout/.test(text)) features.add('timeout');
+  return features;
+}
+
+function renderDsl(spec, features = new Set()) {
   const number = (value) =>
       Number.isInteger(value) ? value.toFixed(1) : String(value);
   const failure =
       spec.failureRate > 0.0
           ? `\n    failure_rate = ${number(spec.failureRate)}`
           : '';
-  return `// AI-generated queue model (rule-based provider).
-model ${spec.model} {
-  resource ${spec.resourceName} {
-    capacity = ${spec.servers}${failure}
+  const source =
+      `  source Arrivals {\n    arrival = rate(${number(spec.lambda)})` +
+      (features.has('priority')
+           ? '\n    state priority: float = 2'
+           : '') +
+      '\n  }';
+  const queueTimeout = features.has('timeout')
+      ? '\n    enableTimeout = true\n    timeout = 5.0'
+      : '';
+  const queue =
+      `  queue WaitLine {\n    capacity = ${spec.queueCapacity}` +
+      (features.has('priority') ? '\n    queuing = queuing_priority' : '') +
+      queueTimeout +
+      '\n  }';
+  const service =
+      features.has('seize')
+          ? `  seize Grab {\n    resource = ${spec.resourceName}\n    numberOfUnits = 1\n  }\n  delay Work {\n    delayTime = exponential(${number(spec.mu)})\n    capacity = 1\n  }\n  release Drop {\n  }`
+          : `  service Service {\n    resource = ${spec.resourceName}\n    time = exponential(${number(spec.mu)})\n  }`;
+  const measure =
+      features.has('measure') && !features.has('batch')
+          ? '  timeMeasureStart T0 {\n  }\n  timeMeasureEnd T1 {\n  }\n'
+          : '';
+  const batch =
+      features.has('batch')
+          ? '  batch Group {\n    batchSize = 2\n    permanent = false\n  }\n  delay BatchWork {\n    delayTime = constant(1.0)\n    capacity = 10\n  }\n  unbatch Split {\n  }\n'
+          : '';
+  const lateSink = features.has('timeout')
+      ? '\n  sink Late { }\n'
+      : '';
+  const lines = [
+    `// AI-generated ${spec.model} model (rule-based provider).`,
+    `model ${spec.model} {`,
+    `  resource ${spec.resourceName} {`,
+    `    capacity = ${spec.servers}${failure}`,
+    '  }',
+    '',
+    source,
+    queue,
+    batch,
+    measure,
+    service,
+    lateSink,
+    '  sink Done { }',
+    '',
+    '  couple Arrivals.out -> WaitLine.in',
+  ];
+  if (features.has('batch')) {
+    lines.push(
+        '  couple WaitLine.out -> Group.in',
+        '  couple Group.out -> BatchWork.in',
+        '  couple BatchWork.out -> Split.in',
+        features.has('seize') ? '  couple Split.out -> Grab.in' :
+                                '  couple Split.out -> Service.in',
+    );
+  } else if (features.has('measure') && !features.has('batch')) {
+    lines.push(
+        '  couple WaitLine.out -> T0.in',
+        '  couple T0.out -> ' + (features.has('seize') ? 'Grab.in' : 'Service.in'),
+        '  couple ' + (features.has('seize') ? 'Drop.out' : 'Service.out') +
+            ' -> T1.in',
+        '  couple T1.out -> Done.in',
+    );
+  } else {
+    lines.push(
+        '  couple WaitLine.out -> ' +
+            (features.has('seize') ? 'Grab.in' : 'Service.in'),
+    );
   }
-
-  source Arrivals {
-    arrival = rate(${number(spec.lambda)})
+  if (features.has('seize')) {
+    lines.push(
+        '  couple Grab.out -> Work.in',
+        '  couple Work.out -> Drop.in',
+    );
+    if (!(features.has('measure') && !features.has('batch'))) {
+      lines.push('  couple Drop.out -> Done.in');
+    }
+  } else if (!(features.has('measure') && !features.has('batch'))) {
+    lines.push('  couple Service.out -> Done.in');
   }
-  queue WaitLine {
-    capacity = ${spec.queueCapacity}
+  if (features.has('timeout')) {
+    lines.push('  couple WaitLine.outTimeout -> Late.in');
   }
-  service Service {
-    resource = ${spec.resourceName}
-    time = exponential(${number(spec.mu)})
-  }
-  sink Done { }
-
-  couple Arrivals.out -> WaitLine.in
-  couple WaitLine.out -> Service.in
-  couple Service.out -> Done.in
-}
-`;
+  lines.push('}');
+  return `${lines.join('\n')}\n`;
 }
 
 export function ruleBasedProvider(prompt, diagnostics = []) {
@@ -106,7 +185,41 @@ export function ruleBasedProvider(prompt, diagnostics = []) {
   if (continuous) {
     return continuous;
   }
-  return renderDsl(repairSpec(parseSpec(prompt), diagnostics));
+  const features = advancedFeatures(prompt);
+  if (features.has('assembly')) {
+    return renderAssembler(parseSpec(prompt), diagnostics);
+  }
+  return renderDsl(repairSpec(parseSpec(prompt), diagnostics), features);
+}
+
+// Dedicated assembler template: kit + parts -> assemble -> sink.
+function renderAssembler(spec, diagnostics) {
+  void diagnostics;
+  const number = (value) =>
+      Number.isInteger(value) ? value.toFixed(1) : String(value);
+  return `// AI-generated assembler model (rule-based provider).
+model ${spec.model} {
+  resource ${spec.resourceName} {
+    capacity = ${spec.servers}
+  }
+
+  source Kits {
+    arrival = rate(${number(spec.lambda)})
+  }
+  source Parts {
+    arrival = rate(${number(Math.max(spec.lambda * 2, 0.1))})
+  }
+  assembler Build {
+    quantity125 = 2
+    delayTime = ${number(spec.mu)}
+  }
+  sink Done { }
+
+  couple Kits.out -> Build.in
+  couple Parts.out -> Build.p1
+  couple Build.out -> Done.in
+}
+`;
 }
 
 // Continuous-model generation for ODE prompts (decay / SIR).

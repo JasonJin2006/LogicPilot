@@ -8,6 +8,12 @@ AI Copilot 把"人描述问题 → AI 生成模型 → 自动仿真 → 自动�
 node scripts/ai-build.mjs "2 machines with failure rate 0.05, arrival 1.5, service 2.0" --run
 ```
 
+规则 provider 除基础 M/M/1 外，会按提示词关键词生成 **DES 语义模板**：
+`priority`（优先级队列 + 实体属性）、`measure`（timeMeasure 测量）、
+`seize`（资源抢占/归还）、`batch`（临时批 + 还原）、`assembly`（assembler
+装配线）、`timeout`（队列超时出口）；生成的 DSL 全部经编译器校验
+（组合边界有回归测试，`ai_build_smoke` ctest 覆盖）。
+
 流程：
 
 ```text
