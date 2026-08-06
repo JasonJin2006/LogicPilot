@@ -160,6 +160,14 @@ add_test(NAME ai_build_smoke
 set_tests_properties(ai_build_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-BUILD TEST: PASS")
 
+# Runtime verifier (P1): lpcli run -> verify-run.mjs invariant + theory
+# checks; a broken metrics file must fail.
+add_test(NAME verify_run_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-verify-run.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(verify_run_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "VERIFY-RUN TEST: PASS")
+
 # AI build endpoint (IDE dev server middleware): POST /api/ai-build.
 add_test(NAME ai_endpoint_smoke
   COMMAND node

@@ -124,6 +124,7 @@ export async function buildModel({
       }
     }
     let runSummary = '';
+    let verification = null;
     if (ok && run) {
       const runDir = mkdtempSync(join(tmpdir(), 'ai-run-'));
       try {
@@ -139,9 +140,34 @@ export async function buildModel({
           '--arrivals', String(runParams.arrivals),
           '--warmup', String(runParams.warmup),
           '--trajectory', trajectoryPath,
+          '--results-dir', runDir,
         ]);
         if (existsSync(trajectoryPath)) {
           runTrajectory = JSON.parse(readFileSync(trajectoryPath, 'utf8'));
+        }
+        // P1 verification loop: check the run's metrics.json against the
+        // invariant checks (conservation / finiteness / positive throughput).
+        const metricsPath = join(runDir, 'metrics.json');
+        if (existsSync(metricsPath)) {
+          try {
+            const verifyOut = execFileSync(
+              process.execPath,
+              [join(here, 'verify-run.mjs'), metricsPath],
+              { encoding: 'utf8' },
+            );
+            verification = JSON.parse(verifyOut);
+          } catch (error) {
+            // The verifier exits 1 when a check fails but still prints the
+            // report on stdout; a failed verification is a result, not a
+            // crash of the build loop.
+            if (error.stdout) {
+              try {
+                verification = JSON.parse(String(error.stdout));
+              } catch {
+                verification = null;
+              }
+            }
+          }
         }
       } finally {
         rmSync(runDir, { recursive: true, force: true });
@@ -155,6 +181,7 @@ export async function buildModel({
       lastDiagnostics: diagnostics,
       runSummary,
       trajectory: runTrajectory,
+      verification,
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });

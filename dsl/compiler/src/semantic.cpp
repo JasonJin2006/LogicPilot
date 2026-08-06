@@ -558,6 +558,27 @@ class Analyzer {
     if (sources == 0) {
       error("LP2002", scope_name + " has no source stage", span);
     }
+    // LP5004: with an explicit coupling graph, every non-source stage must
+    // have at least one incoming coupling - otherwise it can never receive
+    // an entity (the engine routes only by the coupling graph).
+    if (!couplings.empty() && sources > 0) {
+      std::unordered_set<std::string> targets;
+      for (const CoupleDecl& couple : couplings) {
+        if (stages.count(couple.from_model) > 0 &&
+            stages.count(couple.to_model) > 0) {
+          targets.insert(couple.to_model);
+        }
+      }
+      for (const auto& [name, stage] : stages) {
+        if (stage->kind != "source" && targets.count(name) == 0) {
+          error("LP5004",
+                "process stage '" + name + "' in " + scope_name +
+                    " has no incoming coupling and can never receive an "
+                    "entity",
+                stage->span);
+        }
+      }
+    }
     for (const CoupleDecl& couple : couplings) {
       const auto from = stages.find(couple.from_model);
       const auto to = stages.find(couple.to_model);

@@ -104,6 +104,7 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
       "  source A { arrival = rate(1) }\n"
       "  queue Q { capacity = 4 }\n"
       "  service R { resource = Server; time = exponential(1) }\n"
+      "  couple A.out -> Q.in\n"
       "  couple Q.outTimeout -> R.in\n"
       "}\n",
       "input.lp");
@@ -121,6 +122,7 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
       "  queue Q { capacity = 4 }\n"
       "  service R { resource = Server; time = exponential(1) }\n"
       "  couple A.nope -> Q.in\n"
+      "  couple Q.out -> R.in\n"
       "}\n",
       "input.lp");
   REQUIRE(bad_port.ok());
@@ -382,4 +384,29 @@ TEST_CASE("semantic: independent errors are all reported, not fail-fast",
   REQUIRE(codes.count("LP2004") == 1);  // unknown kind
   REQUIRE(codes.count("LP2005") == 1);  // unknown field
   REQUIRE(codes.count("LP2006") == 1);  // undeclared identifier
+}
+
+TEST_CASE("semantic: unreachable process stage is flagged LP5004",
+          "[dsl][semantic]") {
+  // queue Q is declared but never coupled: with an explicit coupling graph
+  // it can never receive an entity.
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  resource Server { capacity = 1 }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  queue Q { capacity = 4 }\n"
+      "  service S { resource = Server; time = exponential(1) }\n"
+      "  couple A.out -> S.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  int lp5004 = 0;
+  for (const Diagnostic& diagnostic : diags) {
+    if (diagnostic.code == "LP5004") {
+      ++lp5004;
+      REQUIRE(diagnostic.message.find("Q") != std::string::npos);
+    }
+  }
+  REQUIRE(lp5004 == 1);
 }

@@ -20,6 +20,7 @@
 //   LP5001  effect references an undeclared state variable
 //   LP5002  coupling references an undeclared atomic model
 //   LP5003  coupling port is not an emitted output / declared input
+//   LP5004  process stage has no incoming coupling (unreachable)
 //   LP6001  unknown agent behavior handler
 //   LP6002  agent behavior argument mismatch
 //   LP7001  experiment field value is not supported (v0.1)

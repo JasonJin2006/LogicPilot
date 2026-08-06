@@ -37,12 +37,16 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   pattern matching / 逻辑规则语法）与扩展点（库注册表、表达式、`instance`
   引用）；把 `dsl-spec.md` 的 out-of-scope 清单固化为冻结契约。
 
-## P1 验证引擎 + AI 验证闭环（后续）
+## P1 验证引擎 + AI 验证闭环（进行中）
 
-- 静态检查：在 semantic（LP2001–8002）上补仿真语义检查（不可达块、死锁、
-  资源引用环、耦合完整性），产出新 LP 码。
-- 运行时 verifier：把 `expect.json` 理论验收模式做成通用校验器，
-  `ai-build` 末尾接入：生成 → 编译诊断修复 → 运行 → 与解析解/守恒不变量对拍。
+- **静态检查 ✅（LP5004）**：`semantic.cpp` 新增「流程 stage 无入边耦合
+  （不可达）」检查（LP5004），显式耦合图中非 source 且无入边的 stage 报错；
+  耦合完整性（LP5002/5003）与缺 source（LP2002）此前已有。
+- **运行时 verifier ✅**：新增 `scripts/verify-run.mjs`（守恒 / 有限性 /
+  吞吐为正 + 可选 expect.json 理论契约：CI 覆盖或点估计容差，对齐
+  examples/*.expect.json 验收规则）；`ai-build.mjs` 运行后自动校验并把
+  `verification` 报告并入输出；新增 `verify_run_smoke` ctest。
+- 后续：死锁（服务前无源/队列容量 0 语义）等更深静态检查。
 
 ## P2 开发者生态（后续）
 
