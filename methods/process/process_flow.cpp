@@ -184,7 +184,11 @@ std::unique_ptr<ProcessBlock> make_block(
     }
     return std::make_unique<ServiceBlock>(
         name, pool_servers(node_string_param(stage, "resource")),
-        std::move(sampler), false, std::move(failure), std::move(repair));
+        std::move(sampler), false, std::move(failure), std::move(repair),
+        node_bool_param(stage, "enablePreemption", false),
+        node_bool_param(stage, "taskMayPreempt", true),
+        block_string_param(stage, "taskPreemptionPolicy"),
+        node_float_param(stage, "taskPriority", 0.0));
   }
   if (kind == "seize") {
     const char* resource = node_string_param(stage, "resource");

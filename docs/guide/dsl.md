@@ -153,6 +153,11 @@ sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外�
 `lpcli run` 与 `metrics.json`。示例：`examples/failure_line.lp`（用 `count`
 强制走通用引擎，可用性 < 1、无丢件）。
 
+`service` 还支持**任务抢占**（AnyLogic 资源任务优先级）：`enablePreemption`
+打开且 `taskPreemptionPolicy` 非 `pp_no_preemption` 时，高优先级新任务
+（实体属性 `priority` 或 `taskPriority` 字段）可打断正在运行的低优先级
+任务，后者经 `outPreempted` 退出。示例：`examples/task_preempt.lp`。
+
 ## 表达式与参数
 
 数值字段接受**编译期常量表达式**（`+ - * /`、一元负、括号），并可通过
@@ -279,6 +284,7 @@ use manufacturing
 | `examples/assembler_line.lp` | assembler 等待部件 → 装配延时 → 输出 |
 | `examples/move_route.lp` | moveTo 行程时间（tripTime） |
 | `examples/comparison_queue.lp` | 比较式排队（agent1IsPreferredToAgent2） |
+| `examples/task_preempt.lp` | service 任务抢占（outPreempted） |
 | `examples/move_route.lp` | moveTo 沿 path 网络最短路径位移 |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

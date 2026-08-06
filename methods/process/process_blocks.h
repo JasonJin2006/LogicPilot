@@ -463,26 +463,76 @@ class DelayBlock final : public BufferedBlock {
 // (seize holds for zero time and is released downstream).
 class ServiceBlock final : public BufferedBlock {
  public:
-  ServiceBlock(std::string name, std::int64_t servers,
-               TimeSampler service_time, bool seize,
-               TimeSampler failure = {}, TimeSampler repair = {})
+    ServiceBlock(std::string name, std::int64_t servers,
+                 TimeSampler service_time, bool seize,
+                 TimeSampler failure = {}, TimeSampler repair = {},
+                 bool enable_preemption = false, bool task_may_preempt = false,
+                 std::string preemption_policy = "",
+                 double task_priority = 0.0)
       : BufferedBlock(seize ? "seize" : "service", std::move(name), -1),
         servers_(servers),
         service_time_(std::move(service_time)),
         seize_(seize),
         failure_(std::move(failure)),
-        repair_(std::move(repair)) {}
+        repair_(std::move(repair)),
+        enable_preemption_(enable_preemption),
+        task_may_preempt_(task_may_preempt),
+        preemption_policy_(std::move(preemption_policy)),
+        task_priority_(task_priority) {}
 
-  bool can_accept(const Entity&) override {
-    return units_in_use_ < servers_;
-  }
+    bool can_accept(const Entity&) override {
+      if (units_in_use_ < servers_) {
+        return true;
+      }
+      // Admit a newcomer even when full: task preemption may free a unit for
+      // it (the update pass decides and ejects the weakest running task).
+      return task_may_preempt_ && enable_preemption_ &&
+             preemption_policy_ != "pp_no_preemption";
+    }
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
     }
     if (units_in_use_ >= servers_) {
-      return false;
+      // Task preemption (AnyLogic): a higher-priority newcomer may preempt
+      // the weakest running task (terminated through outPreempted) when the
+      // block's preemption policy allows it.
+      if (!(task_may_preempt_ && enable_preemption_ &&
+            preemption_policy_ != "pp_no_preemption")) {
+        return false;
+      }
+      const Entity& newcomer = input_.front();
+      Entity* victim = nullptr;
+      double lowest = 0.0;
+      for (Entity& entity : in_service_) {
+        if (down_.count(entity.id) != 0) {
+          continue;
+        }
+        const double priority = priority_of(entity);
+        if (victim == nullptr || priority < lowest) {
+          victim = &entity;
+          lowest = priority;
+        }
+      }
+      if (victim == nullptr || priority_of(newcomer) <= lowest) {
+        return false;
+      }
+      const auto victim_it =
+          std::find_if(in_service_.begin(), in_service_.end(),
+                       [victim](const Entity& entry) {
+                         return entry.id == victim->id;
+                       });
+      if (victim_it == in_service_.end()) {
+        return false;
+      }
+      const Entity preempted = *victim_it;
+      in_service_.erase(victim_it);
+      --units_in_use_;
+      --busy_;
+      if (!ctx.emit(preempted, "outPreempted")) {
+        alt_outgoing_.push_back({preempted, "outPreempted"});
+      }
     }
     Entity entity = input_.front();
     input_.pop_front();
@@ -524,6 +574,12 @@ class ServiceBlock final : public BufferedBlock {
   // may fail (exponential time-to-failure); the service is preempted and
   // restarts from scratch after the repair (preemptive-repeat).
   void on_failure(BlockContext& ctx, std::uint64_t entity_id) override {
+    if (std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     }) == in_service_.end()) {
+      return;  // the task was preempted
+    }
     if (!down_.insert(entity_id).second) {
       return;
     }
@@ -534,6 +590,12 @@ class ServiceBlock final : public BufferedBlock {
   }
 
   void on_repair(BlockContext& ctx, std::uint64_t entity_id) override {
+    if (std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     }) == in_service_.end()) {
+      return;  // the task was preempted
+    }
     if (down_.erase(entity_id) == 0) {
       return;
     }
@@ -576,9 +638,27 @@ class ServiceBlock final : public BufferedBlock {
     units_in_use_ = 0;
     busy_ = 0;
     down_.clear();
+    alt_outgoing_.clear();
+  }
+
+  bool retry_outgoing(BlockContext& ctx) override {
+    if (!alt_outgoing_.empty()) {
+      const auto entry = alt_outgoing_.front();
+      if (ctx.emit(entry.first, entry.second.c_str())) {
+        alt_outgoing_.pop_front();
+        return true;
+      }
+      return false;
+    }
+    return BufferedBlock::retry_outgoing(ctx);
   }
 
  private:
+  double priority_of(const Entity& entity) const {
+    const auto it = entity.attributes.find("priority");
+    return it != entity.attributes.end() ? it->second : task_priority_;
+  }
+
   void schedule_service(BlockContext& ctx, std::uint64_t entity_id) {
     const double hold = service_time_(ctx.rng());
     if (failure_) {
@@ -599,8 +679,13 @@ class ServiceBlock final : public BufferedBlock {
   bool seize_{false};
   TimeSampler failure_;
   TimeSampler repair_;
+  bool enable_preemption_{false};
+  bool task_may_preempt_{false};
+  std::string preemption_policy_;
+  double task_priority_{0.0};
   std::deque<Entity> in_service_;
   std::unordered_set<std::uint64_t> down_;
+  std::deque<std::pair<Entity, std::string>> alt_outgoing_;
   std::int64_t units_in_use_{0};
   std::int64_t busy_{0};
 };

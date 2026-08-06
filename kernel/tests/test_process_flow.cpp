@@ -1743,3 +1743,61 @@ TEST_CASE("process flow: moveTo follows the path network's shortest route",
   const ReplicationMetrics direct = run(false);
   REQUIRE(std::abs(direct.mean_sojourn - std::sqrt(200.0) / 10.0) < 1e-6);
 }
+
+TEST_CASE("process flow: service task preemption interrupts weak tasks",
+          "[process_flow][preemption][des_blocks]") {
+  const auto run_service = [&](bool enable_preemption) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "priority", 1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {3.0}))},
+        {var_int(builder, "priority", 5)}, {});
+    const auto resource = block(
+        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1000.0})),
+         var_string(builder, "resource", "Server"),
+         var_bool(builder, "enablePreemption", enable_preemption),
+         var_bool(builder, "taskMayPreempt", true),
+         var_string(builder, "taskPreemptionPolicy", "pp_terminate")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto preempted = block(builder, "Out", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, service, sink, preempted},
+        {couple(builder, "S1", "out", "S", "in"),
+         couple(builder, "S2", "out", "S", "in"),
+         couple(builder, "S", "out", "K", "in"),
+         couple(builder, "S", "outPreempted", "Out", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // The priority-5 task at t=3 preempts the running priority-1 task (it
+  // exits through outPreempted at t=3 instead of completing at t=1001), so
+  // the high-priority job jumps ahead and the mean sojourn drops sharply.
+  const ReplicationMetrics preempting = run_service(true);
+  REQUIRE(preempting.departures == 6);
+  REQUIRE(preempting.mean_sojourn < 3000.0);
+
+  const ReplicationMetrics plain = run_service(false);
+  REQUIRE(plain.departures == 6);
+  REQUIRE(plain.mean_sojourn > 3000.0);
+  REQUIRE(preempting.mean_sojourn < plain.mean_sojourn);
+}

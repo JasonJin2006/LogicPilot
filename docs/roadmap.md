@@ -253,6 +253,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **path 网络 ✅ 已完成**（2026-08-07）：`path { node1; node2 }` +
    Floyd-Warshall 全对最短路径，moveTo 沿网络位移（三角形差分测试）；
    `examples/move_route.lp` 为三段网络示例。
+   **service 任务抢占 ✅ 已完成**（2026-08-07）：enablePreemption +
+   taskMayPreempt + taskPreemptionPolicy 驱动高优先级打断运行任务
+   （outPreempted 退出）；`examples/task_preempt.lp` 冒烟。
+   **DES 计划所列全部项完成**：23 块内核语义 + 表达式/属性/排队四模式/
+   抢占（队列与任务）/超时/测量/空间节点与网络/AI 模板/IDE 属性编辑。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

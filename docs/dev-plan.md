@@ -143,6 +143,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `moveTo` 沿网络最短路径位移（无 path 回退直线）；新增三角形网络差分
   测试（网络 20 vs 直线 14.14），`examples/move_route.lp` 改为三段节点
   网络。
+- **service 任务抢占已落地（2026-08-07）**：`enablePreemption` +
+  `taskMayPreempt` + `taskPreemptionPolicy`（非 pp_no_preemption）时，
+  高优先级新任务（属性 priority 或 taskPriority）打断最弱运行任务，
+  后者经 outPreempted 退出；新增内核差分测试（抢占拉低 mean_sojourn）
+  与 `examples/task_preempt.lp` 冒烟。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 
