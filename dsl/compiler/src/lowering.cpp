@@ -562,6 +562,18 @@ flatbuffers::Offset<v2::Node> v2_node(
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);
   }
+  if (node.kind == "node") {
+    std::vector<flatbuffers::Offset<v2::Var>> params;
+    params.push_back(v2_var_float(
+        builder, "x", float_field(node, "x", scope, 0.0)));
+    params.push_back(v2_var_float(
+        builder, "y", float_field(node, "y", scope, 0.0)));
+    return v2::CreateNode(
+        builder, v2_metadata(builder, node.name, source_file),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+        builder.CreateVector(params), 0,
+        v2_semantics(builder, "core", "node"), 0, 0, 0, 0, 0);
+  }
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment
   // members are handled via ModelFile.experiments, not the node tree.

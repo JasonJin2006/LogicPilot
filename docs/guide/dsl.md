@@ -140,9 +140,11 @@ sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外�
 可并行。装配期可用 `resourcePool` + `numberOfUnits` 占用资源单元
 （不足时等待，装配完成后归还）。示例：`examples/assembler_line.lp`。
 
-`moveTo` 已实现：`tripTime` 显式行程时间，或 `speed` + `xYZ`（沿轴位移，
-耗时 = 距离/速度）；两者都不设则零时跳转。完整的 node/path 空间建模为
-后续项。示例：`examples/move_route.lp`。
+`moveTo` 已实现：`tripTime` 显式行程时间、`speed` + 坐标位移（`xYZ` 沿轴
+或 `node` 目标，耗时 = 距离/速度）；两者都不设则零时跳转。
+**空间标记**：`node <Name> { x = <f>; y = <f> }` 声明带坐标的节点，
+`moveTo` 的 `node = <Name>` 即按节点位移。完整 path 网络为后续项。
+示例：`examples/move_route.lp`。
 
 `service` 现在在**通用流程引擎**（`ProcessFlowSim`）里也遵守资源池的故障语义：
 `resource` 的 `failure_rate` / `repair_rate` 按「忙时故障 + 修复」建模
@@ -276,5 +278,6 @@ use manufacturing
 | `examples/assembler_line.lp` | assembler 等待部件 → 装配延时 → 输出 |
 | `examples/move_route.lp` | moveTo 行程时间（tripTime） |
 | `examples/comparison_queue.lp` | 比较式排队（agent1IsPreferredToAgent2） |
+| `examples/move_route.lp` | moveTo 按 node 目标位移（距离/速度） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

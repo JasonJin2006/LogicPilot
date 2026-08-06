@@ -134,8 +134,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   故障模型联动）；新增资源门控差分测试（cap 0 全阻塞 vs cap 1 放行）。
 - **moveTo 语义已落地（2026-08-07）**：`tripTime` 显式行程时间、
   `speed`+`xYZ` 沿轴位移（距离/速度）、缺省零时跳转；Entity 增加位置
-  字段；新增内核测试与 `examples/move_route.lp` 冒烟。至此 process 库
-  23 块全部有内核语义（完整 node/path 空间建模为后续项）。
+  字段；新增内核测试与 `examples/move_route.lp` 冒烟。
+- **空间节点已落地（2026-08-07）**：新增核心块 `node { x; y }`（语义
+  校验数值常量、lowering 为 core/node、内核收集坐标），`moveTo` 支持
+  `node = <Name>` 目标（2D 距离/速度）；新增内核节点目标测试，
+  `examples/move_route.lp` 改为节点位移。完整 path 网络为后续项。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

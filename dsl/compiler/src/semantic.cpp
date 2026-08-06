@@ -253,6 +253,10 @@ class Analyzer {
     if (kind == "experiment") {
       return;  // validated via the typed ExperimentDecl list below
     }
+    if (kind == "node") {
+      check_node(node, parent_scope);
+      return;
+    }
     if (registry_ != nullptr && registry_->has_block(kind)) {
       // Process-library blocks (source/queue/service/... and resource) are
       // valid members of the model root and agent bodies (agent-centric
@@ -262,9 +266,30 @@ class Analyzer {
     }
     error("LP2004",
           "unknown declaration kind '" + kind + "' (core kinds: "
-              "agent/atomic/continuous/experiment; process library: "
+              "agent/atomic/continuous/experiment/node; process library: "
               "resource/source/queue/service/sink)",
           node.name_span);
+  }
+
+  // Spatial markup: `node <Name> { x = <f>; y = <f>; z = <f> }` anchors the
+  // moveTo destination (AnyLogic node markup; coordinates are numeric
+  // constants).
+  void check_node(const Node& node, const ParamScope& scope) {
+    for (const char* field_name : {"x", "y", "z"}) {
+      const Field* field = field_of(node, field_name);
+      if (field == nullptr) {
+        continue;
+      }
+      Value folded;
+      if (!fold_value(field->value, scope, folded) ||
+          (folded.kind != ValueKind::kInt &&
+           folded.kind != ValueKind::kFloat)) {
+        error("LP3001",
+              "node '" + node.name + "' field '" + field_name +
+                  "' must be a numeric constant",
+              field->span);
+      }
+    }
   }
 
   // ------------------------------------------------------------------

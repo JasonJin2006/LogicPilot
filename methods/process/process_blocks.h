@@ -748,11 +748,13 @@ class AssemblerBlock final : public BufferedBlock {
 class MoveToBlock final : public BufferedBlock {
  public:
   MoveToBlock(std::string name, std::int64_t trip_time_ns, double speed,
-              double target_x)
+              double target_x, double target_y, bool use_2d)
       : BufferedBlock("moveTo", std::move(name), -1),
         trip_time_ns_(trip_time_ns),
         speed_(speed),
-        target_x_(target_x) {}
+        target_x_(target_x),
+        target_y_(target_y),
+        use_2d_(use_2d) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
@@ -764,7 +766,9 @@ class MoveToBlock final : public BufferedBlock {
     in_service_.push_back(entity);
     std::int64_t hold_ns = trip_time_ns_;
     if (hold_ns <= 0 && speed_ > 0.0) {
-      const double distance = std::abs(target_x_ - entity.x);
+      const double dx = target_x_ - entity.x;
+      const double dy = use_2d_ ? target_y_ - entity.y : 0.0;
+      const double distance = std::sqrt(dx * dx + dy * dy);
       hold_ns = static_cast<std::int64_t>(
           std::llround(distance / speed_ * 1e9));
     }
@@ -784,6 +788,7 @@ class MoveToBlock final : public BufferedBlock {
     Entity entity = *it;
     in_service_.erase(it);
     entity.x = target_x_;
+    entity.y = target_y_;
     ++departed_;
     if (!ctx.emit(entity, "out")) {
       outgoing_.push_back(entity);
@@ -803,6 +808,8 @@ class MoveToBlock final : public BufferedBlock {
   std::int64_t trip_time_ns_{0};
   double speed_{0.0};
   double target_x_{0.0};
+  double target_y_{0.0};
+  bool use_2d_{false};
   std::deque<Entity> in_service_;
 };
 

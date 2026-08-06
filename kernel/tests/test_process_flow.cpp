@@ -1632,3 +1632,45 @@ TEST_CASE("process flow: moveTo spends tripTime or distance/speed",
   REQUIRE(jump.departures == 3);
   REQUIRE(jump.mean_sojourn == 0.0);
 }
+
+TEST_CASE("process flow: moveTo resolves a node destination",
+          "[process_flow][moveTo][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto move = block(
+      builder, "M", "moveTo",
+      {var_string(builder, "node", "Depot"),
+       var_float(builder, "speed", 5.0)},
+      {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto node = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("Depot"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
+          var_float(builder, "x", 10.0), var_float(builder, "y", 0.0)}),
+      0, CreateSemanticsRef(builder, builder.CreateString("core"),
+                            builder.CreateString("node"), 0, 0),
+      0, 0, 0, 0, 0);
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<Node>>{node}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder, {source, move, sink},
+      {couple(builder, "In", "out", "M", "in"),
+       couple(builder, "M", "out", "K", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  // Depot is 10 units away at speed 5 -> 2.0s travel.
+  const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
+  REQUIRE(metrics.departures == 3);
+  REQUIRE(metrics.mean_sojourn == 2.0);
+}

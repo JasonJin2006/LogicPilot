@@ -59,6 +59,11 @@ struct PoolSpec {
   double repair_rate{1.0};
 };
 
+struct NodePos {
+  double x{0.0};
+  double y{0.0};
+};
+
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
 }
@@ -100,6 +105,7 @@ std::string block_string_param(const Node* stage, const char* name) {
 std::unique_ptr<ProcessBlock> make_block(
     const Node* stage, const std::string& kind, const std::string& name,
     const std::unordered_map<std::string, PoolSpec>& pools,
+    const std::unordered_map<std::string, NodePos>& nodes,
     std::string* error) {
   const auto pool_servers = [&](const char* resource_name) -> std::int64_t {
     const std::string pool =
@@ -242,10 +248,21 @@ std::unique_ptr<ProcessBlock> make_block(
         node_int_param(stage, "numberOfUnits", 0));
   }
   if (kind == "moveTo") {
+    const char* node_ref = node_string_param(stage, "node");
+    double target_x = node_float_param(stage, "xYZ", 0.0);
+    double target_y = 0.0;
+    bool use_2d = false;
+    if (node_ref != nullptr) {
+      const auto it = nodes.find(node_ref);
+      if (it != nodes.end()) {
+        target_x = it->second.x;
+        target_y = it->second.y;
+        use_2d = true;
+      }
+    }
     return std::make_unique<MoveToBlock>(
         name, to_ns(node_float_param(stage, "tripTime", 0.0)),
-        node_float_param(stage, "speed", 0.0),
-        node_float_param(stage, "xYZ", 0.0));
+        node_float_param(stage, "speed", 0.0), target_x, target_y, use_2d);
   }
   if (kind == "split") {
     return std::make_unique<GenericBlock>(
@@ -321,6 +338,21 @@ class Engine final : public BlockContext {
                        node_float_param(child, "failure_rate", 0.0),
                        node_float_param(child, "repair_rate", 1.0)};
         }
+        if (child != nullptr && child->semantics() != nullptr &&
+            child->semantics()->library() != nullptr &&
+            child->semantics()->block() != nullptr &&
+            std::strcmp(child->semantics()->library()->c_str(), "core") ==
+                0 &&
+            std::strcmp(child->semantics()->block()->c_str(), "node") == 0) {
+          const std::string node_name =
+              child->metadata() != nullptr &&
+                      child->metadata()->name() != nullptr
+                  ? child->metadata()->name()->str()
+                  : "";
+          nodes_[node_name] =
+              NodePos{node_float_param(child, "x", 0.0),
+                      node_float_param(child, "y", 0.0)};
+        }
       }
     }
     for (const Node* stage : stages) {
@@ -332,7 +364,8 @@ class Engine final : public BlockContext {
       }
       const std::string name = stage->metadata()->name()->str();
       const std::string kind = stage->semantics()->block()->str();
-      auto block = make_block(stage, kind, name, resource_pools_, error);
+      auto block = make_block(stage, kind, name, resource_pools_, nodes_,
+                              error);
       if (block == nullptr) {
         return;
       }
@@ -909,6 +942,7 @@ class Engine final : public BlockContext {
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   std::unordered_map<std::string, PoolSpec> resource_pools_;
+  std::unordered_map<std::string, NodePos> nodes_;
   std::unordered_map<std::string, std::int64_t> available_;
   std::unordered_map<std::string, std::int64_t> pool_busy_;
   std::unordered_map<std::string, bool> pool_down_;
