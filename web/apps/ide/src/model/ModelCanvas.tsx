@@ -735,10 +735,12 @@ export function ModelCanvas() {
                       title={port.name}
                       style={{
                         // portAnchor() is node-centre-relative; the icon span's
-                        // origin is its top-left (node centre - 17px), hence the
-                        // +17 shift.
+                        // origin is its top-left corner. The icon is a 34px
+                        // square centred on the node, so its left edge sits at
+                        // node.x - 17 and its top edge at node.y - 26.5 (the
+                        // card is 34px icon + 4px gap + 15px name = 53px).
                         left: anchor.x - node.x + 17,
-                        top: anchor.y - node.y + 17,
+                        top: anchor.y - node.y + 26.5,
                       }}
                       onPointerDown={
                         isIn
