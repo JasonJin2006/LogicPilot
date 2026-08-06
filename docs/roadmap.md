@@ -269,8 +269,13 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
     `process_blocks.h`）；QueueingFlowSim 与 ProcessFlowSim 均改为增量
     reset/advance/metrics，`ProcessRuntime::advance(until)` 真正按仿真时间
     步进（切片推进与批量运行指标/事件序列逐位一致，新增 2 个对等性测试）。
-    184 ctest 全绿。后续：合并 lp-server 流式驱动（SimRunner）到同一执行器；
-    Phase 4 接入第二种方法（Statechart）验证架构。
+    184 ctest 全绿。**Phase 4（第二种方法：Statechart）✅ 已完成
+    （2026-08-06）：** 新增 `methods/statechart/`（`StatechartRuntime` +
+    `StatechartReplicationModel`），IR 根块 `{library: statechart, block:
+    statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并按仿真
+    时间运行（Timeout 驱动、arrivals 限步、final_value 报告终态）；新增
+    3 个测试，187 ctest 全绿。后续：合并 lp-server 流式驱动（SimRunner）
+    到同一执行器；DSL 状态图语法与跨状态机 Message 耦合。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

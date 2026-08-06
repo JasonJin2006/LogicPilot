@@ -327,9 +327,4 @@ void register_process_method() {
       "process", [] { return std::make_unique<ProcessRuntime>(); });
 }
 
-void register_all_methods() {
-  register_builtin_methods();
-  register_process_method();
-}
-
 }  // namespace logicpilot

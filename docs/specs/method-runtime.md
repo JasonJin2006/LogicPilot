@@ -1,6 +1,7 @@
 # Method Runtime Layer（多方法仿真平台架构）
 
-状态：Phase 1 + Phase 3 已落地（2026-08-06）· 维护者：`/root` · 参考：`docs/roadmap.md`
+状态：Phase 1 + Phase 3 + Phase 4 已落地（2026-08-06）· 维护者：`/root` ·
+参考：`docs/roadmap.md`
 
 ## 1. 为什么需要这一层
 
@@ -153,16 +154,34 @@ methods/process/
 lp-server 的流式驱动（SimRunner）与 QueueingFlowSim 的双实现合并列为后续
 优化项：现在两个执行器均可增量推进，合并后 lp-server 可复用同一执行器。
 
-### Phase 4：第二种方法接入
+### Phase 4：第二种方法接入 ✅ 已完成（2026-08-06）
 
-不继续优化 process，直接接入第二种方法（如 Statechart：kernel 已有
-`statemachine/` 与 IR `Statechart` 表）验证架构；随后 agent / system
-dynamics 各自拆成独立方法库。多方法模型通过 `VariableStore` + 同一
-`RuntimeManager` 组合运行。
+不继续优化 process，直接接入第二种方法 **Statechart** 验证架构，kernel 零改动：
+
+```
+methods/statechart/
+├── statechart_replication.h/.cpp  # StatechartReplicationModel
+└── statechart_runtime.h/.cpp      # StatechartRuntime + register_statechart_method()
+```
+
+IR 侧：独立状态图模型 = 根节点 `SemanticsRef{library: "statechart",
+block: "statechart"}` + `behavior` Statechart 表（states / transitions /
+initial）；`resolve_method_name()` 把该根块映射到 "statechart" 方法。
+`StatechartReplicationModel` 把表降级到 kernel 已有的表驱动
+`StateMachineDefinition` 引擎上，按仿真时间运行：Timeout 转移调度内部事件
+（timeout_value 或采样 timeout_distribution），触发后推进状态并调度下一跳；
+Message 转移按 message_port 注册事件 id（为后续跨机耦合预留）；循环状态图
+由 `ReplicationConfig.arrivals` 限步，保证确定性终止；`metrics.final_value`
+报告最终状态 id。新增 3 个测试（注册/降级/运行、生命周期与批量一致、非法表
+报错），187 ctest 全绿。
+
+后续：DSL 状态图语法（`statechart { ... }`）、Message 驱动的跨状态机耦合、
+agent / system dynamics 拆成独立方法库；多方法模型通过 `VariableStore` +
+同一 `RuntimeManager` 组合运行。
 
 ## 5. 验收与约定
 
-- 变更不破坏 182 ctest 与前端测试。
+- 变更不破坏 187 ctest 与前端测试。
 - kernel 层禁止 include `methods/`（方向只能由方法库指向 kernel）。
 - 新方法 = 新目录 `methods/<name>/` + 一个 `SimulationMethod` 子类 +
   `register_<name>_method()`；驱动通过 `register_all_methods()` 汇总注册。

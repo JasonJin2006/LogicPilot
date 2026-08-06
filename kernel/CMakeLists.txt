@@ -79,6 +79,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_ir_loader.cpp
     tests/test_process_flow.cpp
     tests/test_method_registry.cpp
+    tests/test_statechart_runtime.cpp
     tests/test_mm1_acceptance.cpp
     tests/test_mm1_failure.cpp
     tests/test_continuous.cpp

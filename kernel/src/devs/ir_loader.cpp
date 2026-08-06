@@ -122,6 +122,9 @@ std::string resolve_method_name(const Node* root) {
   if (root_block == "atomic") {
     return "devs";
   }
+  if (root_block == "statechart") {
+    return "statechart";
+  }
   if (root_block == "agent") {
     return "agent";
   }

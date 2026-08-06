@@ -63,7 +63,9 @@ class ProcessRuntime final : public SimulationMethod {
 // by drivers (lpcli, lp-server) and tests that lower process models.
 void register_process_method();
 
-// Registers every built-in method runtime (kernel-native + process).
+// register_all_methods() is defined in methods/register.cpp (it also
+// registers the statechart method library). Declared here so existing
+// consumers that include process_runtime.h keep working.
 void register_all_methods();
 
 }  // namespace logicpilot
