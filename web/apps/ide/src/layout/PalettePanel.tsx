@@ -95,9 +95,16 @@ export function PalettePanel() {
       .map((kind) => defs.get(kind))
       .filter((block): block is PaletteBlock => block !== undefined);
   } else if (library === 'process') {
-    visible = BLOCK_DEFS.filter((block) => block.library === 'process');
+    // Resolve through the defs map so library views render the same port
+    // indicators as the All view (BLOCK_DEFS carries ports, not the
+    // palette's in/out flags).
+    visible = BLOCK_DEFS.filter((block) => block.library === 'process')
+      .map((block) => defs.get(block.kind))
+      .filter((block): block is PaletteBlock => block !== undefined);
   } else if (library === 'presentation' || library === 'statechart' || library === 'action') {
-    visible = BLOCK_DEFS.filter((block) => block.library === library);
+    visible = BLOCK_DEFS.filter((block) => block.library === library)
+      .map((block) => defs.get(block.kind))
+      .filter((block): block is PaletteBlock => block !== undefined);
   } else {
     visible = customLibraries[library]?.blocks ?? [];
   }
