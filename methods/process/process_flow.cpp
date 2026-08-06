@@ -225,6 +225,12 @@ std::unique_ptr<ProcessBlock> make_block(
   if (kind == "sink") {
     return std::make_unique<SinkBlock>(name);
   }
+  if (kind == "exit") {
+    return std::make_unique<ExitBlock>(name);
+  }
+  if (kind == "enter") {
+    return std::make_unique<EnterBlock>(name);
+  }
   if (kind == "split") {
     return std::make_unique<GenericBlock>(
         kind, name, 0.5, node_int_param(stage, "copies", 2), false);
@@ -265,8 +271,8 @@ std::unique_ptr<ProcessBlock> make_block(
   if (kind == "timeMeasureEnd") {
     return std::make_unique<TimeMeasureEndBlock>(name);
   }
-  // count / enter / exit / moveTo / assembler / ... pass tokens through with
-  // counters maintained (location/assembly semantics are future work).
+  // count / moveTo / assembler / ... pass tokens through with counters
+  // maintained (location/assembly semantics are future work).
   return std::make_unique<GenericBlock>(kind, name, 0.5, 2, false);
 }
 

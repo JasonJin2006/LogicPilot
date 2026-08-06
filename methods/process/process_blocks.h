@@ -557,6 +557,35 @@ class SinkBlock final : public BufferedBlock {
   }
 };
 
+// Exit: removes the incoming agent from the process flow (AnyLogic Exit);
+// the agent leaves the system, sojourn recorded like a sink.
+class ExitBlock final : public BufferedBlock {
+ public:
+  explicit ExitBlock(std::string name)
+      : BufferedBlock("exit", std::move(name), -1) {}
+
+  bool update(BlockContext& ctx) override {
+    if (input_.empty()) {
+      return false;
+    }
+    Entity entity = input_.front();
+    input_.pop_front();
+    ++departed_;
+    ctx.leave_system(entity);
+    return true;
+  }
+};
+
+// Enter: an entry point with no input port. In AnyLogic agents are injected
+// programmatically (enter()); without an external API the block stays idle.
+class EnterBlock final : public BufferedBlock {
+ public:
+  explicit EnterBlock(std::string name)
+      : BufferedBlock("enter", std::move(name), -1) {}
+
+  bool update(BlockContext&) override { return false; }
+};
+
 // Remaining kinds with their existing semantics: selectOutput (RNG routing),
 // split (clone to outCopy), hold (frozen = blocked), count/release/pass-
 // through (immediate forward).

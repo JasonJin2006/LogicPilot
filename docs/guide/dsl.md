@@ -121,9 +121,13 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
-`count` 继续直通计数；`enter`/`exit`/`moveTo`/`assembler` 暂为直通占位
+`count` 继续直通计数；`moveTo`/`assembler` 暂为直通占位
 （位置/装配语义为后续工作）。示例：`examples/seize_release.lp`、
 `examples/batch_unbatch.lp`、`examples/combine_time.lp`。
+
+`exit` 块已实现 AnyLogic 语义：把 agent 从流程中移除（无输出端口），
+sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外部注入 API，
+保持空闲（不产生 agent）。示例：`examples/flow_exit.lp`。
 
 `service` 现在在**通用流程引擎**（`ProcessFlowSim`）里也遵守资源池的故障语义：
 `resource` 的 `failure_rate` / `repair_rate` 按「忙时故障 + 修复」建模
@@ -253,5 +257,6 @@ use manufacturing
 | `examples/priority_preempt.lp` | 优先级排队 + 满队抢占（outPreempted） |
 | `examples/match_attr.lp` | match 按实体属性等值配对 |
 | `examples/seize_failure.lp` | seize 持有单元的池故障（availability） |
+| `examples/flow_exit.lp` | exit 从流程移除 agent（sojourn 保留） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

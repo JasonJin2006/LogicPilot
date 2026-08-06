@@ -110,6 +110,10 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   故障期新 seize 不放行，`availability` 计入池停机面积；新增内核测试
   （无丢件/可用性带/无故障 availability==1/逐位确定）与
   `examples/seize_failure.lp` 冒烟（availability≈0.955）。
+- **exit/enter 语义已落地（2026-08-06）**：`exit` 从流程移除 agent
+  （sojourn 保留，AnyLogic Exit）；`enter` 为无输入的入口点，无外部注入
+  API 时空闲（AnyLogic 需程序化 enter() 触发）；新增内核测试与
+  `examples/flow_exit.lp` 冒烟。moveTo/assembler 仍为直通占位。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

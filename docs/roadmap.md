@@ -216,6 +216,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **seize 池故障 ✅ 已完成**（2026-08-06）：被 seize 持有的单元服从池的
    failure/repair（忙周期代际计数防过期事件），availability 计入停机面积；
    `examples/seize_failure.lp` 冒烟；故障期已持有 agent 不中断为简化语义。
+   **exit/enter ✅ 已完成**（2026-08-06）：exit 从流程移除 agent（sojourn
+   保留）；enter 为无输入的入口点（无外部注入 API 时空闲）；
+   `examples/flow_exit.lp` 冒烟；moveTo/assembler 仍为直通占位。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

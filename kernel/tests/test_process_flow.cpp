@@ -1270,3 +1270,47 @@ TEST_CASE("process flow: seized resource units honor pool failures",
   REQUIRE(again.availability == failing.availability);
   REQUIRE(again.mean_in_queue == failing.mean_in_queue);
 }
+
+TEST_CASE("process flow: exit removes agents from the flow (sojourn kept)",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto delay = block(
+      builder, "D", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto exit = block(builder, "Out", "exit", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, delay, exit},
+      {couple(builder, "In", "out", "D", "in"),
+       couple(builder, "D", "out", "Out", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics metrics = run_once(*model, 7, 5, 0);
+  // The exit absorbs every agent: departures == arrivals, sojourn = delay.
+  REQUIRE(metrics.departures == 5);
+  REQUIRE(metrics.mean_sojourn == 0.5);
+}
+
+TEST_CASE("process flow: enter is an inert entry point without a trigger",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto enter = block(builder, "E", "enter", {}, {});
+  const auto sink2 = block(builder, "K2", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, sink, enter, sink2},
+      {couple(builder, "In", "out", "K", "in"),
+       couple(builder, "E", "out", "K2", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics metrics = run_once(*model, 7, 5, 0);
+  // Only the source produces agents; enter contributes nothing.
+  REQUIRE(metrics.departures == 5);
+}
