@@ -181,6 +181,13 @@ add_test(NAME logicpkg_smoke
 set_tests_properties(logicpkg_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "LOGICPKG TEST: PASS")
 
+# Industry-library publish loop (P3): pack -> install -> compile -> run.
+add_test(NAME library_publish_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-library-publish.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(library_publish_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "LIBRARY-PUBLISH TEST: PASS")
+
 # AI build endpoint (IDE dev server middleware): POST /api/ai-build.
 add_test(NAME ai_endpoint_smoke
   COMMAND node

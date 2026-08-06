@@ -432,3 +432,51 @@ TEST_CASE("semantic: custom block extending an unknown built-in is LP2011",
   }
   REQUIRE(has_lp2011);
 }
+
+TEST_CASE("semantic: runtime condition identifiers are validated (LP5006)",
+          "[dsl][semantic][condition]") {
+  // Valid: t and the block's own numeric field are in scope.
+  const ParseOutput valid = parse_source(
+      "model M {\n"
+      "  source In { arrival = rate(1) }\n"
+      "  selectOutput G {\n"
+      "    threshold = 0.8\n"
+      "    condition = threshold > 0.5\n"
+      "  }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.outT -> K.in\n"
+      "  couple G.outF -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(valid.ok());
+  const std::vector<Diagnostic> valid_diags = analyze_model(*valid.model);
+  bool has_lp5006 = false;
+  for (const Diagnostic& diagnostic : valid_diags) {
+    if (diagnostic.code == "LP5006") {
+      has_lp5006 = true;
+    }
+  }
+  REQUIRE_FALSE(has_lp5006);
+
+  // Invalid: an undeclared identifier evaluates to 0.0 silently at runtime.
+  const ParseOutput invalid = parse_source(
+      "model M {\n"
+      "  source In { arrival = rate(1) }\n"
+      "  hold G { blockingCondition = queueLevel > 5 }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.out -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(invalid.ok());
+  const std::vector<Diagnostic> invalid_diags = analyze_model(*invalid.model);
+  int lp5006 = 0;
+  for (const Diagnostic& diagnostic : invalid_diags) {
+    if (diagnostic.code == "LP5006") {
+      ++lp5006;
+      REQUIRE(diagnostic.message.find("queueLevel") != std::string::npos);
+    }
+  }
+  REQUIRE(lp5006 >= 1);
+}

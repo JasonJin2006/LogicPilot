@@ -43,6 +43,31 @@ double folded_double(const Value& value) {
              : value.float_value;
 }
 
+bool value_is_constant(const Value& value) {
+  return value.kind == ValueKind::kBool || value.kind == ValueKind::kInt ||
+         value.kind == ValueKind::kFloat ||
+         value.kind == ValueKind::kString;
+}
+
+// Collect bare identifiers inside a value tree that are not in `known`
+// (used to validate runtime condition expressions at compile time).
+void collect_unknown_identifiers(
+    const Value& value, const std::unordered_set<std::string>& known,
+    std::vector<std::string>& unknown) {
+  if (value.kind == ValueKind::kIdentifier) {
+    if (known.count(value.string_value) == 0) {
+      unknown.push_back(value.string_value);
+    }
+    return;
+  }
+  for (const Value& operand : value.operands) {
+    collect_unknown_identifiers(operand, known, unknown);
+  }
+  for (const Value& arg : value.call_args) {
+    collect_unknown_identifiers(arg, known, unknown);
+  }
+}
+
 class Analyzer {
  public:
   std::vector<Diagnostic> run(const ModelAst& model,
@@ -461,6 +486,32 @@ class Analyzer {
   // Kind-specific semantic rules on top of the registered shape (range
   // checks and the service resource reference).
   void check_block_semantics(const Node& node, const ParamScope& scope) {
+    if (node.kind == "selectOutput" || node.kind == "hold") {
+      // Runtime conditions (selectOutput.condition / hold.blockingCondition)
+      // are evaluated by the kernel with `t`/`time` and the block's own
+      // numeric fields in scope; anything else is a silent 0.0 at runtime.
+      const char* field_name =
+          node.kind == "selectOutput" ? "condition" : "blockingCondition";
+      const Field* condition = field_of(node, field_name);
+      if (condition != nullptr && !value_is_constant(condition->value)) {
+        std::unordered_set<std::string> known = {"t", "time"};
+        for (const Field& field : node.fields) {
+          if (field.value.kind == ValueKind::kInt ||
+              field.value.kind == ValueKind::kFloat) {
+            known.insert(field.name);
+          }
+        }
+        std::vector<std::string> unknown;
+        collect_unknown_identifiers(condition->value, known, unknown);
+        for (const std::string& id : unknown) {
+          error("LP5006",
+                "condition '" + condition->name + "' in " + node.kind + " '" +
+                    node.name + "' references unknown identifier '" + id +
+                    "' (expected 't'/'time' or a numeric block field)",
+                condition->span);
+        }
+      }
+    }
     if (node.kind == "resource") {
       const Field* capacity = field_of(node, "capacity");
       if (capacity) {

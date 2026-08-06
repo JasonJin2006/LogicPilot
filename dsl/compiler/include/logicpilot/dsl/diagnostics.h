@@ -17,6 +17,8 @@
 //           or non-constant arithmetic)
 //   LP2010  `use`d library file was not found on any search path
 //   LP2011  `use`d library file is invalid (parse error or name mismatch)
+//   LP5006  runtime condition references an unknown identifier (only
+//           `t`/`time` and the block's own numeric fields are in scope)
 //   LP3001  numeric value out of range
 //   LP4001  unresolved resource reference
 //   LP5001  effect references an undeclared state variable
