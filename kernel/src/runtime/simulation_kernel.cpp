@@ -21,24 +21,36 @@ bool SimulationKernel::load(const IrModelFile& model, std::string* error) {
 
 std::vector<ReplicationMetrics> SimulationKernel::run(
     const ReplicationConfig& config, TraceRecorder* trace,
-    std::string* error) {
-  const auto fail = [&](const std::string& message) {
+    std::string* error, std::vector<RuntimeDiagnostic>* diagnostics,
+    DebugRecorder* debug, SimulationProfile* profile) {
+  const auto fail = [&](const std::string& code,
+                        const std::string& message) {
+    if (diagnostics != nullptr) {
+      diagnostics->push_back(
+          RuntimeDiagnostic{RuntimeSeverity::kError, code, message});
+    }
     if (error != nullptr) {
       *error = message;
     }
     return std::vector<ReplicationMetrics>{};
   };
+  SimulationProfiler profiler;
+  if (profile != nullptr) {
+    profiler.begin();
+  }
   if (bytes_.empty()) {
-    return fail("SimulationKernel has no loaded model");
+    return fail("KR1001", "SimulationKernel has no loaded model");
   }
   const IrLoadResult loaded =
       load_model_buffer(bytes_.data(), bytes_.size());
   if (!loaded.ok()) {
-    return fail("cannot re-validate the loaded model: " + loaded.message);
+    return fail("KR1002",
+                "cannot re-validate the loaded model: " + loaded.message);
   }
   const std::vector<std::string> methods = resolve_method_names(loaded.file);
   if (methods.empty()) {
-    return fail("no executable modeling method under the model root");
+    return fail("KR1003",
+                "no executable modeling method under the model root");
   }
 
   // Fresh per-replication world: one scheduler, empty handler registry and
@@ -53,15 +65,16 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
   for (const std::string& name : methods) {
     auto runtime = MethodRegistry::instance().create(name);
     if (runtime == nullptr) {
-      return fail("no registered method runtime for '" + name +
-                  "' (link the method library and register it)");
+      return fail("KR1004", "no registered method runtime for '" + name +
+                                "' (link the method library and register it)");
     }
     if (!manager.add(std::move(runtime), error)) {
-      return {};
+      return fail("KR1005",
+                  error != nullptr ? *error : "method attach failed");
     }
   }
   if (!manager.initialize(loaded.file, error)) {
-    return {};
+    return fail("KR1006", error != nullptr ? *error : "initialize failed");
   }
 
   // One shared event queue: scheduler events dispatch to the runtime that
@@ -70,6 +83,12 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
             [&](const Event& event) {
               if (trace != nullptr) {
                 trace->record(event.at, event.type, event.payload);
+              }
+              if (debug != nullptr) {
+                debug->record(event);
+              }
+              if (profile != nullptr) {
+                profiler.record_event(event);
               }
               handlers_.dispatch(event);
             });
@@ -81,6 +100,9 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
   out.reserve(manager.method_count());
   for (std::size_t i = 0; i < manager.method_count(); ++i) {
     out.push_back(manager.method(i)->replication_metrics());
+  }
+  if (profile != nullptr) {
+    *profile = profiler.end();
   }
   return out;
 }

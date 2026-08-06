@@ -96,6 +96,7 @@ export default defineConfig({
             collapsed: true,
             items: [
               { text: 'DSL 规范', link: '/specs/dsl-spec' },
+              { text: 'DSL 冻结契约', link: '/specs/dsl-freeze' },
               { text: '工程格式 v2', link: '/specs/project-format-v2' },
               { text: 'Method Runtime Layer', link: '/specs/method-runtime' },
               { text: '流程库图标规范', link: '/specs/process-library-icons' },

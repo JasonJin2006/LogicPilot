@@ -154,6 +154,7 @@ jobs:
         run: |
           ./build/linux-clang-release/kernel/logicpilot_bench --benchmark_min_time=0.2s
           ./build/linux-clang-release/kernel/mm1_event_bench --benchmark_min_time=0.2s
+          ./build/linux-clang-release/kernel/process_flow_bench --benchmark_min_time=0.2s
 
   dsl-grammar:
     name: dsl grammar (tree-sitter corpus)

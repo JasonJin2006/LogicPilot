@@ -33,7 +33,9 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/runtime/method_registry.h"
+#include "logicpilot/runtime/runtime_diagnostics.h"
 #include "logicpilot/runtime/runtime_manager.h"
+#include "logicpilot/runtime/simulation_profiler.h"
 #include "logicpilot/runtime/simulation_method.h"
 #include "logicpilot/state/variable_store.h"
 
@@ -51,10 +53,16 @@ class SimulationKernel {
   // Run one full replication: resolve methods, attach one runtime per method,
   // initialize, dispatch until the scheduler drains, shutdown. Returns one
   // metric set per method (in resolution order). `trace` records every
-  // dispatched event (plus each method's final stat bits via shutdown).
+  // dispatched event (plus each method's final stat bits via shutdown);
+  // `diagnostics` receives structured failures (KR1xxx), `debug` captures
+  // the ordered event stream, and `profile` reports the event-type histogram
+  // and wall time for this replication.
   std::vector<ReplicationMetrics> run(const ReplicationConfig& config,
                                       TraceRecorder* trace = nullptr,
-                                      std::string* error = nullptr);
+                                      std::string* error = nullptr,
+                                      std::vector<RuntimeDiagnostic>* diagnostics = nullptr,
+                                      DebugRecorder* debug = nullptr,
+                                      SimulationProfile* profile = nullptr);
 
   // Shared cross-method state (readable between/after runs).
   [[nodiscard]] const VariableStore& variables() const { return variables_; }

@@ -175,4 +175,14 @@ if(LOGICPILOT_BUILD_BENCH)
     logicpilot_phase1b
     benchmark::benchmark_main
   )
+
+  # Generic process-flow engine baseline (budget #2 extension): modular
+  # ProcessFlowSim throughput, bench/process_flow_bench.cpp.
+  add_executable(process_flow_bench
+    ${CMAKE_SOURCE_DIR}/bench/process_flow_bench.cpp
+  )
+  target_link_libraries(process_flow_bench PRIVATE
+    logicpilot_methods
+    benchmark::benchmark_main
+  )
 endif()

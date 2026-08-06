@@ -326,3 +326,113 @@ TEST_CASE("simulation kernel: same seed reproduces the identical trace",
   REQUIRE(metrics1[0].departures == metrics2[0].departures);
   REQUIRE(metrics1[1].final_value == metrics2[1].final_value);
 }
+
+TEST_CASE("simulation kernel: profiler and debug recorder capture the run",
+          "[runtime][kernel][profiler]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+
+  ReplicationConfig config = test_config();
+  TraceRecorder trace;
+  DebugRecorder debug;
+  SimulationProfile profile;
+  const auto metrics = kernel.run(config, &trace, &error, nullptr, &debug,
+                                 &profile);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 2);
+
+  // The debug event stream matches the trace hash input exactly.
+  REQUIRE(debug.event_count() == trace.event_count());
+  REQUIRE(profile.events_dispatched == debug.event_count());
+  REQUIRE(profile.events_dispatched > 0);
+  REQUIRE(!profile.events_by_type.empty());
+  REQUIRE(profile.wall_seconds >= 0.0);
+  std::uint64_t histogram_total = 0;
+  for (const auto& [type, count] : profile.events_by_type) {
+    (void)type;
+    histogram_total += count;
+  }
+  REQUIRE(histogram_total == profile.events_dispatched);
+}
+
+TEST_CASE("simulation kernel: structured diagnostics on failures",
+          "[runtime][kernel][diagnostics]") {
+  register_all_methods();
+
+  // KR1001: no model loaded.
+  {
+    SimulationKernel kernel;
+    std::vector<RuntimeDiagnostic> diagnostics;
+    const auto metrics = kernel.run(test_config(), nullptr, nullptr,
+                                    &diagnostics);
+    REQUIRE(metrics.empty());
+    REQUIRE(diagnostics.size() == 1);
+    REQUIRE(diagnostics.front().code == "KR1001");
+    REQUIRE(std::string(to_string(diagnostics.front().severity)) == "error");
+    REQUIRE(format_runtime_diagnostic(diagnostics.front()).find("KR1001") !=
+            std::string::npos);
+  }
+
+  // KR1003: model root has no executable method (only a resource child).
+  {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto resource = v2::CreateNode(
+        builder,
+        v2::CreateMetadata(builder, builder.CreateString("Server"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{
+            var_int(builder, "capacity", 1)}),
+        0,
+        v2::CreateSemanticsRef(builder, builder.CreateString("process"),
+                               builder.CreateString("resource"), 0, 0),
+        0, 0, 0, 0, 0);
+    const auto root = v2::CreateNode(
+        builder,
+        v2::CreateMetadata(builder, builder.CreateString("Empty"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+        v2::CreateSemanticsRef(builder, builder.CreateString("core"),
+                               builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Node>>{
+            resource}),
+        0, 0, 0, 0);
+    builder.Finish(v2::CreateModelFile(builder, 2, root, 0, 0), "LP2R");
+    const std::vector<std::uint8_t> bytes(
+        builder.GetBufferPointer(),
+        builder.GetBufferPointer() + builder.GetSize());
+    const IrLoadResult loaded = load(bytes);
+
+    SimulationKernel kernel;
+    std::string error;
+    REQUIRE(kernel.load(loaded.file, &error));
+    std::vector<RuntimeDiagnostic> diagnostics;
+    const auto metrics = kernel.run(test_config(), nullptr, &error,
+                                    &diagnostics);
+    REQUIRE(metrics.empty());
+    REQUIRE(diagnostics.size() == 1);
+    REQUIRE(diagnostics.front().code == "KR1003");
+    REQUIRE(error.find("no executable") != std::string::npos);
+  }
+}
+
+TEST_CASE("simulation kernel: conservation invariant across engines",
+          "[runtime][kernel][invariant]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+
+  // Process flow: every arrival is eventually served and departs
+  // (no losses), even with the statechart child sharing the scheduler.
+  ReplicationConfig config = test_config();
+  const auto metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 2);
+  REQUIRE(metrics[0].departures == config.arrivals);
+  REQUIRE(metrics[0].mean_in_queue >= 0.0);
+  REQUIRE(metrics[1].departures >= 0);
+}

@@ -225,6 +225,27 @@ VariableStore / methods/process + methods/statechart）可运行、187 ctest 全
 4. **对等性验证**：单方法（process / statechart）经 kernel 驱动的指标与
    事件序列与批量路径逐位一致；同种子复现相同 trace。191 ctest 全绿。
 
+### 执行生命周期契约
+
+一次 replication 的官方生命周期（驱动方必须遵守的顺序）：
+
+```text
+load(model)                 // 拷贝模型字节（校验延后）
+  -> run(config):
+       resolve_method_names // 按 IR 解析方法集合
+       attach runtimes      // MethodRegistry 装配
+       initialize           // 复位 clock/handlers/variables，注册事件
+       advance*             // SimulationKernel 派发共享事件队列直到排空
+       shutdown             // 各 runtime 结算 metrics
+       collect replication_metrics()
+```
+
+错误约定：kernel 侧失败输出**结构化诊断**（`RuntimeDiagnostic`，KR1xxx：
+KR1001 无模型 / KR1002 校验失败 / KR1003 无方法 / KR1004 未注册 /
+KR1005 装配失败 / KR1006 初始化失败），同时保持 `std::string* error`
+人类可读文本；`DebugRecorder` 记录逐事件流，`SimulationProfile` 给出事件
+类型直方图与墙钟耗时，供调试与性能剖析使用。
+
 ## 8. 剩余工作
 
 - agent / system_dynamics 拆成独立方法库（目前仍是 kernel 原生方法，已走
