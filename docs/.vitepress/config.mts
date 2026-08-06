@@ -73,7 +73,7 @@ export default defineConfig({
         items: [
           { text: '总计划与现状', link: '/roadmap' },
           { text: 'DSL 规范', link: '/specs/dsl-spec' },
-          { text: 'DSL v2 重设计（草案）', link: '/specs/dsl-v2' },
+          { text: 'DSL v2 设计', link: '/specs/dsl-v2' },
           { text: 'IR v2 迁移设计', link: '/specs/ir-v2' },
           { text: '工程格式 v2（Project Format v2）', link: '/specs/project-format-v2' },
           { text: 'AI 建模闭环', link: '/specs/ai-loop' },

@@ -29,10 +29,12 @@ Node（容器契约，故意薄）
   └─ semantics: SemanticsRef { library, block, version, params }
 
 引擎注册表（按 semantics 分发，各方法各一个引擎）：
-  process → QueueingFlowSim（事件引擎，现状）
-  devs    → DevsExecutor（DEVS-lite，现状）
-  agent   → AgentRuntime tick（ECS，现状）
-  sd/eqn  → ODE/DAE 求解器（未来，结构化方程）
+  process     → ProcessRuntime（methods/process：QueueingFlowSim /
+                ProcessFlowSim，注册表驱动，现状）
+  statechart  → StatechartRuntime（methods/statechart，Phase 4，现状）
+  devs        → DevsExecutor（DEVS-lite，kernel 原生方法，现状）
+  agent       → AgentRuntime tick（ECS，kernel 原生方法，现状）
+  sd/eqn      → ContinuousReplicationModel（RK4 ODE，现状）
   physics → PDE/FEM/SPH 引擎（未来）
   cluster → 分布式/GPU 内核（未来）
 ```
@@ -48,7 +50,7 @@ Node（容器契约，故意薄）
 | `resource` 靠字符串名匹配 | `Resource` 级 `SemanticsRef`（块参数） | `ir_v2.fbs`、`lowering.cpp` |
 | 端口无类型 | `Port.event_type` 类型化（复用 F2 类型名） | `ir_v2.fbs` |
 | 实验散在 CLI/脚本（`--reps/--arrivals`、prompt 解析） | `Experiment` 进模型（simulation/optimization/MC） | `ir_v2.fbs`、DSL `experiment` 块、`ai-optimize.mjs` |
-| `EquationModel` 字符串袋 | 结构化 `[Equation]` + ODE 引擎 | `ir_v2.fbs`（未来） |
+| `EquationModel` 字符串袋 | 结构化 `[Equation]` + RK4 ODE 引擎 | `ir_v2.fbs`、`continuous.cpp` |
 
 ## 4. 分阶段实施
 

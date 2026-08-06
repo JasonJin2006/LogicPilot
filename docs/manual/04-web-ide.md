@@ -24,7 +24,8 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 - **Palette**（左侧）：库选择条（All / Recent / process / presentation /
   statechart / action / 导入的自定义库），块拖到画布。
   - `process` 流程库：source / queue / delay / service / sink / split /
-    batch / seize / release 等 23 个块，带 in/out 端口可连线。
+    batch / seize / release 等 39 个块（23 常用 + 16 新增 AnyLogic PML 块），
+    带 in/out 端口可连线。
   - `presentation` 演示库：矩形/椭圆/线/文本等绘图形状，渲染为真实 SVG。
   - `statechart` / `action`：状态图与行动图元素（画布建模，语义落内核为后续）。
 - 画布：滚轮缩放、空白拖动平移、坐标网格；端口拖出连线（点击连线删除）。

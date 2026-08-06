@@ -23,5 +23,5 @@ features:
   - title: Web 实时可视化
     details: WebSocket + FlatBuffers 推流，拖拽建模画布、DSL 编译、实时运行徽标、AI 生成/优化。
   - title: 契约冻结
-    details: F1（IR）/F2（wire）schema 双门禁冻结，v1/v2 契约双向互操作由 CI 逐字段校验。
+    details: F1（IR）/F2（wire）schema 双门禁冻结，C++ ↔ TS 运行时互操作由 CI 逐字段校验（v1 契约已全量退役）。
 ---

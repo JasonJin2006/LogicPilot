@@ -14,7 +14,7 @@ LogicPilot 是一个 AI 原生、Web 化的多方法仿真平台。一条典型�
 ```powershell
 cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
 cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 153+ 个测试
+ctest --preset windows-msvc-dev      # 190+ 个测试
 ```
 
 产物位于 `build/<preset>/kernel/apps/lpcli/lpcli.exe`（`lp-server` 在同目录 `build/<preset>/kernel/lp-server.exe`）。
@@ -51,7 +51,8 @@ lpcli compile examples/mm1.lp -o build/mm1.ir.bin
 lpcli run --model-file build/mm1.ir.bin --seed 42 --reps 3 --arrivals 500 --warmup 50
 ```
 
-输出包含吞吐量、L/Lq/W/Wq 的均值、标准差与 95% 置信区间，以及资源利用率与可用性：
+输出包含吞吐量、L/Lq/W/Wq 的均值、标准差与 95% 置信区间，以及资源利用率与可用性
+（以下为示例数值，随种子与参数变化）：
 
 ```text
 summary: 3 replications, 95% CI

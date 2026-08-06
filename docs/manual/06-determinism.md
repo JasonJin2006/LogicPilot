@@ -5,7 +5,7 @@
 给定固定种子，同一构建的仿真**逐位可复现**，由三层机制保证：
 
 - **确定性 RNG**：xoshiro256++ 流，种子派生只用 add/shift/rotate，无系统熵
-- **确定性时间**：int64 纳秒定点时间（`t*2^32`），无浮点累积漂移
+- **确定性时间**：int64 纳秒定点时间（1 ns 分辨率），无浮点累积漂移
 - **同刻事件排序**：时间戳相同的并发事件按 FIFO（入队顺序）tie-break
 
 ```powershell
@@ -39,7 +39,7 @@ lpcli run --model-file build/mm1.ir.bin --seed 42   # 两次运行输出逐位�
 
 ## 测试矩阵
 
-- 153 个 CTest（内核单元/集成/确定性/互操作/验收，含 1M-agent 规模冒烟、
+- 190+ 个 CTest（内核单元/集成/确定性/互操作/验收，含 1M-agent 规模冒烟、
   慢客户端写队列上限、IR 加载器健壮性与 JSON 控制解析器边界单测）
 - 前端：renderer2d vitest（wire 解码）、protocol 互操作校验（58 checks）、
   editor 包 vitest（图文档/DSL 生成）、浏览器 E2E（动画/图表/AI 面板）

@@ -1,46 +1,62 @@
-# LogicPilot IDE — 最薄 2D 可视化切片
+# LogicPilot IDE
 
-Vite 6 + React 19 + TypeScript 浏览器前端：连接 lp-server 网关、解码
-size-prefixed LPWR FlatBuffers 遥测帧、PixiJS 8 渲染 M/M/1 排队动画、
-uPlot 绘制实时计数折线。
+浏览器前端（Vite 6 + React 19 + TypeScript + zustand）：拖拽建模画布、DSL
+编译诊断、WebSocket 实时运行可视化、AI 建模/优化/归因面板，以及工程保存/打开。
+桌面客户端（Tauri）是同一前端的外壳，见 `desktop/README.md`；用户操作指南见
+`docs/manual/04-web-ide.md`。
 
 ## 依赖结构
 
 - `@logicpilot/protocol` — flatc 生成的 wire/ir TS 绑定。
+- `@logicpilot/editor` — 图文档模型、DSL v2 生成器（`generateDsl` /
+  `parseDsl` / `modelRunParams`）、块库元数据。
 - `@logicpilot/renderer2d` — 纯函数 wire 帧解码（无 DOM，为 Worker 化预留）。
-- 本应用 — WebSocket 传输、PixiJS 场景、uPlot 折线、控制面板。
+- 本应用 — 面板系统（`src/layout`）、建模画布（`src/model`）、Presentation
+  矢量编辑器（`src/presentation`）、工程（`src/project`）、运行状态
+  （`src/run`/`src/state`）、AI 面板（`src/ai`）。
 
-## 开发步骤（Windows PowerShell）
+## 开发步骤（仓库根目录）
 
 ```powershell
-# 1. 启动网关（仓库根目录；首次构建参考 scripts/build-hello-kernel.ps1）
-.\build\integration-dev\kernel\apps\lpcli\lpcli.exe serve examples/mm1.lp --port 8089 --seed 42
+# 1. 启动网关（编译 DSL 并开服；或 lp-server --model-file <ir>）
+lpcli serve examples/mm1.lp --port 8089 --seed 42
 
-# 2. 安装 workspace 依赖（仓库根目录，pnpm 经 corepack 提供）
+# 2. 安装 workspace 依赖
 pnpm install
 
-# 3. 启动 Vite dev server（本目录或根目录 pnpm dev）
-pnpm dev
+# 3. 启动 Vite dev server
+pnpm --filter @logicpilot/ide dev
 # -> http://localhost:5173
 ```
 
-浏览器打开 `http://localhost:5173`：
+IDE 启动时自动连接网关（桌面客户端自动拉起 lp-server；浏览器模式默认
+`ws://127.0.0.1:8089/sim`，可在设置中修改并手动 Connect/Disconnect）。
 
-1. 地址栏默认 `ws://127.0.0.1:8089/sim`（直连网关，无需代理），点 **Connect**。
-2. 设置 seed/reps/arrivals/warmup/speed（可留默认 42/3/4000/400/10），点 **Start**。
-3. 左侧为排队动画（服务台 busy 时高亮；顾客按 `Tick.deltas.pos_x` 排布，
-   id 稳定，10 Hz 数据经线性插值在 rAF 循环中平滑移动）；
-   右侧为 `queue_length / throughput / mean_wait` 滚动折线；
-   底部状态栏显示帧 seq、sim_time、渲染 FPS 与网关 ack。
-4. 运行结束（RunFinished）后右下方面板展示跨 replication 统计与 Student-t CI。
-   Pause / Resume / Step / Stop / Set speed 按钮对应网关 JSON 控制指令。
+## 功能一览
+
+- **Palette**（左侧）：`process`（39 块，AnyLogic PML）/ `presentation` /
+  `statechart` / `action` 四个库，拖到画布；最近使用（Recent）与自定义库导入。
+- **Model 画布**（中央）：SVG 块 + 端口连线（`out → in`，点击连线删除）、
+  网格/缩放/平移、选中块 Properties 编辑（AnyLogic 风格字段）、撤销/重做、
+  编组/对齐/层级、Presentation 矢量形状（矩形/椭圆/线/文本/图片/路径/分组/
+  Frame + 绑定）。
+- **DSL 编辑区**：画布旁可收起代码区，Show DSL / Compile（诊断回显
+  Console）。
+- **Run**（画布左上角）：seed / reps / arrivals / warmup / speed +
+  Start / Pause / Resume / Step / Stop；运行中画布块显示实时队列长度与
+  忙/闲/宕机状态点。
+- **AI 面板**（右侧）：`generate + run`（NL → DSL → 编译修复 → 运行，
+  Load to canvas）、`optimize`（声明区间内搜索）、`explain`（瓶颈归因）。
+- **工程**：`*.lpproj` 单文件打包 + agent-centric 目录；会话态启动（每次从
+  空状态开始，Open Recent / Open 重新打开）。
 
 ## 构建与校验
 
 ```powershell
-pnpm build        # tsc --noEmit + vite build（根目录 pnpm -r build）
-pnpm typecheck    # 仅 tsc --noEmit
-pnpm test         # @logicpilot/renderer2d 解码单元测试（Vitest）
+pnpm --filter @logicpilot/ide build     # tsc --noEmit + vite build
+pnpm --filter @logicpilot/ide typecheck # 仅 tsc --noEmit
+pnpm test                               # workspace：editor / renderer2d / protocol vitest
+node web/apps/ide/scripts/browser-verify.mjs  # 浏览器 E2E（需网关）
 ```
 
 ## 备注
@@ -48,4 +64,5 @@ pnpm test         # @logicpilot/renderer2d 解码单元测试（Vitest）
 - 遥测为二进制帧：4 字节 size 前缀 → FlatBuffer（identifier `LPWR`，
   version 1）→ `FrameHeader` + payload union（见 `schemas/wire.fbs`）。
 - 解码位于 `web/packages/renderer2d/src/decode.ts`，纯函数、零 DOM 依赖；
-  后续可将该模块移入 Web Worker 而无需改动应用层。
+  运行可视化用 PixiJS 渲染循环（`src/state/vizState.ts`），画布徽标由
+  `SimClient` → `vizState` 驱动。

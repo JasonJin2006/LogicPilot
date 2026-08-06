@@ -59,13 +59,13 @@ model CallCenter {
   （沿用 LP2002），沿用 registry 端口校验。
 - `check_agent` 递归校验子成员（流程块、嵌套 agent）。
 - lowering 已支持：根/agent 的 process 库子成员按 `{process, block}` 发出，
-  同作用域 `couple` 落到节点 couplings。`process` 容器路径保留（兼容）。
+  同作用域 `couple` 落到节点 couplings。`process` 容器路径已移除（LP2004）。
 
 ### 3.2 内核（`kernel/src/devs/ir_loader.cpp`）
 
 - `build_replication_model` / `extract_flow_params`：在 model 根（以及 agent
   作用域）的**直接子成员**中查找 process 库成员，构造 QueueingFlowSim
-  （M/M/1 链）或 ProcessFlowSim（通用拓扑）；保留 `{process, flow}` 容器路径。
+  （M/M/1 链）或 ProcessFlowSim（通用拓扑）。
 
 ### 3.3 工程格式（`docs/specs/project-format-v2.md`）
 

@@ -106,7 +106,7 @@ model Swarm {
 }
 ```
 
-行为由内核内置处理器注册表提供（`flip` / `bounce` / 观测收集 `collect` 等），同种子下 tick 顺序确定。
+行为由内核内置处理器注册表提供（`noop` / `flip <state>` / `bounce`），同种子下 tick 顺序确定。
 
 ## continuous：连续 ODE 系统
 

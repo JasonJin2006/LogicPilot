@@ -51,7 +51,7 @@ LogicPilot
 │   ├── process/                      # ProcessRuntime（第一个方法插件）
 │   ├── agent/                        # （后续）
 │   ├── system_dynamics/              # （后续）
-│   └── statechart/                   # （后续）
+│   └── statechart/                   # StatechartRuntime（Phase 4 已落地）
 ├── compiler/
 ├── ir/
 ├── libraries/

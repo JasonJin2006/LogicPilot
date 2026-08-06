@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "LogicPilot browser IDE: minimal 2D visualization slice (MM1 queue animation + live counters)",
+  "description": "LogicPilot browser IDE: drag-modeling canvas, DSL compile, live simulation viz, AI copilot panel and project system",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p tsconfig.json && vite build",

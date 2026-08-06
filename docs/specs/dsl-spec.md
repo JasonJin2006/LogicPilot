@@ -1,7 +1,7 @@
-# LogicPilot DSL Specification — v2 Draft
+# LogicPilot DSL Specification (v2)
 
-Status: **Draft v2 (thin core grammar + library registry)** · Phase 2
-implemented (2026-08-04) · Supersedes: v0
+Status: **Implemented** (2026-08-06; supersedes v0) · Normative reference for
+the tree-sitter grammar + compiler lowering
 
 This is the normative DSL reference (tree-sitter grammar + compiler
 lowering), aligned with `docs/specs/dsl-v2.md`. The grammar is a **thin
@@ -9,7 +9,8 @@ generic skeleton**: `kind` is any identifier, resolved by the compiler
 against the core kinds and the process library registry (block shapes),
 so adding a library block never changes the grammar. `lpcli compile` lowers
 the model to the frozen v2 IR contract (`schemas/ir_v2.fbs`, `LP2R`).
-Expression grammar is the remaining open item (see §5).
+Numeric fields accept compile-time constant expressions (arithmetic over
+literals and model-level `param`s, see §2).
 
 **Library meta-layer**: block shapes are declared in DSL library files
 (`libraries/process.lplib`, embedded into the compiler binary); a parameter
@@ -28,7 +29,7 @@ reference semantics stay in the compiler/runtime keyed by `{library, block}`.
 | R4 | `variable_declaration` | `state <name> = <value>` / `param <name> = <value>` with optional `: type` annotation (`int`/`float`/`bool`/`string`/`distribution`/`ref`). |
 | R5 | `value` | expression: literal (`bool`/`int`/`float`/`string`), bare identifier, numeric call `name(<expr>, ...)`, binary `+ - * /` (precedence), unary `-`, parentheses. Constant-folded; parameter references resolve against declared `param`s. |
 | R6 | `behavior` | `on_<trigger> [port] { effect; ... }` — unified behavior block; triggers `timeout`/`input`/`tick`/...; effects are `name = <value>`, `emit <port>` or `call [arg]`. |
-| R7 | `equation` | `d <var>/dt = <rhs>` — structured ODE; raw RHS text until expressions land (Phase D). |
+| R7 | `equation` | `d <var>/dt = <rhs>` — structured ODE; RHS supports `+ - * /`, unary `-`, parentheses, identifiers and numeric calls (`exp`/`log`/`sqrt`/`sin`/`cos`, explicit `t`). |
 | R8 | `port_declaration` | `in [name]: <type>` / `out [name]: <type>` / `inout [name]: <type>` — typed ports (unnamed → `entity`). |
 | R9 | `couple_declaration` | `couple <from>.<port> -> <to>.<port>` — explicit port wiring. |
 | R10 | `use_declaration` | `use <library>` — optional in stage 1 (the process library is implicitly available). |
@@ -39,12 +40,15 @@ reference semantics stay in the compiler/runtime keyed by `{library, block}`.
 
 ## 2. Semantics (v2)
 
-- A `model` is a root container: model-level `param` declarations, core
-  kinds (`resource`/`process`/`atomic`/`agent`/`continuous`/`experiment`) and
-  `couple` wiring.
-- A `process` executes its stages in declaration order: entities arrive at the
-  `source`, pass through `queue`(s), are served by `service`(s), and (v2)
-  exit via `sink`.
+- A `model` is a root container: model-level `param` declarations, process
+  library blocks (`resource`/`source`/`queue`/`service`/`sink`/...), core
+  kinds (`atomic`/`agent`/`continuous`/`experiment`), and `couple` wiring.
+  There is **no `process` container**: process-library blocks are direct
+  members of the `model` root or an `agent` body (agent-centric, `LP2004`
+  otherwise).
+- A flow executes its stages in declaration order: entities arrive at the
+  `source`, pass through `queue`(s), are served by `service`(s), and exit via
+  `sink`.
 - A `service` declares which `resource` it consumes with an explicit
   `resource = R` reference (validated `LP4001`); when the field is absent the
   v0 identifier binding is kept as a transitional fallback. If the resource is
@@ -61,24 +65,25 @@ reference semantics stay in the compiler/runtime keyed by `{library, block}`.
 ## 3. Example
 
 ```logicpilot
-// Factory example — v0 DSL
+// Factory example — agent-centric (no `process` container)
 model Factory {
   resource Machine {
     capacity = 3
     failure_rate = 0.01
   }
 
-  process Production {
-    source Order {
-      arrival = poisson(5)
-    }
-    queue Buffer {
-      capacity = 50
-    }
-    service Machine {
-      time = normal(10, 2)
-    }
+  source Order {
+    arrival = poisson(5)
   }
+  queue Buffer {
+    capacity = 50
+  }
+  service Machining {
+    resource = Machine
+    time = normal(10, 2)
+  }
+  couple Order.out -> Buffer.in
+  couple Buffer.out -> Machining.in
 }
 ```
 
@@ -87,26 +92,27 @@ Equivalent minimal variant using exponential service time:
 ```logicpilot
 model QueueDemo {
   resource Server { capacity = 1 }
-  process Arrivals {
-    source Clients { arrival = poisson(2) }
-    queue WaitLine { capacity = 0 }
-    service Server { time = exponential(3) }
-  }
+  source Clients { arrival = poisson(2) }
+  queue WaitLine { capacity = 0 }
+  service Server { resource = Server; time = exponential(3) }
+  couple Clients.out -> WaitLine.in
+  couple WaitLine.out -> Server.in
 }
 ```
 
 ## 4. Lowering (non-normative preview)
 
 `model → ir_v2.fbs::ModelFile` (root Node + SemanticsRef children);
-`resource/process/atomic/agent/continuous → v2 Node` blocks.
+process-library blocks and `atomic`/`agent`/`continuous`/`experiment` → v2
+Node blocks.
 See `docs/specs/ir-v2.md`.
 
 ## 5. Explicitly Out of Scope (v2 stage 1)
 
 Runtime-variable references in expressions (state variables are not
-compile-time constants), branching (`route`), priorities, batches,
-replication, warmup/run-length settings, multi-file imports, statistics
-blocks, and expression support inside `experiment` blocks (literal-only).
+compile-time constants), branching (`route`), priorities, replication and
+warmup/run-length settings (CLI-level today), multi-file imports, and
+expression support inside `experiment` blocks (literal-only).
 
 ## 6. Diagnostics JSON Protocol (AI Copilot loop)
 
