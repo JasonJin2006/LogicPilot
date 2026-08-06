@@ -31,23 +31,29 @@ const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
 // the axes, arrowheads and tick labels are fully visible on first load.
 const VIEW_MARGIN = 48;
 
-// Ports the canvas shows for a node: conditional ports (e.g. outTimeout)
-// are only present when their gating field is set to true on the node.
+// Ports the canvas shows for a node: every catalog port, including the
+// conditional ones (outTimeout / outPreempted / preparedUnits / wrapUp) at
+// their AnyLogic green-dot positions, matching the palette preview. Wiring a
+// conditional port auto-enables its gating option in modelStore so the DSL
+// stays compilable (LP5003).
 function visiblePorts(node: ModelNode): BlockPortDef[] {
-  return blockPorts(node.kind).filter(
-    (port) => !port.conditionalOn || node.params[port.conditionalOn] === true,
-  );
+  return blockPorts(node.kind);
 }
 
+/** Fallback port for edges without explicit ports: the primary in/out first,
+ *  skipping conditional ports. */
 function firstOutPort(node: ModelNode): string {
-  return visiblePorts(node).find((port) => port.direction === 'out')?.name ?? 'out';
+  const outs = blockPorts(node.kind).filter(
+    (port) => !port.conditionalOn && port.direction === 'out',
+  );
+  return outs.find((port) => port.name === 'out')?.name ?? outs[0]?.name ?? 'out';
 }
 
 function firstInPort(node: ModelNode): string {
-  return (
-    visiblePorts(node).find((port) => port.direction === 'in' || port.direction === 'inout')
-      ?.name ?? 'in'
+  const ins = blockPorts(node.kind).filter(
+    (port) => !port.conditionalOn && (port.direction === 'in' || port.direction === 'inout'),
   );
+  return ins.find((port) => port.name === 'in')?.name ?? ins[0]?.name ?? 'in';
 }
 
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.

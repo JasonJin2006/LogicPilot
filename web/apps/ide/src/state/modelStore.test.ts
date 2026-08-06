@@ -96,4 +96,23 @@ describe('modelStore undo/redo', () => {
     expect(Array.isArray(document.nodes)).toBe(true);
     expect(Array.isArray(document.edges)).toBe(true);
   });
+
+  it('wiring a conditional port auto-enables its gating option', () => {
+    const store = useModelStore.getState();
+    store.addBlock({ kind: 'queue', name: 'Q', x: 0, y: 0 });
+    store.addBlock({ kind: 'service', name: 'R', x: 120, y: 0 });
+    const queue = useModelStore.getState().document.nodes.find((node) => node.name === 'Q')!;
+    const service = useModelStore.getState().document.nodes.find((node) => node.name === 'R')!;
+    expect(queue.params['enableTimeout']).toBeUndefined();
+
+    // Q.outTimeout -> R.in must turn on Q's enableTimeout so the generated
+    // DSL compiles (no LP5003 for the conditional port).
+    store.connectBlocks(queue.id, service.id, 'outTimeout', 'in');
+    const after = useModelStore.getState().document;
+    const wired = after.nodes.find((node) => node.id === queue.id)!;
+    expect(wired.params['enableTimeout']).toBe(true);
+    expect(
+      after.edges.some((edge) => edge.from === queue.id && edge.fromPort === 'outTimeout'),
+    ).toBe(true);
+  });
 });

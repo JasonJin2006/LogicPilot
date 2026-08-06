@@ -27,40 +27,33 @@
 
 ## 3. 端口排布规则
 
-端口锚点由 `portAnchor()`（blockDefs.ts）计算，相对块中心：
+端口锚点由 `PORT_LAYOUTS`（blockDefs.ts）按 **AnyLogic 绿点规律**标定，坐标在
+图标 40×40 viewBox 空间内（相对图标中心 (20,20)），渲染时按 34/40 缩放到画布：
 
-| 常量          | 值   | 含义                                 |
-| ------------- | ---- | ------------------------------------ |
-| `PORT_X`      | 17   | 内轨横偏移（无条件/主流程端口）      |
-| `PORT_X_COND` | 23   | 外轨横偏移（条件/异常端口）          |
-| `PORT_Y`      | −9.5 | 垂直基准（图标中心偏上，避开名字行） |
+- **主 `in`/`out`**：图形左/右边缘中点（rect 类块 x=7/33，圆类块 x=9/31）。
+- **条件端口**（`outTimeout`/`outPreempted`）：顶边（y≈9–11）；
+  `match` 四个条件口分列顶/底边；`seize.preparedUnits`、`release.wrapUp` 在底边。
+- **合分流**：`split` in/out/outCopy 落在三角形三个角点；`combine` 镜像。
+- **决策**：`selectOutput` 的 `outF` 在菱形下顶点（outT 在右侧中点）。
+- **计时**：timeMeasureStart 的 `in` 在秒表正下方。
+- 多口堆叠（selectOutput5/In/Out 的 5 个口）沿边等距排布，不超出图标。
+- 自定义库块无布局条目时回退到左右中点堆叠（`PORT_X`/16px）。
 
-规则：
-
-1. **主流程口永远在 y=0**：`in`/`out` 存在时钉在水平轴，开关 timeout/preemption
-   等条件口不改变主口位置，已有连线不跳。
-2. **无条件副口**（`split.outCopy`、`seize.preparedUnits`、`release.wrapUp`）：
-   内轨 +12 / −12 / −24 依次下排（`SECONDARY_OFFSETS`）。
-3. **无主口的块**（`selectOutput`、`combine`、`match`、`assembler`）：按 catalog
-   顺序固定展开（`INNER_SPREADS`）：selectOutput 上 `outT` 下 `outF`；
-   combine/match/assembler 多入口 −6/+6。
-4. **条件口**：全部走外轨 ±23，按 catalog 顺序以 10px 间距居中堆叠，钳制 ±15
-   （`match` 全开 4 个条件口 = −15/−5/+5/+15），永不碰名字行。
-5. **自定义库块**（无主口名）：同方向 12px 居中堆叠。
-
-画布渲染：锚点是块中心相对坐标，图标 span 原点在左上角（中心 −17px），因此
-`left/top` 需再 +17 偏移；条件口带 `port-cond` 类（7px 小点 + 1px 引线），
-主口 9px，hover/拖线目标放大 1.3 倍（缩放由 CSS 完成，内联样式不覆盖 transform）。
+画布与 palette **始终显示全部端口**（含条件端口）；用线连到条件端口时，
+`modelStore` 自动把对应开关（`enableTimeout`/`enablePreemption` 等）置为
+`true`，保证生成 DSL 可编译（否则 LP5003）。渲染偏移：锚点相对块中心，
+图标 span 左上角在块中心 (−17, −26.5)（卡片 = 34px 图标 + 4px 间距 + 15px
+名称），故 `left = anchor.x − node.x + 17`、`top = anchor.y − node.y + 26.5`；
+画布圆点 5px、palette 4px（约图块宽度 12%），hover/拖线目标放大 1.5×。
 
 ## 4. 验收清单
 
 - [ ] `source→queue→service→sink` 主流程连线全水平（y 对齐 0）。
-- [ ] 勾选 service 的 `enableTimeout/enablePreemption`：主 `out` 不动，外轨出现
-      小点带引线；取消勾选后连线不跳。
-- [ ] `match` 四条件全开：右外轨 4 小点（−15/−5/+5/+15），不碰名字行。
-- [ ] `selectOutput` 上 `outT` 下 `outF`；`split.outCopy`、`release.wrapUp` 在
-      主口下方 12px。
-- [ ] hover 任意端口放大 1.3 倍生效。
+- [ ] 拖入 queue/service：顶边直接可见 `outTimeout`/`outPreempted` 小点。
+- [ ] 连线到 `outTimeout`：Properties 里 `enableTimeout` 自动勾选，编译通过。
+- [ ] `match` 8 个端口（左右各 2 + 顶/底各 2）全显示且不重叠。
+- [ ] `selectOutput` 上 `outT` 下 `outF`；`split` 三点在三角角位。
+- [ ] hover 任意端口放大 1.5 倍生效。
 - [ ] 16/24/34px 下新 glyph 可辨认；`source` 与 `enter` 不撞脸。
 
 ## 5. 端口语义（对照 AnyLogic 官方文档）

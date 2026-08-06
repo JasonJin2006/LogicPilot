@@ -106,7 +106,29 @@ export const useModelStore = create<ModelState>()((set) => ({
         return {};
       }
       const result = connect(state.document, from, to, fromPort, toPort);
-      return result.error ? {} : commit(state, result.document);
+      if (result.error) {
+        return {};
+      }
+      // Wiring a conditional port turns on its gating option (AnyLogic
+      // semantics: the port exists only while the option is enabled), so the
+      // generated DSL compiles without an LP5003.
+      let document = result.document;
+      const enableGates = (
+        nodeId: string,
+        spec: ReturnType<typeof blockPorts>[number] | undefined,
+        port: string | undefined,
+      ) => {
+        if (!spec?.conditionalOn || !port) {
+          return;
+        }
+        const node = document.nodes.find((entry) => entry.id === nodeId);
+        if (node && node.params[spec.conditionalOn] !== true) {
+          document = setParam(document, nodeId, spec.conditionalOn, true);
+        }
+      };
+      enableGates(from, fromSpec, fromPort ?? 'out');
+      enableGates(to, toSpec, toPort ?? 'in');
+      return commit(state, document);
     }),
   disconnectEdge: (id) => set((state) => commit(state, disconnect(state.document, id))),
   removeBlock: (id) =>
