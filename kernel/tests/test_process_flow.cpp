@@ -670,19 +670,32 @@ TEST_CASE("process flow: source entity attributes drive condition routing",
 TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
           "[process_flow][acceptance][failure]") {
   // Milestone-1 busy-time failure semantics (preemptive-repeat) wired into
-  // the generic ProcessFlowSim engine. The dedicated QueueingFlowSim path
-  // keeps its M/G/1 acceptance (test_mm1_failure); here we verify the
-  // mechanics: no lost jobs, downtime fraction, preemption-aware wait
-  // ordering, failure-induced congestion and bit-exact determinism.
+  // the generic ProcessFlowSim engine, verified against the same M/G/1
+  // (Pollaczek-Khinchine) theory as test_mm1_failure: lambda=0.8, mu=1.0,
+  // f=0.1, r=1.0. Sample size must be large (20000 arrivals x 16 reps);
+  // M/M/1-class waits have huge variance and small runs read as noise.
   constexpr double kLambda = 0.8;
   constexpr double kMu = 1.0;
   constexpr double kFailure = 0.1;
   constexpr double kRepair = 1.0;
-  constexpr std::uint64_t kArrivals = 8000;
-  constexpr std::uint64_t kWarmup = 800;
+  constexpr std::uint64_t kArrivals = 20000;
+  constexpr std::uint64_t kWarmup = 2000;
   constexpr std::uint64_t kReps = 16;
 
   const double availability = kRepair / (kFailure + kRepair);
+  const double mu_eff = availability * kMu;
+  const double service_mean = 1.0 / mu_eff;
+  const double p = kMu / (kMu + kFailure);
+  const double shared = 2.0 / ((kMu + kFailure) * (kMu + kFailure));
+  const double failed_branch =
+      shared + 2.0 / (kRepair * kRepair) +
+      2.0 / ((kMu + kFailure) * kRepair) +
+      2.0 * service_mean * (1.0 / (kMu + kFailure) + 1.0 / kRepair);
+  const double service_second_moment =
+      (p * shared + (1.0 - p) * failed_branch) / p;
+  const double rho_eff = kLambda * service_mean;
+  const double theory_wq =
+      kLambda * service_second_moment / (2.0 * (1.0 - rho_eff));
 
   const auto build_model = [&](flatbuffers::FlatBufferBuilder& builder) {
     const auto source = block(
@@ -736,10 +749,18 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
 
   const ReplicationSummary summary =
       summarize_replications(results, 0.95);
-  // Downtime fraction tracks the repair/(failure+repair) law within a band
-  // (the pool is busy ~88% of the time, so the raw fraction is a bit lower).
-  REQUIRE(summary.availability.mean > 0.88);
-  REQUIRE(summary.availability.mean < 0.95);
+  INFO("Wq mean=" << summary.mean_wait.mean << " theory=" << theory_wq
+                  << " CI=[" << summary.mean_wait.ci_low << ", "
+                  << summary.mean_wait.ci_high << "]");
+  // Same acceptance rule as test_mm1_failure: cross-replication CI covers
+  // theory.wq, or the point estimate is within 0.75 of it.
+  const bool ci_covers = summary.mean_wait.covers(theory_wq);
+  const bool point_ok =
+      std::abs(summary.mean_wait.mean - theory_wq) <= 0.75;
+  REQUIRE((ci_covers || point_ok));
+  REQUIRE(std::abs(summary.availability.mean - availability) < 0.03);
+  REQUIRE(std::abs(summary.throughput.mean - kLambda) <=
+          0.05 * kLambda);
   // Preemption-aware wait: sojourn includes failed attempts + repairs.
   REQUIRE(summary.mean_sojourn.mean > summary.mean_wait.mean);  // W > Wq
 
@@ -754,7 +775,7 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
   REQUIRE(first.utilization == second.utilization);
 
   // Failures add congestion: the same model without failures is strictly
-  // less congested and never goes down.
+  // less congested and never goes down (relative check, same engine).
   const auto run_no_failure = [&](double failure_rate) {
     flatbuffers::FlatBufferBuilder builder;
     const auto source = block(
