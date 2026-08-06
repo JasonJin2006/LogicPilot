@@ -1,7 +1,7 @@
 // LogicPilot project serialization: a single-file `*.lpproj` bundle that
 // carries the model source (DSL), the canvas presentation (layout) and the
 // manifest. The bundle maps 1:1 onto the canonical on-disk directory layout
-// (docs/specs/project-format.md) so it can later be unpacked to disk without
+// (docs/specs/project-format-v2.md) so it can later be unpacked to disk without
 // data loss.
 
 import {

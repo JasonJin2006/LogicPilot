@@ -22,7 +22,7 @@ usage: lpcli compile <input.lp> [-o <output>]
 
 - `-o, --output <path>`：输出 IR 文件（默认 `<input>.ir.bin`）
 - `--project <path.lpproj>`：编译工程包内打包的 DSL（`*.lpproj`，格式见
-  [工程格式](../specs/project-format)），默认输出 `<工程名>.lpir`
+  [工程格式 v2](../specs/project-format-v2)），默认输出 `<工程名>.lpir`
 - `--diagnostics-json <path>`：写结构化诊断 JSON（AI Copilot 的修复输入，含 span/行号/错误码）
 - `--experiments-json <path>`：导出模型声明的 `experiment` 块（优化搜索规格）
 

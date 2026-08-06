@@ -4,7 +4,7 @@
 // project and previous projects are reopened via Open / Open Recent. `dirty`
 // tracks whether the canvas has diverged from the last saved bundle (the
 // Explorer shows a dot). The Explorer panel renders its file tree from the
-// bundle (docs/specs/project-format.md).
+// bundle (docs/specs/project-format-v2.md).
 
 import { create } from 'zustand';
 import type { ProjectBundle } from '../project/project';

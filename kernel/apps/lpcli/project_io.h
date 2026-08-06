@@ -1,4 +1,4 @@
-// Minimal reader for `*.lpproj` project bundles (docs/specs/project-format.md).
+// Minimal reader for `*.lpproj` project bundles (docs/specs/project-format-v2.md).
 //
 // A bundle is a single-file JSON envelope:
 //   { "schema": "logicpilot.project", "format": "bundle", "version": 1,

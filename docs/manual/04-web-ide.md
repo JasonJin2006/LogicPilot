@@ -39,7 +39,7 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 
 ## 工程保存 / 打开
 
-工程是工作单元（`*.lpproj` 单文件打包，格式见[工程格式](../specs/project-format)）：
+工程是工作单元（`*.lpproj` 单文件打包，格式见[工程格式 v2](../specs/project-format-v2)）：
 - **File > New Project...**（Ctrl+N）：输入工程名与所在文件夹，桌面客户端会在该文件夹生成 `工程名/` 目录（`logicpilot.json`、`model/main.lp`、`presentation/main.canvas.json`、`build/`、`results/`）；浏览器模式随时可用（内存工程）。编辑后 Explorer 根部显示脏点，Save 直接写回工程目录
 - **File > Save**：把画布模型（含坐标/连线/参数）与生成的 DSL 一起存成
   `*.lpproj`，重新打开时布局完整还原。

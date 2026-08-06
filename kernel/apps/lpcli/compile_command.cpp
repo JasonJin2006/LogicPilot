@@ -9,7 +9,7 @@
 // exits non-zero without writing the IR. --diagnostics-json additionally
 // writes the machine-readable diagnostics document (AI copilot loop).
 // --project compiles the DSL source bundled inside a *.lpproj file
-// (docs/specs/project-format.md) instead of a standalone .lp.
+// (docs/specs/project-format-v2.md) instead of a standalone .lp.
 #include "compile_command.h"
 
 #include <filesystem>
