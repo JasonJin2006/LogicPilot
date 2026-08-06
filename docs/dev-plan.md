@@ -48,6 +48,14 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `verification` 报告并入输出；新增 `verify_run_smoke` ctest。
 - 后续：死锁（服务前无源/队列容量 0 语义）等更深静态检查。
 
+## 运行时执行策略决策（✅ 已落地 2026-08-06）
+
+- **ADR-0009**：并行模型按三阶段落地（A 复现级线程池 → B agent ECS 批量
+  tick 并行 → C 事件级保守并行，ADR-0007 延后）；脚本策略为「表达式优先、
+  暂不上 VM」——复用内核 `ExpressionEvaluator` 在有限决策位（selectOutput/
+  hold/match/agent 守卫）执行运行时 `condition_text`，纯求值无副作用；
+  用户自定义脚本语言仅在出现具体需求时再设计（沙箱 VM 边界）。
+
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 
 - **lp-lsp ✅**：`dsl/lsp/` 语言服务器（stdio JSON-RPC）——复用进程内 DSL
