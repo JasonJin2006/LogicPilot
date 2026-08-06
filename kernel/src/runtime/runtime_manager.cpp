@@ -30,6 +30,12 @@ bool RuntimeManager::add(std::unique_ptr<SimulationMethod> method,
 
 bool RuntimeManager::initialize(const IrModelFile& model,
                                 std::string* error) {
+  // One replication = one fresh world: the clock restarts, the kernel-level
+  // handler registry and the shared variable store are cleared. Method
+  // runtimes then register their handlers and schedule their initial events
+  // into the same clock/scheduler (SimulationKernel driver).
+  context_.clock().reset();
+  context_.handlers().clear();
   context_.variables().clear();
   for (auto& method : methods_) {
     std::string local_error;

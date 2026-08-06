@@ -19,6 +19,7 @@
 #include <string_view>
 
 #include "logicpilot/core/time/sim_time.h"
+#include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
 
@@ -55,6 +56,13 @@ class SimulationMethod {
   // lower the model.
   [[nodiscard]] virtual std::unique_ptr<ReplicationModel> to_replication_model(
       const IrModelFile& model, std::string* error) = 0;
+
+  // Per-method replication metrics. The SimulationKernel driver collects
+  // these after a kernel-driven run (runtimes finalize them in shutdown());
+  // defaults to empty metrics for methods that do not report yet.
+  [[nodiscard]] virtual ReplicationMetrics replication_metrics() const {
+    return ReplicationMetrics{};
+  }
 };
 
 }  // namespace logicpilot

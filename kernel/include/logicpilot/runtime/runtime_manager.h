@@ -19,6 +19,9 @@
 #include <string>
 #include <vector>
 
+#include "logicpilot/core/scheduler/binary_heap_scheduler.h"
+#include "logicpilot/core/scheduler/handler_registry.h"
+#include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"
@@ -29,8 +32,10 @@ struct IrModelFile;
 class RuntimeManager {
  public:
   RuntimeManager(SimulationClock& clock, IEventScheduler& scheduler,
-                 VariableStore& variables)
-      : context_(clock, scheduler, variables) {}
+                 EventHandlerRegistry& handlers,
+                 VariableStore& variables,
+                 const ReplicationConfig& config = ReplicationConfig{})
+      : context_(clock, scheduler, handlers, variables, config) {}
 
   RuntimeManager(const RuntimeManager&) = delete;
   RuntimeManager& operator=(const RuntimeManager&) = delete;
@@ -49,6 +54,11 @@ class RuntimeManager {
 
   [[nodiscard]] std::size_t method_count() const { return methods_.size(); }
   [[nodiscard]] RuntimeContext& context() { return context_; }
+  // Read-only access to an attached method (for metrics collection after a
+  // kernel-driven run).
+  [[nodiscard]] const SimulationMethod* method(std::size_t index) const {
+    return index < methods_.size() ? methods_[index].get() : nullptr;
+  }
 
  private:
   RuntimeContext context_;

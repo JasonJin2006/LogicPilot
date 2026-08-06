@@ -1,7 +1,7 @@
 # Method Runtime Layer（多方法仿真平台架构）
 
-状态：Phase 1 + Phase 3 + Phase 4 已落地（2026-08-06）· 维护者：`/root` ·
-参考：`docs/roadmap.md`
+状态：Phase 1–4 + SimulationKernel 驱动已落地（2026-08-06）· 维护者：
+`/root` · 参考：`docs/roadmap.md`
 
 ## 1. 为什么需要这一层
 
@@ -183,7 +183,7 @@ agent / system dynamics 拆成独立方法库；多方法模型通过 `VariableS
 
 ## 5. 验收与约定
 
-- 变更不破坏 187 ctest 与前端测试。
+- 变更不破坏 191 ctest 与前端测试。
 - kernel 层禁止 include `methods/`（方向只能由方法库指向 kernel）。
 - 新方法 = 新目录 `methods/<name>/` + 一个 `SimulationMethod` 子类 +
   `register_<name>_method()`；驱动通过 `register_all_methods()` 汇总注册。
@@ -199,23 +199,37 @@ agent / system dynamics 拆成独立方法库；多方法模型通过 `VariableS
 类布局 ABI 不一致（曾因此出现仅在测试二进制中复现的崩溃）。CI 全新检出，
 不受此影响。
 
-## 7. 剩余工作（下一里程碑：SimulationKernel 驱动）
+## 7. SimulationKernel 驱动 ✅ 已完成（2026-08-06）
 
 四阶段迁移（抽象隔离 → IR 解耦 → Process 模块化 → 第二种方法接入）已完成，
 架构骨架（MethodRegistry / RuntimeManager / SimulationMethod /
 VariableStore / methods/process + methods/statechart）可运行、187 ctest 全绿。
-尚未完成的是方案 §八「执行流程」的深度接线：
+方案 §八「执行流程」的深度接线已落地：
 
-1. **统一调度**：让 ProcessFlowSim / QueueingFlowSim 不再自建
-   scheduler/clock，而是把事件排进 kernel 的 `RuntimeContext` 设施，kernel
-   一个事件队列同时驱动多个方法运行时（Process + Statechart + Agent + SD
-   共享同一时钟，确定性由 kernel 统一保证）。
-2. **SimulationKernel 驱动**：`kernel/runtime/simulation_kernel` 拥有
-   clock/scheduler/VariableStore + RuntimeManager，`load()` 按 IR 解析并
-   装配方法，`run(config)` 走 initialize → advance* → shutdown，汇总各方法
-   的 `replication_metrics()`；替代 lpcli/lp-server 的批量适配路径。
-3. **多方法模型组合**：同一模型根下混合 process/statechart/agent 子块，
-   经 VariableStore 共享变量互联（Process += produced、Agent -= consumed、
-   SD 积分），端到端验证。
-4. agent / system_dynamics 拆成独立方法库（目前仍是 kernel 原生方法，
-   已走同一注册表）。
+1. **统一调度**：ProcessFlowSim / QueueingFlowSim / StatechartReplicationModel
+   支持「外部设施模式」——`attach(RuntimeContext&)` 后不再自建
+   scheduler/clock，而是把事件排进 kernel 的 `RuntimeContext` 设施
+   （`RuntimeContext` 新增 kernel 级 `handlers()` 与 replication `config()`）；
+   批量路径（`to_replication_model`）保持自包含，逐位不变。
+2. **SimulationKernel 驱动**（`kernel/runtime/simulation_kernel.h/.cpp`）：
+   kernel 拥有 clock / 一个共享 BinaryHeapScheduler / kernel 级 handler
+   注册表 / VariableStore；`load(model)` 存模型，`run(config)` 解析方法
+   （`resolve_method_names`）→ 经 MethodRegistry 装配运行时 → initialize
+   → **一条共享事件队列按时间戳分发（Scheduler 事件 → 对应 runtime 处理）**
+   → shutdown 结算各方法 `replication_metrics()`。
+3. **多方法模型组合**：同一模型根下混合 process + statechart 子块在**一次
+   kernel 运行**中共用同一时钟与调度器（测试验证 process 全量离港 + statechart
+   到达终态，二者 horizon 一致）；`RuntimeManager::initialize` 定义
+   「一次 replication = 一个全新世界」（复位 clock、清空 handler 注册表与
+   共享变量）。
+4. **对等性验证**：单方法（process / statechart）经 kernel 驱动的指标与
+   事件序列与批量路径逐位一致；同种子复现相同 trace。191 ctest 全绿。
+
+## 8. 剩余工作
+
+- agent / system_dynamics 拆成独立方法库（目前仍是 kernel 原生方法，已走
+  同一注册表；kernel 驱动的 `replication_metrics()` 尚未为其接通）。
+- DSL 状态图语法（`statechart { ... }`）与 Message 驱动的跨状态机耦合。
+- 多方法模型经 VariableStore 的显式共享变量写入（接口已就绪，尚无运行时
+  写入）。
+- lp-server 流式驱动（SimRunner）合并到同一执行器。

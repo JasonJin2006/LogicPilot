@@ -67,6 +67,13 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size);
 // Human-readable description of the root model (name, kind, child counts).
 std::string inspect_model(const IrModelFile& file);
 
+// Resolve the set of modeling methods present in the model (root semantics
+// plus child libraries, e.g. process / statechart / devs / agent / sd).
+// Returns an empty vector when nothing executable is present. The
+// SimulationKernel driver attaches one runtime per method so multi-method
+// models compose through a shared kernel scheduler.
+std::vector<std::string> resolve_method_names(const IrModelFile& file);
+
 // Lower an executable replication model from the loaded IR. Returns nullptr
 // (with `error` filled) when the kind has no Phase 1b lowering.
 std::unique_ptr<ReplicationModel> build_replication_model(

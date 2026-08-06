@@ -42,6 +42,9 @@ class StatechartRuntime final : public SimulationMethod {
   [[nodiscard]] const ReplicationMetrics& last_metrics() const {
     return last_metrics_;
   }
+  [[nodiscard]] ReplicationMetrics replication_metrics() const override {
+    return last_metrics_;
+  }
 
  private:
   RuntimeContext* context_{nullptr};

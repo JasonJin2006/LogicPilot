@@ -15,6 +15,7 @@ add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
   src/runtime/method_registry.cpp
   src/runtime/runtime_manager.cpp
+  src/runtime/simulation_kernel.cpp
 )
 target_include_directories(logicpilot_kernel PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -80,6 +81,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_process_flow.cpp
     tests/test_method_registry.cpp
     tests/test_statechart_runtime.cpp
+    tests/test_simulation_kernel.cpp
     tests/test_mm1_acceptance.cpp
     tests/test_mm1_failure.cpp
     tests/test_continuous.cpp

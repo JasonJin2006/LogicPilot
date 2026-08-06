@@ -274,8 +274,16 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
     `StatechartReplicationModel`），IR 根块 `{library: statechart, block:
     statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并按仿真
     时间运行（Timeout 驱动、arrivals 限步、final_value 报告终态）；新增
-    3 个测试，187 ctest 全绿。后续：合并 lp-server 流式驱动（SimRunner）
-    到同一执行器；DSL 状态图语法与跨状态机 Message 耦合。
+    3 个测试，187 ctest 全绿。**SimulationKernel 驱动 ✅ 已完成
+    （2026-08-06）：** `kernel/runtime/simulation_kernel` 统一持有
+    clock/scheduler/handler 注册表/VariableStore，`run(config)` 按
+    `resolve_method_names` 装配方法并**用一条共享事件队列驱动多个方法**（
+    Scheduler 事件 → 对应 runtime 处理）；ProcessFlowSim/QueueingFlowSim/
+    Statechart 支持外部设施模式（attach RuntimeContext），批量路径不变；
+    单方法 kernel 驱动与批量逐位一致，process+statechart 多方法组合在单次
+    运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。后续：agent/SD
+    拆方法库、DSL 状态图语法与跨状态机 Message 耦合、共享变量显式写入、
+    合并 lp-server 流式驱动。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

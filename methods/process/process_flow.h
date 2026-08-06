@@ -25,6 +25,7 @@
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
+class RuntimeContext;
 namespace ir::v2 {
 struct Node;
 struct Coupling;
@@ -48,6 +49,10 @@ class ProcessFlowSim : public ReplicationModel {
   void reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
+
+  // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
+  // facilities instead of per-engine owned ones.
+  void attach(RuntimeContext& context);
 
  private:
   struct Impl;

@@ -17,6 +17,7 @@
 #include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/mm1.h"  // TimeSampler
+#include "logicpilot/runtime/runtime_context.h"
 
 namespace logicpilot {
 namespace {
@@ -44,14 +45,28 @@ struct StatechartReplicationModel::Impl {
 
   // Per-replication runtime state.
   Xoshiro256PlusPlus engine_{0};
-  std::unique_ptr<BinaryHeapScheduler> scheduler_;
-  SimulationClock clock_;
-  EventHandlerRegistry handlers_;
+  RuntimeContext* external_{nullptr};
+  std::unique_ptr<BinaryHeapScheduler> owned_scheduler_;
+  SimulationClock owned_clock_;
+  EventHandlerRegistry owned_handlers_;
   HandlerId timeout_handler_{0};
   StateMachine machine;
   ReplicationConfig config_;
   std::uint64_t steps_{0};
   bool done_{false};
+
+  [[nodiscard]] IEventScheduler& scheduler() {
+    return external_ != nullptr ? external_->scheduler() : *owned_scheduler_;
+  }
+  [[nodiscard]] SimulationClock& clock() {
+    return external_ != nullptr ? external_->clock() : owned_clock_;
+  }
+  [[nodiscard]] const SimulationClock& clock() const {
+    return external_ != nullptr ? external_->clock() : owned_clock_;
+  }
+  [[nodiscard]] EventHandlerRegistry& handlers() {
+    return external_ != nullptr ? external_->handlers() : owned_handlers_;
+  }
 
   void on_timeout(const Event&) {
     FsmContext ctx;
@@ -81,7 +96,7 @@ struct StatechartReplicationModel::Impl {
       return;
     }
     const double seconds = ta->second(engine_);
-    scheduler_->schedule(clock_.now() + SimTime::from_ns(to_ns(seconds)),
+    scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(seconds)),
                          kTimeoutEventType, timeout_handler_,
                          machine.current());
   }
@@ -186,45 +201,73 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
 
 StatechartReplicationModel::~StatechartReplicationModel() = default;
 
+void StatechartReplicationModel::attach(RuntimeContext& context) {
+  impl_->external_ = &context;
+}
+
+void StatechartReplicationModel::reset(const ReplicationConfig& config) {
+  if (impl_ == nullptr) {
+    return;
+  }
+  impl_->config_ = config;
+  impl_->steps_ = 0;
+  impl_->done_ = false;
+  impl_->machine = StateMachine{impl_->initial};
+  impl_->engine_ = Xoshiro256PlusPlus{config.seed};
+  if (impl_->external_ == nullptr) {
+    impl_->owned_scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
+    impl_->owned_clock_ = SimulationClock{};
+    impl_->owned_handlers_ = EventHandlerRegistry{};
+  }
+  impl_->timeout_handler_ =
+      impl_->handlers().add([this](const Event& event) {
+        impl_->on_timeout(event);
+      });
+  impl_->schedule_next_timeout();
+}
+
 ReplicationMetrics StatechartReplicationModel::run(
     const ReplicationConfig& config, TraceRecorder* trace) {
   ReplicationMetrics metrics;
   if (impl_ == nullptr) {
     return metrics;
   }
+  reset(config);
+  advance(SimTime::infinity(), trace);
 
-  impl_->config_ = config;
-  impl_->steps_ = 0;
-  impl_->done_ = false;
-  impl_->machine = StateMachine{impl_->initial};
-  impl_->engine_ = Xoshiro256PlusPlus{config.seed};
-  impl_->scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
-  impl_->clock_ = SimulationClock{};
-  impl_->handlers_ = EventHandlerRegistry{};
-  impl_->timeout_handler_ =
-      impl_->handlers_.add([this](const Event& event) {
-        impl_->on_timeout(event);
-      });
-  impl_->schedule_next_timeout();
-
-  run_until(*impl_->scheduler_, impl_->clock_, SimTime::infinity(),
-            [&](const Event& event) {
-              if (trace != nullptr) {
-                trace->record(event.at, event.type, event.payload);
-              }
-              impl_->handlers_.dispatch(event);
-            });
-
-  metrics.arrivals = impl_->steps_;
-  metrics.departures = impl_->steps_;
-  metrics.horizon_seconds =
-      static_cast<double>(impl_->clock_.now().as_ns()) * 1e-9;
-  metrics.final_value =
-      static_cast<double>(impl_->machine.current());
+  metrics = this->metrics();
   if (trace != nullptr) {
     trace->absorb(static_cast<std::uint64_t>(impl_->steps_));
     trace->absorb(static_cast<std::uint64_t>(impl_->machine.current()));
   }
+  return metrics;
+}
+
+std::size_t StatechartReplicationModel::advance(SimTime until,
+                                                TraceRecorder* trace) {
+  if (impl_ == nullptr) {
+    return 0;
+  }
+  return run_until(impl_->scheduler(), impl_->clock(), until,
+                   [&](const Event& event) {
+                     if (trace != nullptr) {
+                       trace->record(event.at, event.type, event.payload);
+                     }
+                     impl_->handlers().dispatch(event);
+                   });
+}
+
+ReplicationMetrics StatechartReplicationModel::metrics() const {
+  ReplicationMetrics metrics;
+  if (impl_ == nullptr) {
+    return metrics;
+  }
+  metrics.arrivals = impl_->steps_;
+  metrics.departures = impl_->steps_;
+  metrics.horizon_seconds =
+      static_cast<double>(impl_->clock().now().as_ns()) * 1e-9;
+  metrics.final_value =
+      static_cast<double>(impl_->machine.current());
   return metrics;
 }
 

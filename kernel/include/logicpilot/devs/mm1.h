@@ -18,11 +18,14 @@
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/core/scheduler/event.h"
 #include "logicpilot/core/scheduler/handler_registry.h"
+#include "logicpilot/core/scheduler/i_event_scheduler.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
+
+class RuntimeContext;
 
 // Samples one duration in seconds from the replication RNG stream.
 using TimeSampler = std::function<double(Xoshiro256PlusPlus&)>;
@@ -73,6 +76,10 @@ class QueueingFlowSim : public ReplicationModel {
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
 
+  // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
+  // clock/scheduler/handler registry instead of per-engine owned facilities.
+  void attach(RuntimeContext& context);
+
  private:
   QueueingFlowSpec spec_;
   std::vector<double> wait_times_;
@@ -81,9 +88,16 @@ class QueueingFlowSim : public ReplicationModel {
   // Per-replication runtime state (owned across reset/advance/metrics).
   ReplicationConfig config_;
   Xoshiro256PlusPlus engine_{0};
-  std::unique_ptr<BinaryHeapScheduler> scheduler_;
-  SimulationClock clock_;
-  EventHandlerRegistry handlers_;
+  RuntimeContext* external_{nullptr};
+  std::unique_ptr<BinaryHeapScheduler> owned_scheduler_;
+  SimulationClock owned_clock_;
+  EventHandlerRegistry owned_handlers_;
+
+  [[nodiscard]] IEventScheduler& scheduler();
+  [[nodiscard]] SimulationClock& clock();
+  [[nodiscard]] const SimulationClock& clock() const;
+  [[nodiscard]] EventHandlerRegistry& handlers();
+
   std::deque<std::uint64_t> queue_;              // waiting customer ids (FIFO)
   std::vector<Server> servers_;
   std::vector<std::int64_t> arrival_ns_;         // per-customer arrival stamp

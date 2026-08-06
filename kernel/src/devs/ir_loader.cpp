@@ -139,6 +139,7 @@ std::string resolve_method_name(const Node* root) {
   bool has_atomic = false;
   bool has_agent = false;
   bool has_equation = false;
+  bool has_statechart = false;
   for (const Node* child : *root->children()) {
     const std::string library = node_library(child);
     const std::string block = node_block(child);
@@ -162,10 +163,15 @@ std::string resolve_method_name(const Node* root) {
       }
     } else if (library == "sd") {
       has_equation = true;
+    } else if (library == "statechart" && block == "statechart") {
+      has_statechart = true;
     }
   }
   if (has_process) {
     return "process";
+  }
+  if (has_statechart) {
+    return "statechart";
   }
   if (has_agent && !has_atomic && !has_equation) {
     return "agent";
@@ -196,6 +202,62 @@ std::string inspect_model(const IrModelFile& file) {
     out << " (" << root->children()->size() << " children)";
   }
   return out.str();
+}
+
+std::vector<std::string> resolve_method_names(const IrModelFile& file) {
+  std::vector<std::string> out;
+  if (file.v2_root == nullptr || file.v2_root->root() == nullptr) {
+    return out;
+  }
+  const Node* root = file.v2_root->root();
+  const std::string root_block = node_block(root);
+  if (root_block == "atomic") {
+    return {"devs"};
+  }
+  if (root_block == "statechart") {
+    return {"statechart"};
+  }
+  if (root_block == "agent") {
+    return {"agent"};
+  }
+  if (root_block == "equation") {
+    return {"sd"};
+  }
+  if (root_block != "model" || root->children() == nullptr) {
+    return out;
+  }
+  const auto add = [&](const std::string& method) {
+    for (const std::string& existing : out) {
+      if (existing == method) {
+        return;
+      }
+    }
+    out.push_back(method);
+  };
+  for (const Node* child : *root->children()) {
+    const std::string library = node_library(child);
+    const std::string block = node_block(child);
+    if (library == "process" && block != "resource") {
+      add("process");
+    } else if (library == "devs") {
+      add("devs");
+    } else if (library == "agent") {
+      add("agent");
+      if (child->children() != nullptr) {
+        for (const Node* member : *child->children()) {
+          if (std::strcmp(node_library(member), "process") == 0 &&
+              std::strcmp(node_block(member), "resource") != 0) {
+            add("process");
+          }
+        }
+      }
+    } else if (library == "sd") {
+      add("sd");
+    } else if (library == "statechart" && block == "statechart") {
+      add("statechart");
+    }
+  }
+  return out;
 }
 
 std::unique_ptr<ReplicationModel> build_replication_model(

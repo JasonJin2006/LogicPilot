@@ -244,8 +244,9 @@ TEST_CASE("runtime manager: lifecycle orchestrates attached methods",
           "[runtime][manager]") {
   SimulationClock clock;
   BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
   VariableStore variables;
-  RuntimeManager manager{clock, scheduler, variables};
+  RuntimeManager manager{clock, scheduler, handlers, variables};
 
   auto first = std::make_unique<TestMethod>("alpha");
   auto second = std::make_unique<TestMethod>("beta");
@@ -282,8 +283,9 @@ TEST_CASE("runtime manager: initialize fails fast on the first bad method",
           "[runtime][manager]") {
   SimulationClock clock;
   BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
   VariableStore variables;
-  RuntimeManager manager{clock, scheduler, variables};
+  RuntimeManager manager{clock, scheduler, handlers, variables};
 
   auto bad = std::make_unique<TestMethod>("bad");
   auto good = std::make_unique<TestMethod>("good");
@@ -346,14 +348,18 @@ TEST_CASE("process method: lifecycle API runs a replication and reports "
   auto lifecycle = MethodRegistry::instance().create("process");
   SimulationClock clock;
   BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
   VariableStore variables;
-  RuntimeManager manager{clock, scheduler, variables};
+  RuntimeManager manager{clock, scheduler, handlers, variables};
   REQUIRE(manager.add(std::move(lifecycle)));
   REQUIRE(manager.initialize(model.file, &error));
   manager.advance(SimTime::infinity());
   manager.shutdown();
 
   // Re-check through a direct ProcessRuntime (metrics accessor).
+  // (The world is driver-owned: reset it for the second replication.)
+  clock.reset();
+  handlers.clear();
   ProcessRuntime direct;
   REQUIRE(direct.initialize(manager.context(), model.file, &error));
   direct.advance(SimTime::infinity());
@@ -386,8 +392,9 @@ TEST_CASE("process method: advance(until) steps incrementally and matches "
   ProcessRuntime direct;
   SimulationClock clock;
   BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
   VariableStore variables;
-  RuntimeManager manager{clock, scheduler, variables};
+  RuntimeManager manager{clock, scheduler, handlers, variables};
   REQUIRE(manager.add(std::make_unique<ProcessRuntime>()));
   REQUIRE(manager.initialize(model.file, &error));
   manager.advance(SimTime::from_ns(1'000'000));
@@ -397,6 +404,9 @@ TEST_CASE("process method: advance(until) steps incrementally and matches "
   manager.shutdown();
 
   // Compare through a direct ProcessRuntime that keeps the metrics.
+  // (The world is driver-owned: reset it for the second replication.)
+  clock.reset();
+  handlers.clear();
   REQUIRE(direct.initialize(manager.context(), model.file, &error));
   direct.advance(SimTime::from_ns(1'000'000));
   direct.advance(SimTime::from_ns(10'000'000));

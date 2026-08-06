@@ -44,6 +44,9 @@ class ProcessRuntime final : public SimulationMethod {
   [[nodiscard]] const ReplicationMetrics& last_metrics() const {
     return last_metrics_;
   }
+  [[nodiscard]] ReplicationMetrics replication_metrics() const override {
+    return last_metrics_;
+  }
 
  private:
   // Lower the model root to a runnable flow engine (M/M/1 fast path or the

@@ -24,6 +24,7 @@
 #include "logicpilot/statemachine/state_machine.h"
 
 namespace logicpilot {
+class RuntimeContext;
 namespace ir::v2 {
 struct Node;
 }
@@ -39,6 +40,12 @@ class StatechartReplicationModel final : public ReplicationModel {
 
   ReplicationMetrics run(const ReplicationConfig& config,
                          TraceRecorder* trace) override;
+  // Kernel-driven mode (SimulationKernel): schedule into the kernel's
+  // clock/scheduler/handler registry; the kernel dispatches events.
+  void attach(RuntimeContext& context);
+  void reset(const ReplicationConfig& config);
+  std::size_t advance(SimTime until, TraceRecorder* trace);
+  [[nodiscard]] ReplicationMetrics metrics() const;
 
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;

@@ -28,6 +28,7 @@
 #include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/ir_v2_util.h"
+#include "logicpilot/runtime/runtime_context.h"
 #include "process_block.h"
 #include "process_blocks.h"
 
@@ -217,13 +218,19 @@ class Engine final : public BlockContext {
 
   [[nodiscard]] bool valid() const { return valid_; }
 
+  // Kernel-driven mode: schedule into the kernel's clock/scheduler/handler
+  // registry instead of per-engine owned facilities (SimulationKernel).
+  void attach(RuntimeContext& context) { external_ = &context; }
+
   void reset(const ReplicationConfig& config) {
     config_ = config;
     warmup_ = config.warmup_arrivals;
     engine_ = Xoshiro256PlusPlus{config.seed};
-    scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
-    clock_ = SimulationClock{};
-    handlers_.clear();
+    if (external_ == nullptr) {
+      owned_scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
+      owned_clock_ = SimulationClock{};
+      owned_handlers_ = EventHandlerRegistry{};
+    }
     emitted_ = 0;
     departures_ = 0;
     in_system_ = 0;
@@ -240,12 +247,12 @@ class Engine final : public BlockContext {
       servers_total_ += block->pool_capacity();
     }
     depart_handler_ =
-        handlers_.add([this](const Event& event) { on_depart(event); });
+        handlers().add([this](const Event& event) { on_depart(event); });
     arrive_handler_ =
-        handlers_.add([this](const Event& event) { on_arrive(event); });
+        handlers().add([this](const Event& event) { on_arrive(event); });
     for (const std::size_t source : sources_) {
-      scheduler_->schedule(
-          clock_.now() +
+      scheduler().schedule(
+          clock().now() +
               SimTime::from_ns(
                   to_ns(blocks_[source]->sample_gap(engine_))),
           kArriveEvent, arrive_handler_, source);
@@ -253,11 +260,11 @@ class Engine final : public BlockContext {
   }
 
   std::size_t advance(SimTime until, TraceRecorder* trace) {
-    return run_until(*scheduler_, clock_, until, [&](const Event& event) {
+    return run_until(scheduler(), clock(), until, [&](const Event& event) {
       if (trace != nullptr) {
         trace->record(event.at, event.type, event.payload);
       }
-      handlers_.dispatch(event);
+      handlers().dispatch(event);
     });
   }
 
@@ -265,7 +272,7 @@ class Engine final : public BlockContext {
     ReplicationMetrics metrics;
     metrics.arrivals = config_.arrivals;
     metrics.departures = departures_;
-    const std::int64_t horizon_ns = clock_.now().as_ns();
+    const std::int64_t horizon_ns = clock().now().as_ns();
     metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
     metrics.throughput =
         horizon_ns > 0
@@ -314,7 +321,7 @@ class Engine final : public BlockContext {
 
   // --- BlockContext ------------------------------------------------------
 
-  [[nodiscard]] SimTime now() const override { return clock_.now(); }
+  [[nodiscard]] SimTime now() const override { return clock().now(); }
 
   [[nodiscard]] Xoshiro256PlusPlus& rng() override { return engine_; }
 
@@ -327,7 +334,7 @@ class Engine final : public BlockContext {
   }
 
   void schedule_depart(std::int64_t hold_ns) override {
-    scheduler_->schedule(clock_.now() + SimTime::from_ns(hold_ns),
+    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
                          kDepartEvent, depart_handler_, current_);
   }
 
@@ -336,7 +343,7 @@ class Engine final : public BlockContext {
     --in_system_;
     if (entity.id >= warmup_) {
       sojourn_sum_ +=
-          static_cast<double>(clock_.now().as_ns() - entity.created_ns) *
+          static_cast<double>(clock().now().as_ns() - entity.created_ns) *
           1e-9;
       ++sojourn_count_;
     }
@@ -371,11 +378,11 @@ class Engine final : public BlockContext {
 
   void on_arrive(const Event& event) {
     const std::size_t source = static_cast<std::size_t>(event.payload);
-    accumulate_areas(clock_.now().as_ns());
+    accumulate_areas(clock().now().as_ns());
     if (emitted_ < config_.arrivals) {
       Entity entity;
       entity.id = emitted_;
-      entity.created_ns = clock_.now().as_ns();
+      entity.created_ns = clock().now().as_ns();
       entity.service_start_ns = entity.created_ns;
       ++emitted_;
       ++in_system_;
@@ -383,8 +390,8 @@ class Engine final : public BlockContext {
         blocks_[source]->receive(entity);
       }
       pump(source);
-      scheduler_->schedule(
-          clock_.now() +
+      scheduler().schedule(
+          clock().now() +
               SimTime::from_ns(
                   to_ns(blocks_[source]->sample_gap(engine_))),
           kArriveEvent, arrive_handler_, source);
@@ -393,7 +400,7 @@ class Engine final : public BlockContext {
 
   void on_depart(const Event& event) {
     const std::size_t block = static_cast<std::size_t>(event.payload);
-    accumulate_areas(clock_.now().as_ns());
+    accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->complete(*this);
     pump(block);
@@ -468,15 +475,32 @@ class Engine final : public BlockContext {
     }
   }
 
+  // Facilities: the kernel's clock/scheduler/handler registry when attached
+  // (SimulationKernel driver), otherwise per-engine owned ones (batch path).
+  [[nodiscard]] IEventScheduler& scheduler() {
+    return external_ != nullptr ? external_->scheduler() : *owned_scheduler_;
+  }
+  [[nodiscard]] SimulationClock& clock() {
+    return external_ != nullptr ? external_->clock() : owned_clock_;
+  }
+  [[nodiscard]] const SimulationClock& clock() const {
+    return external_ != nullptr ? external_->clock() : owned_clock_;
+  }
+  [[nodiscard]] EventHandlerRegistry& handlers() {
+    return external_ != nullptr ? external_->handlers() : owned_handlers_;
+  }
+
+  RuntimeContext* external_{nullptr};
+  std::unique_ptr<BinaryHeapScheduler> owned_scheduler_;
+  SimulationClock owned_clock_;
+  EventHandlerRegistry owned_handlers_;
+
   std::vector<std::unique_ptr<ProcessBlock>> blocks_;
   std::vector<std::size_t> sources_;
   std::unordered_map<std::string, std::size_t> index_;
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   Xoshiro256PlusPlus engine_{0};
-  std::unique_ptr<BinaryHeapScheduler> scheduler_;
-  SimulationClock clock_;
-  EventHandlerRegistry handlers_;
   HandlerId arrive_handler_{0};
   HandlerId depart_handler_{0};
   std::vector<std::size_t> work_;
@@ -532,6 +556,12 @@ ReplicationMetrics ProcessFlowSim::run(const ReplicationConfig& config,
 void ProcessFlowSim::reset(const ReplicationConfig& config) {
   if (impl_ != nullptr) {
     impl_->engine.reset(config);
+  }
+}
+
+void ProcessFlowSim::attach(RuntimeContext& context) {
+  if (impl_ != nullptr) {
+    impl_->engine.attach(context);
   }
 }
 

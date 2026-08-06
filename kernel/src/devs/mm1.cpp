@@ -19,6 +19,7 @@
 
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/core/scheduler/run.h"
+#include "logicpilot/runtime/runtime_context.h"
 
 namespace logicpilot {
 namespace {
@@ -43,9 +44,11 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
   dropped_ = 0;
 
   engine_ = Xoshiro256PlusPlus{config.seed};
-  scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
-  clock_ = SimulationClock{};
-  handlers_ = EventHandlerRegistry{};
+  if (external_ == nullptr) {
+    owned_scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
+    owned_clock_ = SimulationClock{};
+    owned_handlers_ = EventHandlerRegistry{};
+  }
 
   queue_.clear();
   servers_.assign(spec_.servers < 1 ? 1 : spec_.servers, Server{});
@@ -77,19 +80,19 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     s.state = ServerState::kBusy;
     s.customer = customer;
     ++busy_servers_;
-    service_start_ns_[customer] = clock_.now().as_ns();
+    service_start_ns_[customer] = clock().now().as_ns();
     const std::int64_t service_ns = to_ns(spec_.service(engine_));
     if (!has_failure_) {
-      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+      scheduler().schedule(clock().now() + SimTime::from_ns(service_ns),
                            kDepartEvent, depart_id_, server);
       return;
     }
     const std::int64_t failure_ns = to_ns(spec_.failure(engine_));
     if (failure_ns < service_ns) {
-      scheduler_->schedule(clock_.now() + SimTime::from_ns(failure_ns),
+      scheduler().schedule(clock().now() + SimTime::from_ns(failure_ns),
                            kFailEvent, fail_id_, server);
     } else {
-      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+      scheduler().schedule(clock().now() + SimTime::from_ns(service_ns),
                            kDepartEvent, depart_id_, server);
     }
   };
@@ -104,10 +107,10 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
   };
 
   // Real handlers (registry ids are stable after this block).
-  depart_id_ = handlers_.add(
+  depart_id_ = handlers().add(
       [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock_.now().as_ns();
+    const std::int64_t now_ns = clock().now().as_ns();
     accumulate_area(now_ns);
     Server& s = servers_[server];
     const std::uint64_t id = s.customer;
@@ -132,17 +135,17 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
       start_service(server, next);
     }
   });
-  arrive_id_ = handlers_.add(
+  arrive_id_ = handlers().add(
       [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t id = event.payload;
-    const std::int64_t now_ns = clock_.now().as_ns();
+    const std::int64_t now_ns = clock().now().as_ns();
     accumulate_area(now_ns);
     arrival_ns_[id] = now_ns;
 
     // Emit the next arrival (source keeps generating until the quota).
     if (emitted_ < config_.arrivals) {
       const double gap = spec_.interarrival(engine_);
-      scheduler_->schedule(clock_.now() + SimTime::from_ns(to_ns(gap)),
+      scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
                            kArriveEvent, arrive_id_, emitted_);
       ++emitted_;
     }
@@ -165,9 +168,9 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
       ++dropped_;  // finite buffer full: customer lost, never enters system
     }
   });
-  fail_id_ = handlers_.add([this, accumulate_area](const Event& event) {
+  fail_id_ = handlers().add([this, accumulate_area](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock_.now().as_ns();
+    const std::int64_t now_ns = clock().now().as_ns();
     accumulate_area(now_ns);
     Server& s = servers_[server];
     const std::uint64_t id = s.customer;
@@ -179,13 +182,13 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     queue_.push_front(id);
     ++in_queue_;
     const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
-    scheduler_->schedule(clock_.now() + SimTime::from_ns(repair_ns),
+    scheduler().schedule(clock().now() + SimTime::from_ns(repair_ns),
                          kRepairEvent, repair_id_, server);
   });
-  repair_id_ = handlers_.add(
+  repair_id_ = handlers().add(
       [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock_.now().as_ns();
+    const std::int64_t now_ns = clock().now().as_ns();
     accumulate_area(now_ns);
     Server& s = servers_[server];
     s.state = ServerState::kIdle;
@@ -200,24 +203,46 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
 
   // Seed the first arrival; the handler chain then keeps the source going.
   emitted_ = 1;
-  scheduler_->schedule(SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
+  scheduler().schedule(
+                       clock().now() +
+                           SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
                        kArriveEvent, arrive_id_, 0);
 }
 
 std::size_t QueueingFlowSim::advance(SimTime until, TraceRecorder* trace) {
-  return run_until(*scheduler_, clock_, until, [&](const Event& event) {
+  return run_until(scheduler(), clock(), until, [&](const Event& event) {
     if (trace != nullptr) {
       trace->record(event.at, event.type, event.payload);
     }
-    handlers_.dispatch(event);
+    handlers().dispatch(event);
   });
+}
+
+void QueueingFlowSim::attach(RuntimeContext& context) {
+  external_ = &context;
+}
+
+IEventScheduler& QueueingFlowSim::scheduler() {
+  return external_ != nullptr ? external_->scheduler() : *owned_scheduler_;
+}
+
+SimulationClock& QueueingFlowSim::clock() {
+  return external_ != nullptr ? external_->clock() : owned_clock_;
+}
+
+const SimulationClock& QueueingFlowSim::clock() const {
+  return external_ != nullptr ? external_->clock() : owned_clock_;
+}
+
+EventHandlerRegistry& QueueingFlowSim::handlers() {
+  return external_ != nullptr ? external_->handlers() : owned_handlers_;
 }
 
 ReplicationMetrics QueueingFlowSim::metrics() const {
   ReplicationMetrics metrics;
   metrics.arrivals = config_.arrivals;
 
-  const std::int64_t horizon_ns = clock_.now().as_ns();
+  const std::int64_t horizon_ns = clock().now().as_ns();
   metrics.departures = departures_;
   metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
   metrics.throughput =

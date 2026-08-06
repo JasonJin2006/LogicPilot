@@ -121,13 +121,17 @@ TEST_CASE("statechart method: lifecycle API matches the batch path",
 
   SimulationClock clock;
   BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
   VariableStore variables;
-  RuntimeManager manager{clock, scheduler, variables};
+  RuntimeManager manager{clock, scheduler, handlers, variables};
   REQUIRE(manager.add(std::make_unique<StatechartRuntime>()));
   REQUIRE(manager.initialize(model.file, &error));
   manager.advance(SimTime::infinity());
   manager.shutdown();
 
+  // (The world is driver-owned: reset it for the second replication.)
+  clock.reset();
+  handlers.clear();
   StatechartRuntime direct;
   REQUIRE(direct.initialize(manager.context(), model.file, &error));
   direct.advance(SimTime::infinity());

@@ -270,13 +270,16 @@ bool ProcessRuntime::initialize(RuntimeContext& context,
     return false;
   }
   // Prepare one replication with the lifecycle driver defaults; subsequent
-  // advance(until) calls step the engine by simulation time (Phase 3).
-  ReplicationConfig config;
+  // advance(until) calls step the engine by simulation time (Phase 3). The
+  // engine schedules into the kernel's facilities (SimulationKernel driver)
+  // so multiple methods share one clock/scheduler.
   if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
-    flow->reset(config);
+    flow->attach(context);
+    flow->reset(context.config());
   } else if (auto* queue =
                  dynamic_cast<QueueingFlowSim*>(replication_.get())) {
-    queue->reset(config);
+    queue->attach(context);
+    queue->reset(context.config());
   }
   return true;
 }
@@ -301,6 +304,16 @@ void ProcessRuntime::advance(SimTime until) {
 }
 
 void ProcessRuntime::shutdown() {
+  if (replication_ != nullptr) {
+    // Finalize the metrics from the engine's current state (kernel-driven
+    // runs never call advance(), so this is where they are settled).
+    if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
+      last_metrics_ = flow->metrics();
+    } else if (auto* queue =
+                   dynamic_cast<QueueingFlowSim*>(replication_.get())) {
+      last_metrics_ = queue->metrics();
+    }
+  }
   replication_.reset();
   context_ = nullptr;
   ran_ = false;
