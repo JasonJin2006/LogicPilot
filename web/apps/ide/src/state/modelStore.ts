@@ -16,6 +16,7 @@ import {
   setParam,
   type AddNodeInput,
   type ModelDocument,
+  type PresentationObject,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
 
@@ -59,6 +60,9 @@ interface ModelState {
   select: (id: string | null) => void;
   renameBlock: (id: string, name: string) => void;
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
+  /** Replace a node's vector presentation object (undoable). Keeps the
+   *  node's x/y in sync with the object's transform. */
+  setPresentation: (id: string, object: PresentationObject) => void;
   loadDocument: (document: ModelDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -87,7 +91,29 @@ export const useModelStore = create<ModelState>()((set) => ({
   canRedo: false,
   lastCommitAt: 0,
   addBlock: (input) => set((state) => commit(state, addNode(state.document, input))),
-  moveBlock: (id, x, y) => set((state) => commit(state, moveNode(state.document, id, x, y))),
+  moveBlock: (id, x, y) =>
+    set((state) => {
+      const document = moveNode(state.document, id, x, y);
+      const node = document.nodes.find((entry) => entry.id === id);
+      if (!node?.presentation) {
+        return commit(state, document);
+      }
+      const next: ModelDocument = {
+        ...document,
+        nodes: document.nodes.map((entry) =>
+          entry.id === id && entry.presentation
+            ? {
+                ...entry,
+                presentation: {
+                  ...entry.presentation,
+                  transform: { ...entry.presentation.transform, x, y },
+                },
+              }
+            : entry,
+        ),
+      };
+      return commit(state, next);
+    }),
   connectBlocks: (from, to, fromPort, toPort) =>
     set((state) => {
       const fromNode = state.document.nodes.find((node) => node.id === from);
@@ -140,6 +166,26 @@ export const useModelStore = create<ModelState>()((set) => ({
   renameBlock: (id, name) => set((state) => commit(state, renameNode(state.document, id, name))),
   setBlockParam: (id, key, value) =>
     set((state) => commit(state, setParam(state.document, id, key, value))),
+  setPresentation: (id, object) =>
+    set((state) => {
+      let found = false;
+      const document: ModelDocument = {
+        ...state.document,
+        nodes: state.document.nodes.map((node) => {
+          if (node.id !== id) {
+            return node;
+          }
+          found = true;
+          return {
+            ...node,
+            presentation: object,
+            x: object.transform.x,
+            y: object.transform.y,
+          };
+        }),
+      };
+      return found ? commit(state, document) : {};
+    }),
   loadDocument: (document) => set((state) => commit(state, sanitizeDocument(document))),
   undo: () =>
     set((state) => {

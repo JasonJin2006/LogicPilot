@@ -115,4 +115,58 @@ describe('modelStore undo/redo', () => {
       after.edges.some((edge) => edge.from === queue.id && edge.fromPort === 'outTimeout'),
     ).toBe(true);
   });
+
+  it('setPresentation updates the object, syncs x/y and is undoable', () => {
+    const store = useModelStore.getState();
+    store.addBlock({
+      kind: 'rect',
+      name: 'rect',
+      x: 10,
+      y: 10,
+      library: 'presentation',
+      presentation: {
+        type: 'rect',
+        transform: { x: 10, y: 10, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    const node = useModelStore.getState().document.nodes[0]!;
+    useModelStore.setState({ lastCommitAt: 0 }); // separate undo steps
+    store.setPresentation(node.id, {
+      ...node.presentation!,
+      transform: { ...node.presentation!.transform, width: 200, rotation: 45 },
+    });
+    const after = useModelStore.getState().document.nodes[0]!;
+    expect(after.presentation!.transform.width).toBe(200);
+    expect(after.presentation!.transform.rotation).toBe(45);
+    expect(after.x).toBe(10);
+    expect(after.y).toBe(10);
+
+    store.undo();
+    expect(useModelStore.getState().document.nodes[0]!.presentation!.transform.width).toBe(120);
+    store.redo();
+    expect(useModelStore.getState().document.nodes[0]!.presentation!.transform.width).toBe(200);
+  });
+
+  it('moveBlock keeps the presentation transform in sync', () => {
+    const store = useModelStore.getState();
+    store.addBlock({
+      kind: 'oval',
+      name: 'oval',
+      x: 0,
+      y: 0,
+      library: 'presentation',
+      presentation: {
+        type: 'ellipse',
+        transform: { x: 0, y: 0, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    const node = useModelStore.getState().document.nodes[0]!;
+    store.moveBlock(node.id, 55, 66);
+    const after = useModelStore.getState().document.nodes[0]!;
+    expect(after.x).toBe(55);
+    expect(after.presentation!.transform.x).toBe(55);
+    expect(after.presentation!.transform.y).toBe(66);
+  });
 });

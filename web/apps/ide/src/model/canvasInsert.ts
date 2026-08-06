@@ -4,6 +4,8 @@
 import { useModelStore } from '../state/modelStore';
 import { useCanvasView } from '../state/canvasView';
 import { BLOCK_DEFAULTS } from './blockDefs';
+import { PRESENTATION_KINDS } from './blockDefs';
+import { defaultPresentationObject, type PresentationType } from '@logicpilot/editor';
 
 let cascade = 0;
 
@@ -27,8 +29,7 @@ export function insertBlockAt(
   };
   cascade += 1;
 
-  const isStage =
-    kind !== 'resource' && (library === undefined || library === 'process');
+  const isStage = kind !== 'resource' && (library === undefined || library === 'process');
   let container: string | undefined;
   if (isStage) {
     if (view) {
@@ -45,5 +46,10 @@ export function insertBlockAt(
     params: BLOCK_DEFAULTS[kind],
     library,
     container,
+    // Presentation shapes start as real vector objects (resizable, styleable)
+    // instead of the old fixed 120x80 placeholder.
+    ...(PRESENTATION_KINDS.has(kind)
+      ? { presentation: defaultPresentationObject(kind as PresentationType, pos.x, pos.y) }
+      : {}),
   });
 }

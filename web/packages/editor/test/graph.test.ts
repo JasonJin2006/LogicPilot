@@ -3,6 +3,7 @@ import {
   addNode,
   connect,
   createDocument,
+  defaultPresentationObject,
   disconnect,
   moveNode,
   removeNode,
@@ -11,6 +12,29 @@ import {
 } from '../src/index.js';
 
 describe('graph document operations', () => {
+  it('attaches a presentation object to presentation nodes', () => {
+    const object = defaultPresentationObject('rect', 30, 40);
+    const doc = addNode(createDocument('M'), {
+      kind: 'rect',
+      name: 'rect',
+      x: 30,
+      y: 40,
+      library: 'presentation',
+      presentation: object,
+    });
+    expect(doc.nodes[0]!.presentation).toBe(object);
+    expect(doc.nodes[0]!.presentation!.transform.width).toBe(120);
+    expect(doc.nodes[0]!.presentation!.transform.height).toBe(80);
+    expect(doc.nodes[0]!.presentation!.style.stroke).toBe('#333333');
+  });
+
+  it('default text presentation carries editable text and style', () => {
+    const text = defaultPresentationObject('text', 0, 0);
+    expect(text.text).toBe('Text');
+    expect(text.textStyle?.fontSize).toBe(16);
+    expect(text.transform.height).toBe(24);
+  });
+
   it('adds nodes with fresh ids and copied params', () => {
     const doc = addNode(createDocument('M'), {
       kind: 'resource',

@@ -21,5 +21,17 @@ export type {
 export { generateDsl } from './dsl.js';
 export { parseDsl } from './parseDsl.js';
 export type { ParseResult } from './parseDsl.js';
+export {
+  defaultPresentationObject,
+  defaultPresentationStyle,
+  defaultPresentationTransform,
+} from './presentation.js';
+export type {
+  PresentationObject,
+  PresentationStyle,
+  PresentationTextStyle,
+  PresentationTransform,
+  PresentationType,
+} from './presentation.js';
 export { modelRunParams } from './runParams.js';
 export type { ModelRunParams } from './runParams.js';

@@ -5,16 +5,10 @@
 // yet" marker for fields without runtime semantics (expressions, actions).
 
 import { useModelStore } from '../state/modelStore';
-import {
-  BLOCK_DEFAULTS,
-  blockProperties,
-  type BlockPropertyDef,
-} from './blockDefs';
+import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockDefs';
+import { PresentationInspector } from '../presentation/Inspector';
 
-function parseFieldValue(
-  field: BlockPropertyDef,
-  raw: string,
-): string | number | boolean {
+function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
     const parsed = Number(raw);
     return raw.trim() !== '' && Number.isFinite(parsed) ? parsed : raw;
@@ -32,7 +26,7 @@ export function visibleWhenHolds(
   }
   const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*==\s*(.+)$/.exec(condition.trim());
   if (!match) {
-    return true;  // unrecognized condition: keep the field visible
+    return true; // unrecognized condition: keep the field visible
   }
   const actual = params[match[1]!];
   const expected = match[2]!.trim();
@@ -51,15 +45,14 @@ const SECTION_LABELS: Record<string, string> = {
   actions: 'Actions',
 };
 
-const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set([
-  'expression',
-]);
+const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set(['expression']);
 
 export function PropertiesPanel() {
   const document = useModelStore((state) => state.document);
   const selectedId = useModelStore((state) => state.selectedId);
   const renameBlock = useModelStore((state) => state.renameBlock);
   const setBlockParam = useModelStore((state) => state.setBlockParam);
+  const setPresentation = useModelStore((state) => state.setPresentation);
   const removeBlock = useModelStore((state) => state.removeBlock);
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
@@ -71,20 +64,25 @@ export function PropertiesPanel() {
     );
   }
 
+  if (node.presentation) {
+    return (
+      <PresentationInspector
+        object={node.presentation}
+        onChange={(object) => setPresentation(node.id, object)}
+      />
+    );
+  }
+
   const properties = blockProperties(node.kind);
   const valueFor = (field: BlockPropertyDef) =>
-    node.params[field.name] ??
-    BLOCK_DEFAULTS[node.kind]?.[field.name] ??
-    '';
+    node.params[field.name] ?? BLOCK_DEFAULTS[node.kind]?.[field.name] ?? '';
   const sections = ['basic', 'advanced', 'actions'];
   const visibleBySection = new Map<string, BlockPropertyDef[]>();
   for (const section of sections) {
     visibleBySection.set(
       section,
       properties.filter(
-        (field) =>
-          field.section === section &&
-          visibleWhenHolds(field.visibleWhen, node.params),
+        (field) => field.section === section && visibleWhenHolds(field.visibleWhen, node.params),
       ),
     );
   }
@@ -96,7 +94,14 @@ export function PropertiesPanel() {
       <label className="props-field" key={field.name}>
         <span className="props-field-name">
           {field.displayName || field.name}
-          {noRuntime && <em className="props-no-runtime" title="Declared for compatibility; the kernel does not execute this yet">not executed</em>}
+          {noRuntime && (
+            <em
+              className="props-no-runtime"
+              title="Declared for compatibility; the kernel does not execute this yet"
+            >
+              not executed
+            </em>
+          )}
         </span>
         {field.type === 'bool' ? (
           <input
@@ -107,9 +112,7 @@ export function PropertiesPanel() {
         ) : field.type === 'enum' && field.validValues && field.validValues.length > 0 ? (
           <select
             value={String(value)}
-            onChange={(event) =>
-              setBlockParam(node.id, field.name, event.target.value)
-            }
+            onChange={(event) => setBlockParam(node.id, field.name, event.target.value)}
           >
             {!field.validValues.includes(String(value)) && (
               <option value={String(value)}>{String(value)}</option>
@@ -124,20 +127,14 @@ export function PropertiesPanel() {
           <textarea
             rows={2}
             value={String(value)}
-            onChange={(event) =>
-              setBlockParam(node.id, field.name, event.target.value)
-            }
+            onChange={(event) => setBlockParam(node.id, field.name, event.target.value)}
           />
         ) : (
           <input
             type={field.type === 'int' || field.type === 'float' ? 'number' : 'text'}
             value={String(value)}
             onChange={(event) =>
-              setBlockParam(
-                node.id,
-                field.name,
-                parseFieldValue(field, event.target.value),
-              )
+              setBlockParam(node.id, field.name, parseFieldValue(field, event.target.value))
             }
           />
         )}
@@ -150,18 +147,13 @@ export function PropertiesPanel() {
       <div className="props-kind">{node.kind}</div>
       <label className="props-field">
         <span className="props-field-name">Name</span>
-        <input
-          value={node.name}
-          onChange={(event) => renameBlock(node.id, event.target.value)}
-        />
+        <input value={node.name} onChange={(event) => renameBlock(node.id, event.target.value)} />
       </label>
       {sections.map(
         (section) =>
           (visibleBySection.get(section)?.length ?? 0) > 0 && (
             <div className="props-section" key={section}>
-              <div className="props-section-title">
-                {SECTION_LABELS[section] ?? section}
-              </div>
+              <div className="props-section-title">{SECTION_LABELS[section] ?? section}</div>
               {visibleBySection.get(section)!.map(renderField)}
             </div>
           ),

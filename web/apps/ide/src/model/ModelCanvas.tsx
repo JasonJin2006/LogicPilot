@@ -8,14 +8,22 @@ import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
-import type { BlockKind, ModelNode } from '@logicpilot/editor';
+import type {
+  BlockKind,
+  ModelNode,
+  PresentationObject,
+  PresentationTransform,
+  PresentationType,
+} from '@logicpilot/editor';
+import { defaultPresentationObject } from '@logicpilot/editor';
 import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd';
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
 import { syncCanvasFromProject } from '../state/projectSync';
 import { BLOCK_DEFAULTS, blockPorts, portAnchor, PRESENTATION_KINDS } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
-import { PresentationShape } from './PresentationShape';
+import { PresentationRenderer } from '../presentation/renderer';
+import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
 import { insertBlockAt } from './canvasInsert';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
@@ -109,6 +117,7 @@ export function ModelCanvas() {
   const recordUse = usePaletteStore((state) => state.recordUse);
   const undo = useModelStore((state) => state.undo);
   const redo = useModelStore((state) => state.redo);
+  const setPresentation = useModelStore((state) => state.setPresentation);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   // Pan/zoom is remembered per canvas view (the root + each open container
@@ -150,6 +159,13 @@ export function ModelCanvas() {
     port: string;
   } | null>(null);
   const wireStart = useRef<{ x: number; y: number } | null>(null);
+  // Active resize/rotate gesture on a selected presentation object.
+  const [transformDrag, setTransformDrag] = useState<{
+    id: string;
+    kind: 'resize' | 'rotate';
+    handle?: ResizeHandleName;
+    startTransform: PresentationTransform;
+  } | null>(null);
 
   // Delete/Backspace removes the selected block (unless typing in a field).
   useEffect(() => {
@@ -388,6 +404,58 @@ export function ModelCanvas() {
     setWireTarget(null);
   };
 
+  // Resize / rotate gestures on the selected presentation object. The drag
+  // runs on window pointer events; resize happens in the object's unrotated
+  // local frame around its centre so rotation stays stable.
+  const startShapeResize = (id: string, handle: ResizeHandleName, object: PresentationObject) =>
+    setTransformDrag({ id, kind: 'resize', handle, startTransform: object.transform });
+  const startShapeRotate = (id: string, object: PresentationObject) =>
+    setTransformDrag({ id, kind: 'rotate', startTransform: object.transform });
+
+  useEffect(() => {
+    if (!transformDrag) return;
+    const onMove = (event: PointerEvent) => {
+      const drag = transformDrag;
+      const node = visibleDocument.nodes.find((entry) => entry.id === drag.id);
+      const object = node?.presentation;
+      if (!node || !object) return;
+      const world = clientToWorld(event.clientX, event.clientY);
+      const t = drag.startTransform;
+      const cx = t.x + t.width / 2;
+      const cy = t.y + t.height / 2;
+      if (drag.kind === 'rotate') {
+        const angle = Math.atan2(world.y - cy, world.x - cx) * (180 / Math.PI);
+        const rotation = (((angle + 90) % 360) + 360) % 360;
+        setPresentation(drag.id, { ...object, transform: { ...t, rotation } });
+        return;
+      }
+      const handle = drag.handle ?? 'se';
+      const rad = (t.rotation * Math.PI) / 180;
+      const dx = world.x - cx;
+      const dy = world.y - cy;
+      const localX = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+      const localY = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+      const min = 4;
+      let width = t.width;
+      let height = t.height;
+      if (handle.includes('e')) width = Math.max(min, localX * 2);
+      if (handle.includes('w')) width = Math.max(min, -localX * 2);
+      if (handle.includes('s')) height = Math.max(min, localY * 2);
+      if (handle.includes('n')) height = Math.max(min, -localY * 2);
+      setPresentation(drag.id, {
+        ...object,
+        transform: { ...t, width, height, x: cx - width / 2, y: cy - height / 2 },
+      });
+    };
+    const onUp = () => setTransformDrag(null);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [transformDrag, setPresentation, visibleDocument, view]);
+
   // Escape cancels an in-flight wire.
   useEffect(() => {
     if (!draftWire) return;
@@ -589,22 +657,42 @@ export function ModelCanvas() {
         className="model-shapes"
         style={{ left: minX, top: minY, width: maxX - minX, height: maxY - minY }}
       >
-        {shapeNodes.map((node) => (
-          <PresentationShape
-            key={node.id}
-            node={node}
-            ox={minX}
-            oy={minY}
-            selected={node.id === selectedId}
-            onPointerDown={(event) => onElementPointerDown(event, node)}
-            onPointerMove={(event) => onElementPointerMove(event, node)}
-            onPointerUp={(event) => onElementPointerUp(event, node)}
-            onPointerCancel={() => {
-              elementDrag.current = null;
-              setDraggingId(null);
-            }}
-          />
-        ))}
+        {shapeNodes.map((node) => {
+          const shapeObject =
+            node.presentation ??
+            defaultPresentationObject(node.kind as PresentationType, node.x, node.y);
+          const selected = node.id === selectedId;
+          return (
+            <g
+              key={node.id}
+              className={`model-shape kind-${node.kind}${selected ? ' selected' : ''}`}
+              onPointerDown={(event) => onElementPointerDown(event, node)}
+              onPointerMove={(event) => onElementPointerMove(event, node)}
+              onPointerUp={(event) => onElementPointerUp(event, node)}
+              onPointerCancel={() => {
+                elementDrag.current = null;
+                setDraggingId(null);
+              }}
+            >
+              <PresentationRenderer object={shapeObject} ox={minX} oy={minY} />
+              {selected && (
+                <TransformHandles
+                  object={shapeObject}
+                  ox={minX}
+                  oy={minY}
+                  onResizeStart={(handle, event) => {
+                    event.stopPropagation();
+                    startShapeResize(node.id, handle, shapeObject);
+                  }}
+                  onRotateStart={(event) => {
+                    event.stopPropagation();
+                    startShapeRotate(node.id, shapeObject);
+                  }}
+                />
+              )}
+            </g>
+          );
+        })}
       </svg>
     );
   }

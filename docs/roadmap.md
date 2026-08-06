@@ -16,26 +16,26 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 ## 2. 现状总览（已完成）
 
-| 域 | 状态 | 说明 |
-|---|---|---|
-| 理论设计（Phase 0） | ✅ | ADR-0001..0008、`dsl-spec`、F1/F2 契约冻结 |
-| 内核基础（Phase 1） | ✅ | 二叉堆调度器、xoshiro256++、int64 定点时间、SlabPool/Arena |
-| 多方法执行 | ✅ | process（M/M/1、M/M/c+故障）、DEVS atomic、agent tick、continuous ODE（RK4+耦合+RHS 函数）——五类模型全部可执行 |
-| DSL（Phase 2） | ✅ | DSL v2 全量完成：薄核心文法 + process 库注册表（`.lplib`）、显式资源引用、表达式/参数引用、行为统一、实验限定路径；结构化诊断 JSON |
-| IR v2 迁移 | ✅ | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役** |
-| AI Copilot（Phase 6 第一刀） | 🔶 | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始** |
-| Web IDE（Phase 3 切片） | 🔶 | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
-| 工程与文档 | ✅ | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册 |
-| 测试基线 | ✅ | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E |
+| 域                           | 状态 | 说明                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 理论设计（Phase 0）          | ✅   | ADR-0001..0008、`dsl-spec`、F1/F2 契约冻结                                                                                                                                                                                                                                        |
+| 内核基础（Phase 1）          | ✅   | 二叉堆调度器、xoshiro256++、int64 定点时间、SlabPool/Arena                                                                                                                                                                                                                        |
+| 多方法执行                   | ✅   | process（M/M/1、M/M/c+故障）、DEVS atomic、agent tick、continuous ODE（RK4+耦合+RHS 函数）——五类模型全部可执行                                                                                                                                                                    |
+| DSL（Phase 2）               | ✅   | DSL v2 全量完成：薄核心文法 + process 库注册表（`.lplib`）、显式资源引用、表达式/参数引用、行为统一、实验限定路径；结构化诊断 JSON                                                                                                                                                |
+| IR v2 迁移                   | ✅   | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役**                                                                                                                                                                                            |
+| AI Copilot（Phase 6 第一刀） | 🔶   | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始**                                                                                                                      |
+| Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
+| 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
+| 测试基线                     | ✅   | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E                                                                                                                                                                                                    |
 
 ## 3. 契约与工程纪律状态
 
-| 契约 | 状态 |
-|---|---|
+| 契约                                | 状态                                              |
+| ----------------------------------- | ------------------------------------------------- |
 | F1 `ir_v2.fbs`（Node/SemanticsRef） | ✅ 冻结（flatc conform + baseline SHA256 双门禁） |
-| F2 `wire.fbs` 遥测帧 | ✅ 冻结 |
-| F3 C++ ↔ TS 运行时互操作 | ✅ CI 逐字段校验（58 checks） |
-| `performance-budget.md` 性能预算 | ✅ 契约 + bench 门禁（`>= 1M events/s`）已进 CI |
+| F2 `wire.fbs` 遥测帧                | ✅ 冻结                                           |
+| F3 C++ ↔ TS 运行时互操作            | ✅ CI 逐字段校验（58 checks）                     |
+| `performance-budget.md` 性能预算    | ✅ 契约 + bench 门禁（`>= 1M events/s`）已进 CI   |
 
 ## 4. 待开发（按优先级）
 
@@ -110,10 +110,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    - 阶段 2：递归分割树布局模型（`tabs`/`split` 节点）+ 标签页拖拽合并 +
      区域级停靠（拖面板到另一区域停靠为其标签页）。
    - 阶段 3（按需）：像素级分裂 + 浮动窗口；届时再评估自研 vs docking 库。
-   验收：面板可折叠/调宽/标签切换，布局刷新后保持；浏览器 E2E 覆盖；
-   typecheck/build/test 不回归。
-   入口：`web/apps/ide/src/layout/`、`web/apps/ide/src/state/layoutStore.ts`、
-   `web/apps/ide/src/styles/layout.css`。
+     验收：面板可折叠/调宽/标签切换，布局刷新后保持；浏览器 E2E 覆盖；
+     typecheck/build/test 不回归。
+     入口：`web/apps/ide/src/layout/`、`web/apps/ide/src/state/layoutStore.ts`、
+     `web/apps/ide/src/styles/layout.css`。
 
 7. **Web IDE 拖拽建模**
    现状：IDE 只有运行可视化切片；建模靠手写 DSL / AI 生成。
@@ -172,6 +172,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    assembler/count，均配图标与 in/out 端口；新增块的常用字段进 Properties
    （delay.time、seize/release.resource、split.copies、batch.size 等）；
    DSL 会照常生成（内核尚未注册的新块编译时报 LP2004）。
+   **Presentation 矢量编辑器 Phase 1–2 🔶 进行中**（2026-08-06）：拖入的表现层
+   形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
+   支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/
+   fill/stroke/strokeWidth/opacity/文字），全部走现有 undo/redo；画布文件升
+   v3 持久化形状（`presentation/main.canvas.json` 的 `shapes`）。待办：文字
+   双击编辑、图片资源、group/layer、复制粘贴/对齐分布。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、
@@ -190,9 +196,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    （`decorations: false`）+ 顶栏内嵌最小化/最大化/关闭按钮（Tauri 环境
    下渲染，`@tauri-apps/api` 控制窗口，capabilities 授予 window 权限）；
    顶栏空白区作 `data-tauri-drag-region` 拖动窗口；搜索框保持居中与可
-  交互；浏览器模式不渲染这些控件（无回归）。修复 Rust 读完端口即关
-  闭子进程 stdout 管道导致服务自毁的问题（改为后台线程排空 + 退出时
-  kill 子进程）。
+   交互；浏览器模式不渲染这些控件（无回归）。修复 Rust 读完端口即关
+   闭子进程 stdout 管道导致服务自毁的问题（改为后台线程排空 + 退出时
+   kill 子进程）。
    **桌面窗口控制修复 ✅**（2026-08-05）：外部 URL（http://127.0.0.1）下
    Tauri ACL 按 URL 作用域拦截窗口 IPC（报错 `allowed on [URL: local]`）
    ——改为窗口加载**打包资产**（`tauri://localhost`，local 域放行 IPC），
@@ -215,7 +221,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 ### P2 — 扩展（远期）
 
 10. **行业模型库**：制造（Machine/Robot/AGV/Warehouse）、物流（Truck/Route/Demand）、
-   交通模板；以 `SemanticsRef` 库注册表形式交付（引擎注册表已就绪）。
+    交通模板；以 `SemanticsRef` 库注册表形式交付（引擎注册表已就绪）。
 11. **2D/3D 场景与可视化增强**：更多 2D 视图（人群/交通）、3D 数字孪生（Three.js/GLTF）。
 12. **跨工具链确定性黄金值**：libm 超越函数跨 MSVC/clang 不保证逐位一致（评审 m4）；
     需自研位精确 log/sqrt 或把 bit-exact 限定为"同构建内"（文档已限定）。

@@ -5,13 +5,8 @@
 // data loss.
 
 import { createDocument, freshId, generateDsl, parseDsl } from '@logicpilot/editor';
-import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
-import {
-  insertMember,
-  parseProjectMembers,
-  parseProjectSource,
-  replaceSpan,
-} from './projectTree';
+import type { ModelDocument, ModelEdge, ModelNode, PresentationObject } from '@logicpilot/editor';
+import { insertMember, parseProjectMembers, parseProjectSource, replaceSpan } from './projectTree';
 
 /** Container kinds reload with a nested structure (one scene file each). */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
@@ -166,21 +161,12 @@ export function sceneContainerFromFile(
 }
 
 /** Insert an `instance <name> = "<scene-path>"` member into the model body. */
-export function addInstanceLine(
-  source: string,
-  path: string,
-  name: string,
-): string {
+export function addInstanceLine(source: string, path: string, name: string): string {
   const parsed = parseProjectSource(source);
   if (!parsed.ok || !parsed.model) {
     return source;
   }
-  return insertMember(
-    source,
-    parsed.model.bodyClose,
-    '  ',
-    `instance ${name} = "${path}"`,
-  );
+  return insertMember(source, parsed.model.bodyClose, '  ', `instance ${name} = "${path}"`);
 }
 
 /** A unique member name based on `baseName` (Flow, Flow2, Flow3, ...). */
@@ -214,14 +200,9 @@ export function collectModelParts(files: Record<string, string>): string[] {
 
 /** The expanded text for an `instance` member: load the referenced scene and
  *  take its container declaration (renamed to the instance's name). */
-export function instanceContainerText(
-  sceneSource: string,
-  instanceName: string,
-): string {
+export function instanceContainerText(sceneSource: string, instanceName: string): string {
   const parsed = parseProjectMembers(sceneSource);
-  const container = parsed.ok
-    ? (parsed.members ?? []).find((member) => !member.isLeaf)
-    : undefined;
+  const container = parsed.ok ? (parsed.members ?? []).find((member) => !member.isLeaf) : undefined;
   if (!container) {
     return '';
   }
@@ -425,8 +406,17 @@ export function canvasLayoutJson(document: ModelDocument): string {
     }
     return [{ from: nodePath(from, document.nodes), to: nodePath(to, document.nodes) }];
   });
+  // Presentation shapes live outside the DSL, so the canvas file carries the
+  // full vector objects (v3). They are restored by applyCanvasLayout.
+  const shapes = document.nodes
+    .filter((node) => node.presentation)
+    .map((node) => ({
+      kind: node.kind,
+      name: node.name,
+      object: node.presentation as PresentationObject,
+    }));
   return JSON.stringify(
-    { schema: 'logicpilot.canvas', version: 2, layout, edges },
+    { schema: 'logicpilot.canvas', version: 3, layout, edges, shapes },
     null,
     2,
   );
@@ -463,7 +453,11 @@ export function parseProjectBundle(text: string): BundleParseResult {
   if (manifest === undefined || typeof manifest.name !== 'string') {
     return { ok: false, error: 'project manifest is missing or invalid' };
   }
-  if (bundle.files === undefined || typeof bundle.files !== 'object' || Array.isArray(bundle.files)) {
+  if (
+    bundle.files === undefined ||
+    typeof bundle.files !== 'object' ||
+    Array.isArray(bundle.files)
+  ) {
     return { ok: false, error: 'project has no files table' };
   }
   return {
@@ -566,7 +560,10 @@ function isLayoutCanvas(text: string): boolean {
 /** Apply a v2 layout-only canvas file (positions + couplings by node path)
  *  onto a freshly parsed document. */
 function applyCanvasLayout(document: ModelDocument, text: string): void {
-  let raw: { layout?: Record<string, { x?: unknown; y?: unknown }>; edges?: Array<{ from?: unknown; to?: unknown }> } | null;
+  let raw: {
+    layout?: Record<string, { x?: unknown; y?: unknown }>;
+    edges?: Array<{ from?: unknown; to?: unknown }>;
+  } | null;
   try {
     raw = JSON.parse(text);
   } catch {
@@ -597,6 +594,42 @@ function applyCanvasLayout(document: ModelDocument, text: string): void {
     }
     // The persisted couplings replace the parse-time default ones.
     document.edges = next;
+  }
+  // v3: presentation shapes (vector objects) are restored by creating (or
+  // attaching to) their nodes - they have no DSL representation.
+  const shapes = (raw as { shapes?: unknown }).shapes;
+  if (Array.isArray(shapes)) {
+    for (const entry of shapes) {
+      const shape = entry as { kind?: unknown; name?: unknown; object?: unknown } | null;
+      if (shape === null || typeof shape !== 'object' || typeof shape.object !== 'object') {
+        continue;
+      }
+      const kind = typeof shape.kind === 'string' ? shape.kind : 'rect';
+      const name = typeof shape.name === 'string' ? shape.name : kind;
+      const object = shape.object as PresentationObject;
+      if (!object || typeof object.transform !== 'object') {
+        continue;
+      }
+      const existing = document.nodes.find(
+        (node) => node.kind === kind && node.name === name && node.library === 'presentation',
+      );
+      if (existing) {
+        existing.presentation = object;
+        existing.x = object.transform.x;
+        existing.y = object.transform.y;
+      } else {
+        document.nodes.push({
+          id: freshId('shape'),
+          kind,
+          name,
+          x: object.transform.x,
+          y: object.transform.y,
+          params: {},
+          library: 'presentation',
+          presentation: object,
+        });
+      }
+    }
   }
 }
 

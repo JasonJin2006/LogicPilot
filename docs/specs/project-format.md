@@ -12,11 +12,11 @@
 
 ## 2. 现状与动机
 
-| # | 问题 | 现状证据 |
-|---|---|---|
-| P1 | 保存 `.lp` 只序列化 DSL，画布坐标/连线/表现层全部丢失，重开布局回不来 | `generateDsl` 只输出语法，不输出坐标 |
-| P2 | 无工程边界：自定义库、实验预设、运行结果、种子/契约版本散落在 CLI 参数与 localStorage | `recentStore` 只存 `{name, dsl}` |
-| P3 | 无"源 / 派生 / 运行时"分层，编译产物与运行结果没有归属地 | 无 `build/`、`results/` 概念 |
+| #   | 问题                                                                                  | 现状证据                             |
+| --- | ------------------------------------------------------------------------------------- | ------------------------------------ |
+| P1  | 保存 `.lp` 只序列化 DSL，画布坐标/连线/表现层全部丢失，重开布局回不来                 | `generateDsl` 只输出语法，不输出坐标 |
+| P2  | 无工程边界：自定义库、实验预设、运行结果、种子/契约版本散落在 CLI 参数与 localStorage | `recentStore` 只存 `{name, dsl}`     |
+| P3  | 无"源 / 派生 / 运行时"分层，编译产物与运行结果没有归属地                              | 无 `build/`、`results/` 概念         |
 
 ## 3. 三层模型
 
@@ -53,17 +53,54 @@ factory-twin.lpproj/                  # 一个工程 = 一个模型 + 它的世�
 
 ## 5. 清单 logicpilot.json
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `schema` | `"logicpilot.project"` | 格式标识，必填 |
-| `version` | `int` | 清单版本，当前 `1` |
-| `name` | `string` | 工程名（也是默认模型名） |
-| `model` | `path` | 入口 DSL 文件，默认 `model/main.lp` |
-| `presentation` | `path` | 画布布局文件，默认 `presentation/main.canvas.json` |
-| `libraries[]` | `[{name, path}]` | 工程级块库（可选，Phase 3） |
-| `defaultExperiment` | `string \| null` | 默认实验名（可选） |
-| `defaults.seed` | `int` | 默认随机种子，当前默认 `42` |
-| `defaults.schemaVersion` | `int` | 默认 IR 契约版本，当前默认 `2` |
+| 字段                     | 类型                   | 说明                                               |
+| ------------------------ | ---------------------- | -------------------------------------------------- |
+| `schema`                 | `"logicpilot.project"` | 格式标识，必填                                     |
+| `version`                | `int`                  | 清单版本，当前 `1`                                 |
+| `name`                   | `string`               | 工程名（也是默认模型名）                           |
+| `model`                  | `path`                 | 入口 DSL 文件，默认 `model/main.lp`                |
+| `presentation`           | `path`                 | 画布布局文件，默认 `presentation/main.canvas.json` |
+| `libraries[]`            | `[{name, path}]`       | 工程级块库（可选，Phase 3）                        |
+| `defaultExperiment`      | `string \| null`       | 默认实验名（可选）                                 |
+| `defaults.seed`          | `int`                  | 默认随机种子，当前默认 `42`                        |
+| `defaults.schemaVersion` | `int`                  | 默认 IR 契约版本，当前默认 `2`                     |
+
+## 5.2 画布文件（presentation/main.canvas.json）
+
+布局文件 `schema: "logicpilot.canvas"`，当前 **version 3**：
+
+```json
+{
+  "schema": "logicpilot.canvas",
+  "version": 3,
+  "layout": { "模型名": { "x": 40, "y": 60 } },
+  "edges": [{ "from": "A", "to": "B" }],
+  "shapes": [
+    {
+      "kind": "rect",
+      "name": "rect",
+      "object": {
+        "type": "rect",
+        "transform": {
+          "x": 300,
+          "y": 200,
+          "width": 120,
+          "height": 80,
+          "rotation": 0,
+          "scaleX": 1,
+          "scaleY": 1
+        },
+        "style": { "fill": "#ffffff", "stroke": "#333333", "strokeWidth": 1.5, "opacity": 1 }
+      }
+    }
+  ]
+}
+```
+
+`layout`/`edges` 按稳定节点路径记录过程块的坐标与连线；`shapes` 是 v3 新增的
+**矢量表现对象**（Presentation 编辑器）：完整几何与样式随画布文件持久化，
+打开工程时由 `applyCanvasLayout` 还原（这些节点不进 DSL）。旧 v2 文件仍可读，
+但会丢失表现层形状。
 
 ## 5.1 模型片段（model parts）
 

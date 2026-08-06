@@ -190,11 +190,38 @@
   stroke: var(--accent);
 }
 
-.model-shapes .model-shape text {
-  stroke: none;
-  fill: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 12px;
+/* Selection chrome for the active presentation object (Figma-style). */
+.model-shapes .shape-selection-box {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.model-shapes .shape-handle {
+  fill: var(--surface-2);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.model-shapes .shape-handle:hover {
+  fill: var(--accent);
+}
+
+.model-shapes .shape-rotate line {
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.model-shapes .shape-rotate circle {
+  fill: var(--surface-2);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.model-shapes .shape-rotate:hover circle {
+  fill: var(--accent);
 }
 
 .model-grid {

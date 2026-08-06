@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNode, connect, createDocument } from '@logicpilot/editor';
+import { addNode, connect, createDocument, defaultPresentationObject } from '@logicpilot/editor';
 import type { ModelDocument } from '@logicpilot/editor';
 import { parseProjectSource } from './projectTree';
 import {
@@ -201,9 +201,7 @@ describe('project bundle', () => {
   });
 
   it('projectTree parses instance members', () => {
-    const parsed = parseProjectSource(
-      'model M {\n  instance Drone = "model/scenes/Drone.lp"\n}\n',
-    );
+    const parsed = parseProjectSource('model M {\n  instance Drone = "model/scenes/Drone.lp"\n}\n');
     expect(parsed.ok).toBe(true);
     const instance = parsed.model!.members.find((member) => member.kind === 'instance')!;
     expect(instance.name).toBe('Drone');
@@ -242,9 +240,7 @@ describe('project bundle', () => {
 }
 `;
     const split = splitModelSource(source);
-    expect(split['model/main.lp']).toContain(
-      'instance Drone = "model/scenes/Drone.lp"',
-    );
+    expect(split['model/main.lp']).toContain('instance Drone = "model/scenes/Drone.lp"');
     expect(split['model/scenes/Drone.lp']).toContain('agent Drone');
     expect(split['model/main.lp']).toContain('resource Server');
 
@@ -363,5 +359,33 @@ describe('project bundle', () => {
     const result = projectToDocument(bundle);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('missing');
+  });
+
+  it('round-trips presentation shapes through the project bundle', () => {
+    let document = buildSample();
+    const shape = defaultPresentationObject('rect', 300, 200);
+    document = addNode(document, {
+      kind: 'rect',
+      name: 'rect',
+      x: 300,
+      y: 200,
+      library: 'presentation',
+      presentation: shape,
+    });
+    const bundle = createProjectBundle(document);
+    const canvas = JSON.parse(bundle.files[bundle.manifest.presentation]!) as {
+      version?: unknown;
+      shapes?: Array<{ kind?: unknown; object?: unknown }>;
+    };
+    expect(canvas.version).toBe(3);
+    expect(canvas.shapes).toHaveLength(1);
+
+    const result = projectToDocument(bundle);
+    expect(result.ok).toBe(true);
+    const restored = result.document!.nodes.find((node) => node.library === 'presentation');
+    expect(restored).toBeDefined();
+    expect(restored!.presentation?.transform.x).toBe(300);
+    expect(restored!.presentation?.transform.width).toBe(120);
+    expect(restored!.presentation?.style.fill).toBe('#ffffff');
   });
 });

@@ -5,6 +5,8 @@
 // the IDE can layer undo/redo and diagnostics on top without mutating
 // shared state.
 
+import type { PresentationObject } from './presentation.js';
+
 // Any DSL v2 member kind: the five kernel blocks, container kinds and
 // library-registered or still-unknown kinds (the latter render as
 // placeholder nodes so the canvas never drops DSL members).
@@ -34,6 +36,10 @@ export interface ModelNode {
    *  model and the DSL round-trip (never dropped), shown as a grey
    *  placeholder frame. */
   placeholder?: boolean;
+  /** Vector drawing object (AnyLogic presentation / Figma-style layer).
+   *  Present exactly for presentation-library nodes; geometry and style
+   *  live here while `x`/`y` mirror `transform.x`/`transform.y`. */
+  presentation?: PresentationObject;
 }
 
 /** A coupling between two block instances (process flow). `fromPort` /
@@ -61,6 +67,8 @@ export interface AddNodeInput {
   params?: Record<string, string | number | boolean>;
   container?: string;
   library?: string;
+  /** Vector drawing object for presentation-library nodes. */
+  presentation?: PresentationObject;
 }
 
 let nextId = 1;
@@ -88,6 +96,7 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
     params: { ...input.params },
     container: input.container,
     library: input.library,
+    presentation: input.presentation,
   };
   return { ...document, nodes: [...document.nodes, node] };
 }
@@ -108,9 +117,7 @@ export function removeNode(document: ModelDocument, id: string): ModelDocument {
   return {
     ...document,
     nodes: document.nodes.filter((candidate) => !removed.has(candidate.id)),
-    edges: document.edges.filter(
-      (edge) => !removed.has(edge.from) && !removed.has(edge.to),
-    ),
+    edges: document.edges.filter((edge) => !removed.has(edge.from) && !removed.has(edge.to)),
   };
 }
 
