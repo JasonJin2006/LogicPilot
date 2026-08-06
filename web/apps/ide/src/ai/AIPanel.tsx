@@ -3,16 +3,19 @@
 // Wq over servers 1..4") via /api/ai-optimize. API calls live in api.ts,
 // charts in charts.tsx.
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { parseDsl } from '@logicpilot/editor';
 import { aiBuild, aiExplain, aiOptimize } from './api';
 import type { AiResult, ExplainResult, OptimizeResult } from './api';
 import { OptimizeChart, TrajectoryChart } from './charts';
 import { loadModelDocument } from '../state/projectSync';
+import { ScrollArea } from '../components/ScrollArea';
 
 const EXAMPLE_PROMPT = 'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
 
 export function AIPanel() {
+  const dslRef = useRef<HTMLPreElement>(null);
+  const runRef = useRef<HTMLPreElement>(null);
   const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
@@ -84,8 +87,18 @@ export function AIPanel() {
               <button className="ai-load" onClick={loadToCanvas}>
                 Load to canvas
               </button>
-              <pre className="ai-dsl">{result.dsl}</pre>
-              {result.runSummary !== '' && <pre className="ai-run">{result.runSummary}</pre>}
+              <ScrollArea className="ai-dsl-scroll" scrollRef={dslRef}>
+                <pre ref={dslRef} className="ai-dsl scroll-hidden">
+                  {result.dsl}
+                </pre>
+              </ScrollArea>
+              {result.runSummary !== '' && (
+                <ScrollArea className="ai-run-scroll" scrollRef={runRef}>
+                  <pre ref={runRef} className="ai-run scroll-hidden">
+                    {result.runSummary}
+                  </pre>
+                </ScrollArea>
+              )}
               {result.trajectory != null && result.trajectory.points.length > 0 && (
                 <TrajectoryChart trajectory={result.trajectory} />
               )}

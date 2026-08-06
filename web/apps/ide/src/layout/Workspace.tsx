@@ -15,6 +15,7 @@ import { useCanvasView } from '../state/canvasView';
 import { mergeModelSource } from '../project/project';
 import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, type AreaId, type PanelId } from './panels';
+import { ScrollArea } from '../components/ScrollArea';
 
 function Splitter({
   area,
@@ -353,7 +354,16 @@ function PanelArea({ area }: { area: AreaId }) {
                   key={panel}
                   className={`panel-pane${panel === state.activePanel ? ' active' : ''}`}
                 >
-                  <PanelComponent />
+                  {area === 'center' ? (
+                    <PanelComponent />
+                  ) : (
+                    // Side / bottom panes scroll inside the themed thumb;
+                    // the center canvas and code editor manage their own
+                    // scroll surfaces.
+                    <ScrollArea>
+                      <PanelComponent />
+                    </ScrollArea>
+                  )}
                 </div>
               );
             })}

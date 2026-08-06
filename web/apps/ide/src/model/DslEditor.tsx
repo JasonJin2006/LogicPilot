@@ -3,11 +3,14 @@
 // contextual action area.
 
 import { generateDsl } from '@logicpilot/editor';
+import { useRef } from 'react';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
+import { ScrollArea } from '../components/ScrollArea';
 
 export function DslEditor() {
+  const editorRef = useRef<HTMLTextAreaElement>(null);
   const document = useModelStore((state) => state.document);
   const activeFile = useUiStore((state) => state.activeFile);
   const updateDiskFile = useUiStore((state) => state.updateDiskFile);
@@ -24,25 +27,33 @@ export function DslEditor() {
   return (
     <div className="dsl-editor">
       {isDiskFile ? (
-        <textarea
-          className="dsl-source dsl-textarea"
-          value={diskContent}
-          spellCheck={false}
-          onChange={(event) =>
-            activeFile !== null && updateDiskFile(activeFile, event.target.value)
-          }
-        />
+        <ScrollArea className="dsl-source-scroll" scrollRef={editorRef}>
+          <textarea
+            ref={editorRef}
+            className="dsl-source dsl-textarea scroll-hidden"
+            value={diskContent}
+            spellCheck={false}
+            onChange={(event) =>
+              activeFile !== null && updateDiskFile(activeFile, event.target.value)
+            }
+          />
+        </ScrollArea>
       ) : isFileEditor && activeFile !== null ? (
-        <textarea
-          className="dsl-source dsl-textarea"
-          value={fileSource}
-          spellCheck={false}
-          onChange={(event) =>
-            updateFiles((files) => ({ ...files, [activeFile]: event.target.value }))
-          }
-        />
+        <ScrollArea className="dsl-source-scroll" scrollRef={editorRef}>
+          <textarea
+            ref={editorRef}
+            className="dsl-source dsl-textarea scroll-hidden"
+            value={fileSource}
+            spellCheck={false}
+            onChange={(event) =>
+              updateFiles((files) => ({ ...files, [activeFile]: event.target.value }))
+            }
+          />
+        </ScrollArea>
       ) : (
-        <pre className="dsl-source">{generateDsl(document)}</pre>
+        <ScrollArea className="dsl-source-scroll">
+          <pre className="dsl-source">{generateDsl(document)}</pre>
+        </ScrollArea>
       )}
     </div>
   );

@@ -572,12 +572,33 @@
   /* Only the block grid scrolls; the library bar above stays fixed. */
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 /* Fill the pane so the pane itself never scrolls for the palette. */
 .palette-body {
+  flex: 1;
   min-height: 0;
+}
+
+/* The library bar keeps its own (hidden) horizontal scroll; the wrapper
+   must not stretch, or the bar would consume the whole palette height. */
+.palette-bar-scroll {
+  flex: none;
+}
+
+/* The block grid scrolls inside its own ScrollArea; the read-only DSL
+   view and console log must not double-scroll inside the viewport. */
+.dsl-source-scroll > .scroll-area-viewport > .dsl-source,
+.console-scroll .console-log {
+  flex: none;
+  overflow: hidden;
+}
+
+/* The grid grows to its full content height inside the ScrollArea
+   viewport; the viewport (not the grid) performs the vertical scroll. */
+.palette-list-scroll .palette-list {
+  flex: none;
 }
 
 /* Library selector bar above the palette grid. */
@@ -589,7 +610,6 @@
   padding: 3px 4px;
   overflow-x: auto;
   border-bottom: 1px solid var(--border);
-  scrollbar-width: thin;
 }
 
 .palette-library-tab {

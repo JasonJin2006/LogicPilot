@@ -165,6 +165,77 @@ textarea,
   background: var(--text-muted);
 }
 
+/* Custom scroll areas: the native scrollbar is hidden and a themed thumb
+   (with the app's custom cursor series) is drawn on top. Scrolling itself
+   stays native, so wheel / touch / keyboard all keep working. */
+.scroll-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scroll-area-viewport {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.scroll-area-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-area[data-axis='x'] .scroll-area-viewport {
+  overflow-y: hidden;
+  overflow-x: auto;
+}
+
+/* Elements that keep their own native scrolling but hide the OS scrollbar
+   (used together with a ScrollArea scrollRef thumb). */
+.scroll-hidden {
+  scrollbar-width: none;
+}
+
+.scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-area-thumb {
+  position: absolute;
+  z-index: 30;
+  border-radius: 3px;
+  background: var(--border-strong);
+  cursor: var(--cursor-pointer);
+  transition:
+    background 100ms ease,
+    opacity 100ms ease;
+}
+
+.scroll-area[data-axis='y'] .scroll-area-thumb {
+  right: 2px;
+  width: 4px;
+}
+
+.scroll-area[data-axis='x'] .scroll-area-thumb {
+  bottom: 2px;
+  height: 4px;
+}
+
+.scroll-area-thumb:hover {
+  background: var(--text-muted);
+}
+
+.scroll-area-thumb.dragging {
+  background: var(--accent);
+  cursor: var(--cursor-grabbing);
+}
+
 html,
 body,
 #root {
