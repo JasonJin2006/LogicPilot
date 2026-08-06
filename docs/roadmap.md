@@ -195,8 +195,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 4：Frame + Auto Layout ✅ 已完成**（2026-08-06）：新增 `frame`
    容器节点（背景/裁剪/内边距/水平垂直自动排布，`computeFrameLayout` 纯函数
    可测），渲染时按 layout 摆放子对象并按内容自适应尺寸；Inspector 提供
-   clip/padding/direction/gap 与增删子对象。待办：Pen 工具、Boolean 运算、
-   Constraints、更多绑定变量（吞吐/等待）。
+   clip/padding/direction/gap 与增删子对象。
+   **Phase 3（部分）：Boolean 运算 ✅ 已完成**（2026-08-06）：形状（矩形/
+   椭圆/多边形）转多边形后用 polygon-clipping 求 Union/Subtract/Intersect/
+   Exclude，结果落成 path 节点；多选 ≥2 时 Inspector 提供四个布尔按钮，
+   可撤销。待办：Pen 工具、路径节点编辑、Constraints、更多绑定变量。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

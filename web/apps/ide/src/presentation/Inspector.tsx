@@ -6,7 +6,7 @@
 // commits it (undoable).
 
 import { createGraphicNode } from '@logicpilot/editor';
-import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
+import type { BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
 interface InspectorProps {
@@ -18,6 +18,7 @@ interface InspectorProps {
   alignIds?: string[];
   onAlign?: (axis: AlignAxis) => void;
   onDistribute?: (axis: DistributeAxis) => void;
+  onBoolean?: (op: BooleanOp) => void;
   onBringToFront?: () => void;
   onSendToBack?: () => void;
 }
@@ -53,6 +54,7 @@ export function PresentationInspector({
   alignIds,
   onAlign,
   onDistribute,
+  onBoolean,
   onBringToFront,
   onSendToBack,
 }: InspectorProps) {
@@ -464,6 +466,27 @@ export function PresentationInspector({
               >
                 ⇕ V
               </button>
+            </div>
+          )}
+          {(alignIds?.length ?? 0) >= 2 && onBoolean && (
+            <div className="props-align-row" style={{ marginTop: 6 }}>
+              {(
+                [
+                  ['union', 'Union'],
+                  ['subtract', 'Subtract'],
+                  ['intersect', 'Intersect'],
+                  ['exclude', 'Exclude'],
+                ] as const
+              ).map(([op, label]) => (
+                <button
+                  key={op}
+                  className="props-align-btn"
+                  title={label}
+                  onClick={() => onBoolean(op)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           )}
         </div>

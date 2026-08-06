@@ -15,6 +15,8 @@ import {
   removeNode,
   renameNode,
   setParam,
+  booleanShapes,
+  type BooleanOp,
   type AddNodeInput,
   defaultGraphicStyle,
   type GraphicNode,
@@ -106,6 +108,9 @@ interface ModelState {
   bringToFront: (id: string) => void;
   /** Move a node to the start of the render order (behind everything). */
   sendToBack: (id: string) => void;
+  /** Apply a boolean operation over presentation shapes, replacing them
+   *  with a single path node (undoable). Returns the new node id. */
+  applyBooleanShapes: (ids: string[], op: BooleanOp) => string | null;
   loadDocument: (document: ModelDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -412,6 +417,42 @@ export const useModelStore = create<ModelState>()((set) => ({
     }
     const nodes = [node, ...state.document.nodes.filter((entry) => entry.id !== id)];
     set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  applyBooleanShapes: (ids, op) => {
+    const state = useModelStore.getState();
+    const members = ids
+      .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
+      .filter((node): node is ModelNode & { presentation: GraphicNode } => !!node);
+    if (members.length < 2) {
+      return null;
+    }
+    const result = booleanShapes(
+      members.map((member) => member.presentation),
+      op,
+    );
+    if (!result) {
+      return null;
+    }
+    const nodeId = freshId('boolean');
+    const memberIds = new Set(members.map((member) => member.id));
+    const document: ModelDocument = {
+      ...state.document,
+      nodes: [
+        ...state.document.nodes.filter((node) => !memberIds.has(node.id)),
+        {
+          id: nodeId,
+          kind: 'curve',
+          name: 'boolean',
+          x: result.transform.x,
+          y: result.transform.y,
+          params: {},
+          library: 'presentation',
+          presentation: result,
+        },
+      ],
+    };
+    set({ ...commit(state, document), selectedId: nodeId });
+    return nodeId;
   },
   loadDocument: (document) => set((state) => commit(state, sanitizeDocument(document))),
   undo: () =>

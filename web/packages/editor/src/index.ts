@@ -36,6 +36,8 @@ export {
 export { evalBindingExpression, resolveGraphicBindings } from './binding.js';
 export { computeFrameLayout } from './layout.js';
 export type { FramePlacement } from './layout.js';
+export { booleanShapes } from './boolean.js';
+export type { BooleanOp } from './boolean.js';
 export type {
   GraphicFill,
   GraphicNode,

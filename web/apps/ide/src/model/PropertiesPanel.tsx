@@ -79,6 +79,9 @@ export function PropertiesPanel() {
         onDistribute={(axis) =>
           useModelStore.getState().distributeShapes([...new Set([...alignIds, node.id])], axis)
         }
+        onBoolean={(op) =>
+          useModelStore.getState().applyBooleanShapes([...new Set([...alignIds, node.id])], op)
+        }
         onBringToFront={() => useModelStore.getState().bringToFront(node.id)}
         onSendToBack={() => useModelStore.getState().sendToBack(node.id)}
       />
