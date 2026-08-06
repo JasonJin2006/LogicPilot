@@ -32,12 +32,18 @@ function fieldValue(value: string | number | boolean): string {
   if (
     text.startsWith('"') ||
     /^[0-9]/.test(text) ||
-    /[/*+\-]/.test(text) ||
     /^[A-Za-z_][A-Za-z0-9_]*\(.*\)$/.test(text)
   ) {
     return text;
   }
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
+    return text;
+  }
+  // Expression-like values (comparisons, arithmetic, calls, ranges, dotted
+  // identifiers) pass through unquoted so `condition = t < 3` survives the
+  // round trip as an expression instead of a string literal. Plain
+  // multi-word text without operators is a string and gets quoted.
+  if (/[<>=*/+(),.\-]/.test(text)) {
     return text;
   }
   return JSON.stringify(value);
@@ -90,8 +96,10 @@ export function generateDsl(document: ModelDocument): string {
   // are canvas-only and never emit.
   const emitCandidate = (node: ModelNode): boolean =>
     node.library === undefined || node.library === 'process';
-  const childrenOf = (name: string): ModelNode[] =>
-    document.nodes.filter((node) => node.container === name && emitCandidate(node));
+  const childrenOf = (name: string, excludeId?: string): ModelNode[] =>
+    document.nodes.filter(
+      (node) => node.container === name && node.id !== excludeId && emitCandidate(node),
+    );
 
   // Explicit couplings for a container's subgraph: every edge whose
   // endpoints live in the container. When the topology is non-trivial
@@ -141,14 +149,15 @@ export function generateDsl(document: ModelDocument): string {
       return;
     }
     if (node.kind.startsWith('on_')) {
-      lines.push(`${indent}${node.kind} {`);
-      for (const child of childrenOf(node.name)) {
+      const port = typeof node.params['port'] === 'string' ? node.params['port'] : undefined;
+      lines.push(`${indent}${node.kind}${port ? ` ${port}` : ''} {`);
+      for (const child of childrenOf(node.name, node.id)) {
         emitNode(child, `${indent}  `);
       }
       lines.push(`${indent}}`);
       return;
     }
-    const children = childrenOf(node.name);
+    const children = childrenOf(node.name, node.id);
     const params = Object.entries(node.params);
     if (params.length === 0 && children.length === 0) {
       lines.push(`${indent}${node.kind} ${node.name} { }`);

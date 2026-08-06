@@ -108,3 +108,26 @@ save(canonical):
 - 面板编辑 → 保存 → 磁盘文件 diff 干净、可读。
 - 手改 DSL 引入错误 → 面板保留旧结构 + 诊断定位；修复后双向恢复。
 - 全语法 round-trip 通过；现有 ctest 与浏览器 E2E 不回退。
+
+### 8.1 全量 round-trip 保证（parse ⇄ generate）
+
+画布文档（`ModelDocument`）与 DSL 文本互为投影，编辑器的
+`parseDsl`（DSL → 画布）与 `generateDsl`（画布 → DSL）保证以下不变量
+（`web/packages/editor/test/parseDsl.test.ts` 的 round-trip 套件逐条覆盖）：
+
+- **稳定性**：对任意合法 DSL 子集，`parse(generate(parse(src)))` 与
+  `parse(src)` 的成员集合（kind/name/container）、参数键值、couple 边集
+  完全一致；`generate` 在首次 parse 后幂等（二次生成字节级相同）。
+- **表达式原样保留**：比较/算术表达式（`condition = t < 3`、
+  `blockingCondition = t >= 10`）、分布调用（`rate(0.8)`）、typed state
+  （`state active: bool = true`）、ODE（`d y/dt = -k*y`）以表达式形式往返，
+  不会被加引号变成字符串字面量。
+- **行为块完整**：同一容器内多个同名触发器（多个 `on_tick`）各自保留自己的
+  effect 分组（合成名 `on_tick`、`on_tick#2`），带端口的触发器
+  （`on_timeout ready { emit ready }`）端口不丢失。
+- **占位成员不丢**：未知块种类、effect 裸行、端口声明
+  （`outTimeout: entity when enableTimeout`）以 placeholder 节点保留，
+  生成时原样写回。
+- **约束**：容器名跨作用域重名时画布无法无损表达，解析产生 LP3103 警告，
+  生成器做了自引用防护不会递归崩溃；presentation/statechart 等纯画布元素
+  按设计不进入 DSL。

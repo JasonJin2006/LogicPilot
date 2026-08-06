@@ -53,7 +53,7 @@ const CANVAS_KINDS: ReadonlySet<string> = new Set([
   ...CONTAINER_KINDS,
 ]);
 
-const PUNCT = '{}()=,;:/*+->.';
+const PUNCT = '{}()=,;:/*+<->.';
 
 function tokenize(source: string): Token[] | string {
   const tokens: Token[] = [];
@@ -351,18 +351,28 @@ class Parser {
       }
       if (token!.type === 'punct' && token!.text === '{') {
         this.next();
-        if (head.length === 1 && head[0]!.text.startsWith('on_')) {
+        if (head.length >= 1 && head[0]!.text.startsWith('on_')) {
+          // `on_<trigger> [port] { effects }`: the optional port is a single
+          // identifier after the trigger (e.g. `on_timeout ready { ... }`).
+          const trigger = head[0]!.text;
+          const port =
+            head.length > 1
+              ? head
+                  .slice(1)
+                  .map((token) => token.text)
+                  .join(' ')
+              : undefined;
           const children = this.parseBody();
           if (typeof children === 'string') {
             return children;
           }
           if (!this.expectPunct('}')) {
-            return `unterminated behavior '${head[0]!.text}'`;
+            return `unterminated behavior '${trigger}'`;
           }
           return {
-            kind: head[0]!.text,
-            name: head[0]!.text,
-            params: {},
+            kind: trigger,
+            name: trigger,
+            params: port !== undefined ? { port } : {},
             children,
           };
         }
@@ -457,6 +467,16 @@ export function parseDsl(source: string): ParseResult {
   // container. Behavior blocks (on_*) are exempt - a container may hold
   // several behaviors with the same trigger.
   const seenNames = new Map<string, Set<string>>();
+  // Behavior blocks have no user-facing name, so multiple `on_tick` blocks
+  // in one container are legal. Each instance gets a stable synthetic name
+  // (`on_tick`, `on_tick#2`, ...) that groups its effects; only the first
+  // keeps the bare trigger so existing layout paths stay unchanged.
+  const behaviorCounts = new Map<string, number>();
+  // The canvas groups a container's children by its NAME, so a name must be
+  // unique across the whole model (not just its own scope) to survive the
+  // round trip. Same-named nested containers get a warning (LP3103) instead
+  // of silently corrupting the tree.
+  const globalContainerNames = new Set<string>();
   // Explicit `couple A.out -> B.in` declarations.
   const couples: Array<{
     from: string;
@@ -477,7 +497,13 @@ export function parseDsl(source: string): ParseResult {
     member: BodyMember,
     parent: string | undefined,
   ): void => {
-    if (!member.kind.startsWith('on_')) {
+    const isBehavior = member.kind.startsWith('on_');
+    if (
+      !isBehavior &&
+      member.kind !== 'couple' &&
+      member.kind !== 'field' &&
+      member.kind !== 'effect'
+    ) {
       const scope = parent ?? '';
       const seen = seenNames.get(scope) ?? new Set<string>();
       if (seen.has(member.name)) {
@@ -527,18 +553,21 @@ export function parseDsl(source: string): ParseResult {
       return;
     }
     if (member.kind.startsWith('on_')) {
+      const count = (behaviorCounts.get(member.kind) ?? 0) + 1;
+      behaviorCounts.set(member.kind, count);
+      const behaviorName = count === 1 ? member.kind : `${member.kind}#${count}`;
       nodes.push({
         id: freshId('behavior'),
         kind: member.kind,
-        name: member.name,
+        name: behaviorName,
         x: pos.x,
         y: pos.y,
-        params: {},
+        params: { ...member.params },
         container: parent,
         placeholder: true,
       });
       for (const child of member.children) {
-        flatten(child, member.name);
+        flatten(child, behaviorName);
       }
       return;
     }
@@ -552,6 +581,18 @@ export function parseDsl(source: string): ParseResult {
       } else {
         nested.push(child);
       }
+    }
+    if (globalContainerNames.has(member.name)) {
+      diagnostics.push({
+        code: 'LP3103',
+        severity: 'warning',
+        message:
+          `container name '${member.name}' repeats across scopes; the ` +
+          'canvas groups children by name, so nested same-name containers ' +
+          'cannot round-trip losslessly',
+      });
+    } else if (nested.length > 0) {
+      globalContainerNames.add(member.name);
     }
     const node: ModelNode = {
       id: freshId(member.kind),
