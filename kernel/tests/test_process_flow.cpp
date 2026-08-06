@@ -1503,6 +1503,61 @@ TEST_CASE("process flow: assembler waits for parts, delays, then outputs",
   REQUIRE(starved.departures == 0);
 }
 
+TEST_CASE("process flow: assembler gates on assembly resources",
+          "[process_flow][assembler][des_blocks]") {
+  const auto run_assembler_resource = [&](std::int64_t capacity) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto kits = block(
+        builder, "Kits", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
+    const auto parts = block(
+        builder, "Parts", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto assembler = block(
+        builder, "Build", "assembler",
+        {var_int(builder, "quantity125", 2),
+         var_float(builder, "delayTime", 2.0),
+         var_string(builder, "resourcePool", "Server"),
+         var_int(builder, "numberOfUnits", 1)},
+        {});
+    const auto resource = block(
+        builder, "Server", "resource", {var_int(builder, "capacity", capacity)}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {kits, parts, assembler, sink},
+        {couple(builder, "Kits", "out", "Build", "in"),
+         couple(builder, "Parts", "out", "Build", "p1"),
+         couple(builder, "Build", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // Assemblies form at t=2 and t=4, each holding the single unit for 2.0s.
+  const ReplicationMetrics gated = run_assembler_resource(1);
+  REQUIRE(gated.departures == 2);
+  REQUIRE(gated.mean_sojourn == 2.0);
+
+  // A zero-capacity pool never grants a unit: no assembly starts.
+  const ReplicationMetrics blocked = run_assembler_resource(0);
+  REQUIRE(blocked.departures == 0);
+
+  // Determinism.
+  const ReplicationMetrics again = run_assembler_resource(1);
+  REQUIRE(again.departures == gated.departures);
+  REQUIRE(again.mean_sojourn == gated.mean_sojourn);
+}
+
 TEST_CASE("process flow: composed blocks conserve entities end-to-end",
           "[process_flow][composition][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;

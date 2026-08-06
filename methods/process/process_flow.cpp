@@ -234,9 +234,12 @@ std::unique_ptr<ProcessBlock> make_block(
     return std::make_unique<EnterBlock>(name);
   }
   if (kind == "assembler") {
+    const char* resource = node_string_param(stage, "resourcePool");
     return std::make_unique<AssemblerBlock>(
         name, to_ns(node_float_param(stage, "delayTime", 0.0)),
-        node_int_param(stage, "quantity125", 1));
+        node_int_param(stage, "quantity125", 1),
+        resource != nullptr ? resource : "",
+        node_int_param(stage, "numberOfUnits", 0));
   }
   if (kind == "moveTo") {
     return std::make_unique<MoveToBlock>(
@@ -337,7 +340,7 @@ class Engine final : public BlockContext {
       if (kind == "source") {
         sources_.push_back(blocks_.size());
       }
-      if (kind == "seize") {
+      if (kind == "seize" || kind == "assembler") {
         resource_seizers_.push_back(blocks_.size());
       }
       blocks_.push_back(std::move(block));

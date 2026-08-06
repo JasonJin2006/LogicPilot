@@ -128,7 +128,10 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 - **assembler 语义已落地（2026-08-06）**：等待 in（主件）+ p1（部件，
   quantity125 数量）到齐后装配 delayTime 秒输出主件（多装配并行）；
   新增内核测试（正常装配/部件不足）与 `examples/assembler_line.lp` 冒烟；
-  装配期资源占用为后续项。至此 process 库仅剩 moveTo 为直通占位。
+  装配期资源占用为后续项。
+- **assembler 装配期资源已落地（2026-08-07）**：`resourcePool` +
+  `numberOfUnits` 在装配期间占用资源单元（不足时等待、完成后归还，随池
+  故障模型联动）；新增资源门控差分测试（cap 0 全阻塞 vs cap 1 放行）。
 - **moveTo 语义已落地（2026-08-07）**：`tripTime` 显式行程时间、
   `speed`+`xYZ` 沿轴位移（距离/速度）、缺省零时跳转；Entity 增加位置
   字段；新增内核测试与 `examples/move_route.lp` 冒烟。至此 process 库

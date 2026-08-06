@@ -654,10 +654,13 @@ class EnterBlock final : public BufferedBlock {
 class AssemblerBlock final : public BufferedBlock {
  public:
   AssemblerBlock(std::string name, std::int64_t delay_ns,
-                 std::int64_t parts_needed)
+                 std::int64_t parts_needed, std::string resource = "",
+                 std::int64_t units = 0)
       : BufferedBlock("assembler", std::move(name), -1),
         delay_ns_(delay_ns),
-        parts_needed_(parts_needed > 0 ? parts_needed : 1) {}
+        parts_needed_(parts_needed > 0 ? parts_needed : 1),
+        resource_(std::move(resource)),
+        units_(units > 0 ? units : 0) {}
 
   void receive(const Entity& entity, std::string_view port) override {
     ++arrived_;
@@ -673,10 +676,16 @@ class AssemblerBlock final : public BufferedBlock {
         parts_.size() < static_cast<std::size_t>(parts_needed_)) {
       return false;
     }
+    if (units_ > 0 && !ctx.try_seize(resource_, units_)) {
+      return false;  // assembly resources unavailable: wait
+    }
     Entity assembled = main_.front();
     main_.pop_front();
     for (std::int64_t i = 0; i < parts_needed_; ++i) {
       parts_.pop_front();
+    }
+    if (units_ > 0) {
+      assembled.resources[resource_] += units_;
     }
     assembled.service_start_ns = ctx.now().as_ns();
     in_service_.push_back(assembled);
@@ -695,6 +704,10 @@ class AssemblerBlock final : public BufferedBlock {
     }
     Entity entity = *it;
     in_service_.erase(it);
+    if (units_ > 0) {
+      ctx.release_resources(resource_, units_);
+      entity.resources.erase(resource_);
+    }
     ++departed_;
     if (!ctx.emit(entity, "out")) {
       outgoing_.push_back(entity);
@@ -721,6 +734,8 @@ class AssemblerBlock final : public BufferedBlock {
  private:
   std::int64_t delay_ns_{0};
   std::int64_t parts_needed_{1};
+  std::string resource_;
+  std::int64_t units_{0};
   std::deque<Entity> main_;
   std::deque<Entity> parts_;
   std::deque<Entity> in_service_;

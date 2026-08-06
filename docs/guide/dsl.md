@@ -137,8 +137,8 @@ sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外�
 
 `assembler` 已实现 AnyLogic 语义：等待 `in`（主件）+ `p1`（部件，
 `quantity125` 指定数量）到齐后装配 `delayTime` 秒，再输出主件；多个装配
-可并行。装配期资源占用（resourcePool）暂未建模。示例：
-`examples/assembler_line.lp`。
+可并行。装配期可用 `resourcePool` + `numberOfUnits` 占用资源单元
+（不足时等待，装配完成后归还）。示例：`examples/assembler_line.lp`。
 
 `moveTo` 已实现：`tripTime` 显式行程时间，或 `speed` + `xYZ`（沿轴位移，
 耗时 = 距离/速度）；两者都不设则零时跳转。完整的 node/path 空间建模为
