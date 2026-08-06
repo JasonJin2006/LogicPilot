@@ -61,10 +61,16 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   包）/ `install`（防路径穿越）/ `list`；`logicpkg_smoke` ctest 覆盖
   init→pack→install→list 往返。
 
-## P3 行业化与云（后续）
+## P3 行业化与云（✅ 部分落地 2026-08-06）
 
-- 行业模型库（制造/物流/交通）以 `SemanticsRef` 注册表交付；lp-server
-  云化部署；可视化增强。
+- **行业示例模型 ✅**：`examples/industry/manufacturing_line.lp`（制造线：
+  原料到达 → 钻床池（2 台含故障）→ 装配 → 成品），`lpcli compile/run`
+  实测通过；`examples/industry/README.md` 说明如何以 `.lpkg` 分发。
+- **容器化部署 ✅（基建）**：`docker/Dockerfile` 多阶段构建（vcpkg 固定
+  基线编译 lp-server + lpcli）+ `.dockerignore` + `docker/README.md`
+  （构建/运行/健康检查/TLS 建议）。
+- 后续：行业模型库扩展为独立 `.lpkg` 包（新块经 `.lplib` + 内核引擎按
+  `{library, block}` 注册）；可视化增强。
 
 ## 验收纪律
 

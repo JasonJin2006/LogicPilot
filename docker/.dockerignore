@@ -1,0 +1,8 @@
+.git
+build/
+node_modules/
+desktop/
+docs/.vitepress/dist/
+*.obj
+*.exe
+*.dll
