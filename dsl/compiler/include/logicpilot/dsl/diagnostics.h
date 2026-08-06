@@ -15,6 +15,8 @@
 //   LP2005  unknown field for the declaration's kind (library block shapes)
 //   LP2006  expression is not a compile-time constant (undeclared identifier
 //           or non-constant arithmetic)
+//   LP2010  `use`d library file was not found on any search path
+//   LP2011  `use`d library file is invalid (parse error or name mismatch)
 //   LP3001  numeric value out of range
 //   LP4001  unresolved resource reference
 //   LP5001  effect references an undeclared state variable

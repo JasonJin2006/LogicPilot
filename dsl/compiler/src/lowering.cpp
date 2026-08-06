@@ -32,7 +32,8 @@ namespace v2 = logicpilot::ir::v2;
 flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file);
+    const ParamScope& scope, const std::string& source_file,
+    const LibraryRegistry& registry);
 
 flatbuffers::Offset<v2::Metadata> v2_metadata(
     flatbuffers::FlatBufferBuilder& builder, const std::string& name,
@@ -207,7 +208,8 @@ flatbuffers::Offset<v2::Node> v2_resource(
 flatbuffers::Offset<v2::Node> v2_process_block(
     flatbuffers::FlatBufferBuilder& builder, const Node& stage,
     const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file,
+    const LibraryRegistry& registry) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
   for (const Field& field : stage.fields) {
     const Value folded = fold_or_raw(field.value, scope);
@@ -243,8 +245,9 @@ flatbuffers::Offset<v2::Node> v2_process_block(
   // Registered block ports (direction + event type), so the IR carries the
   // full connectable shape of every process stage.
   std::vector<flatbuffers::Offset<v2::Port>> ports;
-  const LibraryRegistry& registry = builtin_process_registry();
-  const BlockShape* shape = registry.block(stage.kind);
+  const BlockShape* shape = registry.resolve(stage.kind);
+  const std::string effective_kind =
+      shape != nullptr ? shape->kind : stage.kind;
   if (shape != nullptr) {
     for (const BlockPortSpec& spec : shape->ports) {
       const auto direction =
@@ -261,7 +264,7 @@ flatbuffers::Offset<v2::Node> v2_process_block(
       builder, v2_metadata(builder, stage.name, source_file),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
       builder.CreateVector(params), builder.CreateVector(ports),
-      v2_semantics(builder, "process", stage.kind.c_str()),
+      v2_semantics(builder, "process", effective_kind.c_str()),
       0, 0, 0, 0, 0);
 }
 
@@ -398,7 +401,8 @@ flatbuffers::Offset<v2::Node> v2_atomic(
 flatbuffers::Offset<v2::Node> v2_agent(
     flatbuffers::FlatBufferBuilder& builder, const Node& agent,
     const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file,
+    const LibraryRegistry& registry) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : agent.vars) {
     if (var.keyword == "state") {
@@ -432,12 +436,13 @@ flatbuffers::Offset<v2::Node> v2_agent(
   std::vector<flatbuffers::Offset<v2::Node>> children;
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
   for (const Node& child : agent.children) {
-    if (builtin_process_registry().has_block(child.kind)) {
+    if (registry.has_block(child.kind)) {
       children.push_back(
-          v2_process_block(builder, child, resources, scope, source_file));
+          v2_process_block(builder, child, resources, scope, source_file,
+                           registry));
     } else {
       const auto nested = v2_node(builder, child, resources, scope,
-                                  source_file);
+                                  source_file, registry);
       if (nested.o != 0) {
         children.push_back(nested);
       }
@@ -525,7 +530,8 @@ flatbuffers::Offset<v2::Experiment> v2_experiment(
 flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file) {
+    const ParamScope& scope, const std::string& source_file,
+    const LibraryRegistry& registry) {
   if (node.kind == "resource") {
     return v2_resource(builder, node, scope, source_file);
   }
@@ -533,7 +539,7 @@ flatbuffers::Offset<v2::Node> v2_node(
     return v2_atomic(builder, node, scope, source_file);
   }
   if (node.kind == "agent") {
-    return v2_agent(builder, node, resources, scope, source_file);
+    return v2_agent(builder, node, resources, scope, source_file, registry);
   }
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);
@@ -541,8 +547,9 @@ flatbuffers::Offset<v2::Node> v2_node(
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment
   // members are handled via ModelFile.experiments, not the node tree.
-  if (builtin_process_registry().has_block(node.kind)) {
-    return v2_process_block(builder, node, resources, scope, source_file);
+  if (registry.has_block(node.kind)) {
+    return v2_process_block(builder, node, resources, scope, source_file,
+                            registry);
   }
   return 0;
 }
@@ -550,8 +557,11 @@ flatbuffers::Offset<v2::Node> v2_node(
 }  // namespace
 
 LoweredIr lower_to_ir_v2(const ModelAst& model,
-                         const std::string& source_file) {
+                         const std::string& source_file,
+                         const LibraryRegistry* registry) {
   flatbuffers::FlatBufferBuilder builder;
+  const LibraryRegistry& registry_ref =
+      registry != nullptr ? *registry : builtin_process_registry();
 
   ParamScope model_scope;
   for (const VarDecl& param : model.params) {
@@ -584,7 +594,8 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
       continue;  // experiments live in ModelFile.experiments
     }
     children.push_back(
-        v2_node(builder, member, resources, model_scope, source_file));
+        v2_node(builder, member, resources, model_scope, source_file,
+                registry_ref));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;

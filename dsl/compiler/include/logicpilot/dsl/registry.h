@@ -48,6 +48,10 @@ struct BlockPortSpec {
 
 struct BlockShape {
   std::string kind;
+  // Custom library blocks may map onto a built-in kernel block (e.g.
+  // `block Machine { extends: ref = service }`); "" = no mapping. The
+  // effective shape and the lowering target come from resolve().
+  std::string extends_kind;
   std::vector<BlockParamSpec> params;
   std::vector<BlockPortSpec> ports;
 
@@ -97,6 +101,10 @@ class LibraryRegistry {
   // `diagnostics` when non-null) if the source does not parse.
   [[nodiscard]] bool load(const std::string& source,
                           std::vector<Diagnostic>* diagnostics);
+  // Parse a library source and append its shapes (used to layer a custom
+  // library over the built-in registry).
+  [[nodiscard]] bool merge(const std::string& source,
+                           std::vector<Diagnostic>* diagnostics);
 
   [[nodiscard]] bool has_block(const std::string& kind) const {
     return index_.count(kind) > 0;
@@ -110,6 +118,11 @@ class LibraryRegistry {
   [[nodiscard]] const std::vector<BlockShape>& blocks() const {
     return blocks_;
   }
+
+  // Effective shape for `kind`: follows the extends chain to the terminal
+  // built-in block (custom `Machine` -> `service`). Returns the block's own
+  // shape when it has no mapping, nullptr when unknown.
+  [[nodiscard]] const BlockShape* resolve(const std::string& kind) const;
 
  private:
   std::unordered_map<std::string, std::size_t> index_;

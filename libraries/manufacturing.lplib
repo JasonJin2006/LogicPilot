@@ -1,0 +1,18 @@
+// Manufacturing domain library (P3 industry models).
+//
+// Custom blocks map onto built-in process-library blocks via
+// `extends: ref = <builtin>`, so models can publish an industry vocabulary
+// that compiles, lowers to the built-in semantics and runs on the kernel.
+library manufacturing {
+  block Machine {
+    extends: ref = service
+  }
+
+  block Station {
+    extends: ref = queue
+  }
+
+  block WorkCell {
+    extends: ref = delay
+  }
+}

@@ -63,14 +63,20 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 
 ## P3 行业化与云（✅ 部分落地 2026-08-06）
 
+- **自定义库块闭环 ✅**：`.lplib` 块可用 `extends: ref = <内置块>` 映射到
+  内核已有语义；`use <library>` 按搜索路径加载 `<library>.lplib`，编译/
+  语义/降级全链路打通（LP2010 找不到库 / LP2011 库名或映射错误），
+  `lpcli compile --lib-path` 支持自定义库目录。`libraries/manufacturing.lplib`
+  示例（Machine→service、Station→queue、WorkCell→delay），e2e 实测编译降级
+  为 `{process, service}` 并运行。行业库从此「可发布、可编译、可运行」。
 - **行业示例模型 ✅**：`examples/industry/manufacturing_line.lp`（制造线：
   原料到达 → 钻床池（2 台含故障）→ 装配 → 成品），`lpcli compile/run`
   实测通过；`examples/industry/README.md` 说明如何以 `.lpkg` 分发。
 - **容器化部署 ✅（基建）**：`docker/Dockerfile` 多阶段构建（vcpkg 固定
   基线编译 lp-server + lpcli）+ `.dockerignore` + `docker/README.md`
   （构建/运行/健康检查/TLS 建议）。
-- 后续：行业模型库扩展为独立 `.lpkg` 包（新块经 `.lplib` + 内核引擎按
-  `{library, block}` 注册）；可视化增强。
+- 后续：行业模型库扩展为独立 `.lpkg` 包分发；自定义块纯新语义（无 extends）
+  需在内核注册新引擎；可视化增强。
 
 ## 验收纪律
 

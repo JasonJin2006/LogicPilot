@@ -410,3 +410,25 @@ TEST_CASE("semantic: unreachable process stage is flagged LP5004",
   }
   REQUIRE(lp5004 == 1);
 }
+
+TEST_CASE("semantic: custom block extending an unknown built-in is LP2011",
+          "[dsl][semantic][library]") {
+  const std::string fixtures =
+      std::string(kGoldenDir) + "/../fixtures";  // golden/.. = tests dir
+  const std::vector<std::string> library_dirs = {fixtures};
+  const CompileResult result = compile_source(
+      "model M {\n"
+      "  use badlib\n"
+      "  Gadget G { }\n"
+      "}\n",
+      "input.lp", library_dirs);
+  REQUIRE_FALSE(result.ok);
+  const std::vector<Diagnostic> diags = result.diagnostics;
+  bool has_lp2011 = false;
+  for (const Diagnostic& diagnostic : diags) {
+    if (diagnostic.code == "LP2011") {
+      has_lp2011 = true;
+    }
+  }
+  REQUIRE(has_lp2011);
+}

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "logicpilot/dsl/ast.h"
+#include "logicpilot/dsl/registry.h"
 
 namespace logicpilot::dsl {
 
@@ -28,6 +29,7 @@ struct LoweredIr {
 
 // Precondition: analyze_model() returned no diagnostics for `model`.
 [[nodiscard]] LoweredIr lower_to_ir_v2(const ModelAst& model,
-                                       const std::string& source_file);
+                                       const std::string& source_file,
+                                       const LibraryRegistry* registry = nullptr);
 
 }  // namespace logicpilot::dsl

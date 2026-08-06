@@ -140,3 +140,68 @@ TEST_CASE("compile: oversized source is rejected up front with LP0003",
   REQUIRE(result.diagnostics.front().code == "LP0003");
   REQUIRE(result.v2_bytes.empty());
 }
+
+TEST_CASE("E2E: custom library block extends a built-in and runs on the "
+          "kernel",
+          "[dsl][e2e][library]") {
+  const std::string repo =
+      std::string(kExamplesDir) + "/..";  // examples/.. = repo root
+  const std::vector<std::string> library_dirs = {repo + "/libraries"};
+  const std::string source =
+      "model CustomLine {\n"
+      "  use manufacturing\n"
+      "  resource Pool { capacity = 1 }\n"
+      "  source In { arrival = rate(1) }\n"
+      "  Station Q { capacity = 1000000 }\n"
+      "  Machine Drill { resource = Pool; time = exponential(1.0) }\n"
+      "  sink Done { }\n"
+      "  couple In.out -> Q.in\n"
+      "  couple Q.out -> Drill.in\n"
+      "  couple Drill.out -> Done.in\n"
+      "}\n";
+  const dsl::CompileResult compiled =
+      dsl::compile_source(source, "custom_line.lp", library_dirs);
+  INFO(dsl::format_diagnostics("custom_line.lp", compiled.diagnostics));
+  REQUIRE(compiled.ok);
+
+  // The custom `Machine` block lowers to the built-in {process, service}
+  // semantics so the kernel can execute it.
+  IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  const ir::v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root->children() != nullptr);
+  const ir::v2::Node* machine = nullptr;
+  for (const ir::v2::Node* child : *root->children()) {
+    if (child->metadata() != nullptr &&
+        child->metadata()->name() != nullptr &&
+        child->metadata()->name()->str() == "Drill") {
+      machine = child;
+    }
+  }
+  REQUIRE(machine != nullptr);
+  REQUIRE(machine->semantics() != nullptr);
+  REQUIRE(std::string(machine->semantics()->library()->c_str()) == "process");
+  REQUIRE(std::string(machine->semantics()->block()->c_str()) == "service");
+
+  std::string error;
+  auto model = build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+  ReplicationConfig config;
+  config.seed = 42;
+  config.arrivals = 1000;
+  config.warmup_arrivals = 100;
+  const ReplicationMetrics metrics = model->run(config, nullptr);
+  REQUIRE(metrics.departures == 1000);
+  REQUIRE(metrics.mean_sojourn > 0.0);
+}
+
+TEST_CASE("compile: unknown `use`d library is LP2010",
+          "[dsl][compile][library]") {
+  const dsl::CompileResult result = dsl::compile_source(
+      "model M { use no_such_library resource R { capacity = 1 } }\n",
+      "input.lp", {});
+  REQUIRE_FALSE(result.ok);
+  REQUIRE(!result.diagnostics.empty());
+  REQUIRE(result.diagnostics.front().code == "LP2010");
+}

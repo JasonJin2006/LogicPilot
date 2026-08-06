@@ -57,6 +57,7 @@ int compile_command(std::span<const std::string> args) {
   std::string diagnostics_json;
   std::string experiments_json;
   std::string project_path;
+  std::vector<std::string> library_dirs;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];
@@ -87,6 +88,12 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       project_path = args[++i];
+    } else if (arg == "--lib-path") {
+      if (i + 1 >= args.size()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      library_dirs.push_back(args[++i]);
     } else if (arg.starts_with("-")) {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -134,14 +141,16 @@ int compile_command(std::span<const std::string> args) {
                  project_path, bundle_error);
       return 1;
     }
-    compiled = dsl::compile_source(bundle.model_source, bundle.model_path);
+    compiled =
+        dsl::compile_source(bundle.model_source, bundle.model_path,
+                            library_dirs);
     display_path = bundle.model_path;
     if (output.empty()) {
       std::filesystem::path project{project_path};
       output = project.replace_extension(".lpir").string();
     }
   } else {
-    compiled = dsl::compile_file(input);
+    compiled = dsl::compile_file(input, library_dirs);
   }
   if (output.empty()) {
     output = default_output_path(input);

@@ -16,10 +16,16 @@
 
 #include "logicpilot/dsl/ast.h"
 #include "logicpilot/dsl/diagnostics.h"
+#include "logicpilot/dsl/registry.h"
 
 namespace logicpilot::dsl {
 
 // Returns all semantic diagnostics (empty => the model is well-formed).
-[[nodiscard]] std::vector<Diagnostic> analyze_model(const ModelAst& model);
+// `registry` overrides the built-in process registry (a merged registry that
+// layers custom `use`d libraries); `libraries` lists the loaded library
+// names so `use <name>` resolves.
+[[nodiscard]] std::vector<Diagnostic> analyze_model(
+    const ModelAst& model, const LibraryRegistry* registry = nullptr,
+    const std::vector<std::string>* libraries = nullptr);
 
 }  // namespace logicpilot::dsl

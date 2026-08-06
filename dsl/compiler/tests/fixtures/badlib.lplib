@@ -1,0 +1,6 @@
+// Negative fixture: extends an unknown block -> LP2011.
+library badlib {
+  block Gadget {
+    extends: ref = no_such_builtin
+  }
+}

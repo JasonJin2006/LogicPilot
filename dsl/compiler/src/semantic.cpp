@@ -45,8 +45,12 @@ double folded_double(const Value& value) {
 
 class Analyzer {
  public:
-  std::vector<Diagnostic> run(const ModelAst& model) {
-    registry_ = &builtin_process_registry();
+  std::vector<Diagnostic> run(const ModelAst& model,
+                              const LibraryRegistry* registry,
+                              const std::vector<std::string>* libraries) {
+    registry_ =
+        registry != nullptr ? registry : &builtin_process_registry();
+    libraries_ = libraries;
     declared_resources_.clear();
     for (const Node& member : model.members) {
       if (member.kind == "resource") {
@@ -91,6 +95,8 @@ class Analyzer {
   }
 
  private:
+  const std::vector<std::string>* libraries_{nullptr};
+
   void push(Severity severity, const char* code, const std::string& message,
             const Span& span) {
     Diagnostic diagnostic;
@@ -155,10 +161,19 @@ class Analyzer {
   // `use` is validated once multiple libraries land (Phase E); for now the
   // standard process library is implicitly available.
   void check_library(const std::string& library) {
-    if (library != "process") {
+    bool loaded = library == "process";
+    if (!loaded && libraries_ != nullptr) {
+      for (const std::string& name : *libraries_) {
+        if (name == library) {
+          loaded = true;
+          break;
+        }
+      }
+    }
+    if (!loaded) {
       error("LP2004",
             "unknown library '" + library +
-                "' (only 'process' is registered in v2 stage 1)",
+                "' (not a loaded library: 'process' or a 'use'd .lplib)",
             Span{});
     }
   }
@@ -362,8 +377,15 @@ class Analyzer {
                 node.name + "'",
             var.span);
     }
-    const BlockShape* shape = registry_->block(node.kind);
+    const BlockShape* shape = registry_->resolve(node.kind);
     if (shape == nullptr) {
+      const BlockShape* own = registry_->block(node.kind);
+      if (own != nullptr && !own->extends_kind.empty()) {
+        error("LP2011",
+              "block '" + node.kind + "' extends unknown block '" +
+                  own->extends_kind + "'",
+              node.span);
+      }
       return;  // unknown kind is reported by check_decl
     }
     for (const BlockParamSpec& spec : shape->params) {
@@ -1086,9 +1108,9 @@ class Analyzer {
   void check_process_coupling(const Node& from, const Node& to,
                               const CoupleDecl& couple) {
     const BlockShape* from_shape =
-        registry_ == nullptr ? nullptr : registry_->block(from.kind);
+        registry_ == nullptr ? nullptr : registry_->resolve(from.kind);
     const BlockShape* to_shape =
-        registry_ == nullptr ? nullptr : registry_->block(to.kind);
+        registry_ == nullptr ? nullptr : registry_->resolve(to.kind);
     if (from_shape != nullptr) {
       const BlockPortSpec* port = from_shape->port(couple.from_port);
       if (port == nullptr || port->direction == "in") {
@@ -1147,8 +1169,10 @@ class Analyzer {
 
 }  // namespace
 
-std::vector<Diagnostic> analyze_model(const ModelAst& model) {
-  return Analyzer{}.run(model);
+std::vector<Diagnostic> analyze_model(
+    const ModelAst& model, const LibraryRegistry* registry,
+    const std::vector<std::string>* libraries) {
+  return Analyzer{}.run(model, registry, libraries);
 }
 
 }  // namespace logicpilot::dsl

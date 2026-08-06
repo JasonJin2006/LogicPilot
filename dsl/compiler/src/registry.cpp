@@ -34,8 +34,8 @@ const char* block_param_type_name(BlockParamType type) {
   return "unknown";
 }
 
-bool LibraryRegistry::load(const std::string& source,
-                           std::vector<Diagnostic>* diagnostics) {
+bool LibraryRegistry::merge(const std::string& source,
+                            std::vector<Diagnostic>* diagnostics) {
   const ParseLibraryOutput parsed =
       parse_library_source(source, "<library>");
   if (!parsed.ok()) {
@@ -45,12 +45,18 @@ bool LibraryRegistry::load(const std::string& source,
     return false;
   }
   const LibraryAst& library = *parsed.library;
-  blocks_.clear();
-  index_.clear();
   for (const LibraryBlock& block : library.blocks) {
     BlockShape shape;
     shape.kind = block.kind;
     for (const LibraryParam& param : block.params) {
+      // `extends: ref = <kind>` declares a mapping onto a built-in block;
+      // it is a registry directive, not a model-facing field.
+      if (param.name == "extends" && param.type == "ref" &&
+          param.has_default &&
+          param.default_value.kind == ValueKind::kIdentifier) {
+        shape.extends_kind = param.default_value.string_value;
+        continue;
+      }
       BlockParamSpec spec;
       spec.name = param.name;
       spec.type = block_param_type(param.type);
@@ -69,6 +75,24 @@ bool LibraryRegistry::load(const std::string& source,
     blocks_.push_back(std::move(shape));
   }
   return true;
+}
+
+bool LibraryRegistry::load(const std::string& source,
+                           std::vector<Diagnostic>* diagnostics) {
+  blocks_.clear();
+  index_.clear();
+  return merge(source, diagnostics);
+}
+
+const BlockShape* LibraryRegistry::resolve(const std::string& kind) const {
+  const BlockShape* shape = block(kind);
+  // Guard against extends cycles (a malformed library); cap the chain.
+  for (int hops = 0; shape != nullptr && !shape->extends_kind.empty() &&
+                     hops < 32;
+       ++hops) {
+    shape = block(shape->extends_kind);
+  }
+  return shape;
 }
 
 const LibraryRegistry& builtin_process_registry() {
