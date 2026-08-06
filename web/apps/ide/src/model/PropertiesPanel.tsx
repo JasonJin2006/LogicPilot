@@ -7,6 +7,7 @@
 import { useModelStore } from '../state/modelStore';
 import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockDefs';
 import { PresentationInspector } from '../presentation/Inspector';
+import { useShapeSelection } from '../presentation/selectionStore';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
@@ -53,6 +54,7 @@ export function PropertiesPanel() {
   const renameBlock = useModelStore((state) => state.renameBlock);
   const setBlockParam = useModelStore((state) => state.setBlockParam);
   const setPresentation = useModelStore((state) => state.setPresentation);
+  const alignIds = useShapeSelection((state) => state.ids);
   const removeBlock = useModelStore((state) => state.removeBlock);
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
@@ -70,6 +72,12 @@ export function PropertiesPanel() {
         object={node.presentation}
         onChange={(object) => setPresentation(node.id, object)}
         onUngroup={() => useModelStore.getState().ungroupShape(node.id)}
+        alignIds={alignIds}
+        onAlign={(axis) =>
+          useModelStore.getState().alignShapes([...new Set([...alignIds, node.id])], axis)
+        }
+        onBringToFront={() => useModelStore.getState().bringToFront(node.id)}
+        onSendToBack={() => useModelStore.getState().sendToBack(node.id)}
       />
     );
   }

@@ -674,3 +674,26 @@
   border-color: var(--error);
   color: var(--error);
 }
+
+.props-align-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.props-align-btn {
+  flex: 1 1 auto;
+  min-width: 42px;
+  padding: 4px 6px;
+  font-size: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.props-align-btn:hover {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}

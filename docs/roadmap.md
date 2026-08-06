@@ -177,9 +177,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/
    fill/stroke/strokeWidth/opacity/文字），全部走现有 undo/redo；画布文件升
    v3 持久化形状（`presentation/main.canvas.json` 的 `shapes`）。
-   **Phase 3–4 🔶 进行中**（2026-08-06）：文字双击内联编辑、图片嵌入
+   **Phase 3–4 ✅ 已完成**（2026-08-06）：文字双击内联编辑、图片嵌入
    （文件 → data URL 持久化）、Ctrl+C/V/D 复制粘贴、方向键微调、Esc 取消、
-   Shift 多选 + Ctrl+G 分组 / Inspector Ungroup。待办：对齐/分布、图层管理。
+   Shift 多选 + Ctrl+G 分组 / Inspector Ungroup、对齐（Inspector 6 向）、
+   置顶/置底（Ctrl+] / Ctrl+[ 与 Inspector）。待办：图层面板、动画绑定 API。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

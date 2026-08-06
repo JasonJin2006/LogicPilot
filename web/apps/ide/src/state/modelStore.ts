@@ -32,6 +32,9 @@ const COALESCE_MS = 600;
  *  'oval' while the scene-graph type is 'ellipse'). */
 const PRESENTATION_KIND_BY_TYPE: Record<string, string> = { ellipse: 'oval' };
 
+/** Alignment axis for the multi-selected presentation shapes. */
+export type AlignAxis = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+
 // Validate a hydrated document: must be an object with `nodes` and `edges`
 // arrays. Older builds (or hand-edited localStorage) can leave a partial
 // document behind whose `nodes` is undefined, which crashes the first render
@@ -76,6 +79,12 @@ interface ModelState {
   /** Expand a `group` node back into its children (undoable). Returns the
    *  first child id (for selection), or null. */
   ungroupShape: (id: string) => string | null;
+  /** Align ≥2 presentation shapes along an axis (undoable). */
+  alignShapes: (ids: string[], axis: AlignAxis) => void;
+  /** Move a node to the end of the render order (on top). */
+  bringToFront: (id: string) => void;
+  /** Move a node to the start of the render order (behind everything). */
+  sendToBack: (id: string) => void;
   loadDocument: (document: ModelDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -291,6 +300,63 @@ export const useModelStore = create<ModelState>()((set) => ({
     };
     set({ ...commit(state, document), selectedId: newNodes[0]?.id ?? null });
     return newNodes[0]?.id ?? null;
+  },
+  alignShapes: (ids, axis) => {
+    const state = useModelStore.getState();
+    const targets = ids
+      .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
+      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+    if (targets.length < 2) {
+      return;
+    }
+    const minX = Math.min(...targets.map((m) => m.presentation.transform.x));
+    const maxX = Math.max(
+      ...targets.map((m) => m.presentation.transform.x + m.presentation.transform.width),
+    );
+    const minY = Math.min(...targets.map((m) => m.presentation.transform.y));
+    const maxY = Math.max(
+      ...targets.map((m) => m.presentation.transform.y + m.presentation.transform.height),
+    );
+    const nodes = state.document.nodes.map((node) => {
+      const target = targets.find((entry) => entry.id === node.id);
+      if (!target) {
+        return node;
+      }
+      const tr = target.presentation.transform;
+      let x = tr.x;
+      let y = tr.y;
+      if (axis === 'left') x = minX;
+      else if (axis === 'centerX') x = (minX + maxX) / 2 - tr.width / 2;
+      else if (axis === 'right') x = maxX - tr.width;
+      else if (axis === 'top') y = minY;
+      else if (axis === 'centerY') y = (minY + maxY) / 2 - tr.height / 2;
+      else if (axis === 'bottom') y = maxY - tr.height;
+      return {
+        ...node,
+        x,
+        y,
+        presentation: { ...target.presentation, transform: { ...tr, x, y } },
+      };
+    });
+    set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  bringToFront: (id) => {
+    const state = useModelStore.getState();
+    const node = state.document.nodes.find((entry) => entry.id === id);
+    if (!node) {
+      return;
+    }
+    const nodes = [...state.document.nodes.filter((entry) => entry.id !== id), node];
+    set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  sendToBack: (id) => {
+    const state = useModelStore.getState();
+    const node = state.document.nodes.find((entry) => entry.id === id);
+    if (!node) {
+      return;
+    }
+    const nodes = [node, ...state.document.nodes.filter((entry) => entry.id !== id)];
+    set({ ...commit(state, { ...state.document, nodes }) });
   },
   loadDocument: (document) => set((state) => commit(state, sanitizeDocument(document))),
   undo: () =>

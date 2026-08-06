@@ -4,12 +4,18 @@
 // PresentationObject; the modelStore action commits it (undoable).
 
 import type { PresentationObject } from '@logicpilot/editor';
+import type { AlignAxis } from '../state/modelStore';
 
 interface InspectorProps {
   object: PresentationObject;
   onChange: (next: PresentationObject) => void;
   /** Expand a selected `group` back into its children. */
   onUngroup?: () => void;
+  /** Multi-selected shape ids (for alignment). */
+  alignIds?: string[];
+  onAlign?: (axis: AlignAxis) => void;
+  onBringToFront?: () => void;
+  onSendToBack?: () => void;
 }
 
 function numField(
@@ -36,7 +42,15 @@ function numField(
   );
 }
 
-export function PresentationInspector({ object, onChange, onUngroup }: InspectorProps) {
+export function PresentationInspector({
+  object,
+  onChange,
+  onUngroup,
+  alignIds,
+  onAlign,
+  onBringToFront,
+  onSendToBack,
+}: InspectorProps) {
   const t = object.transform;
   const s = object.style;
   const patchTransform = (patch: Partial<PresentationObject['transform']>) =>
@@ -156,6 +170,49 @@ export function PresentationInspector({ object, onChange, onUngroup }: Inspector
         <button className="props-delete" onClick={onUngroup}>
           Ungroup
         </button>
+      )}
+      {(onBringToFront || onSendToBack) && (
+        <div className="props-section">
+          <div className="props-section-title">Arrange</div>
+          <div className="props-align-row">
+            {onBringToFront && (
+              <button className="props-align-btn" onClick={onBringToFront}>
+                Bring to front
+              </button>
+            )}
+            {onSendToBack && (
+              <button className="props-align-btn" onClick={onSendToBack}>
+                Send to back
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {(alignIds?.length ?? 0) >= 2 && onAlign && (
+        <div className="props-section">
+          <div className="props-section-title">Align</div>
+          <div className="props-align-row">
+            {(
+              [
+                ['left', '←'],
+                ['centerX', '↔'],
+                ['right', '→'],
+                ['top', '↑'],
+                ['centerY', '↕'],
+                ['bottom', '↓'],
+              ] as const
+            ).map(([axis, label]) => (
+              <button
+                key={axis}
+                className="props-align-btn"
+                title={axis}
+                onClick={() => onAlign(axis)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -24,6 +24,7 @@ import { BLOCK_DEFAULTS, blockPorts, portAnchor, PRESENTATION_KINDS } from './bl
 import { BlockIcon } from './BlockIcon';
 import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
+import { useShapeSelection } from '../presentation/selectionStore';
 import { insertBlockAt } from './canvasInsert';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
@@ -172,7 +173,7 @@ export function ModelCanvas() {
   // Presentation editing UI state: inline text editing, shift-click
   // multi-selection and the image file picker target.
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
-  const [shapeMulti, setShapeMulti] = useState<Set<string>>(new Set());
+  const shapeIds = useShapeSelection((state) => state.ids);
   const [imageTargetId, setImageTargetId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -249,13 +250,13 @@ export function ModelCanvas() {
       }
       if (mod && key === 'g' && !event.shiftKey) {
         event.preventDefault();
-        const ids = new Set(shapeMulti);
+        const ids = new Set(useShapeSelection.getState().ids);
         const current = doc().nodes.find((entry) => entry.id === selectedId);
         if (current?.presentation) {
           ids.add(current.id);
         }
         if (useModelStore.getState().groupShapes([...ids])) {
-          setShapeMulti(new Set());
+          useShapeSelection.getState().clear();
         }
         return;
       }
@@ -265,6 +266,14 @@ export function ModelCanvas() {
         if (node?.presentation?.type === 'group') {
           useModelStore.getState().ungroupShape(node.id);
         }
+        return;
+      }
+      if (mod && (key === ']' || key === '[')) {
+        if (!selectedId) return;
+        event.preventDefault();
+        const store = useModelStore.getState();
+        if (key === ']') store.bringToFront(selectedId);
+        else store.sendToBack(selectedId);
         return;
       }
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
@@ -280,13 +289,13 @@ export function ModelCanvas() {
       }
       if (event.key === 'Escape') {
         setEditingTextId(null);
-        setShapeMulti(new Set());
+        useShapeSelection.getState().clear();
         select(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, shapeMulti, editingTextId, addBlock, moveBlock, select]);
+  }, [selectedId, shapeIds, editingTextId, addBlock, moveBlock, select]);
 
   const drag = useRef<{
     startX: number;
@@ -748,7 +757,7 @@ export function ModelCanvas() {
             node.presentation ??
             defaultPresentationObject(node.kind as PresentationType, node.x, node.y);
           const selected = node.id === selectedId;
-          const multi = shapeMulti.has(node.id);
+          const multi = shapeIds.includes(node.id);
           const t = shapeObject.transform;
           return (
             <g
@@ -757,15 +766,7 @@ export function ModelCanvas() {
               onPointerDown={(event) => {
                 if (event.shiftKey) {
                   event.stopPropagation();
-                  setShapeMulti((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(node.id)) {
-                      next.delete(node.id);
-                    } else {
-                      next.add(node.id);
-                    }
-                    return next;
-                  });
+                  useShapeSelection.getState().toggle(node.id);
                   select(node.id);
                   return;
                 }

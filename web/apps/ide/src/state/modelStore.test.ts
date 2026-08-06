@@ -217,4 +217,38 @@ describe('modelStore undo/redo', () => {
       ungrouped.nodes.some((node) => node.x === 200 && node.presentation?.type === 'ellipse'),
     ).toBe(true);
   });
+
+  it('aligns and reorders presentation shapes', () => {
+    const store = useModelStore.getState();
+    const rect = (x: number, y: number) => ({
+      kind: 'rect' as const,
+      name: 'rect',
+      x,
+      y,
+      library: 'presentation' as const,
+      presentation: {
+        type: 'rect' as const,
+        transform: { x, y, width: 100, height: 50, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    store.addBlock(rect(0, 0));
+    store.addBlock(rect(300, 200));
+    const ids = useModelStore.getState().document.nodes.map((node) => node.id);
+
+    useModelStore.getState().alignShapes(ids, 'left');
+    let nodes = useModelStore.getState().document.nodes;
+    expect(nodes.every((node) => node.x === 0)).toBe(true);
+
+    useModelStore.getState().alignShapes(ids, 'centerY');
+    nodes = useModelStore.getState().document.nodes;
+    expect(nodes.every((node) => node.y === 100)).toBe(true);
+
+    useModelStore.getState().sendToBack(ids[0]!);
+    nodes = useModelStore.getState().document.nodes;
+    expect(nodes[0]!.id).toBe(ids[0]);
+    useModelStore.getState().bringToFront(ids[0]!);
+    nodes = useModelStore.getState().document.nodes;
+    expect(nodes[nodes.length - 1]!.id).toBe(ids[0]);
+  });
 });
