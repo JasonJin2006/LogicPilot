@@ -205,3 +205,46 @@ TEST_CASE("compile: unknown `use`d library is LP2010",
   REQUIRE(!result.diagnostics.empty());
   REQUIRE(result.diagnostics.front().code == "LP2010");
 }
+
+TEST_CASE("compile: selectOutput runtime condition lowers as a string param",
+          "[dsl][compile][condition]") {
+  const std::string source =
+      "model M {\n"
+      "  resource R { capacity = 1 }\n"
+      "  source In { arrival = rate(10) }\n"
+      "  selectOutput G { condition = t < 100 }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.outT -> K.in\n"
+      "  couple G.outF -> K.in\n"
+      "}\n";
+  const dsl::CompileResult compiled = dsl::compile_source(source, "cond.lp");
+  INFO(dsl::format_diagnostics("cond.lp", compiled.diagnostics));
+  REQUIRE(compiled.ok);
+
+  IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  const ir::v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root->children() != nullptr);
+  const ir::v2::Node* gate = nullptr;
+  for (const ir::v2::Node* child : *root->children()) {
+    if (child->metadata() != nullptr &&
+        child->metadata()->name() != nullptr &&
+        child->metadata()->name()->str() == "G") {
+      gate = child;
+    }
+  }
+  REQUIRE(gate != nullptr);
+  REQUIRE(gate->params() != nullptr);
+  const ir::v2::Var* condition = nullptr;
+  for (const ir::v2::Var* param : *gate->params()) {
+    if (param != nullptr && param->name() != nullptr &&
+        param->name()->str() == "condition") {
+      condition = param;
+    }
+  }
+  REQUIRE(condition != nullptr);
+  REQUIRE(condition->string_value() != nullptr);
+  REQUIRE(std::string(condition->string_value()->c_str()) == "t < 100");
+}

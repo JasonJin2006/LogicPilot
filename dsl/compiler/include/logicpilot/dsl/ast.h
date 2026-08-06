@@ -45,6 +45,10 @@ enum class ValueKind {
   kSub,
   kMul,
   kDiv,
+  kLt,
+  kGt,
+  kLe,
+  kGe,
   kParen,
 };
 

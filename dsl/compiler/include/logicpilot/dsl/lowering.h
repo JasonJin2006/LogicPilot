@@ -30,6 +30,7 @@ struct LoweredIr {
 // Precondition: analyze_model() returned no diagnostics for `model`.
 [[nodiscard]] LoweredIr lower_to_ir_v2(const ModelAst& model,
                                        const std::string& source_file,
-                                       const LibraryRegistry* registry = nullptr);
+                                       const LibraryRegistry* registry = nullptr,
+                                       const std::string* source_text = nullptr);
 
 }  // namespace logicpilot::dsl

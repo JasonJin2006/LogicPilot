@@ -268,9 +268,15 @@ module.exports = grammar({
         field('op', $.binary_op),
         field('right', $.value),
       )),
+      // Comparisons bind looser than arithmetic: `a + b < c` = `(a + b) < c`.
+      prec.left(0, seq(
+        field('left', $.value),
+        field('op', $.binary_op),
+        field('right', $.value),
+      )),
     ),
 
-    binary_op: $ => choice('+', '-', '*', '/'),
+    binary_op: $ => choice('+', '-', '*', '/', '<', '>', '<=', '>='),
 
     unary_expression: $ => prec(3, seq(
       field('op', $.unary_op),

@@ -144,7 +144,7 @@ CompileResult compile_source(const std::string& source,
     return result;
   }
 
-  LoweredIr lowered = lower_to_ir_v2(*parsed.model, path, &registry);
+  LoweredIr lowered = lower_to_ir_v2(*parsed.model, path, &registry, &source);
   result.ok = true;
   result.v2_bytes = std::move(lowered.bytes);
   result.model_name = parsed.model->name;

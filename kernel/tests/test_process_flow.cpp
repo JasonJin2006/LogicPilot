@@ -322,3 +322,70 @@ TEST_CASE("process flow: incremental advance matches a batch run",
   REQUIRE(sliced_trace.hash() == batch_trace.hash());
   REQUIRE(sliced_trace.event_count() == batch_trace.event_count());
 }
+
+TEST_CASE("process flow: selectOutput runtime condition routes "
+          "deterministically",
+          "[process_flow][condition]") {
+  const auto run_route = [](const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(
+        builder, "R", "selectOutput",
+        {var_string(builder, "condition", condition)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+         var_int(builder, "capacity", -1)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "outT", "Slow", "in"),
+         couple(builder, "R", "outF", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  // `t < 0` is never true -> everything takes outF (no delay);
+  // `t < 1e8` is always true -> everything takes outT (100s delay).
+  const ReplicationMetrics fast = run_route("t < 0");
+  const ReplicationMetrics slow = run_route("t < 100000000");
+  REQUIRE(fast.departures == 2000);
+  REQUIRE(slow.departures == 2000);
+  REQUIRE(fast.mean_sojourn < 1.0);
+  REQUIRE(slow.mean_sojourn > 50.0);
+}
+
+TEST_CASE("process flow: hold blockingCondition blocks tokens while true",
+          "[process_flow][condition]") {
+  const auto run_hold = [](const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto hold = block(
+        builder, "H", "hold",
+        {var_string(builder, "blockingCondition", condition)}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, hold, sink},
+        {couple(builder, "In", "out", "H", "in"),
+         couple(builder, "H", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 1000, 0);
+  };
+
+  const ReplicationMetrics open = run_hold("t < 0");  // never -> passes
+  const ReplicationMetrics blocked =
+      run_hold("t < 100000000");  // always -> tokens stay behind the hold
+  REQUIRE(open.departures == 1000);
+  REQUIRE(blocked.departures < 1000);
+}

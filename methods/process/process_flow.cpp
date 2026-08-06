@@ -56,6 +56,32 @@ void fail(std::string* error, const std::string& message) {
   }
 }
 
+// Numeric block params by name (condition-expression lookup context).
+std::unordered_map<std::string, double> block_numeric_params(
+    const Node* stage) {
+  std::unordered_map<std::string, double> params;
+  if (stage == nullptr || stage->params() == nullptr) {
+    return params;
+  }
+  for (const ir::v2::Var* var : *stage->params()) {
+    if (var == nullptr || var->name() == nullptr) {
+      continue;
+    }
+    if (var->type() == ir::v2::VarType_Int) {
+      params[var->name()->str()] =
+          static_cast<double>(var->int_value());
+    } else if (var->type() == ir::v2::VarType_Float) {
+      params[var->name()->str()] = var->float_value();
+    }
+  }
+  return params;
+}
+
+std::string block_string_param(const Node* stage, const char* name) {
+  const char* value = node_string_param(stage, name);
+  return value != nullptr ? std::string(value) : "";
+}
+
 // Builds the modular block for one process-library stage, carrying over the
 // pre-modular engine's parameter mapping verbatim.
 std::unique_ptr<ProcessBlock> make_block(
@@ -117,12 +143,17 @@ std::unique_ptr<ProcessBlock> make_block(
   }
   if (kind == "selectOutput") {
     return std::make_unique<GenericBlock>(
-        kind, name, node_float_param(stage, "probability", 0.5), 2, false);
+        kind, name, node_float_param(stage, "probability", 0.5), 2, false,
+        block_string_param(stage, "condition"), "",
+        block_numeric_params(stage));
   }
   if (kind == "hold") {
     const bool frozen = node_int_param(stage, "initiallyBlocked", 0) != 0 ||
                         node_int_param(stage, "freeze", 0) != 0;
-    return std::make_unique<GenericBlock>(kind, name, 0.5, 2, frozen);
+    return std::make_unique<GenericBlock>(
+        kind, name, 0.5, 2, frozen, "",
+        block_string_param(stage, "blockingCondition"),
+        block_numeric_params(stage));
   }
   // count / release / enter / exit / batch / unbatch / combine / match /
   // moveTo / ... pass tokens through with counters maintained.

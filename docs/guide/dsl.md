@@ -56,6 +56,20 @@ model MM1Failure {
 `capacity` 是并发上限，`failure_rate > 0` 时内核按"忙时故障 + 修复"建模
 （可用性 `a = r/(f+r)`）。
 
+决策块支持**运行时条件表达式**（比较运算，内核在路由/阻塞时求值）：
+
+```logicpilot
+selectOutput Inspect {
+  condition = t < 100        // 前 100 秒走 outT，之后走 outF
+}
+hold Gate {
+  blockingCondition = t < 60 // 60 秒前阻塞，之后放行
+}
+```
+
+条件里可引用仿真时间 `t`/`time` 与本块的数值参数；表达式是纯求值（无副作用），
+同种子下结果确定。
+
 ## 表达式与参数
 
 数值字段接受**编译期常量表达式**（`+ - * /`、一元负、括号），并可通过

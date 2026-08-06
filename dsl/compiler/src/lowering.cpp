@@ -33,7 +33,7 @@ flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry);
+    const LibraryRegistry& registry, const std::string* source_text);
 
 flatbuffers::Offset<v2::Metadata> v2_metadata(
     flatbuffers::FlatBufferBuilder& builder, const std::string& name,
@@ -198,7 +198,7 @@ flatbuffers::Offset<v2::Node> v2_process_block(
     flatbuffers::FlatBufferBuilder& builder, const Node& stage,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry) {
+    const LibraryRegistry& registry, const std::string* source_text) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
   for (const Field& field : stage.fields) {
     const Value folded = fold_or_raw(field.value, scope);
@@ -226,7 +226,21 @@ flatbuffers::Offset<v2::Node> v2_process_block(
             v2_var_string(builder, field.name.c_str(), folded.string_value));
         break;
       default:
-        // Non-constant values are rejected by the analyzer; never lower.
+        // Non-constant values are rejected by the analyzer except for
+        // runtime condition expressions (selectOutput.condition /
+        // hold.blockingCondition): those lower as raw-text string params
+        // evaluated by the kernel at routing time.
+        if (source_text != nullptr &&
+            (field.name == "condition" ||
+             field.name == "blockingCondition") &&
+            field.value.span.byte_length > 0 &&
+            field.value.span.byte_offset + field.value.span.byte_length <=
+                source_text->size()) {
+          params.push_back(v2_var_string(
+              builder, field.name.c_str(),
+              source_text->substr(field.value.span.byte_offset,
+                                  field.value.span.byte_length)));
+        }
         break;
     }
   }
@@ -391,7 +405,7 @@ flatbuffers::Offset<v2::Node> v2_agent(
     flatbuffers::FlatBufferBuilder& builder, const Node& agent,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry) {
+    const LibraryRegistry& registry, const std::string* source_text) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : agent.vars) {
     if (var.keyword == "state") {
@@ -428,10 +442,10 @@ flatbuffers::Offset<v2::Node> v2_agent(
     if (registry.has_block(child.kind)) {
       children.push_back(
           v2_process_block(builder, child, resources, scope, source_file,
-                           registry));
+                           registry, source_text));
     } else {
       const auto nested = v2_node(builder, child, resources, scope,
-                                  source_file, registry);
+                                  source_file, registry, source_text);
       if (nested.o != 0) {
         children.push_back(nested);
       }
@@ -520,7 +534,7 @@ flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry) {
+    const LibraryRegistry& registry, const std::string* source_text) {
   if (node.kind == "resource") {
     return v2_resource(builder, node, scope, source_file);
   }
@@ -528,7 +542,8 @@ flatbuffers::Offset<v2::Node> v2_node(
     return v2_atomic(builder, node, scope, source_file);
   }
   if (node.kind == "agent") {
-    return v2_agent(builder, node, resources, scope, source_file, registry);
+    return v2_agent(builder, node, resources, scope, source_file, registry,
+                    source_text);
   }
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);
@@ -538,7 +553,7 @@ flatbuffers::Offset<v2::Node> v2_node(
   // members are handled via ModelFile.experiments, not the node tree.
   if (registry.has_block(node.kind)) {
     return v2_process_block(builder, node, resources, scope, source_file,
-                            registry);
+                            registry, source_text);
   }
   return 0;
 }
@@ -547,7 +562,8 @@ flatbuffers::Offset<v2::Node> v2_node(
 
 LoweredIr lower_to_ir_v2(const ModelAst& model,
                          const std::string& source_file,
-                         const LibraryRegistry* registry) {
+                         const LibraryRegistry* registry,
+                         const std::string* source_text) {
   flatbuffers::FlatBufferBuilder builder;
   const LibraryRegistry& registry_ref =
       registry != nullptr ? *registry : builtin_process_registry();
@@ -584,7 +600,7 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
     }
     children.push_back(
         v2_node(builder, member, resources, model_scope, source_file,
-                registry_ref));
+                registry_ref, source_text));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;

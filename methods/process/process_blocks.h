@@ -12,7 +12,9 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
+#include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/devs/mm1.h"  // TimeSampler
 #include "process_block.h"
@@ -229,22 +231,43 @@ class SinkBlock final : public BufferedBlock {
 class GenericBlock final : public BufferedBlock {
  public:
   GenericBlock(std::string kind, std::string name, double probability,
-               std::int64_t copies, bool frozen)
+               std::int64_t copies, bool frozen,
+               std::string condition_text = "",
+               std::string blocking_condition = "",
+               std::unordered_map<std::string, double> numeric_params = {})
       : BufferedBlock(std::move(kind), std::move(name), -1),
         probability_(probability),
         copies_(copies),
-        frozen_(frozen) {}
+        frozen_(frozen),
+        condition_text_(std::move(condition_text)),
+        blocking_condition_(std::move(blocking_condition)),
+        numeric_params_(std::move(numeric_params)) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
     }
+    const auto lookup = [this, &ctx](const std::string& id) -> double {
+      if (id == "t" || id == "time") {
+        return static_cast<double>(ctx.now().as_ns()) * 1e-9;
+      }
+      const auto it = numeric_params_.find(id);
+      return it != numeric_params_.end() ? it->second : 0.0;
+    };
     Entity entity = input_.front();
     if (kind_ == "selectOutput") {
-      const double roll =
-          static_cast<double>(ctx.rng()()) /
-          static_cast<double>(UINT64_MAX);
-      const bool take_true = roll < probability_;
+      bool take_true;
+      if (!condition_text_.empty()) {
+        // Runtime condition expression (ADR-0009 scripting Phase 1):
+        // evaluated at routing time; nonzero means take the true branch.
+        const ExpressionEvaluator evaluator{condition_text_};
+        take_true = evaluator.eval(lookup) != 0.0;
+      } else {
+        const double roll =
+            static_cast<double>(ctx.rng()()) /
+            static_cast<double>(UINT64_MAX);
+        take_true = roll < probability_;
+      }
       if (!ctx.emit(entity, take_true ? "outT" : "outF")) {
         return false;
       }
@@ -267,8 +290,15 @@ class GenericBlock final : public BufferedBlock {
       }
       return true;
     }
-    if (kind_ == "hold" && frozen_) {
-      return false;
+    if (kind_ == "hold") {
+      bool blocked = frozen_;
+      if (!blocked && !blocking_condition_.empty()) {
+        const ExpressionEvaluator evaluator{blocking_condition_};
+        blocked = evaluator.eval(lookup) != 0.0;
+      }
+      if (blocked) {
+        return false;
+      }
     }
     if (!ctx.emit(entity, "out")) {
       return false;
@@ -282,6 +312,9 @@ class GenericBlock final : public BufferedBlock {
   double probability_{0.5};
   std::int64_t copies_{2};
   bool frozen_{false};
+  std::string condition_text_;
+  std::string blocking_condition_;
+  std::unordered_map<std::string, double> numeric_params_;
 };
 
 }  // namespace logicpilot::process

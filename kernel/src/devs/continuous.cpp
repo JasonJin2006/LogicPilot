@@ -25,7 +25,7 @@ ExpressionEvaluator::ExpressionEvaluator(std::string text)
 }
 
 void ExpressionEvaluator::parse() {
-  root_ = parse_expr();
+  root_ = parse_cmp();
   while (pos_ < text_.size() &&
          std::isspace(static_cast<unsigned char>(text_[pos_]))) {
     ++pos_;
@@ -34,6 +34,47 @@ void ExpressionEvaluator::parse() {
     error_ = "unexpected trailing input at '" + text_.substr(pos_) + "'";
     root_.reset();
   }
+}
+
+std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_cmp() {
+  auto left = parse_expr();
+  if (left == nullptr) {
+    return nullptr;
+  }
+  for (;;) {
+    while (pos_ < text_.size() &&
+           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+      ++pos_;
+    }
+    Node::Kind kind = Node::Kind::kNumber;
+    if (pos_ + 1 < text_.size() && text_[pos_] == '<' &&
+        text_[pos_ + 1] == '=') {
+      kind = Node::Kind::kLe;
+      pos_ += 2;
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '>' &&
+               text_[pos_ + 1] == '=') {
+      kind = Node::Kind::kGe;
+      pos_ += 2;
+    } else if (pos_ < text_.size() && text_[pos_] == '<') {
+      kind = Node::Kind::kLt;
+      ++pos_;
+    } else if (pos_ < text_.size() && text_[pos_] == '>') {
+      kind = Node::Kind::kGt;
+      ++pos_;
+    } else {
+      break;
+    }
+    auto right = parse_expr();
+    if (right == nullptr) {
+      return nullptr;
+    }
+    auto node = std::make_unique<Node>();
+    node->kind = kind;
+    node->left = std::move(left);
+    node->right = std::move(right);
+    left = std::move(node);
+  }
+  return left;
 }
 
 std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_expr() {
@@ -120,7 +161,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
   const char c = text_[pos_];
   if (c == '(') {
     ++pos_;
-    auto inner = parse_expr();
+    auto inner = parse_cmp();
     while (pos_ < text_.size() &&
            std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
@@ -247,6 +288,26 @@ double ExpressionEvaluator::eval_node(
              eval_node(node->right.get(), lookup);
     case Kind::kNeg:
       return -eval_node(node->left.get(), lookup);
+    case Kind::kLt:
+      return eval_node(node->left.get(), lookup) <
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
+    case Kind::kGt:
+      return eval_node(node->left.get(), lookup) >
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
+    case Kind::kLe:
+      return eval_node(node->left.get(), lookup) <=
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
+    case Kind::kGe:
+      return eval_node(node->left.get(), lookup) >=
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
   }
   return 0.0;
 }

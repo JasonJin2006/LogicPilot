@@ -312,7 +312,11 @@ class Extractor {
       value.kind = op == "+" ? ValueKind::kAdd
                   : op == "-" ? ValueKind::kSub
                   : op == "*" ? ValueKind::kMul
-                              : ValueKind::kDiv;
+                  : op == "/" ? ValueKind::kDiv
+                  : op == "<" ? ValueKind::kLt
+                  : op == ">" ? ValueKind::kGt
+                  : op == "<=" ? ValueKind::kLe
+                               : ValueKind::kGe;
       value.operands.push_back(extract_value(field(child, "left")));
       value.operands.push_back(extract_value(field(child, "right")));
     } else if (node_is(child, "unary_expression")) {
@@ -790,6 +794,43 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
         case ValueKind::kAdd: out.float_value = l + r; break;
         case ValueKind::kSub: out.float_value = l - r; break;
         case ValueKind::kMul: out.float_value = l * r; break;
+        default: break;
+      }
+      return true;
+    }
+    case ValueKind::kLt:
+    case ValueKind::kGt:
+    case ValueKind::kLe:
+    case ValueKind::kGe: {
+      if (value.operands.size() != 2) {
+        return false;
+      }
+      Value left;
+      Value right;
+      if (!fold_value(value.operands[0], scope, left) ||
+          !fold_value(value.operands[1], scope, right)) {
+        return false;
+      }
+      const bool numeric =
+          (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
+          (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
+      if (!numeric) {
+        return false;
+      }
+      const double l =
+          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value)
+                                       : left.float_value;
+      const double r =
+          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value)
+                                        : right.float_value;
+      out = Value{};
+      out.span = value.span;
+      out.kind = ValueKind::kBool;
+      switch (value.kind) {
+        case ValueKind::kLt: out.bool_value = l < r; break;
+        case ValueKind::kGt: out.bool_value = l > r; break;
+        case ValueKind::kLe: out.bool_value = l <= r; break;
+        case ValueKind::kGe: out.bool_value = l >= r; break;
         default: break;
       }
       return true;

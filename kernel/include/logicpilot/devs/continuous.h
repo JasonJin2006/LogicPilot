@@ -51,6 +51,10 @@ class ExpressionEvaluator {
       kMul,
       kDiv,
       kNeg,
+      kLt,
+      kGt,
+      kLe,
+      kGe,
     };
     Kind kind{Kind::kNumber};
     double number{0.0};
@@ -61,6 +65,7 @@ class ExpressionEvaluator {
   };
 
   void parse();
+  std::unique_ptr<Node> parse_cmp();
   std::unique_ptr<Node> parse_expr();
   std::unique_ptr<Node> parse_term();
   std::unique_ptr<Node> parse_factor();
