@@ -254,7 +254,8 @@ std::unique_ptr<ProcessBlock> make_block(
         name, block_string_param(stage, "combineMode"));
   }
   if (kind == "match") {
-    return std::make_unique<MatchBlock>(name);
+    return std::make_unique<MatchBlock>(
+        name, block_string_param(stage, "matchCondition"));
   }
   if (kind == "timeMeasureStart") {
     return std::make_unique<TimeMeasureStartBlock>(name);

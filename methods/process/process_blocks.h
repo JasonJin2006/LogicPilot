@@ -973,19 +973,25 @@ class CombineBlock final : public BufferedBlock {
 // matching AnyLogic's default match condition `true` = pure synchronizer).
 class MatchBlock final : public BufferedBlock {
  public:
-  explicit MatchBlock(std::string name)
-      : BufferedBlock("match", std::move(name), -1) {}
+  explicit MatchBlock(std::string name, std::string condition)
+      : BufferedBlock("match", std::move(name), -1),
+        condition_(std::move(condition)) {}
 
   void receive(const Entity& entity, std::string_view port) override {
     ++arrived_;
     if (port == "in2") {
       input2_.push_back(entity);
+      pending_new_ = {entity.id, 2};
     } else {
       input1_.push_back(entity);
+      pending_new_ = {entity.id, 1};
     }
   }
 
   bool update(BlockContext& ctx) override {
+    if (!condition_.empty()) {
+      return update_conditioned(ctx);
+    }
     if (input1_.empty() || input2_.empty()) {
       return false;
     }
@@ -1005,6 +1011,49 @@ class MatchBlock final : public BufferedBlock {
     return true;
   }
 
+  // Pairing on an entity attribute (AnyLogic `matchCondition`: here the
+  // field names the attribute; agents pair when their values are equal).
+  // The arriving agent is checked against the opposite queue front-to-back,
+  // matching AnyLogic's "checked against all agents in the other queue".
+  bool update_conditioned(BlockContext& ctx) {
+    if (pending_new_.id == std::numeric_limits<std::uint64_t>::max()) {
+      return false;
+    }
+    const bool newcomer_in_1 = pending_new_.port == 1;
+    const std::uint64_t newcomer_id = pending_new_.id;
+    pending_new_ = {std::numeric_limits<std::uint64_t>::max(), 0};
+
+    auto& own_queue = newcomer_in_1 ? input1_ : input2_;
+    auto& other_queue = newcomer_in_1 ? input2_ : input1_;
+    const auto newcomer =
+        std::find_if(own_queue.begin(), own_queue.end(),
+                     [newcomer_id](const Entity& entry) {
+                       return entry.id == newcomer_id;
+                     });
+    if (newcomer == own_queue.end() || other_queue.empty()) {
+      return false;
+    }
+    const double own_value = attribute_value(*newcomer);
+    for (auto it = other_queue.begin(); it != other_queue.end(); ++it) {
+      if (attribute_value(*it) != own_value) {
+        continue;
+      }
+      if (!ctx.downstream_accepts(*newcomer, "out1") ||
+          !ctx.downstream_accepts(*it, "out2")) {
+        return false;
+      }
+      const Entity partner = *it;
+      const Entity first = *newcomer;
+      other_queue.erase(it);
+      own_queue.erase(newcomer);
+      ctx.emit(first, "out1");
+      ctx.emit(partner, "out2");
+      departed_ += 2;
+      return true;
+    }
+    return false;
+  }
+
   void accumulate_areas(std::int64_t dt_ns) override {
     BufferedBlock::accumulate_areas(dt_ns);
     area_occupancy_ += static_cast<double>(dt_ns) *
@@ -1018,6 +1067,17 @@ class MatchBlock final : public BufferedBlock {
   }
 
  private:
+  double attribute_value(const Entity& entity) const {
+    const auto it = entity.attributes.find(condition_);
+    return it != entity.attributes.end() ? it->second : 0.0;
+  }
+
+  std::string condition_;
+  struct PendingNew {
+    std::uint64_t id{std::numeric_limits<std::uint64_t>::max()};
+    int port{0};
+  };
+  PendingNew pending_new_;
   std::deque<Entity> input1_;
   std::deque<Entity> input2_;
 };

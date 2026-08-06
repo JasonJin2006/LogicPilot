@@ -55,6 +55,14 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_cmp() {
                text_[pos_ + 1] == '=') {
       kind = Node::Kind::kGe;
       pos_ += 2;
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '=' &&
+               text_[pos_ + 1] == '=') {
+      kind = Node::Kind::kEq;
+      pos_ += 2;
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '!' &&
+               text_[pos_ + 1] == '=') {
+      kind = Node::Kind::kNe;
+      pos_ += 2;
     } else if (pos_ < text_.size() && text_[pos_] == '<') {
       kind = Node::Kind::kLt;
       ++pos_;
@@ -305,6 +313,16 @@ double ExpressionEvaluator::eval_node(
                  : 0.0;
     case Kind::kGe:
       return eval_node(node->left.get(), lookup) >=
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
+    case Kind::kEq:
+      return eval_node(node->left.get(), lookup) ==
+                     eval_node(node->right.get(), lookup)
+                 ? 1.0
+                 : 0.0;
+    case Kind::kNe:
+      return eval_node(node->left.get(), lookup) !=
                      eval_node(node->right.get(), lookup)
                  ? 1.0
                  : 0.0;

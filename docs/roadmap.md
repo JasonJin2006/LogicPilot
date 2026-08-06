@@ -208,6 +208,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    outPreempted（queue 满队踢最弱、wait/seize 到达抢占最弱）；
    `examples/priority_preempt.lp` 冒烟；queuing_comparison 表达式回退
    FIFO，资源任务抢占（taskPriority/preemptionPolicy）为后续项。
+   **等值比较与 match 属性配对 ✅ 已完成**（2026-08-06）：`==`/`!=` 进入
+   表达式文法（tree-sitter 重生成 + 编译器/内核求值同步，corpus 49/49）；
+   `matchCondition = <属性名>` 按实体属性等值配对；
+   `examples/match_attr.lp` 冒烟。任意字段访问表达式
+   （`agent1.attr == agent2.attr`）为后续项。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

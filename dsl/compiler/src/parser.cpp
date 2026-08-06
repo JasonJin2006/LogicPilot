@@ -316,7 +316,9 @@ class Extractor {
                   : op == "<" ? ValueKind::kLt
                   : op == ">" ? ValueKind::kGt
                   : op == "<=" ? ValueKind::kLe
-                               : ValueKind::kGe;
+                  : op == ">=" ? ValueKind::kGe
+                  : op == "==" ? ValueKind::kEq
+                               : ValueKind::kNe;
       value.operands.push_back(extract_value(field(child, "left")));
       value.operands.push_back(extract_value(field(child, "right")));
     } else if (node_is(child, "unary_expression")) {
@@ -801,7 +803,9 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
     case ValueKind::kLt:
     case ValueKind::kGt:
     case ValueKind::kLe:
-    case ValueKind::kGe: {
+    case ValueKind::kGe:
+    case ValueKind::kEq:
+    case ValueKind::kNe: {
       if (value.operands.size() != 2) {
         return false;
       }
@@ -831,6 +835,8 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
         case ValueKind::kGt: out.bool_value = l > r; break;
         case ValueKind::kLe: out.bool_value = l <= r; break;
         case ValueKind::kGe: out.bool_value = l >= r; break;
+        case ValueKind::kEq: out.bool_value = l == r; break;
+        case ValueKind::kNe: out.bool_value = l != r; break;
         default: break;
       }
       return true;

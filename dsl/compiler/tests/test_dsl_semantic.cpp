@@ -548,3 +548,51 @@ TEST_CASE("semantic: source entity attributes are routable in conditions",
   }
   REQUIRE(lp2005 >= 1);
 }
+
+TEST_CASE("semantic: equality comparisons and match attribute pairing compile",
+          "[dsl][semantic][condition][match]") {
+  const ParseOutput output = parse_source(
+      "model M {\n"
+      "  source In {\n"
+      "    arrival = rate(1)\n"
+      "    state priority: float = 5\n"
+      "    state kind: int = 1\n"
+      "  }\n"
+      "  selectOutput G { condition = priority == 5 }\n"
+      "  match Sync { matchCondition = kind }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.outT -> Sync.in1\n"
+      "  couple G.outF -> Sync.in2\n"
+      "  couple Sync.out1 -> K.in\n"
+      "  couple Sync.out2 -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(output.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*output.model);
+  for (const Diagnostic& diagnostic : diagnostics) {
+    REQUIRE_FALSE(diagnostic.code == "LP5006");
+    REQUIRE_FALSE(diagnostic.code == "LP2005");
+    REQUIRE_FALSE(diagnostic.code == "LP1002");
+  }
+
+  // Unknown identifiers in equality conditions are still LP5006.
+  const ParseOutput unknown = parse_source(
+      "model M {\n"
+      "  source In { arrival = rate(1) }\n"
+      "  selectOutput G { condition = mystery == 5 }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.outT -> K.in\n"
+      "  couple G.outF -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(unknown.ok());
+  int lp5006 = 0;
+  for (const Diagnostic& diagnostic : analyze_model(*unknown.model)) {
+    if (diagnostic.code == "LP5006") {
+      ++lp5006;
+    }
+  }
+  REQUIRE(lp5006 >= 1);
+}

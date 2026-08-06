@@ -100,6 +100,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   到达抢占最弱；`can_accept` 升级为按实体判断；新增 queue/wait/seize 抢占
   差分测试与 `examples/priority_preempt.lp` 冒烟。`queuing_comparison`
   （表达式比较）暂回退 FIFO。
+- **等值比较与 match 属性配对已落地（2026-08-06）**：表达式语言新增
+  `==` / `!=`（tree-sitter 文法 + 编译器折叠 + 内核 ExpressionEvaluator
+  同步，corpus 49/49）；`matchCondition = <属性名>` 让 match 按实体属性
+  等值配对（新到达者与对侧队列从前到后找首个同值配对）；新增内核
+  match 配对/等值路由测试与 `examples/match_attr.lp` 冒烟。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

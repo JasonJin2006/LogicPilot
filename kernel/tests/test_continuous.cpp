@@ -73,6 +73,16 @@ TEST_CASE("expression evaluator handles the v0 RHS grammar", "[continuous]") {
   REQUIRE_FALSE(bad.ok());
 }
 
+TEST_CASE("expression evaluator supports equality comparisons",
+          "[continuous][condition]") {
+  REQUIRE(evaluate("a == 5", {{"a", 5.0}}) == 1.0);
+  REQUIRE(evaluate("a == 5", {{"a", 4.0}}) == 0.0);
+  REQUIRE(evaluate("a != 5", {{"a", 4.0}}) == 1.0);
+  REQUIRE(evaluate("a != 5", {{"a", 5.0}}) == 0.0);
+  REQUIRE(evaluate("a == b", {{"a", 2.0}, {"b", 2.0}}) == 1.0);
+  REQUIRE(evaluate("(a + b) == 7", {{"a", 3.0}, {"b", 4.0}}) == 1.0);
+}
+
 TEST_CASE("v2-native RK4 matches exponential decay analytically",
           "[continuous][ir-v2]") {
   // dy/dt = -k*y, y(0)=1, k=0.5 -> y(10) = e^{-5}.

@@ -276,7 +276,9 @@ module.exports = grammar({
       )),
     ),
 
-    binary_op: $ => choice('+', '-', '*', '/', '<', '>', '<=', '>='),
+    binary_op: $ => choice(
+      '+', '-', '*', '/', '<', '>', '<=', '>=', '==', '!='
+    ),
 
     unary_expression: $ => prec(3, seq(
       field('op', $.unary_op),

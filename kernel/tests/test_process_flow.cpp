@@ -1128,3 +1128,81 @@ TEST_CASE("process flow: seize preempts the weakest waiting agent",
   const ReplicationMetrics plain = run_seize(false);
   REQUIRE(plain.departures == 0);
 }
+
+TEST_CASE("process flow: match pairs agents on an equal attribute",
+          "[process_flow][match][des_blocks]") {
+  const auto run_match = [&](int kind1, int kind2, const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "kind", kind1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "kind", kind2)}, {});
+    const auto match = block(
+        builder, "M", "match",
+        {var_string(builder, "matchCondition", condition)}, {});
+    const auto sink1 = block(builder, "K1", "sink", {}, {});
+    const auto sink2 = block(builder, "K2", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, match, sink1, sink2},
+        {couple(builder, "S1", "out", "M", "in1"),
+         couple(builder, "S2", "out", "M", "in2"),
+         couple(builder, "M", "out1", "K1", "in"),
+         couple(builder, "M", "out2", "K2", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // Equal attributes pair 1:1; unequal attributes never pair; without a
+  // match condition the block stays a pure synchronizer.
+  const ReplicationMetrics matched = run_match(1, 1, "kind");
+  REQUIRE(matched.departures == 6);
+
+  const ReplicationMetrics mismatched = run_match(1, 2, "kind");
+  REQUIRE(mismatched.departures == 0);
+
+  const ReplicationMetrics synchronizer = run_match(1, 2, "");
+  REQUIRE(synchronizer.departures == 6);
+}
+
+TEST_CASE("process flow: equality comparison drives condition routing",
+          "[process_flow][condition][attributes]") {
+  const auto run_route = [](const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block_with_state(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "size", 10)}, {});
+    const auto route = block(
+        builder, "R", "selectOutput",
+        {var_string(builder, "condition", condition)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "outT", "Slow", "in"),
+         couple(builder, "R", "outF", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 500, 0);
+  };
+
+  // size = 10 on every entity: `== 10` always takes outT (1s delay),
+  // `== 999` always takes outF (no delay).
+  const ReplicationMetrics equals = run_route("size == 10");
+  const ReplicationMetrics not_equals = run_route("size == 999");
+  REQUIRE(equals.departures == 500);
+  REQUIRE(not_equals.departures == 500);
+  REQUIRE(equals.mean_sojourn > 0.5);
+  REQUIRE(not_equals.mean_sojourn < 0.1);
+}

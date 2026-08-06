@@ -49,6 +49,8 @@ enum class ValueKind {
   kGt,
   kLe,
   kGe,
+  kEq,
+  kNe,
   kParen,
 };
 

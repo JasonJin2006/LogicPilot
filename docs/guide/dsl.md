@@ -69,7 +69,8 @@ hold Gate {
 
 条件里可引用仿真时间 `t`/`time` 与本块的数值参数；表达式是纯求值（无副作用），
 同种子下结果确定。条件字段引用未声明的标识符会得到 `LP5006` 诊断（只允许
-`t`/`time` 与本块自身的数值字段）。
+`t`/`time` 与本块自身的数值字段）。表达式支持等值比较 `==` / `!=`
+（如 `condition = priority == 5`），与 `< > <= >=` 同级。
 
 ### 实体属性（entity attributes）
 
@@ -100,6 +101,9 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   丢弃原件；`false` 时原件作为批内容，`unbatch` 恢复为独立 agent）。
 - `combine`：等待 `in1`/`in2` 两个输入各一个 agent 后合成一个（零时间）。
 - `match`：同步两条流，双方都到齐时成对从 `out1`/`out2` 同时输出。
+- `match` 的**属性配对**：`matchCondition = <属性名>` 时按该实体属性等值
+  配对（新到达的 agent 与对侧队列从前到后找第一个同值配对），缺省
+  （不写或 `true`）保持纯同步器。
 - `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
 - `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
@@ -243,5 +247,6 @@ use manufacturing
 | `examples/failure_line.lp` | 通用引擎故障模型（failure/repair + availability） |
 | `examples/wait_timeout.lp` | wait 退出超时（outTimeout 出口） |
 | `examples/priority_preempt.lp` | 优先级排队 + 满队抢占（outPreempted） |
+| `examples/match_attr.lp` | match 按实体属性等值配对 |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

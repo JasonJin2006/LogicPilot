@@ -243,3 +243,34 @@ model M {
                 right: (value
                   (value_literal
                     (integer)))))))))))
+
+====================
+Equality comparison in a condition
+====================
+
+model M {
+  selectOutput R {
+    condition = priority == 5
+  }
+}
+
+---
+
+(source_file
+  (model_declaration
+    name: (identifier)
+    body: (model_body
+      (declaration
+        kind: (identifier)
+        name: (identifier)
+        body: (declaration_body
+          (field
+            name: (identifier)
+            value: (value
+              (binary_expression
+                left: (value
+                  (identifier))
+                op: (binary_op)
+                right: (value
+                  (value_literal
+                    (integer)))))))))))

@@ -55,6 +55,8 @@ class ExpressionEvaluator {
       kGt,
       kLe,
       kGe,
+      kEq,
+      kNe,
     };
     Kind kind{Kind::kNumber};
     double number{0.0};
