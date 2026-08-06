@@ -28,14 +28,7 @@ export interface BlockPortDef {
 }
 
 export type CatalogFieldType =
-  | 'int'
-  | 'float'
-  | 'bool'
-  | 'string'
-  | 'enum'
-  | 'distribution'
-  | 'ref'
-  | 'expression';
+  'int' | 'float' | 'bool' | 'string' | 'enum' | 'distribution' | 'ref' | 'expression';
 
 export interface BlockPropertyDef {
   name: string;
@@ -210,42 +203,106 @@ export function blockProperties(kind: string): BlockPropertyDef[] {
 }
 
 /** Friendly defaults applied when a block is dropped (catalog defaults). */
-export const BLOCK_DEFAULTS: Record<string, Record<string, string | number | boolean>> =
-  Object.fromEntries(
-    BLOCK_DEFS.map((def) => [
-      def.kind,
-      Object.fromEntries(
-        def.properties
-          .filter((property) => property.default !== null)
-          .map((property) => [property.name, property.default as string | number | boolean]),
-      ),
-    ]),
-  );
+export const BLOCK_DEFAULTS: Record<
+  string,
+  Record<string, string | number | boolean>
+> = Object.fromEntries(
+  BLOCK_DEFS.map((def) => [
+    def.kind,
+    Object.fromEntries(
+      def.properties
+        .filter((property) => property.default !== null)
+        .map((property) => [property.name, property.default as string | number | boolean]),
+    ),
+  ]),
+);
 
 // Canvas card geometry (must match styles/model.css): the block card is a
-// centered flex column (34px icon + 4px gap + 15px name line). Port dots are
-// drawn on the icon's left/right midpoints. With multiple ports of the same
-// direction they stack vertically around the midpoint (24px apart).
+// centered flex column (34px icon + 4px gap + 15px name line). Ports live on
+// two vertical rails per side (docs/specs/process-library-icons.md):
+//   inner rail ±PORT_X      unconditional flow ports (9px dots)
+//   outer rail ±PORT_X_COND conditional/exception ports (7px dots + tick)
+// The primary flow port ('in'/'out') is pinned to the icon's vertical centre
+// so enabling conditional options never moves an existing wire.
 export const PORT_X = 17;
+export const PORT_X_COND = 23;
 export const PORT_Y = -9.5;
-const PORT_STACK_SPACING = 16;
+const SECONDARY_OFFSETS = [12, -12, -24];
+const COND_SPACING = 10;
+const COND_CLAMP = 15;
+
+/** Fixed vertical spreads (px, + down, relative to the icon centre) for the
+ *  unconditional same-direction ports of blocks that have no 'in'/'out'
+ *  primary, assigned in catalog order. */
+const INNER_SPREADS: Record<string, { in?: number[]; out?: number[] }> = {
+  selectOutput: { out: [-8, 8] }, // true on top, false below (AnyLogic)
+  combine: { in: [-6, 6] },
+  match: { in: [-6, 6], out: [-6, 6] },
+  assembler: { in: [-6, 6] },
+};
+
+function clamp(value: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, value));
+}
+
+export interface PortAnchor {
+  x: number;
+  y: number;
+  /** True when the port sits on the outer (conditional) rail. */
+  conditional: boolean;
+}
 
 export function portAnchor(
   node: { x: number; y: number; kind?: string },
   port: string,
-): { x: number; y: number } {
+): PortAnchor {
   const ports = node.kind ? blockPorts(node.kind) : [];
   const spec = ports.find((entry) => entry.name === port);
-  if (spec?.direction === 'in' || spec?.direction === 'inout') {
-    const ins = ports.filter(
-      (entry) => entry.direction === 'in' || entry.direction === 'inout',
-    );
-    const index = Math.max(0, ins.findIndex((entry) => entry.name === port));
-    return { x: node.x - PORT_X, y: node.y + PORT_Y + (index - (ins.length - 1) / 2) * PORT_STACK_SPACING };
-  }
-  const outs = ports.filter(
-    (entry) => entry.direction === 'out' || entry.direction === 'inout',
+  const isIn = spec?.direction === 'in' || spec?.direction === 'inout';
+  const side = isIn ? -1 : 1;
+  const sameDir = ports.filter((entry) =>
+    isIn
+      ? entry.direction === 'in' || entry.direction === 'inout'
+      : entry.direction === 'out' || entry.direction === 'inout',
   );
-  const index = Math.max(0, outs.findIndex((entry) => entry.name === port));
-  return { x: node.x + PORT_X, y: node.y + PORT_Y + (index - (outs.length - 1) / 2) * PORT_STACK_SPACING };
+
+  // Conditional ports: outer rail, centred 10px stack in catalog order.
+  if (spec?.conditionalOn) {
+    const conditional = sameDir.filter((entry) => entry.conditionalOn);
+    const index = Math.max(
+      0,
+      conditional.findIndex((entry) => entry.name === port),
+    );
+    const y = clamp((index - (conditional.length - 1) / 2) * COND_SPACING, -COND_CLAMP, COND_CLAMP);
+    return { x: node.x + side * PORT_X_COND, y: node.y + PORT_Y + y, conditional: true };
+  }
+
+  // Unconditional ports: inner rail.
+  const unconditional = sameDir.filter((entry) => !entry.conditionalOn);
+  const index = Math.max(
+    0,
+    unconditional.findIndex((entry) => entry.name === port),
+  );
+  const spread = INNER_SPREADS[node.kind ?? '']?.[isIn ? 'in' : 'out'];
+  let y: number;
+  if (spread) {
+    y = spread[Math.min(index, spread.length - 1)] ?? 0;
+  } else {
+    const primary = isIn ? 'in' : 'out';
+    const primaryIndex = unconditional.findIndex((entry) => entry.name === primary);
+    if (primaryIndex === -1) {
+      // No canonical primary (custom blocks): centred 12px stack.
+      y = (index - (unconditional.length - 1) / 2) * 12;
+    } else if (index === primaryIndex) {
+      y = 0; // primary flow stays on the horizontal axis, always
+    } else {
+      const secondary = unconditional.filter((entry) => entry.name !== primary);
+      const si = Math.max(
+        0,
+        secondary.findIndex((entry) => entry.name === port),
+      );
+      y = SECONDARY_OFFSETS[Math.min(si, SECONDARY_OFFSETS.length - 1)] ?? -24;
+    }
+  }
+  return { x: node.x + side * PORT_X, y: node.y + PORT_Y + y, conditional: false };
 }

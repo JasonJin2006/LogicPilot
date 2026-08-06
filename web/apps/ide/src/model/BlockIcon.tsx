@@ -27,8 +27,8 @@ export function BlockIcon({ kind }: { kind: string }) {
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M12 20h11" />
-          <path d="M19 16l4 4-4 4" />
+          <path d="M14 20h14" />
+          <path d="M24 16l4 4-4 4" />
         </Glyph>
       );
     case 'queue':
@@ -59,16 +59,9 @@ export function BlockIcon({ kind }: { kind: string }) {
       return (
         <Glyph>
           <rect x="7" y="7" width="26" height="26" rx="6" />
-          <text
-            x="20"
-            y="25.5"
-            textAnchor="middle"
-            fontSize="15"
-            fill="currentColor"
-            stroke="none"
-          >
-            R
-          </text>
+          <circle cx="14" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="20" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="26" cy="20" r="1.6" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'process':
@@ -89,32 +82,41 @@ export function BlockIcon({ kind }: { kind: string }) {
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M13 20h8" />
-          <path d="M21 15l4 5-4 5" />
+          <path d="M9 20h4" />
+          <path d="M15 15h12" />
+          <path d="M23 12l4 3-4 3" />
+          <path d="M15 25h12" />
+          <path d="M23 22l4 3-4 3" />
         </Glyph>
       );
     case 'combine':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M27 20h-8" />
-          <path d="M19 15l-4 5 4 5" />
+          <path d="M9 15h4l4 5" />
+          <path d="M9 25h4l4-5" />
+          <path d="M17 20h10" />
+          <path d="M23 17l4 3-4 3" />
         </Glyph>
       );
     case 'batch':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <rect x="15" y="13" width="10" height="5" rx="1" />
-          <rect x="15" y="22" width="10" height="5" rx="1" />
+          <rect x="12" y="13.5" width="6" height="5" rx="1" />
+          <rect x="12" y="21.5" width="6" height="5" rx="1" />
+          <path d="M21 17l3 3-3 3" />
+          <rect x="25" y="16" width="4" height="8" rx="1" />
         </Glyph>
       );
     case 'unbatch':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <rect x="15" y="13" width="10" height="5" rx="1" />
-          <path d="M18 25h4" />
+          <rect x="12" y="16" width="4" height="8" rx="1" />
+          <path d="M19 17l3 3-3 3" />
+          <rect x="23.5" y="14" width="5" height="5" rx="1" />
+          <rect x="23.5" y="21" width="5" height="5" rx="1" />
         </Glyph>
       );
     case 'seize':
@@ -156,33 +158,38 @@ export function BlockIcon({ kind }: { kind: string }) {
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M13 20h4" />
-          <path d="M23 20h4" />
-          <path d="M17 20l3-4 3 4" />
+          <path d="M10 20h5" />
+          <path d="M11 17l4 3-4 3" />
+          <path d="M30 20h-5" />
+          <path d="M29 17l-4 3 4 3" />
+          <circle cx="20" cy="20" r="2" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'selectOutput':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M13 20h3" />
-          <path d="M22 14l5 6-5 6" />
+          <path d="M9 20h5" />
+          <path d="M14 20l12-6" />
+          <path d="M22.2 15.4L26 14L24.6 10.2" />
+          <path d="M14 20l12 6" />
+          <path d="M22.2 24.6L26 26L24.6 29.8" />
         </Glyph>
       );
     case 'enter':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M12 20h8" />
-          <path d="M16 16l4 4-4 4" />
+          <path d="M12 10v20" />
+          <path d="M7 20h15" />
+          <path d="M18 16l4 4-4 4" />
         </Glyph>
       );
     case 'exit':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 20h8" />
-          <path d="M24 16l4 4-4 4" />
+          <path d="M28 10v20" />
+          <path d="M18 20h14" />
+          <path d="M28 16l4 4-4 4" />
         </Glyph>
       );
     case 'moveTo':
@@ -199,17 +206,21 @@ export function BlockIcon({ kind }: { kind: string }) {
     case 'timeMeasureStart':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 13v7l5 3" />
-          <path d="M14 29h12" />
+          <circle cx="20" cy="21" r="9" />
+          <path d="M20 8v4" />
+          <path d="M17.5 8h5" />
+          <path d="M20 17v4l3.5 2.5" />
+          <path d="M14 33h12" />
         </Glyph>
       );
     case 'timeMeasureEnd':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 13v7l5 3" />
-          <path d="M14 11h12" />
+          <circle cx="20" cy="23" r="9" />
+          <path d="M20 10v4" />
+          <path d="M17.5 10h5" />
+          <path d="M20 19v4l3.5 2.5" />
+          <path d="M14 7h12" />
         </Glyph>
       );
     case 'assembler':
@@ -218,6 +229,8 @@ export function BlockIcon({ kind }: { kind: string }) {
           <rect x="7" y="8" width="10" height="10" rx="2" />
           <rect x="7" y="22" width="10" height="10" rx="2" />
           <rect x="23" y="14" width="10" height="12" rx="2" />
+          <path d="M18 10l3 3-3 3" />
+          <path d="M18 24l3 3-3 3" />
         </Glyph>
       );
     case 'count':

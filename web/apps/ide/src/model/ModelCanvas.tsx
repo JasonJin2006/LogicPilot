@@ -13,12 +13,7 @@ import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
 import { syncCanvasFromProject } from '../state/projectSync';
-import {
-  BLOCK_DEFAULTS,
-  blockPorts,
-  portAnchor,
-  PRESENTATION_KINDS,
-} from './blockDefs';
+import { BLOCK_DEFAULTS, blockPorts, portAnchor, PRESENTATION_KINDS } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 import { PresentationShape } from './PresentationShape';
 import { insertBlockAt } from './canvasInsert';
@@ -50,16 +45,15 @@ function firstOutPort(node: ModelNode): string {
 
 function firstInPort(node: ModelNode): string {
   return (
-    visiblePorts(node).find(
-      (port) => port.direction === 'in' || port.direction === 'inout',
-    )?.name ?? 'in'
+    visiblePorts(node).find((port) => port.direction === 'in' || port.direction === 'inout')
+      ?.name ?? 'in'
   );
 }
 
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
-  0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500,
-  1000, 2000, 2500, 5000, 10_000, 20_000, 25_000, 50_000, 100_000,
+  0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500,
+  5000, 10_000, 20_000, 25_000, 50_000, 100_000,
 ];
 
 function clamp(value: number, min: number, max: number): number {
@@ -125,9 +119,7 @@ export function ModelCanvas() {
   const setView = (updater: View | ((current: View) => View)) => {
     setViewState((current) => {
       const next =
-        typeof updater === 'function'
-          ? (updater as (current: View) => View)(current)
-          : updater;
+        typeof updater === 'function' ? (updater as (current: View) => View)(current) : updater;
       cameraCache.current.set(viewKey, next);
       return next;
     });
@@ -226,11 +218,7 @@ export function ModelCanvas() {
       const mx = event.clientX - rect.left;
       const my = event.clientY - rect.top;
       setView((current) => {
-        const scale = clamp(
-          current.scale * Math.exp(-event.deltaY * 0.0015),
-          MIN_SCALE,
-          MAX_SCALE,
-        );
+        const scale = clamp(current.scale * Math.exp(-event.deltaY * 0.0015), MIN_SCALE, MAX_SCALE);
         const worldX = (mx - current.panX) / current.scale;
         const worldY = (my - current.panY) / current.scale;
         return { scale, panX: mx - worldX * scale, panY: my - worldY * scale };
@@ -295,8 +283,7 @@ export function ModelCanvas() {
       if (mainSource !== undefined && sceneSource !== undefined) {
         const container = sceneContainerFromFile(scenePath, sceneSource);
         const baseName =
-          container?.name ??
-          scenePath.slice(scenePath.lastIndexOf('/') + 1).replace(/\.lp$/, '');
+          container?.name ?? scenePath.slice(scenePath.lastIndexOf('/') + 1).replace(/\.lp$/, '');
         const instanceName = nextInstanceName(mainSource, baseName);
         const nextMain = addInstanceLine(mainSource, scenePath, instanceName);
         useProjectStore.getState().updateFiles((files) => ({
@@ -358,11 +345,7 @@ export function ModelCanvas() {
     return best;
   };
 
-  const startWire = (
-    event: ReactPointerEvent<HTMLSpanElement>,
-    node: ModelNode,
-    port: string,
-  ) => {
+  const startWire = (event: ReactPointerEvent<HTMLSpanElement>, node: ModelNode, port: string) => {
     event.stopPropagation();
     const anchor = portAnchor(node, port);
     wireStart.current = { x: event.clientX, y: event.clientY };
@@ -381,7 +364,8 @@ export function ModelCanvas() {
   const endWire = (event: ReactPointerEvent<HTMLSpanElement>) => {
     if (!draftWire) return;
     const start = wireStart.current;
-    const moved = start !== null && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 4;
+    const moved =
+      start !== null && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 4;
     if (moved) {
       const world = clientToWorld(event.clientX, event.clientY);
       const target = findWireTarget(world, draftWire.fromId);
@@ -413,7 +397,9 @@ export function ModelCanvas() {
   const [, setLiveVersion] = useState(vizState.tickVersion);
   useEffect(() => {
     const id = window.setInterval(() => {
-      setLiveVersion((version) => (version === vizState.tickVersion ? version : vizState.tickVersion));
+      setLiveVersion((version) =>
+        version === vizState.tickVersion ? version : vizState.tickVersion,
+      );
     }, 100);
     return () => window.clearInterval(id);
   }, []);
@@ -567,11 +553,7 @@ export function ModelCanvas() {
               onPointerDown={(event) => event.stopPropagation()}
             >
               <path className="edge-hit" d={d} strokeWidth={10 / view.scale} />
-              <path
-                className="edge-line"
-                d={d}
-                strokeWidth={1.5 / view.scale}
-              />
+              <path className="edge-line" d={d} strokeWidth={1.5 / view.scale} />
             </g>
           );
         })}
@@ -688,7 +670,7 @@ export function ModelCanvas() {
       >
         {edgesView}
         {shapesView}
-      {visibleNodes.map((node) => {
+        {visibleNodes.map((node) => {
           if (PRESENTATION_KINDS.has(node.kind)) {
             return null; // rendered as a real shape above
           }
@@ -741,18 +723,23 @@ export function ModelCanvas() {
                   const anchor = portAnchor(node, port.name);
                   const isIn = port.direction === 'in' || port.direction === 'inout';
                   const targeted =
-                    isIn && wireTarget !== null && wireTarget.id === node.id &&
+                    isIn &&
+                    wireTarget !== null &&
+                    wireTarget.id === node.id &&
                     wireTarget.port === port.name;
+                  const cond = port.conditionalOn !== null;
                   return (
                     <span
                       key={port.name}
-                      className={`model-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
+                      className={`model-port ${isIn ? 'port-in' : 'port-out'}${cond ? ' port-cond' : ''}${targeted ? ' wire-target' : ''}`}
                       data-port={port.name}
                       title={port.name}
                       style={{
-                        left: anchor.x - node.x,
-                        top: anchor.y - node.y,
-                        transform: 'translate(-50%, -50%)',
+                        // portAnchor() is node-centre-relative; the icon span's
+                        // origin is its top-left (node centre - 17px), hence the
+                        // +17 shift.
+                        left: anchor.x - node.x + 17,
+                        top: anchor.y - node.y + 17,
                       }}
                       onPointerDown={
                         isIn
