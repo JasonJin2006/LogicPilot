@@ -697,30 +697,122 @@
 .properties {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .props-kind {
   font-family: var(--font-mono);
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: var(--accent-text);
 }
 
 .props-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  color: var(--text-muted);
+  gap: 5px;
+}
+
+.props-field-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.props-field > input,
+.props-field > select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 26px;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
-.props-field input {
+.props-field > textarea {
   box-sizing: border-box;
   width: 100%;
+  min-height: 48px;
+  resize: vertical;
+  line-height: 1.45;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.props-field > input:hover:not(:disabled),
+.props-field > select:hover:not(:disabled),
+.props-field > textarea:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.props-no-runtime {
+  font-style: normal;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-text);
+  background: var(--accent-dim);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.props-toggle {
+  position: relative;
+  display: inline-flex;
+  width: 30px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.props-toggle input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.props-toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
+  pointer-events: none;
+}
+
+.props-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition:
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.props-toggle input:checked + .props-toggle-track {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.props-toggle input:checked + .props-toggle-track::after {
+  transform: translateX(13px);
+  background: var(--accent);
+}
+
+.props-toggle input:focus-visible + .props-toggle-track {
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .props-meta {
@@ -733,9 +825,16 @@
 
 .props-delete {
   align-self: flex-start;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
   background: transparent;
   border-color: var(--error-dim);
   color: var(--error);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .props-delete:hover:not(:disabled) {
@@ -760,18 +859,58 @@
 .props-attribute input,
 .props-attribute select {
   box-sizing: border-box;
+  height: 26px;
   font-family: var(--font-mono);
   font-size: 12px;
 }
 
-.props-attribute input[type='checkbox'] {
-  width: auto;
-}
-
 .props-attr-add,
 .props-attr-remove {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
   background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
   line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.props-attr-add:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.props-attr-remove:hover {
+  background: var(--error-dim);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.props-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--row-border);
+}
+
+.props-section-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .props-align-row {

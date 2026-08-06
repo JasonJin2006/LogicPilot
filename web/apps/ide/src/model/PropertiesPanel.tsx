@@ -49,6 +49,29 @@ const SECTION_LABELS: Record<string, string> = {
 
 const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set(['expression']);
 
+/** Modern toggle switch (replaces the native checkbox in the properties
+ *  panel): hidden input drives the styled track/thumb. */
+function Toggle({
+  checked,
+  onChange,
+  title,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title?: string;
+}) {
+  return (
+    <span className="props-toggle" title={title}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="props-toggle-track" aria-hidden="true" />
+    </span>
+  );
+}
+
 /** Entity attributes are stored as `state <name>: <type>` params on the
  *  source block (the DSL form generated/parsed by the editor round-trip). */
 const ATTRIBUTE_PREFIX = 'state ';
@@ -175,10 +198,9 @@ export function PropertiesPanel() {
           )}
         </span>
         {field.type === 'bool' ? (
-          <input
-            type="checkbox"
+          <Toggle
             checked={value === true}
-            onChange={(event) => setBlockParam(node.id, field.name, event.target.checked)}
+            onChange={(checked) => setBlockParam(node.id, field.name, checked)}
           />
         ) : field.type === 'enum' && field.validValues && field.validValues.length > 0 ? (
           <select
@@ -248,12 +270,9 @@ export function PropertiesPanel() {
                 <option value="bool">bool</option>
               </select>
               {attribute.type === 'bool' ? (
-                <input
-                  type="checkbox"
+                <Toggle
                   checked={attribute.value === true}
-                  onChange={(event) =>
-                    setBlockParam(node.id, attribute.key, event.target.checked)
-                  }
+                  onChange={(checked) => setBlockParam(node.id, attribute.key, checked)}
                 />
               ) : (
                 <input
