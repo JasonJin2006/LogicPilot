@@ -68,7 +68,8 @@ hold Gate {
 ```
 
 条件里可引用仿真时间 `t`/`time` 与本块的数值参数；表达式是纯求值（无副作用），
-同种子下结果确定。
+同种子下结果确定。条件字段引用未声明的标识符会得到 `LP5006` 诊断（只允许
+`t`/`time` 与本块自身的数值字段）。
 
 ## 表达式与参数
 
@@ -121,6 +122,8 @@ model Swarm {
 ```
 
 行为由内核内置处理器注册表提供（`noop` / `flip <state>` / `bounce`），同种子下 tick 顺序确定。
+大规模群体（≥ 65536 个 agent 且多核）时，flip/bounce 这类逐实体独立的行为自动
+走并行批量 tick 路径，每实体计算与串行逐位一致（10 万 agent 确定性测试覆盖）。
 
 ## continuous：连续 ODE 系统
 
@@ -151,6 +154,23 @@ experiment Optimization {
 实验作为模型的一部分进入 v2 IR（`ModelFile.experiments`），`lpcli compile
 --experiments-json` 可导出，AI 优化脚本据此做 grid/GA 搜索。`variable` 必须
 引用已声明的模型参数（`LP7001` 校验）。
+
+## 自定义库与行业库
+
+库块形状声明在 `.lplib` 文件中（`block <Name> { <field>: <type> [= 默认值];
+in/out 端口 }`），`use <library>` 按搜索路径加载（模型所在目录与 `libraries/`），
+`lpcli compile --lib-path` 可指定额外目录：
+
+```logicpilot
+use manufacturing
+```
+
+行业库通过 `scripts/logicpkg.mjs` 分发：`logicpkg init` → `logicpkg pack`（单文件
+`.lpkg` 包）→ `logicpkg install`（防路径穿越）→ `logicpkg list`。新块可用
+`extends: ref = <内置块>` 映射到内核已有语义（例如 `Machine → service`），
+无需改动内核即可发布、编译、运行；仓库自带 `libraries/manufacturing.lplib`
+与 `examples/industry/manufacturing_line.lp`（制造线示例，发布闭环由
+`library_publish_smoke` ctest 覆盖）。
 
 ## 示例模型
 

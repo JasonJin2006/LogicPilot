@@ -60,7 +60,10 @@ reference semantics stay in the compiler/runtime keyed by `{library, block}`.
   Poisson arrivals — `poisson` is deprecated.
 - Errors (compile-time): unknown resource reference, negative capacities,
   out-of-range `failure_rate`, duplicate declarations, unknown/misplaced
-  kinds (`LP2004`), unknown fields (`LP2005`).
+  kinds (`LP2004`), unknown fields (`LP2005`). Runtime condition slots
+  (`selectOutput.condition` / `hold.blockingCondition`) may only reference
+  `t`/`time` and the block's own numeric fields; undeclared identifiers are
+  `LP5006`.
 
 ## 3. Example
 

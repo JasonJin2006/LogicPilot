@@ -1,6 +1,6 @@
 # 里程碑 1 契约：多服务器与机器故障（M/M/c + breakdowns）
 
-状态: Implemented（2026-08-04；全量 ctest 现为 190+）。内核引擎（QueueingFlowSim M/M/c + breakdowns）、
+状态: Implemented（2026-08-04；全量 ctest 现为 212）。内核引擎（QueueingFlowSim M/M/c + breakdowns）、
 IR 接线（ir_loader）、验收模型（examples/mm1_failure.lp + expect.json）与流式驱动
 （SimRunner/lp-server 现已按 IR 模型参数运行，含多服务器与故障，wire Counters 增加
 `servers` / `down_servers` 字段）均已落地。

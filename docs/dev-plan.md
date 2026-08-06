@@ -47,6 +47,9 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   examples/*.expect.json 验收规则）；`ai-build.mjs` 运行后自动校验并把
   `verification` 报告并入输出；新增 `verify_run_smoke` ctest。
 - 后续：死锁（服务前无源/队列容量 0 语义）等更深静态检查。
+- **条件字段标识符校验 ✅（LP5006）**：`selectOutput.condition` /
+  `hold.blockingCondition` 只允许 `t`/`time` 与块自身数值字段，未知标识符
+  报 LP5006（此前静默按 0.0 处理）。
 
 ## 运行时执行策略决策（✅ 已落地 2026-08-06）
 
@@ -59,6 +62,13 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   replication API）+ `lpcli run --threads N`——每个 worker 持有独立模型
   实例，按 rep 派生种子，结果与串行逐位一致；`--trajectory` 时回退顺序
   路径（保持主模型 per-run 状态可见）；新增并行确定性测试与 CLI 冒烟。
+- **阶段 B 已落地（2026-08-06）**：agent ECS 批量 tick 并行——flip/bounce
+  等逐实体独立行为在 ≥ 65536 agent 且多核时按原子分区并行执行，每实体计算
+  与串行逐位一致；新增 10 万 agent 两次运行逐位相同的确定性测试。
+- **脚本 Phase 1 已落地（2026-08-06）**：内核 `ExpressionEvaluator` 支持
+  比较运算（`< > <= >=`），`selectOutput` 按 `condition` 路由、`hold` 按
+  `blockingCondition` 阻塞，条件原文随 IR 传递（编译时折叠常量比较，非折叠
+  字段降级为字符串参数），运行时按 `t`/`time` + 块数值参数求值。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 
@@ -84,6 +94,9 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 - **行业示例模型 ✅**：`examples/industry/manufacturing_line.lp`（制造线：
   原料到达 → 钻床池（2 台含故障）→ 装配 → 成品），`lpcli compile/run`
   实测通过；`examples/industry/README.md` 说明如何以 `.lpkg` 分发。
+- **行业库发布闭环 ✅**：新增 `scripts/test-library-publish.mjs` +
+  `library_publish_smoke` ctest——logicpkg pack → install → compile → run
+  制造库模型的端到端冒烟，库分发「可发布、可安装、可运行」受 CI 保护。
 - **容器化部署 ✅（基建）**：`docker/Dockerfile` 多阶段构建（vcpkg 固定
   基线编译 lp-server + lpcli）+ `.dockerignore` + `docker/README.md`
   （构建/运行/健康检查/TLS 建议）。
@@ -92,6 +105,6 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 
 ## 验收纪律
 
-- 每阶段保持 194+ ctest 全绿、docs 构建通过、CI 全绿。
+- 每阶段保持 212 ctest 全绿、docs 构建通过、CI 全绿。
 - 每阶段独立可交付、可回退；P0 增量聚焦结构化诊断/调试/剖析 + 测试基准
   扩展 + DSL 冻结文档。

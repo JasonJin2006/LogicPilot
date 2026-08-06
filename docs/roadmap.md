@@ -25,8 +25,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | IR v2 迁移                   | ✅   | A→B→C→D 全部阶段、原生 v2 发射（`LP2R` 默认）、F3 C++↔TS 互操作门禁；**v1 已全量退役**                                                                                                                                                                                            |
 | AI Copilot（Phase 6 第一刀） | 🔶   | ai-build（规则/LLM 双 provider + 诊断修复闭环）、ai-optimize（模型声明实验 + grid/GA）、ai-explain（池级归因）；AI 面板含轨迹/优化曲线；**细粒度归因未开始**                                                                                                                      |
 | Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
+| 并行执行                     | ✅   | ADR-0009 阶段 A（reps 级线程池）与阶段 B（agent ECS 批量 tick，≥65536 agent 多核自动并行，10 万 agent 逐位确定）已落地；阶段 C（事件级保守并行）延后 |
 | 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
-| 测试基线                     | ✅   | 153 ctest、renderer2d 5 vitest、editor 8 vitest、interop 58 checks、浏览器 E2E                                                                                                                                                                                                    |
+| 测试基线                     | ✅   | 212 ctest、corpus 48/48、renderer2d 5 vitest、editor 53 vitest、IDE 80 vitest、interop 58 checks、浏览器 E2E                                                                                                                                                                    |
 
 ## 3. 契约与工程纪律状态
 
@@ -65,7 +66,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    CI 未安装；文法回归由 C++ 侧 `test_dsl_parser` 间接承担。
    验收：CI 增加一步运行 `tree-sitter test`（或等效的 corpus 校验）。
    入口：`dsl/tree-sitter-logicpilot/`、`.github/workflows/ci.yml`。
-   ✅ 已完成（`ca52e3f`，dsl-grammar job 跑 `tree-sitter test`，45 用例）。
+   ✅ 已完成（`ca52e3f`，dsl-grammar job 跑 `tree-sitter test`，现 48 用例）。
 
 ### P1 — 核心功能（下一个开发主战场）
 
@@ -79,7 +80,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase B（泛化文法）✅ 已完成**（`da2d80c` 落地）：`grammar.js` 重写为
    通用骨架（`kind`=任意 identifier），tree-sitter 0.26.11 重生成 parser；AST/
    parser/semantic/lowering 全部泛化；process 库块形状进编译器内建注册表
-   （`LP2004` 未知/错位 kind、`LP2005` 未知字段）；corpus 40 用例、示例、
+   （`LP2004` 未知/错位 kind、`LP2005` 未知字段）；corpus 48 用例、示例、
    AI provider、文档同步。行为语法统一为 `on_<trigger> { }`（`poisson` 保留为
    `rate` 的等价别名，Phase D 弃用）。
    **Phase C（显式引用）✅ 已完成**（2026-08-04）：`service { resource = R }`
@@ -156,9 +157,14 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    启动为空状态（空白画布、无打开工程），继续之前的工程经
    Open Recent / Open 重新打开；Open Recent 支持单项删除。
    **AI → 画布闭环 ✅ 已完成**（2026-08-05）：`@logicpilot/editor` 新增
-   `parseDsl`（DSL v2 子集 → 图文档，process 块按声明顺序连线，自动布局，
-   18 单测含 round-trip）；AI 面板生成结果新增 "Load to canvas"，加载为可
-   撤销操作；browser-verify 覆盖 AI 生成 → 画布加载。
+   `parseDsl`（DSL v2 全量 → 图文档，自动布局）；AI 面板生成结果新增
+   "Load to canvas"，加载为可撤销操作；browser-verify 覆盖 AI 生成 →
+   画布加载。
+   **DSL ⇄ 画布全量 round-trip ✅ 已完成**（2026-08-06）：任意合法 DSL
+   子集满足 `parse(generate(parse(src))) == parse(src)`（成员/参数/边集
+   一致）且 generate 幂等；比较表达式、typed state、ODE、多 behavior
+   （含端口）、自定义块、couple 端口全部无损往返；editor 包 53 vitest
+   覆盖（同名嵌套容器给 LP3103 警告并防递归）。
    **Palette 库选择栏 ✅ 已完成**（2026-08-05）：标题栏下新增库选择条
    （All / Recent / process / 导入的自定义库 + "+" 导入按钮，鼠标滚轮横向
    滚动）；Recent 追踪最近拖放的块（持久化）；自定义库 JSON 导入
@@ -309,6 +315,6 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 
 - 每里程碑以功能为单元，先改 `docs/roadmap.md` 状态再实现，实现后同 commit 更新。
 - 涉及两个以上工作流的语义变更，先写契约规格（`docs/specs/`）再实现。
-- 契约变更必须走冻结流程（F1/F2/F3，见 §3），不破坏 136 ctest 与前端测试。
+- 契约变更必须走冻结流程（F1/F2/F3，见 §3），不破坏 212 ctest 与前端测试。
 - 服务端/CI 相关改动在本机验证：`cmake --build build/integration-dev` + `ctest`，
   前端 `pnpm build` / `pnpm test` / `pnpm docs:build`。

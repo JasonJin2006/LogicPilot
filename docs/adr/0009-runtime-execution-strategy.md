@@ -1,6 +1,7 @@
 # ADR-0009: Runtime Execution Strategy (Parallelism + Scripting)
 
-- **Status**: Accepted
+- **Status**: Accepted；Phase A（reps 级并行）、Phase B（agent ECS 批量
+  tick 并行）与脚本 Phase 1（运行时条件表达式）均已落地（2026-08-06）
 - **Date**: 2026-08-06
 - **Deciders**: `/root` (integration) + kernel/DSL owners
 

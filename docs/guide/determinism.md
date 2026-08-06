@@ -39,7 +39,9 @@ lpcli run --model-file build/mm1.ir.bin --seed 42   # 两次运行输出逐位�
 
 ## 测试矩阵
 
-- 190+ 个 CTest（内核单元/集成/确定性/互操作/验收，含 1M-agent 规模冒烟、
-  慢客户端写队列上限、IR 加载器健壮性与 JSON 控制解析器边界单测）
+- 212 个 CTest（内核单元/集成/确定性/互操作/验收，含 1M-agent 规模冒烟、
+  10 万 agent 并行 tick 逐位确定性、行业库发布闭环、慢客户端写队列上限、
+  IR 加载器健壮性与 JSON 控制解析器边界单测）
 - 前端：renderer2d vitest（wire 解码）、protocol 互操作校验（58 checks）、
-  editor 包 vitest（图文档/DSL 生成）、浏览器 E2E（动画/图表/AI 面板）
+  editor 包 vitest（图文档/DSL 生成/全量 round-trip）、IDE 80 vitest、
+  浏览器 E2E（动画/图表/AI 面板）
