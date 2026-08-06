@@ -253,9 +253,10 @@ fn main() {
             .inner_size(1440.0, 900.0)
             .min_inner_size(1024.0, 700.0)
             .decorations(false)
-            // Match the app's dark surface so a pre-paint frame is never a
-            // black flash before the webview draws its first frame.
-            .background_color(tauri::window::Color(10, 14, 20, 255))
+            // White pre-paint frame: the webview paints the resolved theme
+            // (usually light) as soon as the HTML loads. A dark background
+            // here flashed a dark-blue window for light-theme users.
+            .background_color(tauri::window::Color(255, 255, 255, 255))
             .build()?;
             Ok(())
         })

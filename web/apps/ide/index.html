@@ -8,6 +8,25 @@
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='5' cy='8' r='3' fill='%2358a6ff'/%3E%3Ccircle cx='12' cy='8' r='2' fill='%233fb950'/%3E%3C/svg%3E"
     />
     <title>LogicPilot IDE</title>
+    <script>
+      // Apply the persisted theme before the first paint: the HTML default is
+      // dark, so without this a light-theme user would see a dark/blue flash
+      // while the bundle loads (the Rust window background is white).
+      (function () {
+        try {
+          var raw = localStorage.getItem('logicpilot.theme');
+          var state = raw ? JSON.parse(raw) : null;
+          var mode = state && state.state ? state.state.mode : 'system';
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        } catch (e) {
+          /* keep the default theme */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
