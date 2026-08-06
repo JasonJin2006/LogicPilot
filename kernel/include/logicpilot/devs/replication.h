@@ -9,7 +9,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <span>
+#include <vector>
 
 #include "logicpilot/core/scheduler/event.h"
 #include "logicpilot/core/time/sim_time.h"
@@ -105,5 +108,20 @@ double student_t_critical(double confidence, std::size_t df);
 
 ReplicationSummary summarize_replications(
     std::span<const ReplicationMetrics> reps, double confidence = 0.95);
+
+// Run `reps` replications across up to `threads` worker threads (ADR-0009
+// Phase A: replication-level parallelism).
+//
+// `build` must return a fresh, independent ReplicationModel per call:
+// models are NOT safe for concurrent run() on one instance, so every worker
+// owns its own instance and reuses it for its assigned replications (the
+// same reuse semantics as the sequential loop). Per-replication seeds are
+// derived exactly like replication_seed(run_seed, rep) (SeedStreams), so
+// the returned metrics are bit-identical to a sequential run, in rep order.
+// `threads` 0/1 and `reps` <= 1 fall back to a sequential loop.
+std::vector<ReplicationMetrics> run_replications_parallel(
+    const std::function<std::unique_ptr<ReplicationModel>()>& build,
+    const ReplicationConfig& base_config, std::uint64_t reps,
+    std::size_t threads);
 
 }  // namespace logicpilot

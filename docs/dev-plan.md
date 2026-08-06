@@ -55,6 +55,10 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   暂不上 VM」——复用内核 `ExpressionEvaluator` 在有限决策位（selectOutput/
   hold/match/agent 守卫）执行运行时 `condition_text`，纯求值无副作用；
   用户自定义脚本语言仅在出现具体需求时再设计（沙箱 VM 边界）。
+- **阶段 A 已落地（2026-08-06）**：`run_replications_parallel`（内核
+  replication API）+ `lpcli run --threads N`——每个 worker 持有独立模型
+  实例，按 rep 派生种子，结果与串行逐位一致；`--trajectory` 时回退顺序
+  路径（保持主模型 per-run 状态可见）；新增并行确定性测试与 CLI 冒烟。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

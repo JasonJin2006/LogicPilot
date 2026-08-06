@@ -1,7 +1,12 @@
 // Replication summary statistics implementation.
 #include "logicpilot/devs/replication.h"
 
+#include <atomic>
 #include <cmath>
+#include <mutex>
+#include <thread>
+
+#include "logicpilot/core/random/streams.h"
 
 namespace logicpilot {
 namespace {
@@ -139,6 +144,69 @@ ReplicationSummary summarize_replications(
     return m.final_value;
   });
   return out;
+}
+
+std::vector<ReplicationMetrics> run_replications_parallel(
+    const std::function<std::unique_ptr<ReplicationModel>()>& build,
+    const ReplicationConfig& base_config, std::uint64_t reps,
+    std::size_t threads) {
+  std::vector<ReplicationMetrics> results(reps);
+  if (reps == 0) {
+    return results;
+  }
+  if (threads <= 1 || reps == 1) {
+    auto model = build();
+    if (model == nullptr) {
+      throw std::runtime_error(
+          "run_replications_parallel: model builder returned nullptr");
+    }
+    for (std::uint64_t rep = 0; rep < reps; ++rep) {
+      ReplicationConfig config = base_config;
+      const SeedStreams streams{base_config.seed};
+      config.seed = streams.derive_state(rep)[0];
+      results[rep] = model->run(config, nullptr);
+    }
+    return results;
+  }
+  if (threads > static_cast<std::size_t>(reps)) {
+    threads = static_cast<std::size_t>(reps);
+  }
+
+  std::atomic<std::uint64_t> next_rep{0};
+  std::atomic<bool> failed{false};
+  std::string failure_message;
+  std::mutex failure_mutex;
+  std::vector<std::thread> workers;
+  workers.reserve(threads);
+  for (std::size_t worker = 0; worker < threads; ++worker) {
+    workers.emplace_back([&] {
+      auto model = build();  // one isolated model per worker
+      if (model == nullptr) {
+        std::lock_guard<std::mutex> lock(failure_mutex);
+        failure_message =
+            "run_replications_parallel: model builder returned nullptr";
+        failed = true;
+        return;
+      }
+      for (;;) {
+        const std::uint64_t rep = next_rep.fetch_add(1);
+        if (rep >= reps) {
+          break;
+        }
+        ReplicationConfig config = base_config;
+        const SeedStreams streams{base_config.seed};
+        config.seed = streams.derive_state(rep)[0];
+        results[rep] = model->run(config, nullptr);
+      }
+    });
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
+  }
+  if (failed) {
+    throw std::runtime_error(failure_message);
+  }
+  return results;
 }
 
 }  // namespace logicpilot

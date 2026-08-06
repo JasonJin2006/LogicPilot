@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <span>
 #include <string>
 
@@ -17,6 +18,7 @@ struct RunOptions {
   std::string model_file;             // .lpir IR file; overrides --model
   std::uint64_t seed{42};
   std::uint64_t reps{30};
+  std::size_t threads{1};  // parallel replication workers (ADR-0009 Phase A)
   std::uint64_t arrivals{20000};
   std::uint64_t warmup{2000};
   double lambda{0.8};

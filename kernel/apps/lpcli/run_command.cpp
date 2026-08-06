@@ -5,6 +5,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -56,6 +57,7 @@ void print_usage() {
 #endif
       "  --seed <n>                 run seed (default 42)\n"
       "  --reps <n>                 replications (default 30)\n"
+      "  --threads <n>              parallel replication workers (default 1)\n"
       "  --arrivals <n>             arrivals per replication (default 20000)\n"
       "  --warmup <n>               warmup arrivals excluded from stats\n"
       "  --lambda <x>               arrival rate for built-in:mm1 (default 0.8)\n"
@@ -254,6 +256,11 @@ int run_command(std::span<const std::string> args) {
         fmt::print(stderr, "error: invalid --reps\n");
         return 2;
       }
+    } else if (arg == "--threads") {
+      if (!need_value()) {
+        return 2;
+      }
+      options.threads = static_cast<std::size_t>(std::stoull(value));
     } else if (arg == "--arrivals") {
       if (!need_value() || !parse_u64(value, options.arrivals) ||
           options.arrivals == 0) {
@@ -308,6 +315,7 @@ int run_command(std::span<const std::string> args) {
 
   // Resolve the executable model.
   std::unique_ptr<ReplicationModel> model;
+  std::function<std::unique_ptr<ReplicationModel>()> build_model;
   std::string model_label;
   if (explicit_project) {
 #ifdef LOGICPILOT_HAS_DSL
@@ -363,10 +371,16 @@ int run_command(std::span<const std::string> args) {
                  loaded.message, to_string(loaded.status));
       return 1;
     }
-    std::string build_error;
-    model = build_replication_model(loaded.file, &build_error);
+    const std::vector<std::uint8_t> model_bytes = loaded.file.v2_bytes;
+    build_model = [model_bytes]() -> std::unique_ptr<ReplicationModel> {
+      const IrLoadResult re = load_model_buffer(model_bytes.data(),
+                                                model_bytes.size());
+      std::string error;
+      return build_replication_model(re.file, &error);
+    };
+    model = build_model();
     if (!model) {
-      fmt::print(stderr, "error: {}\n", build_error);
+      fmt::print(stderr, "error: failed to build the executable model\n");
       return 1;
     }
     model_label = fmt::format("project:{} ({})", options.project,
@@ -388,10 +402,16 @@ int run_command(std::span<const std::string> args) {
                  options.model_file, loaded.message, to_string(loaded.status));
       return 1;
     }
-    std::string build_error;
-    model = build_replication_model(loaded.file, &build_error);
+    const std::vector<std::uint8_t> model_bytes = loaded.file.v2_bytes;
+    build_model = [model_bytes]() -> std::unique_ptr<ReplicationModel> {
+      const IrLoadResult re = load_model_buffer(model_bytes.data(),
+                                                model_bytes.size());
+      std::string error;
+      return build_replication_model(re.file, &error);
+    };
+    model = build_model();
     if (!model) {
-      fmt::print(stderr, "error: {}\n", build_error);
+      fmt::print(stderr, "error: failed to build the executable model\n");
       return 1;
     }
     model_label = fmt::format("file:{} ({})", options.model_file,
@@ -406,7 +426,10 @@ int run_command(std::span<const std::string> args) {
     const std::string name = options.model.substr(
         std::char_traits<char>::length(kBuiltinPrefix));
     ModelBuildParams params{options.lambda, options.mu};
-    model = BuiltinModelRegistry::instance().create(name, params);
+    build_model = [params, name]() -> std::unique_ptr<ReplicationModel> {
+      return BuiltinModelRegistry::instance().create(name, params);
+    };
+    model = build_model();
     if (!model) {
       fmt::print(stderr, "error: unknown built-in model '{}'\n", name);
       fmt::print(stderr, "available:");
@@ -448,25 +471,51 @@ int run_command(std::span<const std::string> args) {
         theory.throughput);
   }
 
-  // Run replications (per-replication deterministic stream seeds).
-  std::vector<ReplicationMetrics> results;
-  results.reserve(options.reps);
+  // Run replications (per-replication deterministic stream seeds). Parallel
+  // workers each own an isolated model instance (ADR-0009 Phase A); results
+  // are bit-identical to a sequential run.
   fmt::print(
       "{:>4}  {:>20}  {:>10}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}\n", "rep",
       "seed", "departures", "throughput", "L", "Lq", "W", "Wq");
-  for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
-    ReplicationConfig config;
-    config.seed = replication_seed(options.seed, rep);
-    config.arrivals = options.arrivals;
-    config.warmup_arrivals = options.warmup;
-    ReplicationMetrics metrics = model->run(config, nullptr);
-    fmt::print(
-        "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
-        "{:>8.4f}\n",
-        rep + 1, config.seed, metrics.departures, metrics.throughput,
-        metrics.mean_in_system, metrics.mean_in_queue, metrics.mean_sojourn,
-        metrics.mean_wait);
-    results.push_back(metrics);
+  std::vector<ReplicationMetrics> results;
+  results.reserve(options.reps);
+  const bool sequential =
+      options.threads <= 1 || !options.trajectory.empty();
+  if (sequential) {
+    // Sequential path reuses the primary `model` so per-run state (e.g. the
+    // continuous-model trajectory) stays visible after the loop.
+    for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
+      ReplicationConfig config;
+      config.seed = replication_seed(options.seed, rep);
+      config.arrivals = options.arrivals;
+      config.warmup_arrivals = options.warmup;
+      ReplicationMetrics metrics = model->run(config, nullptr);
+      fmt::print(
+          "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
+          "{:>8.4f}\n",
+          rep + 1, config.seed, metrics.departures, metrics.throughput,
+          metrics.mean_in_system, metrics.mean_in_queue, metrics.mean_sojourn,
+          metrics.mean_wait);
+      results.push_back(metrics);
+    }
+  } else {
+    // Parallel workers each own an isolated model instance (ADR-0009
+    // Phase A); results are bit-identical to a sequential run.
+    ReplicationConfig base_config;
+    base_config.seed = options.seed;
+    base_config.arrivals = options.arrivals;
+    base_config.warmup_arrivals = options.warmup;
+    results = run_replications_parallel(build_model, base_config,
+                                        options.reps, options.threads);
+    for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
+      const ReplicationMetrics& metrics = results[rep];
+      fmt::print(
+          "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
+          "{:>8.4f}\n",
+          rep + 1, replication_seed(options.seed, rep), metrics.departures,
+          metrics.throughput, metrics.mean_in_system, metrics.mean_in_queue,
+          metrics.mean_sojourn, metrics.mean_wait);
+    }
   }
 
   const ReplicationSummary summary =
