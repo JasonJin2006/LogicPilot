@@ -62,3 +62,37 @@
       主口下方 12px。
 - [ ] hover 任意端口放大 1.3 倍生效。
 - [ ] 16/24/34px 下新 glyph 可辨认；`source` 与 `enter` 不撞脸。
+
+## 5. 端口语义（对照 AnyLogic 官方文档）
+
+端口位置与语义均对照 AnyLogic PML 官方参考（`libraries/pml-catalog.json` 的
+`description` 即由 `scripts/extract-pml-catalog.mjs` 从官方 HTML 提取）。
+通用约定：`in` = 主输入口，`out` = 主输出口；**条件端口**在对应属性开启后
+才可见（`outTimeout` ← `enableTimeout`，`outPreempted` ← `enablePreemption`，
+`match` 为 `outTimeout1/2`、`outPreempted1/2` ← `enableTimeout1/2`、
+`enablePreemption1/2`）。
+
+| 块                               | 特殊端口                       | 方向  | 语义（官方文档）                                                                      |
+| -------------------------------- | ------------------------------ | ----- | ------------------------------------------------------------------------------------- |
+| source                           | out                            | 出    | 生成的 agent 出口                                                                     |
+| split                            | outCopy                        | 出    | 块创建的新 agent 出口（`out` 为原 agent）                                             |
+| combine                          | in1 / in2                      | 入    | 两个输入口，合并为一个 agent                                                          |
+| seize                            | preparedUnits                  | 出    | 完成准备任务的资源单元出口，应接"资源准备流程"末端（该流程以 ResourceTaskStart 起始） |
+| release                          | wrapUp                         | 出    | 接 wrap-up 流程起始块（该流程以 ResourceTaskEnd 结束）                                |
+| selectOutput                     | outT / outF                    | 出    | 条件为 true/false 分别走 outT（上）/ outF（下）                                       |
+| selectOutput5                    | out1..out5                     | 出    | 按条件路由到 5 个出口之一                                                             |
+| selectOutputIn                   | in1..in5                       | 入    | 从 5 个输入之一接收（与 SelectOutputOut 配对）                                        |
+| selectOutputOut                  | out1..out5                     | 出    | 路由到 5 个输出之一（与 SelectOutputIn 配对）                                         |
+| match                            | in1/in2、out1/out2             | 入/出 | 两路配对：第一/第二队列的输入与配对后的输出                                           |
+| match                            | outTimeout1/2、outPreempted1/2 | 出    | 第一/第二队列超时或抢占离开的 agent                                                   |
+| assembler                        | in、p1                         | 入    | 主 agent 入口与第一个部件入口；`out` 为装配后的 agent                                 |
+| pickup                           | inPickup                       | 入    | 连接 Queue 块的 out 口（也可由属性指定 Queue，此时可不连）                            |
+| dropoff                          | outDropoff                     | 出    | 从容器 agent 中移除的 agent 出口                                                      |
+| queue/service/wait               | outTimeout / outPreempted      | 出    | 超时离开 / 被抢占离开的 agent（置顶边）                                               |
+| timeMeasureStart                 | in                             | 入    | 计时开始（秒表正下方）                                                                |
+| timeMeasureEnd                   | out                            | 出    | 计时结束                                                                              |
+| enter / exit                     | out / in                       | —     | 流程边界：入口只有出、出口只有入                                                      |
+| restrictedAreaStart / End        | in/out                         | 入/出 | 限制区进入 / 离开                                                                     |
+| plainTransfer                    | in/out                         | 入/出 | 简单 agent 传输                                                                       |
+| resourceTaskStart / End          | in/out                         | 入/出 | 资源任务开始 / 结束（流经块）                                                         |
+| resourceSendTo / Attach / Detach | in/out                         | 入/出 | 资源发送到节点 / 绑定 / 解绑                                                          |

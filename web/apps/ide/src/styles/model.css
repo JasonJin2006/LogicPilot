@@ -378,16 +378,15 @@
   pointer-events: none;
 }
 
-/* Connection ports sit on two vertical rails at the icon's left/right edges
-   (inner rail = flow ports, outer rail = conditional ports; anchors come
-   from portAnchor() in blockDefs.ts). */
+/* Connection ports: small dots anchored on the glyph outline (positions come
+   from PORT_LAYOUTS in blockDefs.ts, AnyLogic green-dot reference). */
 .model-port {
   position: absolute;
-  width: 9px;
-  height: 9px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--surface-2);
-  border: 1.5px solid var(--border-strong);
+  border: 1px solid var(--border-strong);
   transform: translate(-50%, -50%);
   cursor: var(--cursor-wire);
   transition:
@@ -395,7 +394,7 @@
     border-color 0.1s,
     transform 0.1s;
 }
-/* >=14px hit target without growing the visual dot. */
+/* >=13px hit target so the tiny dot stays wireable. */
 .model-port::after {
   content: '';
   position: absolute;
@@ -406,28 +405,7 @@
 .model-port.wire-target {
   background: var(--accent);
   border-color: var(--accent);
-  transform: translate(-50%, -50%) scale(1.3);
-}
-/* Conditional/exception ports: outer rail, smaller dot + leader tick. */
-.model-port.port-cond {
-  width: 7px;
-  height: 7px;
-}
-.model-port.port-cond::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 4px;
-  height: 1px;
-  background: var(--border-strong);
-}
-.model-port.port-cond.port-out::before {
-  right: 100%;
-  margin-right: 1px;
-}
-.model-port.port-cond.port-in::before {
-  left: 100%;
-  margin-left: 1px;
+  transform: translate(-50%, -50%) scale(1.5);
 }
 
 /* Live run feedback on the canvas blocks (10 Hz viz state). */
@@ -580,25 +558,16 @@
   color: var(--text);
 }
 
-/* Port markers on the icon edges, mirroring the canvas card ports. */
+/* Palette port markers: same anchors, scaled to the 30px chip icon. */
 .palette-port {
   position: absolute;
-  top: 50%;
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
-}
-
-.palette-port.port-in {
-  left: 0;
   transform: translate(-50%, -50%);
-}
-
-.palette-port.port-out {
-  right: 0;
-  transform: translate(50%, -50%);
+  pointer-events: none;
 }
 
 .palette-name {

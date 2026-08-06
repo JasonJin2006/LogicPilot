@@ -727,11 +727,10 @@ export function ModelCanvas() {
                     wireTarget !== null &&
                     wireTarget.id === node.id &&
                     wireTarget.port === port.name;
-                  const cond = port.conditionalOn !== null;
                   return (
                     <span
                       key={port.name}
-                      className={`model-port ${isIn ? 'port-in' : 'port-out'}${cond ? ' port-cond' : ''}${targeted ? ' wire-target' : ''}`}
+                      className={`model-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
                       data-port={port.name}
                       title={port.name}
                       style={{

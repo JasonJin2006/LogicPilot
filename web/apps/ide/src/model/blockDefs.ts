@@ -234,92 +234,134 @@ export const BLOCK_DEFAULTS: Record<
   ]),
 );
 
-// Canvas card geometry (must match styles/model.css): the block card is a
-// centered flex column (34px icon + 4px gap + 15px name line). Ports live on
-// two vertical rails per side (docs/specs/process-library-icons.md):
-//   inner rail ±PORT_X      unconditional flow ports (9px dots)
-//   outer rail ±PORT_X_COND conditional/exception ports (7px dots + tick)
-// The primary flow port ('in'/'out') is pinned to the icon's vertical centre
-// so enabling conditional options never moves an existing wire.
-export const PORT_X = 17;
-export const PORT_X_COND = 23;
-export const PORT_Y = -9.5;
-const SECONDARY_OFFSETS = [12, -12, -24];
-const COND_SPACING = 10;
-const COND_CLAMP = 15;
+// ── Port geometry ─────────────────────────────────────────────────────────
+// Port anchors mirror AnyLogic's green-dot placement (PML palette reference):
+// primary in/out on the glyph's left/right mid-edge; conditional ports along
+// the TOP edge (seize.preparedUnits / release.wrapUp on the bottom); split /
+// combine on the triangle corners; selectOutput.outF on the diamond's bottom
+// vertex; timeMeasure pairs keep one port under the stopwatch.
+// Coordinates are in the icon's 40×40 viewBox space, scaled to the rendered
+// 34px canvas icon.
+export const PORT_X = 17; // fallback rail for blocks without a layout entry
+export const PORT_Y = -9.5; // icon centre relative to the node centre
+const ICON_SCALE = 34 / 40;
+const PORT_STACK_SPACING = 16; // fallback stacking for custom libraries
 
-/** Fixed vertical spreads (px, + down, relative to the icon centre) for the
- *  unconditional same-direction ports of blocks that have no 'in'/'out'
- *  primary, assigned in catalog order. */
-const INNER_SPREADS: Record<string, { in?: number[]; out?: number[] }> = {
-  selectOutput: { out: [-8, 8] }, // true on top, false below (AnyLogic)
-  combine: { in: [-6, 6] },
-  match: { in: [-6, 6], out: [-6, 6] },
-  assembler: { in: [-6, 6] },
+const PORT_LAYOUTS: Record<string, Record<string, [number, number]>> = {
+  source: { in: [9, 20], out: [31, 20] },
+  sink: { in: [9, 20] },
+  enter: { out: [31, 20] },
+  exit: { in: [9, 20] },
+  hold: { in: [9, 20], out: [31, 20] },
+  count: { in: [9, 20], out: [31, 20] },
+  delay: { in: [7, 20], out: [33, 20] },
+  queue: { in: [7, 20], out: [33, 20], outTimeout: [16, 11], outPreempted: [24, 11] },
+  service: { in: [7, 20], out: [33, 20], outTimeout: [16, 11], outPreempted: [24, 11] },
+  wait: { in: [7, 20], out: [33, 20], outTimeout: [16, 11], outPreempted: [24, 11] },
+  seize: {
+    in: [7, 20],
+    out: [33, 20],
+    outTimeout: [16, 11],
+    outPreempted: [24, 11],
+    preparedUnits: [16, 29],
+  },
+  release: { in: [7, 20], out: [33, 20], wrapUp: [24, 29] },
+  batch: { in: [7, 20], out: [33, 20] },
+  unbatch: { in: [7, 20], out: [33, 20] },
+  moveTo: { in: [7, 20], out: [33, 20] },
+  selectOutput: { in: [9, 20], outT: [31, 20], outF: [20, 32] },
+  selectOutput5: {
+    in: [9, 20],
+    out1: [31, 8],
+    out2: [31, 14],
+    out3: [31, 20],
+    out4: [31, 26],
+    out5: [31, 32],
+  },
+  selectOutputIn: {
+    in1: [9, 12],
+    in2: [9, 16],
+    in3: [9, 20],
+    in4: [9, 24],
+    in5: [9, 28],
+    out: [31, 20],
+  },
+  selectOutputOut: {
+    in: [9, 20],
+    out1: [31, 12],
+    out2: [31, 16],
+    out3: [31, 20],
+    out4: [31, 24],
+    out5: [31, 28],
+  },
+  split: { in: [12, 12], out: [28, 12], outCopy: [28, 28] },
+  combine: { in1: [12, 12], in2: [12, 28], out: [28, 28] },
+  match: {
+    in1: [7, 15],
+    in2: [7, 25],
+    out1: [33, 15],
+    out2: [33, 25],
+    outTimeout1: [16, 9],
+    outTimeout2: [24, 9],
+    outPreempted1: [16, 31],
+    outPreempted2: [24, 31],
+  },
+  assembler: { in: [11, 14], p1: [11, 26], out: [29, 20] },
+  timeMeasureStart: { in: [15, 26], out: [30, 20] },
+  timeMeasureEnd: { in: [9, 20], out: [25, 26] },
+  resourceTaskStart: { in: [12, 20], out: [28, 20] },
+  resourceTaskEnd: { in: [12, 20], out: [28, 20] },
+  resourceSendTo: { in: [7, 20], out: [33, 20] },
+  resourceAttach: { in: [7, 20], out: [33, 20] },
+  resourceDetach: { in: [7, 20], out: [33, 20] },
+  pickup: { in: [7, 20], out: [33, 20] },
+  dropoff: { in: [7, 20], out: [33, 20] },
+  restrictedAreaStart: { in: [10, 20], out: [25, 20] },
+  restrictedAreaEnd: { in: [15, 20], out: [30, 20] },
+  plainTransfer: { in: [10, 20], out: [30, 20] },
 };
 
-function clamp(value: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, value));
-}
-
-export interface PortAnchor {
-  x: number;
-  y: number;
-  /** True when the port sits on the outer (conditional) rail. */
-  conditional: boolean;
+/** Port anchor in the icon's 40×40 viewBox space (used by the palette dots). */
+export function portGlyphPoint(
+  kind: string,
+  port: string,
+  direction: PortDirection,
+): [number, number] {
+  return PORT_LAYOUTS[kind]?.[port] ?? (direction === 'in' ? [7, 20] : [33, 20]);
 }
 
 export function portAnchor(
   node: { x: number; y: number; kind?: string },
   port: string,
-): PortAnchor {
+): { x: number; y: number } {
+  const point = PORT_LAYOUTS[node.kind ?? '']?.[port];
+  if (point) {
+    return {
+      x: node.x + (point[0] - 20) * ICON_SCALE,
+      y: node.y + PORT_Y + (point[1] - 20) * ICON_SCALE,
+    };
+  }
+  // Fallback (custom libraries): stack on the left/right mid-edge.
   const ports = node.kind ? blockPorts(node.kind) : [];
   const spec = ports.find((entry) => entry.name === port);
-  const isIn = spec?.direction === 'in' || spec?.direction === 'inout';
-  const side = isIn ? -1 : 1;
-  const sameDir = ports.filter((entry) =>
-    isIn
-      ? entry.direction === 'in' || entry.direction === 'inout'
-      : entry.direction === 'out' || entry.direction === 'inout',
-  );
-
-  // Conditional ports: outer rail, centred 10px stack in catalog order.
-  if (spec?.conditionalOn) {
-    const conditional = sameDir.filter((entry) => entry.conditionalOn);
+  if (spec?.direction === 'in' || spec?.direction === 'inout') {
+    const ins = ports.filter((entry) => entry.direction === 'in' || entry.direction === 'inout');
     const index = Math.max(
       0,
-      conditional.findIndex((entry) => entry.name === port),
+      ins.findIndex((entry) => entry.name === port),
     );
-    const y = clamp((index - (conditional.length - 1) / 2) * COND_SPACING, -COND_CLAMP, COND_CLAMP);
-    return { x: node.x + side * PORT_X_COND, y: node.y + PORT_Y + y, conditional: true };
+    return {
+      x: node.x - PORT_X,
+      y: node.y + PORT_Y + (index - (ins.length - 1) / 2) * PORT_STACK_SPACING,
+    };
   }
-
-  // Unconditional ports: inner rail.
-  const unconditional = sameDir.filter((entry) => !entry.conditionalOn);
+  const outs = ports.filter((entry) => entry.direction === 'out' || entry.direction === 'inout');
   const index = Math.max(
     0,
-    unconditional.findIndex((entry) => entry.name === port),
+    outs.findIndex((entry) => entry.name === port),
   );
-  const spread = INNER_SPREADS[node.kind ?? '']?.[isIn ? 'in' : 'out'];
-  let y: number;
-  if (spread) {
-    y = spread[Math.min(index, spread.length - 1)] ?? 0;
-  } else {
-    const primary = isIn ? 'in' : 'out';
-    const primaryIndex = unconditional.findIndex((entry) => entry.name === primary);
-    if (primaryIndex === -1) {
-      // No canonical primary (custom blocks): centred 12px stack.
-      y = (index - (unconditional.length - 1) / 2) * 12;
-    } else if (index === primaryIndex) {
-      y = 0; // primary flow stays on the horizontal axis, always
-    } else {
-      const secondary = unconditional.filter((entry) => entry.name !== primary);
-      const si = Math.max(
-        0,
-        secondary.findIndex((entry) => entry.name === port),
-      );
-      y = SECONDARY_OFFSETS[Math.min(si, SECONDARY_OFFSETS.length - 1)] ?? -24;
-    }
-  }
-  return { x: node.x + side * PORT_X, y: node.y + PORT_Y + y, conditional: false };
+  return {
+    x: node.x + PORT_X,
+    y: node.y + PORT_Y + (index - (outs.length - 1) / 2) * PORT_STACK_SPACING,
+  };
 }

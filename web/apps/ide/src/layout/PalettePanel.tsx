@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { Plus } from 'lucide-react';
-import { BLOCK_DEFS, LIBRARIES } from '../model/blockDefs';
+import { BLOCK_DEFS, LIBRARIES, portGlyphPoint } from '../model/blockDefs';
 import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
 import { useCanvasView } from '../state/canvasView';
@@ -73,12 +73,8 @@ export function PalettePanel() {
       hint: block.hint,
       in: block.ports.some((port) => port.direction === 'in'),
       out: block.ports.some((port) => port.direction === 'out'),
-      inPorts: block.ports
-        .filter((port) => port.direction === 'in')
-        .map((port) => port.name),
-      outPorts: block.ports
-        .filter((port) => port.direction === 'out')
-        .map((port) => port.name),
+      inPorts: block.ports.filter((port) => port.direction === 'in').map((port) => port.name),
+      outPorts: block.ports.filter((port) => port.direction === 'out').map((port) => port.name),
     });
   }
   for (const custom of Object.values(customLibraries)) {
@@ -201,8 +197,10 @@ export function PalettePanel() {
             onPointerMove={(event) => {
               const drag = dragRef.current;
               if (!drag || drag.pointerId !== event.pointerId) return;
-              if (!drag.moved &&
-                  Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4) {
+              if (
+                !drag.moved &&
+                Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4
+              ) {
                 drag.moved = true;
               }
               if (drag.moved) {
@@ -222,8 +220,30 @@ export function PalettePanel() {
             <span className="palette-chip">
               <span className="palette-chip-icon">
                 <BlockIcon kind={block.kind} />
-                {block.in && <span className="palette-port port-in" aria-hidden />}
-                {block.out && <span className="palette-port port-out" aria-hidden />}
+                {(() => {
+                  // Port dots at the glyph's real port anchors (AnyLogic
+                  // green-dot positions), scaled to the 30px chip icon
+                  // (icon origin at (5,5), scale 0.75). Custom-library
+                  // blocks keep the old in/out edge dots via the fallback.
+                  const inPorts = block.inPorts?.length ? block.inPorts : block.in ? ['in'] : [];
+                  const outPorts = block.outPorts?.length
+                    ? block.outPorts
+                    : block.out
+                      ? ['out']
+                      : [];
+                  return [...inPorts, ...outPorts].map((name) => {
+                    const direction = inPorts.includes(name) ? 'in' : 'out';
+                    const [px, py] = portGlyphPoint(block.kind, name, direction);
+                    return (
+                      <span
+                        key={name}
+                        className={`palette-port port-${direction}`}
+                        style={{ left: 5 + (px - 20) * 0.75, top: 5 + (py - 20) * 0.75 }}
+                        aria-hidden
+                      />
+                    );
+                  });
+                })()}
               </span>
             </span>
             <span className="palette-name">{block.name}</span>
