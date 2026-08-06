@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LogicPilot",
+  "scopeName": "source.logicpilot",
+  "patterns": [
+    {
+      "match": "\\b(model|resource|process|source|queue|service|sink|atomic|agent|continuous|experiment|couple|state|param|in|out|inout|on_input|on_timeout|on_tick|time_advance|capacity|failure_rate|arrival|time|objective|metric|variable|range|budget|use)\\b",
+      "name": "keyword.control.logicpilot"
+    },
+    {
+      "match": "\\b(poisson|exponential|normal|constant|infinite|flip|bounce|minimize|maximize|emit|rate)\\b",
+      "name": "support.function.logicpilot"
+    },
+    {
+      "match": "\\b(true|false)\\b",
+      "name": "constant.language.logicpilot"
+    },
+    {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.logicpilot"
+    },
+    {
+      "match": "//.*$",
+      "name": "comment.line.logicpilot"
+    },
+    {
+      "begin": "/\\*",
+      "end": "\\*/",
+      "name": "comment.block.logicpilot"
+    },
+    {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.logicpilot"
+    }
+  ]
+}

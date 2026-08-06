@@ -48,12 +48,18 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `verification` 报告并入输出；新增 `verify_run_smoke` ctest。
 - 后续：死锁（服务前无源/队列容量 0 语义）等更深静态检查。
 
-## P2 开发者生态（后续）
+## P2 开发者生态（✅ 已落地 2026-08-06）
 
-- LSP/VSCode 扩展：复用 `dsl/compiler` 与 tree-sitter 抽 language-server
-  （诊断/补全/悬停/跳转，JSON-RPC），再包 VSCode 扩展。
-- 库包生态：`logicpkg` CLI（打包/安装 `.lplib` + palette JSON + 图标），
-  `use <lib>` 已支持。
+- **lp-lsp ✅**：`dsl/lsp/` 语言服务器（stdio JSON-RPC）——复用进程内 DSL
+  编译器与 tree-sitter，didOpen/didChange → `publishDiagnostics`（LP 码、
+  0 基 span）、completion（核心种类 + process 库块及字段）、hover（块
+  摘要）；stdin/stdout 二进制模式保证 framing 逐字节正确；`lsp_smoke`
+  ctest 覆盖有效/损坏模型与补全。
+- **VSCode 扩展 ✅**：`extensions/logicpilot-vscode/`——自包含 LSP 客户端
+  （无 npm 依赖）+ TextMate 语法 + 语言配置，诊断/补全/悬停接线。
+- **logicpkg ✅**：`scripts/logicpkg.mjs`——`init` / `pack`（单文件 .lpkg
+  包）/ `install`（防路径穿越）/ `list`；`logicpkg_smoke` ctest 覆盖
+  init→pack→install→list 往返。
 
 ## P3 行业化与云（后续）
 

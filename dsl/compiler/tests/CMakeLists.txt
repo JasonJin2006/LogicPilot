@@ -168,6 +168,19 @@ add_test(NAME verify_run_smoke
 set_tests_properties(verify_run_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "VERIFY-RUN TEST: PASS")
 
+# Language server (P2): diagnostics + completion over stdio JSON-RPC.
+add_test(NAME lsp_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-lsp.mjs
+          --lsp $<TARGET_FILE:lp-lsp>)
+set_tests_properties(lsp_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "LSP TEST: PASS")
+
+# logicpkg (P2): init -> pack -> install -> list round trip.
+add_test(NAME logicpkg_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-logicpkg.mjs)
+set_tests_properties(logicpkg_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "LOGICPKG TEST: PASS")
+
 # AI build endpoint (IDE dev server middleware): POST /api/ai-build.
 add_test(NAME ai_endpoint_smoke
   COMMAND node

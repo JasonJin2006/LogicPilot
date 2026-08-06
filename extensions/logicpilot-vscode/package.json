@@ -1,0 +1,42 @@
+{
+  "name": "logicpilot-vscode",
+  "displayName": "LogicPilot DSL",
+  "description": "LogicPilot modeling DSL support: diagnostics, completion and hover via the lp-lsp language server.",
+  "version": "0.1.0",
+  "publisher": "logicpilot",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:logicpilot"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "logicpilot",
+        "aliases": [
+          "LogicPilot",
+          "logicpilot"
+        ],
+        "extensions": [
+          ".lp",
+          ".lplib"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "logicpilot",
+        "scopeName": "source.logicpilot",
+        "path": "./syntaxes/logicpilot.tmLanguage.json"
+      }
+    ]
+  }
+}
