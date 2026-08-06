@@ -21,7 +21,6 @@ const CURSORS = [
   { name: 'cursor-text', icon: 'text-cursor' },
   { name: 'cursor-grab', icon: 'hand', stroke: true },
   { name: 'cursor-grabbing', icon: 'move' },
-  { name: 'cursor-crosshair', icon: 'crosshair' },
   { name: 'cursor-resize-h', icon: 'move-horizontal' },
   { name: 'cursor-resize-v', icon: 'move-vertical' },
 ];
