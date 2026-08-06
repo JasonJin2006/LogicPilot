@@ -59,7 +59,6 @@ add_library(logicpilot_phase1b STATIC
   src/devs/continuous.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
-  src/devs/process_flow.cpp
   src/devs/ir_loader.cpp
   src/runtime/builtin_methods.cpp
 )

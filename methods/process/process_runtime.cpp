@@ -15,9 +15,9 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/ir_v2_util.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/process_flow.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"
+#include "process_flow.h"
 
 namespace logicpilot {
 namespace {
@@ -258,6 +258,7 @@ bool ProcessRuntime::initialize(RuntimeContext& context,
                                 std::string* error) {
   context_ = &context;
   ran_ = false;
+  last_metrics_ = ReplicationMetrics{};
   if (model.v2_root == nullptr || model.v2_root->root() == nullptr) {
     if (error != nullptr) {
       *error = "no root model";
@@ -265,13 +266,35 @@ bool ProcessRuntime::initialize(RuntimeContext& context,
     return false;
   }
   replication_ = lower(model.v2_root->root(), error);
-  return replication_ != nullptr;
+  if (replication_ == nullptr) {
+    return false;
+  }
+  // Prepare one replication with the lifecycle driver defaults; subsequent
+  // advance(until) calls step the engine by simulation time (Phase 3).
+  ReplicationConfig config;
+  if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
+    flow->reset(config);
+  } else if (auto* queue =
+                 dynamic_cast<QueueingFlowSim*>(replication_.get())) {
+    queue->reset(config);
+  }
+  return true;
 }
 
 void ProcessRuntime::advance(SimTime until) {
-  (void)until;  // Phase 1 batch-only; incremental stepping in Phase 3.
-  if (replication_ != nullptr && !ran_) {
-    ReplicationConfig config;  // lifecycle driver defaults
+  if (replication_ == nullptr) {
+    return;
+  }
+  if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
+    flow->advance(until, nullptr);
+    last_metrics_ = flow->metrics();
+  } else if (auto* queue =
+                 dynamic_cast<QueueingFlowSim*>(replication_.get())) {
+    queue->advance(until, nullptr);
+    last_metrics_ = queue->metrics();
+  } else if (!ran_) {
+    // Unexpected engine type: fall back to the batch contract once.
+    ReplicationConfig config;
     last_metrics_ = replication_->run(config, nullptr);
     ran_ = true;
   }

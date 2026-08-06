@@ -262,8 +262,15 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
     `build_replication_model` 改为注册表驱动（按 IR `SemanticsRef{library,
     block}` = method+component 解析并委托），kernel 不再含 process 专属降级
     代码；lpcli / lp-server 启动时 `register_all_methods()`；182 ctest 全绿。
-    后续：Phase 3 把 process Engine 模块化为 Source/Queue/Service/Delay/Sink
-    block 并实现增量 advance；Phase 4 接入第二种方法（Statechart）验证架构。
+    **Phase 3（Process 模块化 + 增量执行）✅ 已完成（2026-08-06）：** 引擎
+    从 `kernel/src/devs/process_flow.cpp` 迁入 `methods/process/`，拆成
+    `ProcessBlock` 契约 + SourceBlock/QueueBlock/DelayBlock/ServiceBlock/
+    SinkBlock/GenericBlock（`methods/process/process_block.h`、
+    `process_blocks.h`）；QueueingFlowSim 与 ProcessFlowSim 均改为增量
+    reset/advance/metrics，`ProcessRuntime::advance(until)` 真正按仿真时间
+    步进（切片推进与批量运行指标/事件序列逐位一致，新增 2 个对等性测试）。
+    184 ctest 全绿。后续：合并 lp-server 流式驱动（SimRunner）到同一执行器；
+    Phase 4 接入第二种方法（Statechart）验证架构。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

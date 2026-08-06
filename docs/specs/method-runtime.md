@@ -1,6 +1,6 @@
 # Method Runtime Layer（多方法仿真平台架构）
 
-状态：Phase 1 已落地（2026-08-06）· 维护者：`/root` · 参考：`docs/roadmap.md`
+状态：Phase 1 + Phase 3 已落地（2026-08-06）· 维护者：`/root` · 参考：`docs/roadmap.md`
 
 ## 1. 为什么需要这一层
 
@@ -125,24 +125,33 @@ agent / devs / sd 以 kernel 原生方法注册（`kernel/src/runtime/builtin_me
 
 ## 4. 后续阶段
 
-### Phase 3：Process 模块化
+### Phase 3：Process 模块化 ✅ 已完成（2026-08-06）
 
-把 `ProcessFlowSim` 的 742 行单体 Engine 拆成方法内的组件：
+`ProcessFlowSim` 的 742 行单体 Engine 已拆成方法内的模块化组件，并把引擎本体
+从 `kernel/src/devs/process_flow.cpp` 迁入 `methods/process/`：
 
 ```
 methods/process/
-├── ProcessRuntime      # 生命周期 + 块调度
-├── ProcessBlock        # 抽象：receive(Entity) / update(Time)
-├── SourceBlock
-├── QueueBlock
-├── ServiceBlock
-├── DelayBlock
-└── SinkBlock
+├── process_runtime.h/.cpp   # ProcessRuntime：生命周期 + 降级 + 注册
+├── process_flow.h/.cpp      # 通用引擎（路由/调度/统计，增量 reset/advance/metrics）
+├── process_block.h          # Entity / BlockContext / ProcessBlock 抽象
+└── process_blocks.h         # SourceBlock / QueueBlock / DelayBlock /
+                             # ServiceBlock / SinkBlock / GenericBlock
 ```
 
-同时把 engine 改为增量执行（reset/advance/metrics 拆分），让
-`SimulationMethod::advance(until)` 真正按时间步进；lp-server 的流式驱动也
-可以复用同一执行器（消除 SimRunner 与 QueueingFlowSim 的双实现）。
+每个块通过 `ProcessBlock` 契约表达自己的行为（`can_accept` / `receive` /
+`update` / `complete` / `retry_outgoing`），引擎只负责端口路由、调度与统计，
+并通过 `BlockContext` 向块提供 `emit` / `schedule_depart` / RNG / 统计钩子。
+
+两个引擎都改为增量执行：`reset(config)` 准备一次 replication，
+`advance(until)` 只派发时间戳 <= until 的事件，`metrics()` 汇总当前统计；
+`run()` = reset + advance(infinity) + metrics，与旧批量调用逐位一致
+（184 ctest 全绿，含新增的增量/批量对等性测试）。因此
+`SimulationMethod::advance(until)` 现在是**真正的按仿真时间步进**：
+`ProcessRuntime::advance(until)` 直接驱动引擎切片推进。
+
+lp-server 的流式驱动（SimRunner）与 QueueingFlowSim 的双实现合并列为后续
+优化项：现在两个执行器均可增量推进，合并后 lp-server 可复用同一执行器。
 
 ### Phase 4：第二种方法接入
 
@@ -159,3 +168,12 @@ dynamics 各自拆成独立方法库。多方法模型通过 `VariableStore` + �
   `register_<name>_method()`；驱动通过 `register_all_methods()` 汇总注册。
 - IR 契约冻结（F1），method/component 的语义映射用现有 `SemanticsRef`
   表达，不改 `schemas/ir_v2.fbs`。
+
+## 6. 构建说明
+
+本机的 MSVC+Ninja 配置（CMake 4.4）生成的编译规则**不追踪头文件依赖**
+（`unscanned` 规则，无 depfile），因此改头文件后需要全量重建
+（`cmake --build build/windows-msvc-dev -j 8` 前先清掉受影响对象，或直接
+`cmake --build ... --target clean`）；否则会残留旧头文件编译的对象，导致
+类布局 ABI 不一致（曾因此出现仅在测试二进制中复现的崩溃）。CI 全新检出，
+不受此影响。

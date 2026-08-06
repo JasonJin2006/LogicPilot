@@ -1,9 +1,13 @@
 // QueueingFlowSim / Mm1Simulator implementation.
 //
 // Hot loop: one BinaryHeapScheduler + arrive/depart handlers (plus
-// fail/repair when the spec carries a failure law). The run drains
-// completely (all arrivals served), so every replication yields
-// steady-state statistics without horizon truncation.
+// fail/repair when the spec carries a failure law). The engine is
+// incremental since the Method Runtime Layer (Phase 3): reset() prepares one
+// replication, advance(until) dispatches every event with timestamp <= until
+// (run drains completely at until = infinity, so a full replication yields
+// steady-state statistics without horizon truncation), metrics() reports the
+// accumulated statistics. run() = reset() + advance(infinity) + metrics()
+// and stays bit-identical to the legacy batch call.
 #include "logicpilot/devs/mm1.h"
 
 #include <algorithm>
@@ -14,10 +18,7 @@
 #include <vector>
 
 #include "logicpilot/core/random/distributions.h"
-#include "logicpilot/core/scheduler/binary_heap_scheduler.h"
-#include "logicpilot/core/scheduler/handler_registry.h"
 #include "logicpilot/core/scheduler/run.h"
-#include "logicpilot/core/time/clock.h"
 
 namespace logicpilot {
 namespace {
@@ -26,13 +27,6 @@ constexpr EventType kArriveEvent = 10;
 constexpr EventType kDepartEvent = 11;
 constexpr EventType kFailEvent = 12;
 constexpr EventType kRepairEvent = 13;
-
-enum class ServerState { kIdle, kBusy, kDown };
-
-struct Server {
-  ServerState state{ServerState::kIdle};
-  std::uint64_t customer{0};  // customer in service while busy
-};
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
@@ -43,201 +37,203 @@ std::int64_t to_ns(double seconds) {
 QueueingFlowSim::QueueingFlowSim(QueueingFlowSpec spec)
     : spec_{std::move(spec)} {}
 
-ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
-                                        TraceRecorder* trace) {
+void QueueingFlowSim::reset(const ReplicationConfig& config) {
+  config_ = config;
   wait_times_.clear();
   dropped_ = 0;
 
-  ReplicationMetrics metrics;
-  metrics.arrivals = config.arrivals;
+  engine_ = Xoshiro256PlusPlus{config.seed};
+  scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
+  clock_ = SimulationClock{};
+  handlers_ = EventHandlerRegistry{};
 
-  Xoshiro256PlusPlus engine{config.seed};
-  BinaryHeapScheduler scheduler{64};
-  SimulationClock clock;
-  EventHandlerRegistry handlers;
+  queue_.clear();
+  servers_.assign(spec_.servers < 1 ? 1 : spec_.servers, Server{});
+  arrival_ns_.assign(config.arrivals, 0);
+  service_start_ns_.assign(config.arrivals, 0);
+  emitted_ = 0;
+  in_system_ = 0;
+  in_queue_ = 0;
+  departures_ = 0;
+  busy_servers_ = 0;
+  down_servers_ = 0;
+  has_failure_ = static_cast<bool>(spec_.failure);
 
-  // Flow state.
-  std::deque<std::uint64_t> queue;              // waiting customer ids (FIFO)
-  std::vector<Server> servers(spec_.servers < 1 ? 1 : spec_.servers);
-  std::vector<std::int64_t> arrival_ns;         // per-customer arrival stamp
-  std::vector<std::int64_t> service_start_ns;   // per-customer last service
-                                                // start (final wait baseline)
-  arrival_ns.resize(config.arrivals);
-  service_start_ns.resize(config.arrivals);
-  std::uint64_t emitted = 0;
-  std::uint64_t in_system = 0;
-  std::uint64_t in_queue = 0;
-  std::uint64_t departures = 0;
-  std::int64_t busy_servers = 0;
-  std::int64_t down_servers = 0;
-  const bool has_failure = static_cast<bool>(spec_.failure);
-
-  // Statistics accumulators.
-  std::int64_t last_ns = 0;
-  std::int64_t area_system_ns = 0;  // sum of in_system * dt
-  std::int64_t area_queue_ns = 0;
-  std::int64_t area_busy_ns = 0;    // sum of busy servers * dt
-  std::int64_t area_down_ns = 0;    // sum of down servers * dt
-  double sojourn_sum = 0.0;
-  std::uint64_t sojourn_count = 0;
-
-  const auto accumulate_area = [&](std::int64_t now_ns) {
-    const std::int64_t dt = now_ns - last_ns;
-    area_system_ns += dt * static_cast<std::int64_t>(in_system);
-    area_queue_ns += dt * static_cast<std::int64_t>(in_queue);
-    area_busy_ns += dt * busy_servers;
-    area_down_ns += dt * down_servers;
-    last_ns = now_ns;
-  };
-
-  HandlerId arrive_id = 0;
-  HandlerId depart_id = 0;
-  HandlerId fail_id = 0;
-  HandlerId repair_id = 0;
+  last_ns_ = 0;
+  area_system_ns_ = 0;
+  area_queue_ns_ = 0;
+  area_busy_ns_ = 0;
+  area_down_ns_ = 0;
+  sojourn_sum_ = 0.0;
+  sojourn_count_ = 0;
 
   // Begins service on `server` for `customer`: samples service time, and
   // (when failures are enabled) a failure time. A failure that would land
   // before the service completes preempts the customer back to the queue
   // head and sends the server down (preemptive-repeat, milestone 1).
-  const auto start_service = [&](std::uint64_t server, std::uint64_t customer) {
-    Server& s = servers[server];
+  const auto start_service = [this](std::uint64_t server,
+                                    std::uint64_t customer) {
+    Server& s = servers_[server];
     s.state = ServerState::kBusy;
     s.customer = customer;
-    ++busy_servers;
-    service_start_ns[customer] = clock.now().as_ns();
-    const std::int64_t service_ns = to_ns(spec_.service(engine));
-    if (!has_failure) {
-      scheduler.schedule(clock.now() + SimTime::from_ns(service_ns),
-                         kDepartEvent, depart_id, server);
+    ++busy_servers_;
+    service_start_ns_[customer] = clock_.now().as_ns();
+    const std::int64_t service_ns = to_ns(spec_.service(engine_));
+    if (!has_failure_) {
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+                           kDepartEvent, depart_id_, server);
       return;
     }
-    const std::int64_t failure_ns = to_ns(spec_.failure(engine));
+    const std::int64_t failure_ns = to_ns(spec_.failure(engine_));
     if (failure_ns < service_ns) {
-      scheduler.schedule(clock.now() + SimTime::from_ns(failure_ns),
-                         kFailEvent, fail_id, server);
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(failure_ns),
+                           kFailEvent, fail_id_, server);
     } else {
-      scheduler.schedule(clock.now() + SimTime::from_ns(service_ns),
-                         kDepartEvent, depart_id, server);
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(service_ns),
+                           kDepartEvent, depart_id_, server);
     }
   };
 
+  const auto accumulate_area = [this](std::int64_t now_ns) {
+    const std::int64_t dt = now_ns - last_ns_;
+    area_system_ns_ += dt * static_cast<std::int64_t>(in_system_);
+    area_queue_ns_ += dt * static_cast<std::int64_t>(in_queue_);
+    area_busy_ns_ += dt * busy_servers_;
+    area_down_ns_ += dt * down_servers_;
+    last_ns_ = now_ns;
+  };
+
   // Real handlers (registry ids are stable after this block).
-  depart_id = handlers.add([&](const Event& event) {
+  depart_id_ = handlers_.add(
+      [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock.now().as_ns();
+    const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
-    Server& s = servers[server];
+    Server& s = servers_[server];
     const std::uint64_t id = s.customer;
-    --in_system;
-    ++departures;
-    if (id >= config.warmup_arrivals) {
+    --in_system_;
+    ++departures_;
+    if (id >= config_.warmup_arrivals) {
       // Final wait = arrival -> last service start (preemption-aware).
       wait_times_.push_back(
-          static_cast<double>(service_start_ns[id] - arrival_ns[id]) * 1e-9);
-      sojourn_sum += static_cast<double>(now_ns - arrival_ns[id]) * 1e-9;
-      ++sojourn_count;
+          static_cast<double>(service_start_ns_[id] - arrival_ns_[id]) *
+          1e-9);
+      sojourn_sum_ +=
+          static_cast<double>(now_ns - arrival_ns_[id]) * 1e-9;
+      ++sojourn_count_;
     }
 
     s.state = ServerState::kIdle;
-    --busy_servers;
-    if (!queue.empty()) {
-      const std::uint64_t next = queue.front();
-      queue.pop_front();
-      --in_queue;
+    --busy_servers_;
+    if (!queue_.empty()) {
+      const std::uint64_t next = queue_.front();
+      queue_.pop_front();
+      --in_queue_;
       start_service(server, next);
     }
   });
-  arrive_id = handlers.add([&](const Event& event) {
+  arrive_id_ = handlers_.add(
+      [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t id = event.payload;
-    const std::int64_t now_ns = clock.now().as_ns();
+    const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
-    arrival_ns[id] = now_ns;
+    arrival_ns_[id] = now_ns;
 
     // Emit the next arrival (source keeps generating until the quota).
-    if (emitted < config.arrivals) {
-      const double gap = spec_.interarrival(engine);
-      scheduler.schedule(clock.now() + SimTime::from_ns(to_ns(gap)),
-                         kArriveEvent, arrive_id, emitted);
-      ++emitted;
+    if (emitted_ < config_.arrivals) {
+      const double gap = spec_.interarrival(engine_);
+      scheduler_->schedule(clock_.now() + SimTime::from_ns(to_ns(gap)),
+                           kArriveEvent, arrive_id_, emitted_);
+      ++emitted_;
     }
 
     const auto idle_server =
-        std::find_if(servers.begin(), servers.end(), [](const Server& s) {
+        std::find_if(servers_.begin(), servers_.end(), [](const Server& s) {
           return s.state == ServerState::kIdle;
         });
-    if (idle_server != servers.end()) {
-      ++in_system;
+    if (idle_server != servers_.end()) {
+      ++in_system_;
       start_service(
-          static_cast<std::uint64_t>(idle_server - servers.begin()), id);
+          static_cast<std::uint64_t>(idle_server - servers_.begin()), id);
     } else if (spec_.queue_capacity < 0 ||
-               static_cast<std::int64_t>(queue.size()) <
+               static_cast<std::int64_t>(queue_.size()) <
                    spec_.queue_capacity) {
-      ++in_system;
-      ++in_queue;
-      queue.push_back(id);
+      ++in_system_;
+      ++in_queue_;
+      queue_.push_back(id);
     } else {
       ++dropped_;  // finite buffer full: customer lost, never enters system
     }
   });
-  fail_id = handlers.add([&](const Event& event) {
+  fail_id_ = handlers_.add([this, accumulate_area](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock.now().as_ns();
+    const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
-    Server& s = servers[server];
+    Server& s = servers_[server];
     const std::uint64_t id = s.customer;
     s.state = ServerState::kDown;
-    --busy_servers;
-    ++down_servers;
+    --busy_servers_;
+    ++down_servers_;
     // Preemptive-repeat: the customer in service returns to the queue head
     // (preempted customers bypass the finite-buffer capacity check).
-    queue.push_front(id);
-    ++in_queue;
-    const std::int64_t repair_ns = to_ns(spec_.repair(engine));
-    scheduler.schedule(clock.now() + SimTime::from_ns(repair_ns),
-                       kRepairEvent, repair_id, server);
+    queue_.push_front(id);
+    ++in_queue_;
+    const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
+    scheduler_->schedule(clock_.now() + SimTime::from_ns(repair_ns),
+                         kRepairEvent, repair_id_, server);
   });
-  repair_id = handlers.add([&](const Event& event) {
+  repair_id_ = handlers_.add(
+      [this, accumulate_area, start_service](const Event& event) {
     const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock.now().as_ns();
+    const std::int64_t now_ns = clock_.now().as_ns();
     accumulate_area(now_ns);
-    Server& s = servers[server];
+    Server& s = servers_[server];
     s.state = ServerState::kIdle;
-    --down_servers;
-    if (!queue.empty()) {
-      const std::uint64_t next = queue.front();
-      queue.pop_front();
-      --in_queue;
+    --down_servers_;
+    if (!queue_.empty()) {
+      const std::uint64_t next = queue_.front();
+      queue_.pop_front();
+      --in_queue_;
       start_service(server, next);
     }
   });
 
   // Seed the first arrival; the handler chain then keeps the source going.
-  emitted = 1;
-  scheduler.schedule(SimTime::from_ns(to_ns(spec_.interarrival(engine))),
-                     kArriveEvent, arrive_id, 0);
+  emitted_ = 1;
+  scheduler_->schedule(SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
+                       kArriveEvent, arrive_id_, 0);
+}
 
-  run_until(scheduler, clock, SimTime::infinity(), [&](const Event& event) {
+std::size_t QueueingFlowSim::advance(SimTime until, TraceRecorder* trace) {
+  return run_until(*scheduler_, clock_, until, [&](const Event& event) {
     if (trace != nullptr) {
       trace->record(event.at, event.type, event.payload);
     }
-    handlers.dispatch(event);
+    handlers_.dispatch(event);
   });
+}
 
-  const std::int64_t horizon_ns = clock.now().as_ns();
-  metrics.departures = departures;
+ReplicationMetrics QueueingFlowSim::metrics() const {
+  ReplicationMetrics metrics;
+  metrics.arrivals = config_.arrivals;
+
+  const std::int64_t horizon_ns = clock_.now().as_ns();
+  metrics.departures = departures_;
   metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
   metrics.throughput =
-      horizon_ns > 0 ? static_cast<double>(departures) /
+      horizon_ns > 0 ? static_cast<double>(departures_) /
                            metrics.horizon_seconds
                      : 0.0;
-  metrics.mean_in_system = horizon_ns > 0
-                               ? static_cast<double>(area_system_ns) /
-                                     static_cast<double>(horizon_ns)
-                               : 0.0;
-  metrics.mean_in_queue = horizon_ns > 0
-                              ? static_cast<double>(area_queue_ns) /
-                                    static_cast<double>(horizon_ns)
-                              : 0.0;
+  metrics.mean_in_system =
+      horizon_ns > 0
+          ? static_cast<double>(area_system_ns_) /
+                static_cast<double>(horizon_ns)
+          : 0.0;
+  metrics.mean_in_queue =
+      horizon_ns > 0
+          ? static_cast<double>(area_queue_ns_) /
+                static_cast<double>(horizon_ns)
+          : 0.0;
   double wait_sum = 0.0;
   for (double w : wait_times_) {
     wait_sum += w;
@@ -245,25 +241,33 @@ ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
   metrics.mean_wait = wait_times_.empty()
                           ? 0.0
                           : wait_sum / static_cast<double>(wait_times_.size());
-  metrics.mean_sojourn = sojourn_count == 0
+  metrics.mean_sojourn = sojourn_count_ == 0
                              ? 0.0
-                             : sojourn_sum / static_cast<double>(sojourn_count);
-  const double servers_total = static_cast<double>(servers.size());
+                             : sojourn_sum_ / static_cast<double>(sojourn_count_);
+  const double servers_total = static_cast<double>(servers_.size());
   if (horizon_ns > 0 && servers_total > 0.0) {
     metrics.utilization =
-        static_cast<double>(area_busy_ns) /
+        static_cast<double>(area_busy_ns_) /
         static_cast<double>(horizon_ns) / servers_total;
     metrics.availability =
-        1.0 - static_cast<double>(area_down_ns) /
+        1.0 - static_cast<double>(area_down_ns_) /
                   static_cast<double>(horizon_ns) / servers_total;
   }
+  return metrics;
+}
+
+ReplicationMetrics QueueingFlowSim::run(const ReplicationConfig& config,
+                                        TraceRecorder* trace) {
+  reset(config);
+  advance(SimTime::infinity(), trace);
+  const ReplicationMetrics metrics = this->metrics();
 
   if (trace != nullptr) {
     // Fold final stat bits so the trace hash covers outcomes, not just the
     // event sequence.
     trace->absorb(std::bit_cast<std::uint64_t>(metrics.mean_wait));
     trace->absorb(std::bit_cast<std::uint64_t>(metrics.mean_sojourn));
-    trace->absorb(departures);
+    trace->absorb(departures_);
   }
   return metrics;
 }

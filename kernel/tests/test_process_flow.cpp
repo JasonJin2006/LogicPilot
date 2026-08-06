@@ -3,6 +3,7 @@
 // generic path (a `count` block forces the generic engine), and
 // same-seed determinism.
 #include <cstdint>
+#include <bit>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,8 +12,9 @@
 
 #include "ir_v2_generated.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
-#include "logicpilot/devs/process_flow.h"
+#include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/devs/replication.h"
+#include "process_flow.h"
 
 namespace {
 
@@ -264,4 +266,59 @@ TEST_CASE("process flow: same seed reproduces the exact trace",
   REQUIRE(first.hash() == second.hash());
   REQUIRE(first.event_count() == second.event_count());
   REQUIRE(m1.departures == m2.departures);
+}
+
+TEST_CASE("process flow: incremental advance matches a batch run",
+          "[process_flow][incremental]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
+  const auto delay = block(
+      builder, "D", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 3, {1.0})),
+       var_int(builder, "capacity", -1)},
+      {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, delay, sink},
+      {couple(builder, "In", "out", "D", "in"),
+       couple(builder, "D", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+
+  ReplicationConfig config;
+  config.seed = 42;
+  config.arrivals = 3000;
+  config.warmup_arrivals = 300;
+
+  // Batch baseline.
+  logicpilot::TraceRecorder batch_trace;
+  const ReplicationMetrics batch = model->run(config, &batch_trace);
+
+  // Incremental: reset then advance through increasing horizons. Slicing
+  // must not change the event sequence or the final statistics.
+  model->reset(config);
+  logicpilot::TraceRecorder sliced_trace;
+  std::vector<std::int64_t> slices = {1'000'000, 5'000'000, 20'000'000};
+  for (std::size_t i = 0; i < slices.size(); ++i) {
+    model->advance(logicpilot::SimTime::from_ns(slices[i]), &sliced_trace);
+  }
+  model->advance(logicpilot::SimTime::infinity(), &sliced_trace);
+  const ReplicationMetrics incremental = model->metrics();
+
+  REQUIRE(incremental.departures == batch.departures);
+  REQUIRE(incremental.horizon_seconds == batch.horizon_seconds);
+  REQUIRE(incremental.throughput == batch.throughput);
+  REQUIRE(incremental.mean_in_system == batch.mean_in_system);
+  REQUIRE(incremental.mean_in_queue == batch.mean_in_queue);
+  REQUIRE(incremental.mean_sojourn == batch.mean_sojourn);
+  REQUIRE(incremental.mean_wait == batch.mean_wait);
+  // The batch path folds the final stat bits into the trace (Engine::run);
+  // replicate that so the sliced trace is comparable.
+  sliced_trace.absorb(std::bit_cast<std::uint64_t>(incremental.mean_sojourn));
+  sliced_trace.absorb(incremental.departures);
+  REQUIRE(sliced_trace.hash() == batch_trace.hash());
+  REQUIRE(sliced_trace.event_count() == batch_trace.event_count());
 }

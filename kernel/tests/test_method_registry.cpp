@@ -364,3 +364,48 @@ TEST_CASE("process method: lifecycle API runs a replication and reports "
   REQUIRE(lifecycle_metrics.mean_wait == Approx(baseline.mean_wait));
   REQUIRE(lifecycle_metrics.utilization == Approx(baseline.utilization));
 }
+
+TEST_CASE("process method: advance(until) steps incrementally and matches "
+          "the batch metrics",
+          "[runtime][process][incremental]") {
+  register_all_methods();
+  const IrLoadResult model = load_mm1();
+
+  // Batch baseline (default driver config).
+  auto runtime = MethodRegistry::instance().create("process");
+  REQUIRE(runtime != nullptr);
+  std::string error;
+  auto batch_model = runtime->to_replication_model(model.file, &error);
+  REQUIRE(batch_model != nullptr);
+  ReplicationConfig config;
+  const ReplicationMetrics baseline = batch_model->run(config, nullptr);
+
+  // Lifecycle path with sliced advance: reset -> advance(t1) -> advance(t2)
+  // -> ... -> advance(infinity). Each slice only changes WHERE the loop
+  // pauses; the event sequence and final statistics stay identical.
+  ProcessRuntime direct;
+  SimulationClock clock;
+  BinaryHeapScheduler scheduler{64};
+  VariableStore variables;
+  RuntimeManager manager{clock, scheduler, variables};
+  REQUIRE(manager.add(std::make_unique<ProcessRuntime>()));
+  REQUIRE(manager.initialize(model.file, &error));
+  manager.advance(SimTime::from_ns(1'000'000));
+  manager.advance(SimTime::from_ns(10'000'000));
+  manager.advance(SimTime::from_ns(50'000'000));
+  manager.advance(SimTime::infinity());
+  manager.shutdown();
+
+  // Compare through a direct ProcessRuntime that keeps the metrics.
+  REQUIRE(direct.initialize(manager.context(), model.file, &error));
+  direct.advance(SimTime::from_ns(1'000'000));
+  direct.advance(SimTime::from_ns(10'000'000));
+  direct.advance(SimTime::from_ns(50'000'000));
+  direct.advance(SimTime::infinity());
+  const ReplicationMetrics incremental = direct.last_metrics();
+  REQUIRE(incremental.departures == baseline.departures);
+  REQUIRE(incremental.throughput == Approx(baseline.throughput));
+  REQUIRE(incremental.mean_sojourn == Approx(baseline.mean_sojourn));
+  REQUIRE(incremental.mean_wait == Approx(baseline.mean_wait));
+  REQUIRE(incremental.utilization == Approx(baseline.utilization));
+}

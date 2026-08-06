@@ -10,9 +10,15 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <functional>
+#include <memory>
 #include <vector>
 
+#include "logicpilot/core/scheduler/binary_heap_scheduler.h"
+#include "logicpilot/core/scheduler/event.h"
+#include "logicpilot/core/scheduler/handler_registry.h"
+#include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/devs/replication.h"
 
@@ -20,6 +26,14 @@ namespace logicpilot {
 
 // Samples one duration in seconds from the replication RNG stream.
 using TimeSampler = std::function<double(Xoshiro256PlusPlus&)>;
+
+// M/M/c server-pool state (mirrored by the streaming driver's ServerState).
+enum class ServerState : std::uint8_t { kIdle = 0, kBusy = 1, kDown = 2 };
+
+struct Server {
+  ServerState state{ServerState::kIdle};
+  std::uint64_t customer{0};  // customer in service while busy
+};
 
 struct QueueingFlowSpec {
   TimeSampler interarrival;
@@ -49,10 +63,53 @@ class QueueingFlowSim : public ReplicationModel {
   // Customers turned away because the queue was at capacity.
   [[nodiscard]] std::uint64_t dropped_count() const { return dropped_; }
 
+  // Method Runtime Layer (Phase 3): the engine is now incremental. reset()
+  // prepares one replication (clears state, seeds the RNG, schedules the
+  // first arrival); advance(until) dispatches every event with timestamp <=
+  // until; metrics() reports the statistics accumulated so far. run() is
+  // reset() + advance(infinity) + metrics() and stays bit-identical to the
+  // legacy batch call.
+  void reset(const ReplicationConfig& config);
+  std::size_t advance(SimTime until, TraceRecorder* trace);
+  [[nodiscard]] ReplicationMetrics metrics() const;
+
  private:
   QueueingFlowSpec spec_;
   std::vector<double> wait_times_;
   std::uint64_t dropped_{0};
+
+  // Per-replication runtime state (owned across reset/advance/metrics).
+  ReplicationConfig config_;
+  Xoshiro256PlusPlus engine_{0};
+  std::unique_ptr<BinaryHeapScheduler> scheduler_;
+  SimulationClock clock_;
+  EventHandlerRegistry handlers_;
+  std::deque<std::uint64_t> queue_;              // waiting customer ids (FIFO)
+  std::vector<Server> servers_;
+  std::vector<std::int64_t> arrival_ns_;         // per-customer arrival stamp
+  std::vector<std::int64_t> service_start_ns_;   // per-customer last service
+                                                 // start (final wait baseline)
+  std::uint64_t emitted_{0};
+  std::uint64_t in_system_{0};
+  std::uint64_t in_queue_{0};
+  std::uint64_t departures_{0};
+  std::int64_t busy_servers_{0};
+  std::int64_t down_servers_{0};
+  bool has_failure_{false};
+
+  // Statistics accumulators.
+  std::int64_t last_ns_{0};
+  std::int64_t area_system_ns_{0};  // sum of in_system * dt
+  std::int64_t area_queue_ns_{0};
+  std::int64_t area_busy_ns_{0};    // sum of busy servers * dt
+  std::int64_t area_down_ns_{0};    // sum of down servers * dt
+  double sojourn_sum_{0.0};
+  std::uint64_t sojourn_count_{0};
+
+  HandlerId arrive_id_{0};
+  HandlerId depart_id_{0};
+  HandlerId fail_id_{0};
+  HandlerId repair_id_{0};
 };
 
 struct Mm1Params {
