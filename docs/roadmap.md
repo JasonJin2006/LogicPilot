@@ -191,7 +191,8 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 5：Simulation Binding ✅ 已完成**（2026-08-06）：图形对象的
    width/height/opacity/x/y/rotation 可绑定运行时表达式（安全算术求值器，
    变量 queueLength/busy/servers/downServers/tick），渲染时叠加、不改存储
-   对象；Inspector 提供绑定编辑。
+   对象；Inspector 提供绑定编辑。绑定变量扩充（2026-08-06）：新增
+   throughput / meanWait（来自 counters 帧）。
    **Phase 4：Frame + Auto Layout ✅ 已完成**（2026-08-06）：新增 `frame`
    容器节点（背景/裁剪/内边距/水平垂直自动排布，`computeFrameLayout` 纯函数
    可测），渲染时按 layout 摆放子对象并按内容自适应尺寸；Inspector 提供
@@ -203,8 +204,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 3（收尾）：Pen 工具 + 路径节点编辑 ✅ 已完成**（2026-08-06）：
    画布左上 Select/Pen 工具切换；Pen 模式下点击加锚点、Enter 结束、Esc
    取消，草稿实时预览；路径节点选中后可拖动/双击删除锚点（`path.ts` 提供
-   可测的命令解析/改点/删点）。待办：Constraints、更多绑定变量与 runtime
-   动画。
+   可测的命令解析/改点/删点）。
+   **Phase 4（收尾）：Constraints ✅ 已完成**（2026-08-06）：非自动布局的
+   frame 子对象可设 left/right/center/scale × top/bottom/center/scale 约束，
+   以 frame 的 baseSize 为基准随容器缩放/位移（`computeFrameLayout` 可测）；
+   Inspector 的 Frame 区新增子对象列表（兼作基础图层）。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

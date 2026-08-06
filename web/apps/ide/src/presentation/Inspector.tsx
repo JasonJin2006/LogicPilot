@@ -9,6 +9,8 @@ import { createGraphicNode } from '@logicpilot/editor';
 import type { BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
+type ConstraintShape = NonNullable<GraphicNode['constraints']>;
+
 interface InspectorProps {
   object: GraphicNode;
   onChange: (next: GraphicNode) => void;
@@ -78,6 +80,17 @@ export function PresentationInspector({
     onChange({ ...object, layout: { ...object.layout!, ...patch } });
   const addChild = (kind: 'rect' | 'oval' | 'text') =>
     onChange({ ...object, children: [...(object.children ?? []), createGraphicNode(kind, 0, 0)] });
+  const patchChild = (index: number, patch: Partial<GraphicNode>) =>
+    onChange({
+      ...object,
+      baseSize: object.baseSize ?? {
+        width: object.transform.width,
+        height: object.transform.height,
+      },
+      children: (object.children ?? []).map((child, i) =>
+        i === index ? { ...child, ...patch } : child,
+      ),
+    });
 
   return (
     <div className="side-panel-body properties">
@@ -376,6 +389,50 @@ export function PresentationInspector({
               − Last
             </button>
           </div>
+          <div className="props-section-title" style={{ marginTop: 8 }}>
+            Children
+          </div>
+          {(object.children ?? []).map((child, index) => (
+            <div key={index} className="props-child-row">
+              <span className="props-child-label">
+                {child.type === 'shape' ? (child.geometry?.shapeType ?? 'shape') : child.type}
+              </span>
+              <select
+                value={child.constraints?.horizontal ?? 'left'}
+                title="Horizontal constraint"
+                onChange={(event) =>
+                  patchChild(index, {
+                    constraints: {
+                      horizontal: event.target.value as ConstraintShape['horizontal'],
+                      vertical: child.constraints?.vertical ?? 'top',
+                    },
+                  })
+                }
+              >
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+                <option value="center">Center</option>
+                <option value="scale">Scale</option>
+              </select>
+              <select
+                value={child.constraints?.vertical ?? 'top'}
+                title="Vertical constraint"
+                onChange={(event) =>
+                  patchChild(index, {
+                    constraints: {
+                      horizontal: child.constraints?.horizontal ?? 'left',
+                      vertical: event.target.value as ConstraintShape['vertical'],
+                    },
+                  })
+                }
+              >
+                <option value="top">Top</option>
+                <option value="bottom">Bottom</option>
+                <option value="center">Center</option>
+                <option value="scale">Scale</option>
+              </select>
+            </div>
+          ))}
         </div>
       )}
       <div className="props-section">
@@ -394,7 +451,9 @@ export function PresentationInspector({
         </label>
         {binding && (
           <>
-            <p className="side-hint">Variables: queueLength, busy, servers, downServers, tick</p>
+            <p className="side-hint">
+              Variables: queueLength, busy, servers, downServers, throughput, meanWait, tick
+            </p>
             {(['width', 'height', 'opacity', 'x', 'y', 'rotation'] as const).map((key) => (
               <label className="props-field" key={key}>
                 <span className="props-field-name">{key}</span>

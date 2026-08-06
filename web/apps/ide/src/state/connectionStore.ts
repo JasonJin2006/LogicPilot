@@ -189,6 +189,8 @@ function applyFrame(frame: WireFrame): void {
       vizState.servers = Math.max(1, Math.round(frame.payload.values['servers'] ?? 1));
       vizState.downServers = Math.max(0, Math.round(frame.payload.values['down_servers'] ?? 0));
       vizState.queueLength = Math.max(0, Math.round(frame.payload.values['queue_length'] ?? 0));
+      vizState.throughput = frame.payload.values['throughput'] ?? 0;
+      vizState.meanWait = frame.payload.values['mean_wait'] ?? 0;
       break;
     }
     case 'run-finished': {
@@ -240,104 +242,103 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
     void resolveGatewayConfig().then(() => client?.connect(get().url));
   };
   return {
-  url: DEFAULT_URL,
-  conn: 'disconnected',
-  seq: null,
-  simTimeNs: null,
-  fps: 0,
-  lastAck: '',
-  error: '',
-  badFrames: 0,
-  events: [],
+    url: DEFAULT_URL,
+    conn: 'disconnected',
+    seq: null,
+    simTimeNs: null,
+    fps: 0,
+    lastAck: '',
+    error: '',
+    badFrames: 0,
+    events: [],
 
-  setUrl: (url) => set({ url }),
-  setFps: (fps) => set({ fps }),
-  connect: () => {
-    stopAutoConnect();
-    connectNow(false);
-  },
-  autoConnect: () => {
-    stopAutoConnect();
-    connectNow(false);
-    // Keep retrying while the desktop gateway boots; stop once connected
-    // (or after the budget is spent) so a dead endpoint does not spam.
-    retryTimer = window.setInterval(() => {
-      if (get().conn === 'connected') {
-        stopAutoConnect();
+    setUrl: (url) => set({ url }),
+    setFps: (fps) => set({ fps }),
+    connect: () => {
+      stopAutoConnect();
+      connectNow(false);
+    },
+    autoConnect: () => {
+      stopAutoConnect();
+      connectNow(false);
+      // Keep retrying while the desktop gateway boots; stop once connected
+      // (or after the budget is spent) so a dead endpoint does not spam.
+      retryTimer = window.setInterval(() => {
+        if (get().conn === 'connected') {
+          stopAutoConnect();
+          return;
+        }
+        retryCount += 1;
+        if (retryCount > AUTO_CONNECT_MAX_RETRIES) {
+          stopAutoConnect();
+          return;
+        }
+        connectNow(true);
+      }, AUTO_CONNECT_INTERVAL_MS);
+    },
+    disconnect: () => {
+      stopAutoConnect();
+      client?.disconnect();
+      client = null;
+      set({ conn: 'disconnected' });
+    },
+    start: (options) => {
+      client?.start(options);
+    },
+    pause: () => {
+      client?.pause();
+    },
+    resume: () => {
+      client?.resume();
+    },
+    step: () => {
+      client?.step();
+    },
+    stop: () => {
+      client?.stop();
+    },
+    setSpeed: (speed) => {
+      client?.setSpeed(speed);
+    },
+    compile: (source?: string) => {
+      const compiled = source ?? generateDsl(useModelStore.getState().document);
+      const sent = client?.compile(compiled) ?? false;
+      if (!sent) {
+        set((state) => ({ events: appendEvent(state, 'error', 'compile: not connected') }));
+      }
+    },
+    runCanvasModel: () => {
+      const source = generateDsl(useModelStore.getState().document);
+      const sent = client?.compile(source) ?? false;
+      if (!sent) {
+        set((state) => ({ events: appendEvent(state, 'error', 'run canvas: not connected') }));
         return;
       }
-      retryCount += 1;
-      if (retryCount > AUTO_CONNECT_MAX_RETRIES) {
-        stopAutoConnect();
-        return;
-      }
-      connectNow(true);
-    }, AUTO_CONNECT_INTERVAL_MS);
-  },
-  disconnect: () => {
-    stopAutoConnect();
-    client?.disconnect();
-    client = null;
-    set({ conn: 'disconnected' });
-  },
-  start: (options) => {
-    client?.start(options);
-  },
-  pause: () => {
-    client?.pause();
-  },
-  resume: () => {
-    client?.resume();
-  },
-  step: () => {
-    client?.step();
-  },
-  stop: () => {
-    client?.stop();
-  },
-  setSpeed: (speed) => {
-    client?.setSpeed(speed);
-  },
-  compile: (source?: string) => {
-    const compiled =
-      source ?? generateDsl(useModelStore.getState().document);
-    const sent = client?.compile(compiled) ?? false;
-    if (!sent) {
-      set((state) => ({ events: appendEvent(state, 'error', 'compile: not connected') }));
-    }
-  },
-  runCanvasModel: () => {
-    const source = generateDsl(useModelStore.getState().document);
-    const sent = client?.compile(source) ?? false;
-    if (!sent) {
-      set((state) => ({ events: appendEvent(state, 'error', 'run canvas: not connected') }));
-      return;
-    }
-    pendingRunContinuation = (ok) => {
-      if (!ok) {
-        return; // diagnostics already echoed to the console
-      }
-      const params = modelRunParams(useModelStore.getState().document);
-      if (!params.ok) {
-        set((state) => ({
-          events: appendEvent(state, 'error', `run canvas: ${params.error ?? 'invalid model'}`),
-        }));
-        return;
-      }
-      const options = useRunStore.getState().runOptions;
-      client?.start({
-        seed: options.seed,
-        reps: options.reps,
-        arrivals: options.arrivals,
-        warmup: options.warmup,
-        speed: options.speed,
-        lambda: params.lambda,
-        mu: params.mu,
-        servers: params.servers,
-        failureRate: params.failureRate,
-        repairRate: params.repairRate,
-      });
-    };
-  },
+      pendingRunContinuation = (ok) => {
+        if (!ok) {
+          return; // diagnostics already echoed to the console
+        }
+        const params = modelRunParams(useModelStore.getState().document);
+        if (!params.ok) {
+          set((state) => ({
+            events: appendEvent(state, 'error', `run canvas: ${params.error ?? 'invalid model'}`),
+          }));
+          return;
+        }
+        const options = useRunStore.getState().runOptions;
+        client?.start({
+          seed: options.seed,
+          reps: options.reps,
+          arrivals: options.arrivals,
+          warmup: options.warmup,
+          speed: options.speed,
+          lambda: params.lambda,
+          mu: params.mu,
+          servers: params.servers,
+          failureRate: params.failureRate,
+          repairRate: params.repairRate,
+        });
+      };
+    },
   };
 });

@@ -848,6 +848,8 @@ export function ModelCanvas() {
         servers: vizState.servers,
         downServers: vizState.downServers,
         tick: vizState.tickVersion,
+        throughput: vizState.throughput,
+        meanWait: vizState.meanWait,
       }
     : undefined;
   let shapesView: ReactElement | null = null;

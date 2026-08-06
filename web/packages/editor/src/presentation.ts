@@ -101,6 +101,13 @@ export interface GraphicNode {
   layout?: { direction: 'horizontal' | 'vertical'; gap: number; padding: number };
   /** Clip children to the frame bounds. */
   clip?: boolean;
+  /** Frame's design-time size, the reference for child constraints. */
+  baseSize?: { width: number; height: number };
+  /** Child constraints relative to its containing frame (Figma-style). */
+  constraints?: {
+    horizontal: 'left' | 'right' | 'center' | 'scale';
+    vertical: 'top' | 'bottom' | 'center' | 'scale';
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +419,12 @@ export function normalizeGraphicNode(value: unknown): GraphicNode | null {
   }
   if (typeof raw.clip === 'boolean') {
     node.clip = raw.clip;
+  }
+  if (raw.baseSize && typeof raw.baseSize === 'object') {
+    node.baseSize = raw.baseSize as GraphicNode['baseSize'];
+  }
+  if (raw.constraints && typeof raw.constraints === 'object') {
+    node.constraints = raw.constraints as GraphicNode['constraints'];
   }
   return node;
 }

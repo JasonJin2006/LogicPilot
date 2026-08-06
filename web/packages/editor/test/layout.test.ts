@@ -35,4 +35,45 @@ describe('frame auto layout', () => {
     expect(placements[0]!.y).toBe(40);
     expect(width).toBe(frame.transform.width);
   });
+
+  it('applies child constraints when the frame resizes', () => {
+    const child = shapeNode('rectangle', 10, 10, 50, 30);
+    child.constraints = { horizontal: 'right', vertical: 'bottom' };
+    const frame = frameNode(0, 0, [child]);
+    frame.layout = undefined;
+    frame.baseSize = { width: 200, height: 100 };
+    frame.transform.width = 300;
+    frame.transform.height = 150;
+    const { placements } = computeFrameLayout(frame);
+    expect(placements[0]!.x).toBe(110);
+    expect(placements[0]!.y).toBe(60);
+  });
+
+  it('scales children with the frame', () => {
+    const child = shapeNode('rectangle', 10, 10, 50, 30);
+    child.constraints = { horizontal: 'scale', vertical: 'scale' };
+    const frame = frameNode(0, 0, [child]);
+    frame.layout = undefined;
+    frame.baseSize = { width: 200, height: 100 };
+    frame.transform.width = 400;
+    frame.transform.height = 200;
+    const { placements } = computeFrameLayout(frame);
+    expect(placements[0]!.x).toBe(20);
+    expect(placements[0]!.y).toBe(20);
+    expect(placements[0]!.width).toBe(100);
+    expect(placements[0]!.height).toBe(60);
+  });
+
+  it('keeps constrained children centred on resize', () => {
+    const child = shapeNode('rectangle', 10, 10, 50, 30);
+    child.constraints = { horizontal: 'center', vertical: 'center' };
+    const frame = frameNode(0, 0, [child]);
+    frame.layout = undefined;
+    frame.baseSize = { width: 200, height: 100 };
+    frame.transform.width = 300;
+    frame.transform.height = 150;
+    const { placements } = computeFrameLayout(frame);
+    expect(placements[0]!.x).toBe(60);
+    expect(placements[0]!.y).toBe(35);
+  });
 });

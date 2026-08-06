@@ -22,6 +22,10 @@ export interface VizState {
   downServers: number;
   /** Latest Counters.queue_length (live queue badge on the canvas). */
   queueLength: number;
+  /** Latest Counters.throughput (agents served, for bindings). */
+  throughput: number;
+  /** Latest Counters.mean_wait (mean waiting time, for bindings). */
+  meanWait: number;
   /** Bumped on every applied Tick so the renderer can detect new data. */
   tickVersion: number;
 }
@@ -33,6 +37,8 @@ export function createVizState(): VizState {
     servers: 1,
     downServers: 0,
     queueLength: 0,
+    throughput: 0,
+    meanWait: 0,
     tickVersion: 0,
   };
 }
@@ -43,6 +49,8 @@ export function resetVizState(viz: VizState): void {
   viz.servers = 1;
   viz.downServers = 0;
   viz.queueLength = 0;
+  viz.throughput = 0;
+  viz.meanWait = 0;
   viz.tickVersion += 1;
 }
 

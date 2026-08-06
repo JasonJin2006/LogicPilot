@@ -169,10 +169,21 @@ function shapeFor(
             </clipPath>
           )}
           <g clipPath={object.clip ? `url(#clip-${uid})` : undefined}>
-            {placements.map(({ child, x, y }, index) => (
+            {placements.map(({ child, x, y, width, height }, index) => (
               <PresentationRenderer
                 key={index}
-                object={child}
+                object={
+                  width !== undefined || height !== undefined
+                    ? {
+                        ...child,
+                        transform: {
+                          ...child.transform,
+                          width: width ?? child.transform.width,
+                          height: height ?? child.transform.height,
+                        },
+                      }
+                    : child
+                }
                 ox={0}
                 oy={0}
                 uid={uid ? `${uid}-c${index}` : undefined}
