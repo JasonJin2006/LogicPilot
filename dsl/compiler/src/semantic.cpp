@@ -257,6 +257,10 @@ class Analyzer {
       check_node(node, parent_scope);
       return;
     }
+    if (kind == "path") {
+      check_path(node);
+      return;
+    }
     if (registry_ != nullptr && registry_->has_block(kind)) {
       // Process-library blocks (source/queue/service/... and resource) are
       // valid members of the model root and agent bodies (agent-centric
@@ -266,7 +270,7 @@ class Analyzer {
     }
     error("LP2004",
           "unknown declaration kind '" + kind + "' (core kinds: "
-              "agent/atomic/continuous/experiment/node; process library: "
+              "agent/atomic/continuous/experiment/node/path; process library: "
               "resource/source/queue/service/sink)",
           node.name_span);
   }
@@ -287,6 +291,21 @@ class Analyzer {
         error("LP3001",
               "node '" + node.name + "' field '" + field_name +
                   "' must be a numeric constant",
+              field->span);
+      }
+    }
+  }
+
+  // Network edge: `path <Name> { node1 = <Node>; node2 = <Node> }` links two
+  // nodes with a straight segment (weight = Euclidean distance).
+  void check_path(const Node& node) {
+    for (const char* field_name : {"node1", "node2"}) {
+      const Field* field = field_of(node, field_name);
+      if (field != nullptr &&
+          field->value.kind != ValueKind::kIdentifier) {
+        error("LP3001",
+              "path '" + node.name + "' field '" + field_name +
+                  "' must reference a node",
               field->span);
       }
     }

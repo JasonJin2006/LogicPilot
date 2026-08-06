@@ -1674,3 +1674,72 @@ TEST_CASE("process flow: moveTo resolves a node destination",
   REQUIRE(metrics.departures == 3);
   REQUIRE(metrics.mean_sojourn == 2.0);
 }
+
+TEST_CASE("process flow: moveTo follows the path network's shortest route",
+          "[process_flow][moveTo][network][des_blocks]") {
+  const auto run = [&](bool with_paths) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto build_node = [&](const char* name, double x, double y) {
+      return CreateNode(
+          builder, CreateMetadata(builder, builder.CreateString(name), 0, 0, 0),
+          builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+          builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
+              var_float(builder, "x", x), var_float(builder, "y", y)}),
+          0, CreateSemanticsRef(builder, builder.CreateString("core"),
+                                builder.CreateString("node"), 0, 0),
+          0, 0, 0, 0, 0);
+    };
+    const auto build_path = [&](const char* name, const char* a,
+                                const char* b) {
+      return CreateNode(
+          builder, CreateMetadata(builder, builder.CreateString(name), 0, 0, 0),
+          builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+          builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
+              var_string(builder, "node1", a),
+              var_string(builder, "node2", b)}),
+          0, CreateSemanticsRef(builder, builder.CreateString("core"),
+                                builder.CreateString("path"), 0, 0),
+          0, 0, 0, 0, 0);
+    };
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto move = block(
+        builder, "M", "moveTo",
+        {var_string(builder, "node", "C"),
+         var_float(builder, "speed", 10.0)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto nodeA = build_node("A", 0.0, 0.0);
+    const auto nodeB = build_node("B", 10.0, 0.0);
+    const auto nodeC = build_node("C", 10.0, 10.0);
+    std::vector<flatbuffers::Offset<Node>> children{nodeA, nodeB, nodeC};
+    if (with_paths) {
+      children.push_back(build_path("AB", "A", "B"));
+      children.push_back(build_path("BC", "B", "C"));
+    }
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(children), 0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, move, sink},
+        {couple(builder, "In", "out", "M", "in"),
+         couple(builder, "M", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 3, 0);
+  };
+
+  // Entity starts at A (0,0): A->C via B along the network is 20 units
+  // (10 + 10); without paths the fallback is the direct 14.14.
+  const ReplicationMetrics networked = run(true);
+  REQUIRE(networked.mean_sojourn == 2.0);
+
+  const ReplicationMetrics direct = run(false);
+  REQUIRE(std::abs(direct.mean_sojourn - std::sqrt(200.0) / 10.0) < 1e-6);
+}

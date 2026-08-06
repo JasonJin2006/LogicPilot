@@ -1,17 +1,32 @@
-// MoveTo (AnyLogic): agents travel to a `node` destination at `speed`
-// (distance / speed), or spend an explicit `tripTime`; with neither they
-// jump. Nodes are spatial markup with x/y coordinates.
+// MoveTo (AnyLogic): agents travel to a `node` destination along the path
+// network's shortest route at `speed` (network distance / speed).
 model MoveRoute {
+  node Dock {
+    x = 0
+    y = 0
+  }
   node Depot {
     x = 10
     y = 0
+  }
+  node Bay {
+    x = 10
+    y = 10
+  }
+  path Run1 {
+    node1 = Dock
+    node2 = Depot
+  }
+  path Run2 {
+    node1 = Depot
+    node2 = Bay
   }
   source Jobs {
     arrival = rate(1.0)
   }
   moveTo Ship {
-    node = Depot
-    speed = 5.0
+    node = Bay
+    speed = 10.0
   }
   sink Done {
   }

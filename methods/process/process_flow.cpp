@@ -59,9 +59,12 @@ struct PoolSpec {
   double repair_rate{1.0};
 };
 
-struct NodePos {
-  double x{0.0};
-  double y{0.0};
+// Spatial markup: nodes with coordinates plus the path network. `distances`
+// holds all-pairs shortest paths over the nodes (inf when unreachable).
+struct SpatialGraph {
+  std::vector<std::string> node_names;
+  std::unordered_map<std::string, NodePos> positions;
+  std::vector<std::vector<double>> distances;
 };
 
 std::int64_t to_ns(double seconds) {
@@ -105,7 +108,7 @@ std::string block_string_param(const Node* stage, const char* name) {
 std::unique_ptr<ProcessBlock> make_block(
     const Node* stage, const std::string& kind, const std::string& name,
     const std::unordered_map<std::string, PoolSpec>& pools,
-    const std::unordered_map<std::string, NodePos>& nodes,
+    const SpatialGraph& spatial,
     std::string* error) {
   const auto pool_servers = [&](const char* resource_name) -> std::int64_t {
     const std::string pool =
@@ -252,17 +255,33 @@ std::unique_ptr<ProcessBlock> make_block(
     double target_x = node_float_param(stage, "xYZ", 0.0);
     double target_y = 0.0;
     bool use_2d = false;
+    std::vector<NodePos> node_coords;
+    std::vector<double> dist_to_target;
     if (node_ref != nullptr) {
-      const auto it = nodes.find(node_ref);
-      if (it != nodes.end()) {
-        target_x = it->second.x;
-        target_y = it->second.y;
+      const auto pos = spatial.positions.find(node_ref);
+      if (pos != spatial.positions.end()) {
+        target_x = pos->second.x;
+        target_y = pos->second.y;
         use_2d = true;
+        const auto target =
+            std::find(spatial.node_names.begin(), spatial.node_names.end(),
+                      node_ref);
+        if (target != spatial.node_names.end()) {
+          const std::size_t target_index =
+              static_cast<std::size_t>(target - spatial.node_names.begin());
+          for (std::size_t i = 0; i < spatial.node_names.size(); ++i) {
+            node_coords.push_back(
+                spatial.positions.at(spatial.node_names[i]));
+            const double d = spatial.distances[i][target_index];
+            dist_to_target.push_back(d >= 1e18 ? -1.0 : d);
+          }
+        }
       }
     }
     return std::make_unique<MoveToBlock>(
         name, to_ns(node_float_param(stage, "tripTime", 0.0)),
-        node_float_param(stage, "speed", 0.0), target_x, target_y, use_2d);
+        node_float_param(stage, "speed", 0.0), target_x, target_y, use_2d,
+        std::move(node_coords), std::move(dist_to_target));
   }
   if (kind == "split") {
     return std::make_unique<GenericBlock>(
@@ -349,12 +368,25 @@ class Engine final : public BlockContext {
                       child->metadata()->name() != nullptr
                   ? child->metadata()->name()->str()
                   : "";
-          nodes_[node_name] =
+          spatial_.positions[node_name] =
               NodePos{node_float_param(child, "x", 0.0),
                       node_float_param(child, "y", 0.0)};
         }
+        if (child != nullptr && child->semantics() != nullptr &&
+            child->semantics()->library() != nullptr &&
+            child->semantics()->block() != nullptr &&
+            std::strcmp(child->semantics()->library()->c_str(), "core") ==
+                0 &&
+            std::strcmp(child->semantics()->block()->c_str(), "path") == 0) {
+          const char* node1 = node_string_param(child, "node1");
+          const char* node2 = node_string_param(child, "node2");
+          if (node1 != nullptr && node2 != nullptr) {
+            path_edges_.push_back({node1, node2});
+          }
+        }
       }
     }
+    build_spatial_graph();
     for (const Node* stage : stages) {
       if (stage == nullptr || stage->semantics() == nullptr ||
           stage->semantics()->block() == nullptr ||
@@ -364,7 +396,7 @@ class Engine final : public BlockContext {
       }
       const std::string name = stage->metadata()->name()->str();
       const std::string kind = stage->semantics()->block()->str();
-      auto block = make_block(stage, kind, name, resource_pools_, nodes_,
+      auto block = make_block(stage, kind, name, resource_pools_, spatial_,
                               error);
       if (block == nullptr) {
         return;
@@ -420,6 +452,52 @@ class Engine final : public BlockContext {
   }
 
   [[nodiscard]] bool valid() const { return valid_; }
+
+  // Build the spatial graph: nodes in stable order, path edges weighted by
+  // Euclidean distance, all-pairs shortest paths (Floyd-Warshall).
+  void build_spatial_graph() {
+    for (const auto& [name, pos] : spatial_.positions) {
+      spatial_.node_names.push_back(name);
+    }
+    std::sort(spatial_.node_names.begin(), spatial_.node_names.end());
+    std::unordered_map<std::string, std::size_t> index;
+    for (std::size_t i = 0; i < spatial_.node_names.size(); ++i) {
+      index[spatial_.node_names[i]] = i;
+    }
+    const std::size_t n = spatial_.node_names.size();
+    const double inf = 1e18;
+    spatial_.distances.assign(n, std::vector<double>(n, inf));
+    for (std::size_t i = 0; i < n; ++i) {
+      spatial_.distances[i][i] = 0.0;
+    }
+    for (const auto& [a, b] : path_edges_) {
+      const auto ia = index.find(a);
+      const auto ib = index.find(b);
+      if (ia == index.end() || ib == index.end()) {
+        continue;
+      }
+      const NodePos& pa = spatial_.positions[a];
+      const NodePos& pb = spatial_.positions[b];
+      const double dx = pa.x - pb.x;
+      const double dy = pa.y - pb.y;
+      const double weight = std::sqrt(dx * dx + dy * dy);
+      spatial_.distances[ia->second][ib->second] =
+          std::min(spatial_.distances[ia->second][ib->second], weight);
+      spatial_.distances[ib->second][ia->second] =
+          spatial_.distances[ia->second][ib->second];
+    }
+    for (std::size_t k = 0; k < n; ++k) {
+      for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = 0; j < n; ++j) {
+          const double via =
+              spatial_.distances[i][k] + spatial_.distances[k][j];
+          if (via < spatial_.distances[i][j]) {
+            spatial_.distances[i][j] = via;
+          }
+        }
+      }
+    }
+  }
 
   // Kernel-driven mode: schedule into the kernel's clock/scheduler/handler
   // registry instead of per-engine owned facilities (SimulationKernel).
@@ -696,7 +774,7 @@ class Engine final : public BlockContext {
     }
   }
 
- private:
+  private:
   struct Edge {
     std::size_t to;
     std::string from_port;
@@ -942,7 +1020,8 @@ class Engine final : public BlockContext {
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   std::unordered_map<std::string, PoolSpec> resource_pools_;
-  std::unordered_map<std::string, NodePos> nodes_;
+  std::vector<std::pair<std::string, std::string>> path_edges_;
+  SpatialGraph spatial_;
   std::unordered_map<std::string, std::int64_t> available_;
   std::unordered_map<std::string, std::int64_t> pool_busy_;
   std::unordered_map<std::string, bool> pool_down_;

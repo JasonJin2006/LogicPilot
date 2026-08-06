@@ -171,6 +171,15 @@ double float_field(const Node& node, const char* name,
   return fallback;
 }
 
+// Identifier-typed field (`node1 = A`): returns the bare name.
+std::string node_field_identifier(const Node& node, const char* name) {
+  const Field* field = field_of(node, name);
+  if (field != nullptr && field->value.kind == ValueKind::kIdentifier) {
+    return field->value.string_value;
+  }
+  return "";
+}
+
 // ---------------------------------------------------------------------------
 // Process library blocks
 // ---------------------------------------------------------------------------
@@ -573,6 +582,20 @@ flatbuffers::Offset<v2::Node> v2_node(
         builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
         builder.CreateVector(params), 0,
         v2_semantics(builder, "core", "node"), 0, 0, 0, 0, 0);
+  }
+  if (node.kind == "path") {
+    std::vector<flatbuffers::Offset<v2::Var>> params;
+    const std::string node1 =
+        node_field_identifier(node, "node1");
+    const std::string node2 =
+        node_field_identifier(node, "node2");
+    params.push_back(v2_var_string(builder, "node1", node1.c_str()));
+    params.push_back(v2_var_string(builder, "node2", node2.c_str()));
+    return v2::CreateNode(
+        builder, v2_metadata(builder, node.name, source_file),
+        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+        builder.CreateVector(params), 0,
+        v2_semantics(builder, "core", "path"), 0, 0, 0, 0, 0);
   }
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment

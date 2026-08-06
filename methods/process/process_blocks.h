@@ -27,6 +27,12 @@
 
 namespace logicpilot::process {
 
+// A spatial position (node coordinate / agent location).
+struct NodePos {
+  double x{0.0};
+  double y{0.0};
+};
+
 // Emits entities at the configured inter-arrival rate.
 class SourceBlock final : public BufferedBlock {
  public:
@@ -748,13 +754,17 @@ class AssemblerBlock final : public BufferedBlock {
 class MoveToBlock final : public BufferedBlock {
  public:
   MoveToBlock(std::string name, std::int64_t trip_time_ns, double speed,
-              double target_x, double target_y, bool use_2d)
+              double target_x, double target_y, bool use_2d,
+              std::vector<NodePos> node_coords = {},
+              std::vector<double> dist_to_target = {})
       : BufferedBlock("moveTo", std::move(name), -1),
         trip_time_ns_(trip_time_ns),
         speed_(speed),
         target_x_(target_x),
         target_y_(target_y),
-        use_2d_(use_2d) {}
+        use_2d_(use_2d),
+        node_coords_(std::move(node_coords)),
+        dist_to_target_(std::move(dist_to_target)) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
@@ -768,7 +778,25 @@ class MoveToBlock final : public BufferedBlock {
     if (hold_ns <= 0 && speed_ > 0.0) {
       const double dx = target_x_ - entity.x;
       const double dy = use_2d_ ? target_y_ - entity.y : 0.0;
-      const double distance = std::sqrt(dx * dx + dy * dy);
+      double distance = std::sqrt(dx * dx + dy * dy);
+      if (!node_coords_.empty()) {
+        // Nearest node to the agent's position, then the network's shortest
+        // path from there to the destination (AnyLogic moveTo semantics).
+        std::size_t nearest = 0;
+        double best = distance;
+        for (std::size_t i = 0; i < node_coords_.size(); ++i) {
+          const double ndx = node_coords_[i].x - entity.x;
+          const double ndy = node_coords_[i].y - entity.y;
+          const double nd = std::sqrt(ndx * ndx + ndy * ndy);
+          if (nd < best) {
+            best = nd;
+            nearest = i;
+          }
+        }
+        if (dist_to_target_[nearest] >= 0.0) {
+          distance = best + dist_to_target_[nearest];
+        }
+      }
       hold_ns = static_cast<std::int64_t>(
           std::llround(distance / speed_ * 1e9));
     }
@@ -810,6 +838,8 @@ class MoveToBlock final : public BufferedBlock {
   double target_x_{0.0};
   double target_y_{0.0};
   bool use_2d_{false};
+  std::vector<NodePos> node_coords_;
+  std::vector<double> dist_to_target_;
   std::deque<Entity> in_service_;
 };
 
