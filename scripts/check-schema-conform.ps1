@@ -33,7 +33,7 @@ function Get-Flatc {
     $cmd = Get-Command flatc -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
     # Last resort: download the pinned prebuilt binary (gitignored .deps/).
-    & (Join-Path $root 'scripts\fetch-flatc.ps1')
+    $null = & (Join-Path $root 'scripts/fetch-flatc.ps1')
     if (Test-Path $deps) { return $deps }
     throw 'flatc not found'
 }

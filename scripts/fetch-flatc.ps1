@@ -47,7 +47,10 @@ if ($isWin) {
 }
 
 $url = "https://github.com/google/flatbuffers/releases/download/$Version/$asset"
-$zip = Join-Path $env:TEMP "flatc-$Version-$asset"
+# GitHub Actions Linux runners do not set $env:TEMP; use the platform temp
+# directory so the download path works on every runner OS.
+$tempDir = [System.IO.Path]::GetTempPath()
+$zip = Join-Path $tempDir "flatc-$Version-$asset"
 
 Write-Host "Downloading $url"
 New-Item -ItemType Directory -Force -Path $destDir | Out-Null
@@ -67,4 +70,7 @@ if (-not (Test-Path $flatc)) { throw "flatc download failed (expected $flatc)" }
 if (-not $isWin) { & chmod +x $flatc }
 
 Write-Host "flatc ready: $flatc"
-& $flatc --version
+# Pipe to Out-Host so the version banner never leaks into the caller's
+# pipeline: callers invoke this script with `&` and PowerShell would
+# otherwise treat every emitted line as the script's return value.
+& $flatc --version | Out-Host
