@@ -185,26 +185,40 @@ std::unique_ptr<ProcessBlock> make_block(
         name, resource != nullptr ? resource : name,
         node_int_param(stage, "numberOfUnits", 0), capacity,
         to_ns(node_float_param(stage, "timeout", 100.0)),
-        node_bool_param(stage, "enableTimeout", false));
+        node_bool_param(stage, "enableTimeout", false),
+        node_bool_param(stage, "enablePreemption", false));
   }
   if (kind == "release") {
     return std::make_unique<ReleaseBlock>(name);
   }
   if (kind == "queue") {
-    std::int64_t capacity = node_int_param(stage, "capacity", -1);
-    if (capacity == 0) {
+    std::int64_t capacity = node_int_param(stage, "capacity", 100);
+    if (capacity == 0 ||
+        node_bool_param(stage, "maximumCapacity", false)) {
       capacity = -1;  // 0 = unbounded in the kernel paths
     }
-    return std::make_unique<QueueBlock>(name, capacity, "queue");
+    const std::string queuing = block_string_param(stage, "queuing");
+    return std::make_unique<WaitBlock>(
+        "queue", name, capacity,
+        to_ns(node_float_param(stage, "timeout", 100.0)),
+        node_bool_param(stage, "enableTimeout", false),
+        queuing.empty() ? "queuing_fifo" : queuing,
+        node_float_param(stage, "agentPriority", 0.0),
+        node_bool_param(stage, "enablePreemption", false));
   }
   if (kind == "wait") {
     std::int64_t capacity = node_int_param(stage, "capacity", 100);
     if (node_bool_param(stage, "maximumCapacity", false) || capacity == 0) {
       capacity = -1;
     }
+    const std::string queuing = block_string_param(stage, "queuing");
     return std::make_unique<WaitBlock>(
-        name, capacity, to_ns(node_float_param(stage, "timeout", 100.0)),
-        node_bool_param(stage, "enableTimeout", false));
+        "wait", name, capacity,
+        to_ns(node_float_param(stage, "timeout", 100.0)),
+        node_bool_param(stage, "enableTimeout", false),
+        queuing.empty() ? "queuing_fifo" : queuing,
+        node_float_param(stage, "agentPriority", 0.0),
+        node_bool_param(stage, "enablePreemption", false));
   }
   if (kind == "sink") {
     return std::make_unique<SinkBlock>(name);
@@ -570,7 +584,7 @@ class Engine final : public BlockContext {
       if (edge.from_port != port) {
         continue;
       }
-      if (!blocks_[edge.to]->can_accept()) {
+      if (!blocks_[edge.to]->can_accept(entity)) {
         return false;
       }
     }
@@ -698,7 +712,7 @@ class Engine final : public BlockContext {
   bool push(std::size_t to, const Entity& entity,
             const std::string& port) {
     ProcessBlock& block = *blocks_[to];
-    if (!block.can_accept()) {
+    if (!block.can_accept(entity)) {
       return false;
     }
     block.receive(entity, port);

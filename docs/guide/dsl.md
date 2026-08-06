@@ -105,6 +105,11 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
   `timeout` 秒的 agent 从 `outTimeout` 出口离开（AnyLogic 语义；couple 到
   `outTimeout` 时编译器要求 `enableTimeout` 为 true）。
+- **优先级排队与抢占**：`queue`/`wait` 的 `queuing` 支持
+  `queuing_fifo`（默认）/ `queuing_lifo` / `queuing_priority`；优先级取
+  实体属性 `priority`（无则回退块字段 `agentPriority`，越大越靠前）。
+  `enablePreemption = true` 时：`queue` 满队且新 agent 优先级更高 → 踢出
+  最弱等待者到 `outPreempted`；`wait`/`seize` 在每次到达时抢占最弱等待者。
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
@@ -237,5 +242,6 @@ use manufacturing
 | `examples/attribute_routing.lp` | 实体属性声明 + selectOutput 按属性路由 |
 | `examples/failure_line.lp` | 通用引擎故障模型（failure/repair + availability） |
 | `examples/wait_timeout.lp` | wait 退出超时（outTimeout 出口） |
+| `examples/priority_preempt.lp` | 优先级排队 + 满队抢占（outPreempted） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

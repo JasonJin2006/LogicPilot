@@ -94,6 +94,12 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `outTimeout` 离开（AnyLogic 语义；couple 到 outTimeout 时编译期要求
   enableTimeout=true，LP5003）；新增 wait/seize 超时内核测试（含无超时
   差分）与 `examples/wait_timeout.lp` 冒烟。
+- **优先级排队与抢占已落地（2026-08-06）**：`queue`/`wait` 的 `queuing`
+  （fifo/lifo/priority）+ 实体 `priority` 属性（回退 `agentPriority`）；
+  `enablePreemption` 驱动 `outPreempted`：queue 满队踢最弱、wait/seize
+  到达抢占最弱；`can_accept` 升级为按实体判断；新增 queue/wait/seize 抢占
+  差分测试与 `examples/priority_preempt.lp` 冒烟。`queuing_comparison`
+  （表达式比较）暂回退 FIFO。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

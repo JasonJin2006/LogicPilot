@@ -105,8 +105,9 @@ class ProcessBlock {
   [[nodiscard]] virtual std::string_view kind() const = 0;
   [[nodiscard]] virtual std::string_view name() const = 0;
 
-  // Whether the block can currently buffer one more entity.
-  [[nodiscard]] virtual bool can_accept() const = 0;
+  // Whether the block can currently buffer `entity` (per-entity admission
+  // lets full priority queues preempt their lowest-priority waiter).
+  [[nodiscard]] virtual bool can_accept(const Entity& entity) = 0;
   // Buffer an entity (caller checked can_accept; capacity rules per kind).
   virtual void receive(const Entity& entity) = 0;
   // Port-aware receive (multi-input blocks: combine in1/in2, match in1/in2).
@@ -169,7 +170,7 @@ class BufferedBlock : public ProcessBlock {
   [[nodiscard]] std::string_view kind() const final { return kind_; }
   [[nodiscard]] std::string_view name() const final { return name_; }
 
-  [[nodiscard]] bool can_accept() const override {
+  [[nodiscard]] bool can_accept(const Entity&) override {
     return capacity_ < 0 ||
            static_cast<std::int64_t>(input_.size()) < capacity_;
   }

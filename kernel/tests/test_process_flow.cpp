@@ -948,3 +948,183 @@ TEST_CASE("process flow: seize exit-on-timeout releases waiting agents",
   const ReplicationMetrics stuck = build_seize(false, no_timeout_builder);
   REQUIRE(stuck.departures == 0);
 }
+
+TEST_CASE("process flow: full priority queue preempts its weakest waiter",
+          "[process_flow][preemption][des_blocks]") {
+  const auto run_queue = [&](const char* queuing) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "priority", 1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+        {var_int(builder, "priority", 5)}, {});
+    const auto queue = block(
+        builder, "Q", "queue",
+        {var_int(builder, "capacity", 2),
+         var_string(builder, "queuing", queuing),
+         var_bool(builder, "enablePreemption", true)},
+        {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto preempted = block(builder, "Out", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, queue, service, sink, preempted},
+        {couple(builder, "S1", "out", "Q", "in"),
+         couple(builder, "S2", "out", "Q", "in"),
+         couple(builder, "Q", "out", "S", "in"),
+         couple(builder, "Q", "outPreempted", "Out", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 7, 0);
+  };
+
+  const ReplicationMetrics fifo = run_queue("queuing_fifo");
+  const ReplicationMetrics priority = run_queue("queuing_priority");
+  // Arrivals: S1 (priority 1) at t=1,2,3,4; S2 (priority 5) at t=2,4,6. With
+  // capacity 2 and the out port blocked, the full queue ejects through
+  // outPreempted. FIFO mode rejects once a high-priority S2 sits at the
+  // back; priority mode keeps ejecting the weakest waiter, so more agents
+  // leave via outPreempted.
+  REQUIRE(fifo.departures == 0);
+  REQUIRE(priority.departures == 1);
+  REQUIRE(priority.departures > fifo.departures);
+}
+
+TEST_CASE("process flow: wait preempts the weakest waiter on arrival",
+          "[process_flow][preemption][des_blocks]") {
+  const auto run_wait = [&](bool enable_preemption) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "priority", 1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+        {var_int(builder, "priority", 5)}, {});
+    const auto wait = block(
+        builder, "W", "wait",
+        {var_int(builder, "capacity", 100),
+         var_string(builder, "queuing", "queuing_priority"),
+         var_bool(builder, "enablePreemption", enable_preemption)},
+        {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto preempted = block(builder, "Out", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, wait, service, sink, preempted},
+        {couple(builder, "S1", "out", "W", "in"),
+         couple(builder, "S2", "out", "W", "in"),
+         couple(builder, "W", "out", "S", "in"),
+         couple(builder, "W", "outPreempted", "Out", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 7, 0);
+  };
+
+  // High-priority S2 arrivals (t=2,4) eject the weakest waiting S1
+  // (priority 1) through outPreempted on arrival.
+  const ReplicationMetrics preempting = run_wait(true);
+  REQUIRE(preempting.departures == 2);
+
+  const ReplicationMetrics plain = run_wait(false);
+  REQUIRE(plain.departures == 0);
+}
+
+TEST_CASE("process flow: seize preempts the weakest waiting agent",
+          "[process_flow][preemption][des_blocks]") {
+  const auto run_seize = [&](bool enable_preemption) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto s1 = block_with_state(
+        builder, "S1", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "priority", 1)}, {});
+    const auto s2 = block_with_state(
+        builder, "S2", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+        {var_int(builder, "priority", 5)}, {});
+    const auto resource = block(
+        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto seize = block(
+        builder, "Grab", "seize",
+        {var_string(builder, "resource", "Server"),
+         var_int(builder, "numberOfUnits", 1),
+         var_bool(builder, "enablePreemption", enable_preemption)},
+        {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto preempted = block(builder, "Out", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {s1, s2, seize, service, sink, preempted},
+        {couple(builder, "S1", "out", "Grab", "in"),
+         couple(builder, "S2", "out", "Grab", "in"),
+         couple(builder, "Grab", "out", "S", "in"),
+         couple(builder, "Grab", "outPreempted", "Out", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 6, 0);
+  };
+
+  // The first S1 agent seizes the only unit (and stays blocked downstream).
+  // Arrival order (S2 precedes S1 at the shared t=2) means S2@2 queues
+  // first; S2@4 ejects the waiting S1, and S1@5 cannot preempt S2@2.
+  const ReplicationMetrics preempting = run_seize(true);
+  REQUIRE(preempting.departures == 1);
+
+  const ReplicationMetrics plain = run_seize(false);
+  REQUIRE(plain.departures == 0);
+}

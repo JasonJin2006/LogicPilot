@@ -11,10 +11,13 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
 #include "logicpilot/core/random/xoshiro256pp.h"
@@ -81,16 +84,54 @@ class QueueBlock final : public BufferedBlock {
   }
 };
 
-// Wait: FIFO buffer with an optional exit-on-timeout (AnyLogic Wait with
-// enableTimeout). Each waiting entity gets a timeout event; when it fires,
-// entities still waiting leave through outTimeout instead of out.
+// Numeric priority of an entity: the "priority" attribute when declared on
+// the emitting source, otherwise the block's static agentPriority fallback.
+inline double entity_priority(const Entity& entity, double fallback) {
+  const auto it = entity.attributes.find("priority");
+  return it != entity.attributes.end() ? it->second : fallback;
+}
+
+// Queue / Wait: FIFO (or LIFO / priority) buffer with optional exit-on-
+// timeout and priority preemption (AnyLogic Queue/Wait semantics).
+//   - queuing: "queuing_fifo" (default) / "queuing_lifo" / "queuing_priority";
+//     "queuing_comparison" falls back to FIFO (no expression engine yet).
+//   - priority: entity attribute "priority", falling back to the block's
+//     agentPriority field; higher value = served first.
+//   - enableTimeout: waiting entities exit through outTimeout after timeout.
+//   - enablePreemption: queue-kind blocks eject their weakest waiter through
+//     outPreempted when a full queue receives a higher-priority agent;
+//     wait-kind blocks preempt on every arrival.
 class WaitBlock final : public BufferedBlock {
  public:
-  WaitBlock(std::string name, std::int64_t capacity,
-            std::int64_t timeout_ns, bool enable_timeout)
-      : BufferedBlock("wait", std::move(name), capacity),
+  WaitBlock(std::string kind, std::string name, std::int64_t capacity,
+            std::int64_t timeout_ns, bool enable_timeout,
+            std::string queuing, double agent_priority,
+            bool enable_preemption)
+      : BufferedBlock(std::move(kind), std::move(name), capacity),
         timeout_ns_(timeout_ns),
-        enable_timeout_(enable_timeout) {}
+        enable_timeout_(enable_timeout),
+        queuing_(std::move(queuing)),
+        agent_priority_(agent_priority),
+        enable_preemption_(enable_preemption) {}
+
+  bool can_accept(const Entity& entity) override {
+    if (capacity_ < 0 ||
+        static_cast<std::int64_t>(input_.size()) < capacity_) {
+      return true;
+    }
+    // Full preempting queue: admit only a newcomer that outranks the agent
+    // that would be ejected (lowest-priority waiter for priority queuing,
+    // otherwise the most recent one).
+    if (!enable_preemption_ || kind_ != "queue") {
+      return false;
+    }
+    return priority_of(entity) > ejection_victim_priority();
+  }
+
+  void receive(const Entity& entity) override {
+    BufferedBlock::receive(entity);
+    last_received_id_ = entity.id;
+  }
 
   bool update(BlockContext& ctx) override {
     if (enable_timeout_ && timeout_ns_ > 0) {
@@ -100,14 +141,32 @@ class WaitBlock final : public BufferedBlock {
         }
       }
     }
+    if (enable_preemption_ && kind_ == "wait") {
+      preempt_new_arrivals(ctx);
+    }
+    if (queuing_ == "queuing_priority") {
+      std::stable_sort(input_.begin(), input_.end(),
+                       [this](const Entity& a, const Entity& b) {
+                         return priority_of(a) > priority_of(b);
+                       });
+    }
+    if (kind_ == "queue" && enable_preemption_ && capacity_ >= 0 &&
+        static_cast<std::int64_t>(input_.size()) > capacity_) {
+      eject_victim(ctx);  // can_accept admitted the outranking newcomer
+    }
     if (input_.empty()) {
       return false;
     }
-    Entity entity = input_.front();
+    Entity entity =
+        queuing_ == "queuing_lifo" ? input_.back() : input_.front();
     if (!ctx.emit(entity, "out")) {
       return false;
     }
-    input_.pop_front();
+    if (queuing_ == "queuing_lifo") {
+      input_.pop_back();
+    } else {
+      input_.pop_front();
+    }
     ++departed_;
     return true;
   }
@@ -126,15 +185,15 @@ class WaitBlock final : public BufferedBlock {
     timed_.erase(entity_id);
     ++departed_;
     if (!ctx.emit(entity, "outTimeout")) {
-      timeout_outgoing_.push_back(entity);
+      alt_outgoing_.push_back({entity, "outTimeout"});
     }
   }
 
   bool retry_outgoing(BlockContext& ctx) override {
-    if (!timeout_outgoing_.empty()) {
-      Entity entity = timeout_outgoing_.front();
-      if (ctx.emit(entity, "outTimeout")) {
-        timeout_outgoing_.pop_front();
+    if (!alt_outgoing_.empty()) {
+      const auto entry = alt_outgoing_.front();
+      if (ctx.emit(entry.first, entry.second.c_str())) {
+        alt_outgoing_.pop_front();
         return true;
       }
       return false;
@@ -145,14 +204,131 @@ class WaitBlock final : public BufferedBlock {
   void clear_buffers() override {
     BufferedBlock::clear_buffers();
     timed_.clear();
-    timeout_outgoing_.clear();
+    queued_.clear();
+    alt_outgoing_.clear();
   }
 
  private:
+  double priority_of(const Entity& entity) const {
+    return entity_priority(entity, agent_priority_);
+  }
+
+  double ejection_victim_priority() const {
+    if (input_.empty()) {
+      return -std::numeric_limits<double>::infinity();
+    }
+    if (queuing_ == "queuing_priority") {
+      double lowest = priority_of(input_.front());
+      for (const Entity& entity : input_) {
+        lowest = std::min(lowest, priority_of(entity));
+      }
+      return lowest;
+    }
+    return priority_of(input_.back());
+  }
+
+  // The agent an arriving newcomer would preempt, per queuing policy
+  // (priority: least priority; fifo: most recent; lifo: oldest). Only
+  // established waiters (queued_) are candidates.
+  const Entity* select_victim(std::uint64_t exclude_id) const {
+    const Entity* victim = nullptr;
+    double lowest = 0.0;
+    for (const Entity& entity : input_) {
+      if (entity.id == exclude_id ||
+          queued_.find(entity.id) == queued_.end()) {
+        continue;
+      }
+      if (queuing_ == "queuing_priority") {
+        const double priority = priority_of(entity);
+        if (victim == nullptr || priority < lowest) {
+          victim = &entity;
+          lowest = priority;
+        }
+      } else if (queuing_ == "queuing_lifo") {
+        if (victim == nullptr) {
+          victim = &entity;  // oldest first
+        }
+      } else {
+        victim = &entity;  // fifo: the most recent one wins
+      }
+    }
+    return victim;
+  }
+
+  void eject(BlockContext& ctx, const Entity& entity) {
+    const auto it =
+        std::find_if(input_.begin(), input_.end(),
+                     [&entity](const Entity& entry) {
+                       return entry.id == entity.id;
+                     });
+    if (it == input_.end()) {
+      return;
+    }
+    Entity ejected = *it;  // copy before erase: the reference dies with it
+    input_.erase(it);
+    timed_.erase(ejected.id);
+    queued_.erase(ejected.id);
+    ++departed_;
+    if (!ctx.emit(ejected, "outPreempted")) {
+      alt_outgoing_.push_back({ejected, "outPreempted"});
+    }
+  }
+
+  void eject_victim(BlockContext& ctx) {
+    // Queue-kind waiters are all established (queued_ is only tracked for
+    // wait-kind on-arrival preemption), so select without the filter.
+    const Entity* victim = nullptr;
+    double lowest = 0.0;
+    for (const Entity& entity : input_) {
+      if (entity.id == last_received_id_) {
+        continue;
+      }
+      if (queuing_ == "queuing_priority") {
+        const double priority = priority_of(entity);
+        if (victim == nullptr || priority < lowest) {
+          victim = &entity;
+          lowest = priority;
+        }
+      } else {
+        victim = &entity;  // fifo/lifo: the most recent one wins
+      }
+    }
+    if (victim != nullptr) {
+      eject(ctx, *victim);
+    }
+  }
+
+  void preempt_new_arrivals(BlockContext& ctx) {
+    std::vector<std::uint64_t> newcomers;
+    for (const Entity& entity : input_) {
+      if (queued_.find(entity.id) == queued_.end()) {
+        newcomers.push_back(entity.id);
+      }
+    }
+    for (const std::uint64_t id : newcomers) {
+      const auto it =
+          std::find_if(input_.begin(), input_.end(),
+                       [id](const Entity& entry) { return entry.id == id; });
+      if (it == input_.end()) {
+        continue;
+      }
+      const Entity* victim = select_victim(id);
+      if (victim != nullptr && priority_of(*it) > priority_of(*victim)) {
+        eject(ctx, *victim);
+      }
+      queued_.insert(id);
+    }
+  }
+
   std::int64_t timeout_ns_{0};
   bool enable_timeout_{false};
+  std::string queuing_;
+  double agent_priority_{0.0};
+  bool enable_preemption_{false};
   std::unordered_set<std::uint64_t> timed_;
-  std::deque<Entity> timeout_outgoing_;
+  std::unordered_set<std::uint64_t> queued_;
+  std::deque<std::pair<Entity, std::string>> alt_outgoing_;
+  std::uint64_t last_received_id_{0};
 };
 
 // Hold-and-forward (delay): occupies a delay slot for the sampled duration.
@@ -162,7 +338,7 @@ class DelayBlock final : public BufferedBlock {
       : BufferedBlock("delay", std::move(name), capacity),
         delay_time_(std::move(delay_time)) {}
 
-  bool can_accept() const override {
+  bool can_accept(const Entity&) override {
     return capacity_ < 0 ||
            static_cast<std::int64_t>(in_service_.size()) < capacity_;
   }
@@ -231,7 +407,7 @@ class ServiceBlock final : public BufferedBlock {
         failure_(std::move(failure)),
         repair_(std::move(repair)) {}
 
-  bool can_accept() const override {
+  bool can_accept(const Entity&) override {
     return units_in_use_ < servers_;
   }
 
@@ -483,27 +659,31 @@ class GenericBlock final : public BufferedBlock {
 // them. Semantics per AnyLogic Seize (resource pool + queue).
 class SeizeBlock final : public BufferedBlock {
  public:
-  SeizeBlock(std::string name, std::string resource, std::int64_t quantity,
-             std::int64_t capacity, std::int64_t timeout_ns = 0,
-             bool enable_timeout = false)
-      : BufferedBlock("seize", std::move(name), capacity),
-        resource_(std::move(resource)),
-        quantity_(quantity > 0 ? quantity : 1),
-        timeout_ns_(timeout_ns),
-        enable_timeout_(enable_timeout) {}
+    SeizeBlock(std::string name, std::string resource, std::int64_t quantity,
+               std::int64_t capacity, std::int64_t timeout_ns = 0,
+               bool enable_timeout = false, bool enable_preemption = false)
+        : BufferedBlock("seize", std::move(name), capacity),
+          resource_(std::move(resource)),
+          quantity_(quantity > 0 ? quantity : 1),
+          timeout_ns_(timeout_ns),
+          enable_timeout_(enable_timeout),
+          enable_preemption_(enable_preemption) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
     }
-    if (enable_timeout_ && timeout_ns_ > 0) {
-      for (const Entity& entity : input_) {
-        if (timed_.insert(entity.id).second) {
-          ctx.schedule_timeout(timeout_ns_, entity.id);
+      if (enable_timeout_ && timeout_ns_ > 0) {
+        for (const Entity& entity : input_) {
+          if (timed_.insert(entity.id).second) {
+            ctx.schedule_timeout(timeout_ns_, entity.id);
+          }
         }
       }
-    }
-    if (!ctx.try_seize(resource_, quantity_)) {
+      if (enable_preemption_) {
+        preempt_new_arrivals(ctx);
+      }
+      if (!ctx.try_seize(resource_, quantity_)) {
       return false;  // pool exhausted: the entity stays in the queue
     }
     Entity entity = input_.front();
@@ -529,37 +709,97 @@ class SeizeBlock final : public BufferedBlock {
     input_.erase(it);
     timed_.erase(entity_id);
     ++departed_;
-    if (!ctx.emit(entity, "outTimeout")) {
-      timeout_outgoing_.push_back(entity);
-    }
-  }
-
-  bool retry_outgoing(BlockContext& ctx) override {
-    if (!timeout_outgoing_.empty()) {
-      Entity entity = timeout_outgoing_.front();
-      if (ctx.emit(entity, "outTimeout")) {
-        timeout_outgoing_.pop_front();
-        return true;
+      if (!ctx.emit(entity, "outTimeout")) {
+        alt_outgoing_.push_back({entity, "outTimeout"});
       }
-      return false;
+    }
+
+    bool retry_outgoing(BlockContext& ctx) override {
+      if (!alt_outgoing_.empty()) {
+        const auto entry = alt_outgoing_.front();
+        if (ctx.emit(entry.first, entry.second.c_str())) {
+          alt_outgoing_.pop_front();
+          return true;
+        }
+        return false;
     }
     return BufferedBlock::retry_outgoing(ctx);
   }
 
-  void clear_buffers() override {
-    BufferedBlock::clear_buffers();
-    timed_.clear();
-    timeout_outgoing_.clear();
-  }
+    void clear_buffers() override {
+      BufferedBlock::clear_buffers();
+      timed_.clear();
+      queued_.clear();
+      alt_outgoing_.clear();
+    }
 
- private:
-  std::string resource_;
-  std::int64_t quantity_{1};
-  std::int64_t timeout_ns_{0};
-  bool enable_timeout_{false};
-  std::unordered_set<std::uint64_t> timed_;
-  std::deque<Entity> timeout_outgoing_;
-};
+   private:
+    // Preemption on arrival (AnyLogic Seize embedded queue): a newcomer
+    // with higher priority than the weakest established waiter ejects it
+    // through outPreempted and takes its place.
+    void preempt_new_arrivals(BlockContext& ctx) {
+      std::vector<std::uint64_t> newcomers;
+      for (const Entity& entity : input_) {
+        if (queued_.find(entity.id) == queued_.end()) {
+          newcomers.push_back(entity.id);
+        }
+      }
+      for (const std::uint64_t id : newcomers) {
+        const auto it =
+            std::find_if(input_.begin(), input_.end(),
+                         [id](const Entity& entry) { return entry.id == id; });
+        if (it == input_.end()) {
+          continue;
+        }
+        const Entity* victim = nullptr;
+        double lowest = 0.0;
+        for (const Entity& waiter : input_) {
+          if (waiter.id == id ||
+              queued_.find(waiter.id) == queued_.end()) {
+            continue;
+          }
+          const double priority = entity_priority(waiter, 0.0);
+          if (victim == nullptr || priority < lowest) {
+            victim = &waiter;
+            lowest = priority;
+          }
+        }
+        if (victim != nullptr &&
+            entity_priority(*it, 0.0) > entity_priority(*victim, 0.0)) {
+          eject(ctx, *victim);
+        }
+        queued_.insert(id);
+      }
+    }
+
+    void eject(BlockContext& ctx, const Entity& entity) {
+      const auto it =
+          std::find_if(input_.begin(), input_.end(),
+                       [&entity](const Entity& entry) {
+                         return entry.id == entity.id;
+                       });
+      if (it == input_.end()) {
+        return;
+      }
+      Entity ejected = *it;  // copy before erase: the reference dies with it
+      input_.erase(it);
+      timed_.erase(ejected.id);
+      queued_.erase(ejected.id);
+      ++departed_;
+      if (!ctx.emit(ejected, "outPreempted")) {
+        alt_outgoing_.push_back({ejected, "outPreempted"});
+      }
+    }
+
+    std::string resource_;
+    std::int64_t quantity_{1};
+    std::int64_t timeout_ns_{0};
+    bool enable_timeout_{false};
+    bool enable_preemption_{false};
+    std::unordered_set<std::uint64_t> timed_;
+    std::unordered_set<std::uint64_t> queued_;
+    std::deque<std::pair<Entity, std::string>> alt_outgoing_;
+  };
 
 // Release: return every resource unit the entity holds to its pool (zero
 // time). Semantics per AnyLogic Release ("all seized resources must be
