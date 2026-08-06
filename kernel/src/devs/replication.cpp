@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 #include "logicpilot/core/random/streams.h"

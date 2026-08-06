@@ -6,6 +6,7 @@
 
 #include <cctype>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,7 +21,10 @@ struct JsonValue {
   double number_value{0.0};
   std::string string_value;
   std::vector<JsonValue> array;
-  std::vector<std::pair<std::string, JsonValue>> object;
+  // Entries are owned via unique_ptr: std::pair with an incomplete value type
+  // is rejected by strict standard libraries (GCC/Clang), unlike a vector of
+  // the (C++17-ok) incomplete JsonValue itself.
+  std::vector<std::pair<std::string, std::unique_ptr<JsonValue>>> object;
 
   [[nodiscard]] bool is_null() const { return type == Type::kNull; }
   [[nodiscard]] bool is_number() const { return type == Type::kNumber; }
@@ -34,7 +38,7 @@ struct JsonValue {
     }
     for (const auto& [name, value] : object) {
       if (name == key) {
-        return &value;
+        return value.get();
       }
     }
     return nullptr;
@@ -239,7 +243,8 @@ inline bool parse_object(const char*& p, const char* end, JsonValue& out) {
     if (!parse_value(p, end, value)) {
       return false;
     }
-    out.object.emplace_back(std::move(key), std::move(value));
+    out.object.emplace_back(std::move(key),
+                            std::make_unique<JsonValue>(std::move(value)));
     skip_ws(p, end);
     if (p >= end) {
       return false;
