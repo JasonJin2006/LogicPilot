@@ -12,11 +12,17 @@
 ## 2. 图标设计系统
 
 - 画布：`viewBox 0 0 40 40`，纯描边单色（`stroke="currentColor"`），线宽 1.5，
-  圆头端点，无填充（`resource`/`match` 的中心点除外）。
-- 安全区：关键笔画离边 ≥4px；触边箭头（source/enter/exit）可到 r=11 的圆外。
-- 隐喻：圆 = 处理/排队/条件，方（圆角矩形）= 资源/聚集/容器，箭头 = 流向。
-- 区分规则：source（圆+触边箭头）与 enter（门+箭头）不同形；batch（两入一束）
-  与 unbatch（一束两出）方向相反；wait（三点）与 hold（双条）不同。
+  圆头端点，无填充（仅允许的小点/小三角除外）。
+- 形状语言（照抄 AnyLogic PML silhouette，转 1.5px 描边）：
+  圆 = 终端/事件（source/sink/hold/resourceTaskStart/End），
+  横矩形 = 站点/容器（delay/queue/service/seize/release/wait/batch/…），
+  菱形 = 决策（selectOutput/selectOutput5/selectOutputIn/Out），
+  三角形 = 合分流（split/combine），块状箭头 = 进出（enter/exit），
+  秒表+箭头 = 计时（timeMeasureStart/End），资源页签 = resource/resourcePool。
+- 全量 39 块（23 + 16 新增：selectOutput5/In/Out、resourcePool、resourceTaskStart/
+  End、resourceSendTo、downtime、pickup/dropoff、restrictedAreaStart/End、
+  resourceAttach/Detach、pMLSettings、plainTransfer）均有图标；新增块的
+  ports/properties 从 AnyLogic 官方文档提取（scripts/extract-pml-catalog.mjs）。
 - 三档尺寸（16/24/34px）均可辨认；不依赖颜色/填充表达语义。
 
 ## 3. 端口排布规则

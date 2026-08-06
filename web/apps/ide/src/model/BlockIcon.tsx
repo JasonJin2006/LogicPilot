@@ -1,7 +1,7 @@
-// Static block glyphs for the palette and the modeling canvas. These are the
-// AnyLogic-style icons that replace the old text cards; flow blocks also
-// expose in/out ports around their edges (see blockDefs.ts).
-
+// Static block glyphs for the palette and the modeling canvas. AnyLogic-style
+// outline icons (40x40 grid, 1.5 stroke, round caps, no fills except sanctioned
+// dots/triangles). Shape language: circle = terminal/event, rect = station,
+// diamond = decision, triangle = split/combine, block arrow = enter/exit.
 import type { ReactNode } from 'react';
 
 function Glyph({ children }: { children: ReactNode }) {
@@ -23,214 +23,344 @@ function Glyph({ children }: { children: ReactNode }) {
 
 export function BlockIcon({ kind }: { kind: string }) {
   switch (kind) {
+    // ── Process library ────────────────────────────────────────────────────
     case 'source':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <path d="M14 20h14" />
-          <path d="M24 16l4 4-4 4" />
-        </Glyph>
-      );
-    case 'queue':
-      return (
-        <Glyph>
-          <rect x="8" y="8" width="24" height="6" rx="3" />
-          <rect x="8" y="17" width="24" height="6" rx="3" />
-          <rect x="8" y="26" width="24" height="6" rx="3" />
-        </Glyph>
-      );
-    case 'service':
-      return (
-        <Glyph>
-          <rect x="7" y="7" width="26" height="26" rx="7" />
-          <circle cx="20" cy="20" r="7.5" />
-          <path d="M20 15.5V20l3.5 2.5" />
+          <circle cx="14" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <path d="M17.5 20h7.5" />
+          <path d="M21.5 16.5l3.5 3.5-3.5 3.5" />
         </Glyph>
       );
     case 'sink':
       return (
         <Glyph>
-          <path d="M20 6v21" />
-          <path d="M14 21l6 6 6-6" />
-          <path d="M8 33h24" />
-        </Glyph>
-      );
-    case 'resource':
-      return (
-        <Glyph>
-          <rect x="7" y="7" width="26" height="26" rx="6" />
-          <circle cx="14" cy="20" r="1.6" fill="currentColor" stroke="none" />
-          <circle cx="20" cy="20" r="1.6" fill="currentColor" stroke="none" />
-          <circle cx="26" cy="20" r="1.6" fill="currentColor" stroke="none" />
-        </Glyph>
-      );
-    case 'process':
-      return (
-        <Glyph>
-          <path d="M7 11h9l3 3h14v15a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" />
-          <path d="M7 16h26" opacity="0.55" />
+          <circle cx="20" cy="20" r="11" />
+          <path d="M15.5 15.5l9 9" />
+          <path d="M24.5 15.5l-9 9" />
         </Glyph>
       );
     case 'delay':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 14v6l4 3" />
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <circle cx="20" cy="20" r="5.5" />
+          <path d="M20 17v3l2.5 2" />
         </Glyph>
       );
-    case 'split':
+    case 'queue':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M9 20h4" />
-          <path d="M15 15h12" />
-          <path d="M23 12l4 3-4 3" />
-          <path d="M15 25h12" />
-          <path d="M23 22l4 3-4 3" />
+          <rect x="7" y="12" width="26" height="16" rx="2" />
+          <path d="M14.5 16v8" />
+          <path d="M20 16v8" />
+          <path d="M25.5 16v8" />
         </Glyph>
       );
-    case 'combine':
+    case 'service':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M9 15h4l4 5" />
-          <path d="M9 25h4l4-5" />
-          <path d="M17 20h10" />
-          <path d="M23 17l4 3-4 3" />
-        </Glyph>
-      );
-    case 'batch':
-      return (
-        <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <rect x="12" y="13.5" width="6" height="5" rx="1" />
-          <rect x="12" y="21.5" width="6" height="5" rx="1" />
-          <path d="M21 17l3 3-3 3" />
-          <rect x="25" y="16" width="4" height="8" rx="1" />
-        </Glyph>
-      );
-    case 'unbatch':
-      return (
-        <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <rect x="12" y="16" width="4" height="8" rx="1" />
-          <path d="M19 17l3 3-3 3" />
-          <rect x="23.5" y="14" width="5" height="5" rx="1" />
-          <rect x="23.5" y="21" width="5" height="5" rx="1" />
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M13.5 16v8" />
+          <path d="M17.5 16v8" />
+          <circle cx="25" cy="20" r="4.5" />
+          <path d="M25 17.5v2.5l2 1.5" />
         </Glyph>
       );
     case 'seize':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 13v8" />
-          <path d="M17 16l3 3 3-3" />
-          <path d="M14 24h12" />
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M13.5 16v8" />
+          <path d="M17.5 16v8" />
+          <path d="M25 15.5l4.5 8h-9z" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'release':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M20 27v-8" />
-          <path d="M17 24l3-3 3 3" />
-          <path d="M14 13h12" />
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M20 24.5l-4.5-8h9z" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'wait':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <circle cx="15" cy="20" r="1.6" fill="currentColor" stroke="none" />
-          <circle cx="20" cy="20" r="1.6" fill="currentColor" stroke="none" />
-          <circle cx="25" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <ellipse cx="20" cy="20" rx="8" ry="5" />
+          <circle cx="16" cy="20" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="20" cy="20" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="24" cy="20" r="1.3" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'hold':
       return (
         <Glyph>
           <circle cx="20" cy="20" r="11" />
-          <rect x="15" y="15" width="3" height="10" />
-          <rect x="22" y="15" width="3" height="10" />
-        </Glyph>
-      );
-    case 'match':
-      return (
-        <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M10 20h5" />
-          <path d="M11 17l4 3-4 3" />
-          <path d="M30 20h-5" />
-          <path d="M29 17l-4 3 4 3" />
-          <circle cx="20" cy="20" r="2" fill="currentColor" stroke="none" />
+          <rect
+            x="14"
+            y="18.4"
+            width="12"
+            height="3.2"
+            rx="1.6"
+            fill="currentColor"
+            stroke="none"
+          />
         </Glyph>
       );
     case 'selectOutput':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <path d="M9 20h5" />
-          <path d="M14 20l12-6" />
-          <path d="M22.2 15.4L26 14L24.6 10.2" />
-          <path d="M14 20l12 6" />
-          <path d="M22.2 24.6L26 26L24.6 29.8" />
+          <path d="M20 8L31 20L20 32L9 20Z" />
         </Glyph>
       );
-    case 'enter':
+    case 'selectOutput5':
       return (
         <Glyph>
-          <path d="M12 10v20" />
-          <path d="M7 20h15" />
-          <path d="M18 16l4 4-4 4" />
+          <path d="M20 7L26 13L20 19L14 13Z" />
+          <path d="M20 19v14" />
+          <path d="M20 23h6" />
+          <path d="M20 27h6" />
+          <path d="M20 31h6" />
         </Glyph>
       );
-    case 'exit':
+    case 'selectOutputIn':
+    case 'selectOutputOut':
       return (
         <Glyph>
-          <path d="M28 10v20" />
-          <path d="M18 20h14" />
-          <path d="M28 16l4 4-4 4" />
+          <path d="M20 9L31 20L20 31L9 20Z" />
+          <path d="M20 9L9 20L20 31Z" fill="currentColor" stroke="none" />
         </Glyph>
       );
-    case 'moveTo':
+    case 'split':
       return (
         <Glyph>
-          <circle cx="20" cy="20" r="11" />
-          <circle cx="20" cy="20" r="3.5" />
-          <path d="M20 6v5" />
-          <path d="M20 29v5" />
-          <path d="M6 20h5" />
-          <path d="M29 20h5" />
+          <path d="M12 12h16v16z" />
+          <path d="M23 17.5v5" />
+          <path d="M20.5 20h5" />
         </Glyph>
       );
-    case 'timeMeasureStart':
+    case 'combine':
       return (
         <Glyph>
-          <circle cx="20" cy="21" r="9" />
-          <path d="M20 8v4" />
-          <path d="M17.5 8h5" />
-          <path d="M20 17v4l3.5 2.5" />
-          <path d="M14 33h12" />
+          <path d="M12 12v16h16z" />
         </Glyph>
       );
-    case 'timeMeasureEnd':
+    case 'match':
       return (
         <Glyph>
-          <circle cx="20" cy="23" r="9" />
-          <path d="M20 10v4" />
-          <path d="M17.5 10h5" />
-          <path d="M20 19v4l3.5 2.5" />
-          <path d="M14 7h12" />
+          <rect x="7" y="9" width="26" height="22" rx="2" />
+          <path d="M12 15h7" />
+          <path d="M12 13.5v3" />
+          <path d="M19 13.5v3" />
+          <path d="M12 25h7" />
+          <path d="M12 23.5v3" />
+          <path d="M19 23.5v3" />
+          <path d="M26 15v10" />
+          <path d="M26 20h4" />
         </Glyph>
       );
     case 'assembler':
       return (
         <Glyph>
-          <rect x="7" y="8" width="10" height="10" rx="2" />
-          <rect x="7" y="22" width="10" height="10" rx="2" />
-          <rect x="23" y="14" width="10" height="12" rx="2" />
-          <path d="M18 10l3 3-3 3" />
-          <path d="M18 24l3 3-3 3" />
+          <rect x="11" y="7" width="18" height="26" rx="2" />
+          <path d="M15.5 12v16" />
+          <path d="M15.5 14h4" />
+          <path d="M15.5 18h4" />
+          <path d="M15.5 22h4" />
+          <path d="M15.5 26h4" />
+          <circle cx="24" cy="13" r="3.5" />
+          <path d="M24 11v2l1.5 1" />
+          <path d="M24 21l3 5h-6z" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'moveTo':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M11.5 20h7" />
+          <path d="M15 16.5l3.5 3.5-3.5 3.5" />
+          <path d="M26.5 24V14" />
+          <path d="M26.5 14h5v4h-5" />
+        </Glyph>
+      );
+    case 'batch':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <circle cx="12.5" cy="16" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="16.5" cy="16" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="20.5" cy="16" r="1.3" fill="currentColor" stroke="none" />
+          <path d="M25 13.5v5" />
+          <path d="M22.5 16l2.5 2.5L25 16" />
+          <path d="M21 21.5v4h8v-4" />
+        </Glyph>
+      );
+    case 'unbatch':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M11 21.5v4h8v-4" />
+          <path d="M15 19v-5" />
+          <path d="M12.5 16.5l2.5-2.5 2.5 2.5" />
+          <circle cx="23" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="27" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="31" cy="15.5" r="1.3" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'enter':
+      return (
+        <Glyph>
+          <path d="M8 16h10v-5l10 9-10 9v-5H8z" />
+          <circle cx="31" cy="20" r="1.6" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'exit':
+      return (
+        <Glyph>
+          <circle cx="9" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <path d="M14 16h8v-5l10 9-10 9v-5h-8z" />
+        </Glyph>
+      );
+    case 'timeMeasureStart':
+      return (
+        <Glyph>
+          <circle cx="15" cy="20" r="6" />
+          <path d="M15 11v3" />
+          <path d="M12.5 11h5" />
+          <path d="M15 17.5v2.5l2 1.5" />
+          <path d="M24 20h6" />
+          <path d="M27 17l3.5 3-3.5 3" />
+        </Glyph>
+      );
+    case 'timeMeasureEnd':
+      return (
+        <Glyph>
+          <path d="M9 20h6" />
+          <path d="M12 17l3.5 3-3.5 3" />
+          <circle cx="25" cy="20" r="6" />
+          <path d="M25 11v3" />
+          <path d="M22.5 11h5" />
+          <path d="M25 17.5v2.5l2 1.5" />
+        </Glyph>
+      );
+    case 'resource':
+    case 'resourcePool':
+      return (
+        <Glyph>
+          <path d="M8 27v-6a3 3 0 0 1 3-3h3.5l3-3H29a3 3 0 0 1 3 3v9z" />
+          <path d="M16 24v-4" />
+          <path d="M14 21.5l2-2.5 2 2.5" />
+          <path d="M24 24v-4" />
+          <path d="M22 21.5l2-2.5 2 2.5" />
+        </Glyph>
+      );
+    case 'resourceTaskStart':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="8" />
+          <path d="M17.5 16l5 4-5 4" />
+        </Glyph>
+      );
+    case 'resourceTaskEnd':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="8" />
+          <path d="M16 20l3 3 6-6" />
+        </Glyph>
+      );
+    case 'resourceSendTo':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M12.5 24v-2a4 4 0 0 1 4-4h7" />
+          <path d="M20 15l3.5 3-3.5 3" />
+        </Glyph>
+      );
+    case 'downtime':
+      return (
+        <Glyph>
+          <rect x="8" y="10" width="24" height="20" rx="2" />
+          <path d="M21.5 14.5a4 4 0 1 0 4 4" />
+          <path d="M22 21l-6 5" />
+        </Glyph>
+      );
+    case 'pickup':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <circle cx="13" cy="24" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="17" cy="24" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="21" cy="24" r="1.3" fill="currentColor" stroke="none" />
+          <path d="M26 24v-8" />
+          <path d="M23.5 18.5l2.5-2.5 2.5 2.5" />
+        </Glyph>
+      );
+    case 'dropoff':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M26 15v8" />
+          <path d="M23.5 20.5l2.5 2.5 2.5-2.5" />
+          <circle cx="13" cy="24" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="17" cy="24" r="1.3" fill="currentColor" stroke="none" />
+          <circle cx="21" cy="24" r="1.3" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'restrictedAreaStart':
+      return (
+        <Glyph>
+          <path d="M25 12h-4v16h4" />
+          <path d="M10 20h9" />
+          <path d="M16 17l3.5 3-3.5 3" />
+        </Glyph>
+      );
+    case 'restrictedAreaEnd':
+      return (
+        <Glyph>
+          <path d="M15 12h4v16h-4" />
+          <path d="M21 20h9" />
+          <path d="M27 17l3.5 3-3.5 3" />
+        </Glyph>
+      );
+    case 'resourceAttach':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M23.5 16.5l-5 5a2.3 2.3 0 0 0 3.3 3.3l5-5a3.9 3.9 0 0 0-5.5-5.5l-5 5" />
+        </Glyph>
+      );
+    case 'resourceDetach':
+      return (
+        <Glyph>
+          <rect x="7" y="11" width="26" height="18" rx="2" />
+          <path d="M22.5 14.5l-4.5 4.5a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5l-4.5 4.5" />
+          <path d="M15 21v5" />
+          <path d="M13 24l2 2 2-2" />
+        </Glyph>
+      );
+    case 'pMLSettings':
+      return (
+        <Glyph>
+          <rect x="8" y="8" width="24" height="24" rx="3" />
+          <circle cx="20" cy="20" r="4" />
+          <path d="M20 12v2.5" />
+          <path d="M20 25.5V28" />
+          <path d="M12 20h2.5" />
+          <path d="M25.5 20H28" />
+          <path d="M14.5 14.5l1.8 1.8" />
+          <path d="M23.7 23.7l1.8 1.8" />
+          <path d="M25.5 14.5l-1.8 1.8" />
+          <path d="M16.3 23.7l-1.8 1.8" />
+        </Glyph>
+      );
+    case 'plainTransfer':
+      return (
+        <Glyph>
+          <path d="M10 20h20" />
+          <circle cx="10" cy="20" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="30" cy="20" r="1.6" fill="currentColor" stroke="none" />
         </Glyph>
       );
     case 'count':
@@ -242,6 +372,14 @@ export function BlockIcon({ kind }: { kind: string }) {
           <path d="M25 15v10" />
         </Glyph>
       );
+    case 'process':
+      return (
+        <Glyph>
+          <path d="M7 11h9l3 3h14v15a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" />
+          <path d="M7 16h26" opacity="0.55" />
+        </Glyph>
+      );
+    // ── Presentation / statechart / action: unchanged ─────────────────────
     case 'rect':
       return (
         <Glyph>

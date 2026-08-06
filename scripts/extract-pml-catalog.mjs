@@ -16,10 +16,14 @@ import { dirname, join, resolve } from 'node:path';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const docsRoot =
   process.argv[2] ??
-  resolve(repoRoot, '..', 'AnyLogic官方文档', 'library-reference-guides',
-          'process-modeling-library');
-const outFile =
-  process.argv[3] ?? join(repoRoot, 'libraries', 'pml-catalog.json');
+  resolve(
+    repoRoot,
+    '..',
+    'AnyLogic官方文档',
+    'library-reference-guides',
+    'process-modeling-library',
+  );
+const outFile = process.argv[3] ?? join(repoRoot, 'libraries', 'pml-catalog.json');
 
 // The 23 process kinds shipped in the editor palette -> AnyLogic doc page.
 const BLOCK_FILES = {
@@ -46,6 +50,24 @@ const BLOCK_FILES = {
   assembler: 'assembler.html',
   count: 'count-agents.html',
   sink: 'sink.html',
+  // Newly added blocks (AnyLogic PML full palette), appended after the
+  // original 23 so the committed catalog stays a pure additive diff.
+  resourcePool: 'resourcepool.html',
+  selectOutput5: 'selectoutput5.html',
+  selectOutputIn: 'selectoutputin.html',
+  selectOutputOut: 'selectoutputout.html',
+  restrictedAreaStart: 'restrictedareastart.html',
+  restrictedAreaEnd: 'restrictedareaend.html',
+  pickup: 'pickup.html',
+  dropoff: 'dropoff.html',
+  resourceTaskStart: 'resourcetaskstart.html',
+  resourceTaskEnd: 'resourcetaskend.html',
+  resourceSendTo: 'resourcesendto.html',
+  resourceAttach: 'resourceattach.html',
+  resourceDetach: 'resourcedetach.html',
+  downtime: 'downtime.html',
+  pMLSettings: 'pmlsettings.html',
+  plainTransfer: 'plaintransfer.html',
 };
 
 // ---------------------------------------------------------------------------
@@ -94,7 +116,10 @@ function headingIndex(html, text) {
   let match;
   while ((match = re.exec(html)) !== null) {
     const visible = decodeEntities(
-      match[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+      match[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
     );
     if (visible.toLowerCase() === text.toLowerCase()) {
       return match.index;
@@ -118,7 +143,10 @@ function sectionRange(html, text, stopTexts) {
       continue;
     }
     const visible = decodeEntities(
-      match[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+      match[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
     ).toLowerCase();
     if (stopTexts.some((stop) => stop.toLowerCase() === visible)) {
       end = match.index;
@@ -136,7 +164,7 @@ function extractParamGroups(html) {
   while ((dlMatch = dlRe.exec(html)) !== null) {
     const dl = dlMatch[1];
     if (/data-success|feedback/i.test(dl)) {
-      continue;  // the feedback form is a dl too; skip it
+      continue; // the feedback form is a dl too; skip it
     }
     const itemRe = /<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/gi;
     let itemMatch;
@@ -168,7 +196,7 @@ function parseContent(ddHtml) {
       inValidValues = true;
     } else if (inValidValues) {
       if (/^local variable/i.test(line)) {
-        break;  // the rest is local-variable hints, not valid values
+        break; // the rest is local-variable hints, not valid values
       }
       if (line) {
         out.validValues.push(line);
@@ -186,7 +214,7 @@ function canonicalEnumValue(raw) {
   if (dash >= 0) {
     value = value.slice(0, dash);
   }
-  value = value.split('.').pop().trim();  // drop the qualified prefix
+  value = value.split('.').pop().trim(); // drop the qualified prefix
   return value.toLowerCase();
 }
 
@@ -204,9 +232,9 @@ function mapType({ rawType, defaultValue, validValues }) {
   }
   if (/double|float/i.test(t)) {
     // A `double` whose default is a distribution call is a distribution.
-    if (/^(exponential|poisson|normal|constant|rate|triangular|uniform)\(/.test(
-      defaultValue ?? '',
-    )) {
+    if (
+      /^(exponential|poisson|normal|constant|rate|triangular|uniform)\(/.test(defaultValue ?? '')
+    ) {
       return 'distribution';
     }
     return 'float';
@@ -251,9 +279,7 @@ function parseDefault(type, rawDefault) {
     case 'enum':
       return text ? canonicalEnumValue(text) : null;
     case 'distribution': {
-      const call = /^(exponential|poisson|normal|constant|rate)\([^)]*\)/.exec(
-        text,
-      );
+      const call = /^(exponential|poisson|normal|constant|rate)\([^)]*\)/.exec(text);
       return call ? call[0] : null;
     }
     default:
@@ -432,11 +458,7 @@ function enumLabel(raw) {
 // ---------------------------------------------------------------------------
 
 function extractProperties(blockKind, html) {
-  const { start, end } = sectionRange(html, 'Properties', [
-    'Statistics',
-    'Functions',
-    'Ports',
-  ]);
+  const { start, end } = sectionRange(html, 'Properties', ['Statistics', 'Functions', 'Ports']);
   if (start < 0) {
     return [];
   }
@@ -454,7 +476,8 @@ function extractProperties(blockKind, html) {
     let cursor = 0;
     for (const h3 of h3s) {
       subsections.push({ id: 'basic', html: section.slice(cursor, h3.index) });
-      const nextIndex = h3s.find((candidate) => candidate.index > h3.index)?.index ?? section.length;
+      const nextIndex =
+        h3s.find((candidate) => candidate.index > h3.index)?.index ?? section.length;
       subsections.push({ id: h3.id, html: section.slice(h3.index, nextIndex) });
       cursor = nextIndex;
     }
@@ -464,7 +487,10 @@ function extractProperties(blockKind, html) {
   for (const subsection of subsections) {
     for (const { dt, dd } of extractParamGroups(subsection.html)) {
       const displayName = decodeEntities(
-        dt.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+        dt
+          .replace(/<[^>]+>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
       );
       const ddLines = htmlToLines(dd);
       const content = parseContent(dd);
@@ -480,8 +506,13 @@ function extractProperties(blockKind, html) {
       }
 
       // Description = dd lines that are not the marker/content boilerplate.
-      const contentStart = ddLines.findIndex((line) => line === 'Name:' ||
-        line.startsWith('Name:') || line === 'Type:' || line === 'Valid values:');
+      const contentStart = ddLines.findIndex(
+        (line) =>
+          line === 'Name:' ||
+          line.startsWith('Name:') ||
+          line === 'Type:' ||
+          line === 'Valid values:',
+      );
       const description = (contentStart > 0 ? ddLines.slice(1, contentStart) : ddLines.slice(1))
         .join(' ')
         .trim();
@@ -494,30 +525,26 @@ function extractProperties(blockKind, html) {
       const type =
         TYPE_OVERRIDES[blockKind]?.[name] ??
         mapType({
-        rawType: content.type,
-        defaultValue: content.defaultValue,
-        validValues: content.validValues,
-      });
+          rawType: content.type,
+          defaultValue: content.defaultValue,
+          validValues: content.validValues,
+        });
       const validValues =
         type === 'enum'
           ? content.validValues
               .map(canonicalEnumValue)
               .filter(
-                (value) =>
-                  !/local variable|t agent|t unit|resourcepool pool|^\w+:/.test(
-                    value,
-                  ),
+                (value) => !/local variable|t agent|t unit|resourcepool pool|^\w+:/.test(value),
               )
           : null;
       const defaultValue =
-        DEFAULT_OVERRIDES[blockKind]?.[name] ??
-        parseDefault(type, content.defaultValue);
+        DEFAULT_OVERRIDES[blockKind]?.[name] ?? parseDefault(type, content.defaultValue);
       const section = SECTION_MAP[subsection.id] ?? 'basic';
       if (DROP_PROPERTIES[blockKind]?.has(docName)) {
         continue;
       }
       if (properties.some((property) => property.name === name)) {
-        continue;  // override collision: keep the first (kernel-facing) one
+        continue; // override collision: keep the first (kernel-facing) one
       }
 
       const property = {
@@ -592,11 +619,99 @@ const MANUAL_BLOCKS = {
     // ResourcePool has no ports (it is referenced, not connected).
     ports: [],
   },
+  resourcePool: {
+    ports: [],
+  },
+  downtime: {
+    // Downtime is configured through the ResourcePool block's references;
+    // it has no connection ports of its own.
+    ports: [],
+  },
+  pMLSettings: {
+    // PML Settings is a model-wide configuration block, not a flow node.
+    ports: [],
+  },
+  selectOutputIn: {
+    // The doc page lists only 'in', but the Routing prose describes the
+    // 5-into-1 merge partner of SelectOutputOut.
+    ports: [
+      { name: 'in1', direction: 'in', description: 'The first input port.', conditionalOn: null },
+      { name: 'in2', direction: 'in', description: 'The second input port.', conditionalOn: null },
+      { name: 'in3', direction: 'in', description: 'The third input port.', conditionalOn: null },
+      { name: 'in4', direction: 'in', description: 'The fourth input port.', conditionalOn: null },
+      { name: 'in5', direction: 'in', description: 'The fifth input port.', conditionalOn: null },
+      { name: 'out', direction: 'out', description: 'The output port.', conditionalOn: null },
+    ],
+  },
+  selectOutputOut: {
+    // The doc page lists only 'out'; SelectOutputOut fans one input out to
+    // up to five branches (SelectOutput5's sibling).
+    ports: [
+      { name: 'in', direction: 'in', description: 'The input port.', conditionalOn: null },
+      {
+        name: 'out1',
+        direction: 'out',
+        description: 'The first output port.',
+        conditionalOn: null,
+      },
+      {
+        name: 'out2',
+        direction: 'out',
+        description: 'The second output port.',
+        conditionalOn: null,
+      },
+      {
+        name: 'out3',
+        direction: 'out',
+        description: 'The third output port.',
+        conditionalOn: null,
+      },
+      {
+        name: 'out4',
+        direction: 'out',
+        description: 'The fourth output port.',
+        conditionalOn: null,
+      },
+      {
+        name: 'out5',
+        direction: 'out',
+        description: 'The fifth output port.',
+        conditionalOn: null,
+      },
+    ],
+  },
+  resourceTaskStart: {
+    ports: [
+      { name: 'in', direction: 'in', description: 'The input port.', conditionalOn: null },
+      { name: 'out', direction: 'out', description: 'The output port.', conditionalOn: null },
+    ],
+  },
+  resourceTaskEnd: {
+    ports: [
+      { name: 'in', direction: 'in', description: 'The input port.', conditionalOn: null },
+      { name: 'out', direction: 'out', description: 'The output port.', conditionalOn: null },
+    ],
+  },
   assembler: {
     ports: [
-      { name: 'in', direction: 'in', description: 'The input port for the main agent.', conditionalOn: null },
-      { name: 'p1', direction: 'in', description: 'The input port for the first part.', conditionalOn: null },
-      { name: 'out', direction: 'out', description: 'The output port for the assembled agent.', conditionalOn: null },
+      {
+        name: 'in',
+        direction: 'in',
+        description: 'The input port for the main agent.',
+        conditionalOn: null,
+      },
+      {
+        name: 'p1',
+        direction: 'in',
+        description: 'The input port for the first part.',
+        conditionalOn: null,
+      },
+      {
+        name: 'out',
+        direction: 'out',
+        description: 'The output port for the assembled agent.',
+        conditionalOn: null,
+      },
     ],
   },
 };
@@ -657,18 +772,15 @@ for (const [kind, file] of Object.entries(BLOCK_FILES)) {
 // to a property in the same block; enum fields need validValues; defaults
 // must match their type.
 const schemaErrors = [];
-  for (const block of blocks) {
-    const propNames = new Set(block.properties.map((property) => property.name));
-    for (const property of block.properties) {
-      property.visibleWhen = normalizeVisibleWhen(
-        property.visibleWhen,
-        block.properties,
-      );
-    }
-    for (const property of block.properties) {
-      delete property._labels;
-    }
-    for (const port of block.ports) {
+for (const block of blocks) {
+  const propNames = new Set(block.properties.map((property) => property.name));
+  for (const property of block.properties) {
+    property.visibleWhen = normalizeVisibleWhen(property.visibleWhen, block.properties);
+  }
+  for (const property of block.properties) {
+    delete property._labels;
+  }
+  for (const port of block.ports) {
     if (port.conditionalOn && !propNames.has(port.conditionalOn)) {
       schemaErrors.push(
         `${block.kind}.${port.name}: conditionalOn '${port.conditionalOn}' ` +
@@ -678,17 +790,13 @@ const schemaErrors = [];
   }
   for (const property of block.properties) {
     if (property.type === 'enum' && !property.validValues?.length) {
-      schemaErrors.push(
-        `${block.kind}.${property.name}: enum without valid values`,
-      );
+      schemaErrors.push(`${block.kind}.${property.name}: enum without valid values`);
     }
     if (property.default !== null) {
       const bad =
         (property.type === 'int' && !Number.isInteger(property.default)) ||
-        (property.type === 'float' &&
-          typeof property.default !== 'number') ||
-        (property.type === 'bool' &&
-          typeof property.default !== 'boolean');
+        (property.type === 'float' && typeof property.default !== 'number') ||
+        (property.type === 'bool' && typeof property.default !== 'boolean');
       if (bad) {
         schemaErrors.push(
           `${block.kind}.${property.name}: default '${property.default}' ` +
@@ -710,9 +818,7 @@ writeFileSync(outFile, `${JSON.stringify(catalog, null, 2)}\n`);
 
 console.log(`wrote ${outFile}`);
 console.log(`blocks: ${blocks.length}`);
-console.log(
-  `properties: ${blocks.reduce((sum, block) => sum + block.properties.length, 0)}`,
-);
+console.log(`properties: ${blocks.reduce((sum, block) => sum + block.properties.length, 0)}`);
 console.log(`ports: ${blocks.reduce((sum, block) => sum + block.ports.length, 0)}`);
 if (schemaErrors.length > 0) {
   console.error('\nschema errors:');

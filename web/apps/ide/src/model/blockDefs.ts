@@ -109,6 +109,23 @@ const PROCESS_DEFS: BlockDef[] = [
   processDef('assembler', 'assemble from parts'),
   processDef('count', 'count passed agents'),
   processDef('sink', 'terminal stage'),
+  // AnyLogic PML full palette (added 2026-08-06; kernel execution support
+  // lands per-block, until then the DSL compiler reports LP2004).
+  processDef('selectOutput5', 'route to one of five outputs'),
+  processDef('selectOutputIn', 'merge up to five inputs'),
+  processDef('selectOutputOut', 'fan one input out to five branches'),
+  processDef('restrictedAreaStart', 'enter a restricted area'),
+  processDef('restrictedAreaEnd', 'leave a restricted area'),
+  processDef('pickup', 'pick agents from a queue into a container'),
+  processDef('dropoff', 'drop agents from a container into a queue'),
+  processDef('resourceTaskStart', 'start a resource task'),
+  processDef('resourceTaskEnd', 'finish a resource task'),
+  processDef('resourceSendTo', 'send a resource unit to a node'),
+  processDef('resourceAttach', 'attach a resource unit'),
+  processDef('resourceDetach', 'detach a resource unit'),
+  processDef('downtime', 'model resource downtime'),
+  processDef('pMLSettings', 'process library settings'),
+  processDef('plainTransfer', 'plain agent transfer'),
 ];
 
 // Presentation library: basic shapes for auxiliary drawing (AnyLogic
