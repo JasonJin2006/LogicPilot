@@ -37,10 +37,17 @@ export default function App() {
     return () => useConnectionStore.getState().disconnect();
   }, []);
 
-  // Opening a file from the Explorer brings the DSL editor tab to the front.
+  // Opening a file brings the DSL editor tab to the front; closing the last
+  // code tab falls back to the open canvas (model root / container views) so
+  // the center does not linger on the editor with nothing open.
   useEffect(() => {
     if (activeFile !== null) {
       useLayoutStore.getState().openPanel('center', 'dsl');
+      return;
+    }
+    const { rootOpen, views } = useCanvasView.getState();
+    if (rootOpen || views.length > 0) {
+      useLayoutStore.getState().openPanel('center', 'model');
     }
   }, [activeFile]);
 

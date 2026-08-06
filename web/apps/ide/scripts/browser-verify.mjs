@@ -196,6 +196,24 @@ try {
   await page.locator('.area-center .tab').filter({ hasText: 'Model' }).click();
   await page.waitForSelector('.model-canvas', { timeout: 5_000 });
 
+  // Closing the last code tab falls back to the open model canvas: the
+  // center must not linger on the file editor with nothing open.
+  await page.locator('.area-center .tab-file .tab-x').first().click();
+  await page.waitForFunction(
+    () => {
+      const modelTab = [...document.querySelectorAll('.area-center .tab')].find(
+        (tab) => tab.textContent?.includes('Model'),
+      );
+      return modelTab?.classList.contains('active') ?? false;
+    },
+    undefined,
+    { timeout: 5_000 },
+  );
+  if ((await page.locator('.model-canvas').count()) === 0) {
+    throw new Error('model canvas did not return to the front after closing the last file tab');
+  }
+  log('closing the last code tab returns to the model canvas');
+
   // Canvas model -> Run -> live block badges (P1-7 run loop): finish the
   // mm1 shape on the canvas, run it with fast params, and assert the live
   // queue/service badges appear while the run streams.
