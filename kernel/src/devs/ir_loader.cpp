@@ -1,11 +1,18 @@
-// IR loader implementation (FlatBuffers read-only view + v2-native lowering
-// to the queueing flow engine).
+// IR loader implementation (FlatBuffers read-only view + registry-driven
+// lowering to executable models).
 //
 // The loader accepts the v2 contract only ("LP2R", schemas/ir_v2.fbs): the
 // v1 contract ("LPIR") was retired in the full IR v2 migration. Every
-// executable model is a Node tree; process flows lower natively to
-// QueueingFlowSim, while DEVS / agent / equation trees go to their dedicated
-// replication engines (all v2-native).
+// executable model is a Node tree; lowering is delegated to the Method
+// Runtime Layer (kernel/runtime + methods/): build_replication_model()
+// resolves the model's method from its IR semantics and asks the
+// MethodRegistry for the runtime that knows how to execute it. The kernel
+// no longer hard-codes process/agent/devs/sd lowering details.
+//
+//   Model IR  ->  resolve method  ->  MethodRegistry  ->  SimulationMethod
+//
+// The streaming driver's flow-parameter extraction stays here because it is
+// a generic IR query (shared by lp-server), not method execution.
 #include "logicpilot/devs/ir_loader.h"
 
 #include <cstring>
@@ -15,16 +22,14 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <flatbuffers/flatbuffers.h>
 
 #include "ir_v2_generated.h"
-#include "logicpilot/core/random/distributions.h"
-#include "logicpilot/devs/continuous.h"
-#include "logicpilot/devs/ir_agent.h"
-#include "logicpilot/devs/ir_atomic.h"
-#include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/process_flow.h"
+#include "logicpilot/devs/ir_v2_util.h"
+#include "logicpilot/runtime/method_registry.h"
+#include "logicpilot/runtime/simulation_method.h"
 
 namespace logicpilot {
 
@@ -94,351 +99,81 @@ namespace {
 
 using ir::v2::Distribution;
 using ir::v2::Node;
-using ir::v2::Var;
-using ir::v2::VarType_Distribution;
-using ir::v2::VarType_Float;
-using ir::v2::VarType_Int;
-using ir::v2::VarType_String;
+using logicpilot::ir_v2_util::node_block;
+using logicpilot::ir_v2_util::node_dist_param;
+using logicpilot::ir_v2_util::node_float_param;
+using logicpilot::ir_v2_util::node_int_param;
+using logicpilot::ir_v2_util::node_library;
+using logicpilot::ir_v2_util::node_name;
+using logicpilot::ir_v2_util::node_string_param;
 
-const char* node_library(const Node* node) {
-  if (node != nullptr && node->semantics() != nullptr &&
-      node->semantics()->library() != nullptr) {
-    return node->semantics()->library()->c_str();
+// Resolve the model's method name from the root node's semantics, mirroring
+// the legacy exclusive-kind lowering:
+//   * root block "atomic"    -> "devs"
+//   * root block "agent"     -> "agent"
+//   * root block "equation"  -> "sd"
+//   * root block "model"     -> scan children by library (process / devs /
+//                               agent / sd); process wins when an agent body
+//                               holds process-library blocks.
+// Returns an empty string when no executable method is present (mixed
+// multi-method models are a later-phase capability).
+std::string resolve_method_name(const Node* root) {
+  const std::string root_block = node_block(root);
+  if (root_block == "atomic") {
+    return "devs";
   }
-  return "";
-}
-
-const char* node_block(const Node* node) {
-  if (node != nullptr && node->semantics() != nullptr &&
-      node->semantics()->block() != nullptr) {
-    return node->semantics()->block()->c_str();
+  if (root_block == "agent") {
+    return "agent";
   }
-  return "";
-}
-
-const char* node_name(const Node* node) {
-  if (node != nullptr && node->metadata() != nullptr &&
-      node->metadata()->name() != nullptr) {
-    return node->metadata()->name()->c_str();
+  if (root_block == "equation") {
+    return "sd";
   }
-  return "<unnamed>";
-}
-
-// Reads a typed block parameter by name from a v2 Node's `params` vector.
-const Var* node_var(const Node* node, const char* name) {
-  if (node == nullptr || node->params() == nullptr) {
-    return nullptr;
-  }
-  for (const Var* var : *node->params()) {
-    if (var != nullptr && var->name() != nullptr &&
-        var->name()->str() == name) {
-      return var;
-    }
-  }
-  return nullptr;
-}
-
-double node_float_param(const Node* node, const char* name, double fallback) {
-  const Var* var = node_var(node, name);
-  if (var != nullptr && var->type() == VarType_Float) {
-    return var->float_value();
-  }
-  return fallback;
-}
-
-std::int64_t node_int_param(const Node* node, const char* name,
-                            std::int64_t fallback) {
-  const Var* var = node_var(node, name);
-  if (var != nullptr && var->type() == VarType_Int) {
-    return var->int_value();
-  }
-  return fallback;
-}
-
-const char* node_string_param(const Node* node, const char* name) {
-  const Var* var = node_var(node, name);
-  if (var != nullptr && var->type() == VarType_String &&
-      var->string_value() != nullptr) {
-    return var->string_value()->c_str();
-  }
-  return nullptr;
-}
-
-const Distribution* node_dist_param(const Node* node, const char* name) {
-  const Var* var = node_var(node, name);
-  if (var != nullptr && var->type() == VarType_Distribution) {
-    return var->distribution();
-  }
-  return nullptr;
-}
-
-// Lower a v2 IR Distribution to a sampler. Poisson(rate) is treated as a
-// Poisson arrival process, i.e. exponential(rate) inter-arrival times
-// (dsl-spec v0 R8 semantics). Kind bytes mirror the v1 DistributionKind
-// values: Constant=0, Uniform=1, Normal=2, Exponential=3, Poisson=4.
-TimeSampler make_sampler(const Distribution* dist, std::string* error) {
-  if (dist == nullptr) {
-    if (error != nullptr) {
-      *error = "missing distribution";
-    }
-    return nullptr;
-  }
-  const auto param = [&](std::size_t i, double fallback) {
-    if (dist->params() != nullptr && i < dist->params()->size()) {
-      return dist->params()->Get(static_cast<flatbuffers::uoffset_t>(i));
-    }
-    return fallback;
-  };
-  switch (dist->kind()) {
-    case 0: {  // Constant
-      const double value = param(0, 0.0);
-      return [value](Xoshiro256PlusPlus&) { return value; };
-    }
-    case 1: {  // Uniform
-      Uniform<Xoshiro256PlusPlus> uniform{param(0, 0.0), param(1, 1.0)};
-      return [uniform](Xoshiro256PlusPlus& engine) mutable {
-        return uniform(engine);
-      };
-    }
-    case 2: {  // Normal
-      Normal<Xoshiro256PlusPlus> normal{param(0, 0.0), param(1, 1.0)};
-      return [normal](Xoshiro256PlusPlus& engine) mutable {
-        return normal(engine);
-      };
-    }
-    case 3: {  // Exponential
-      Exponential<Xoshiro256PlusPlus> exponential{param(0, 1.0)};
-      return [exponential](Xoshiro256PlusPlus& engine) mutable {
-        return exponential(engine);
-      };
-    }
-    case 4: {  // Poisson arrival process == exponential inter-arrivals
-      Exponential<Xoshiro256PlusPlus> exponential{param(0, 1.0)};
-      return [exponential](Xoshiro256PlusPlus& engine) mutable {
-        return exponential(engine);
-      };
-    }
-    default:
-      if (error != nullptr) {
-        *error = "unknown distribution kind";
-      }
-      return nullptr;
-  }
-}
-
-// v2-native process lowering (agent-centric).
-//
-// The flow's stages come from process-library blocks declared directly under
-// the model root (agent-centric structure), connected by the root's own
-// couplings; alternatively an agent body may hold the flow (its members +
-// couplings). Resource pools come from the model root's
-// {process, resource} children.
-std::unique_ptr<ReplicationModel> build_process_model(const Node* model_root,
-                                                      std::string* error) {
-  const auto fail = [&](const std::string& msg) {
-    if (error != nullptr) {
-      *error = msg;
-    }
-    return std::unique_ptr<ReplicationModel>{};
-  };
-  if (model_root->children() == nullptr) {
-    return fail("core/model root has no children to execute");
+  if (root_block != "model" || root->children() == nullptr) {
+    return "";
   }
 
-  std::unordered_map<std::string, const Node*> resources;
-  std::vector<const Node*> flow_stages;
-  std::vector<const ir::v2::Coupling*> flow_couplings;
-  bool agent_body_flow = false;
-  for (const Node* child : *model_root->children()) {
-    if (std::strcmp(node_library(child), "process") != 0) {
-      continue;
-    }
+  bool has_process = false;
+  bool has_atomic = false;
+  bool has_agent = false;
+  bool has_equation = false;
+  for (const Node* child : *root->children()) {
+    const std::string library = node_library(child);
     const std::string block = node_block(child);
-    if (block == "resource") {
-      resources.emplace(node_name(child), child);
-    } else {
-      // Agent-centric: a process-library block directly under the root is a
-      // flow stage connected by the root's couplings.
-      flow_stages.push_back(child);
-    }
-  }
-  // Agent-centric: an agent body may hold the process flow (agent Main {
-  // source ...; couple ... }). Use that agent's members + couplings.
-  if (flow_stages.empty()) {
-    for (const Node* child : *model_root->children()) {
-      if (std::strcmp(node_library(child), "agent") != 0 ||
-          child->children() == nullptr) {
-        continue;
-      }
-      for (const Node* member : *child->children()) {
-        if (std::strcmp(node_library(member), "process") != 0) {
-          continue;
-        }
-        const std::string block = node_block(member);
-        if (block == "resource") {
-          resources.emplace(node_name(member), member);
-        } else {
-          flow_stages.push_back(member);
-        }
-      }
-      if (!flow_stages.empty()) {
-        if (child->couplings() != nullptr) {
-          for (const ir::v2::Coupling* coupling : *child->couplings()) {
-            flow_couplings.push_back(coupling);
+    if (library == "process" && block != "resource") {
+      // Agent-centric process-library blocks declared directly under the
+      // model root.
+      has_process = true;
+    } else if (library == "devs") {
+      has_atomic = true;
+    } else if (library == "agent") {
+      has_agent = true;
+      // An agent whose body holds process-library blocks is a flow scope
+      // (agent-centric: agent Main { source ...; couple ... }).
+      if (child->children() != nullptr) {
+        for (const Node* member : *child->children()) {
+          if (std::strcmp(node_library(member), "process") == 0 &&
+              std::strcmp(node_block(member), "resource") != 0) {
+            has_process = true;
           }
         }
-        agent_body_flow = true;
-        break;
       }
+    } else if (library == "sd") {
+      has_equation = true;
     }
   }
-  if (flow_couplings.empty() && !agent_body_flow) {
-    if (model_root->couplings() != nullptr) {
-      for (const ir::v2::Coupling* coupling : *model_root->couplings()) {
-        flow_couplings.push_back(coupling);
-      }
-    }
+  if (has_process) {
+    return "process";
   }
-  if (flow_stages.empty()) {
-    return fail("no process flow to execute");
+  if (has_agent && !has_atomic && !has_equation) {
+    return "agent";
   }
-
-  // Generic topology check: the specialized M/M/1 path handles exactly
-  // source/queue/service/sink chains; anything else (delay, split,
-  // selectOutput, ...) goes to the generic ProcessFlowSim engine.
-  bool generic_flow = false;
-  int source_count = 0;
-  for (const Node* stage : flow_stages) {
-    const std::string block = node_block(stage);
-    if (block == "source") {
-      ++source_count;
-    } else if (block != "queue" && block != "service" &&
-               block != "sink") {
-      generic_flow = true;
-    }
+  if (has_atomic && !has_agent && !has_equation) {
+    return "devs";
   }
-  if (generic_flow || source_count > 1) {
-    auto generic =
-        std::make_unique<ProcessFlowSim>(flow_stages, flow_couplings,
-                                         model_root, error);
-    if (generic == nullptr || (error != nullptr && !error->empty())) {
-      return fail(error != nullptr && !error->empty()
-                      ? *error
-                      : "cannot build generic process flow");
-    }
-    return generic;
+  if (has_equation && !has_atomic && !has_agent) {
+    return "sd";
   }
-
-  // Index the flow's stages by block; first of each kind wins (matches the
-  // single-source/single-queue/single-service process model).
-  const Node* source = nullptr;
-  const Node* queue = nullptr;
-  const Node* service = nullptr;
-  for (const Node* stage : flow_stages) {
-    const std::string block = node_block(stage);
-    if (block == "source" && source == nullptr) {
-      source = stage;
-    } else if (block == "queue" && queue == nullptr) {
-      queue = stage;
-    } else if (block == "service" && service == nullptr) {
-      service = stage;
-    }
-  }
-  if (source == nullptr) {
-    return fail("process flow requires a source stage");
-  }
-  if (service == nullptr) {
-    return fail("process flow requires a service stage");
-  }
-
-  // Walk the flow couplings to validate connectivity source -> ... ->
-  // service (declaration order is the fallback when no couplings exist).
-  if (!flow_couplings.empty()) {
-    std::unordered_map<std::string, std::string> next;
-    for (const ir::v2::Coupling* c : flow_couplings) {
-      if (c->from_model() != nullptr && c->to_model() != nullptr) {
-        next[c->from_model()->str()] = c->to_model()->str();
-      }
-    }
-    std::string cursor = node_name(source);
-    const std::string service_name = node_name(service);
-    bool reached_service = cursor == service_name;
-    for (std::size_t hops = 0; hops < flow_stages.size() && !reached_service;
-         ++hops) {
-      const auto it = next.find(cursor);
-      if (it == next.end()) {
-        break;
-      }
-      cursor = it->second;
-      reached_service = cursor == service_name;
-    }
-    if (!reached_service) {
-      return fail("couplings do not connect source to service");
-    }
-  }
-
-  QueueingFlowSpec spec;
-  TimeSampler arrival = make_sampler(node_dist_param(source, "arrival"), error);
-  if (!arrival) {
-    return fail(error != nullptr && !error->empty()
-                    ? *error
-                    : "source has no arrival distribution");
-  }
-  TimeSampler service_time =
-      make_sampler(node_dist_param(service, "time"), error);
-  if (!service_time) {
-    return fail(error != nullptr && !error->empty()
-                    ? *error
-                    : "service has no service-time distribution");
-  }
-  spec.interarrival = std::move(arrival);
-  spec.service = std::move(service_time);
-  if (queue != nullptr) {
-    const std::int64_t capacity = node_int_param(queue, "capacity", 0);
-    // <= 0 is treated as unbounded (M/M/1 requires an infinite buffer).
-    spec.queue_capacity = capacity > 0 ? capacity : -1;
-  }
-
-  // Resource failure semantics (milestone 1): the service stage references a
-  // resource node by name; that resource carries failure_rate / repair_rate
-  // block params. failure_rate == 0 disables failures and keeps the RNG draw
-  // order identical to the failure-free path.
-  const Node* resource = nullptr;
-  const char* resource_name = node_string_param(service, "resource");
-  if (resource_name == nullptr) {
-    // v0 same-name binding fallback: service without an explicit resource
-    // references a resource block named like the service.
-    resource_name = node_name(service);
-  }
-  if (resource_name != nullptr) {
-    const auto it = resources.find(resource_name);
-    if (it != resources.end()) {
-      resource = it->second;
-    }
-  }
-  spec.servers = node_int_param(resource, "capacity", 1);
-  if (spec.servers < 1) {
-    return fail("service resource capacity must be >= 1");
-  }
-  const double failure_rate = node_float_param(resource, "failure_rate", 0.0);
-  if (failure_rate < 0.0 || failure_rate > 1.0) {
-    return fail("failure_rate must be in [0, 1]");
-  }
-  if (failure_rate > 0.0) {
-    const double repair_rate = node_float_param(resource, "repair_rate", 1.0);
-    if (repair_rate <= 0.0) {
-      return fail("repair_rate must be > 0 when failure_rate > 0");
-    }
-    spec.failure = [failure_rate](Xoshiro256PlusPlus& engine) {
-      Exponential<Xoshiro256PlusPlus> dist{failure_rate};
-      return dist(engine);
-    };
-    spec.repair = [repair_rate](Xoshiro256PlusPlus& engine) {
-      Exponential<Xoshiro256PlusPlus> dist{repair_rate};
-      return dist(engine);
-    };
-  }
-  return std::make_unique<QueueingFlowSim>(std::move(spec));
+  return "";
 }
 
 }  // namespace
@@ -471,65 +206,27 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   if (file.v2_root == nullptr || file.v2_root->root() == nullptr) {
     return fail("no root model");
   }
-  const Node* root = file.v2_root->root();
-  const std::string root_block = node_block(root);
-  if (root_block == "atomic") {
-    return std::make_unique<DevsReplicationModel>(file.v2_bytes, root);
-  }
-  if (root_block == "agent") {
-    return std::make_unique<AgentReplicationModel>(file.v2_bytes, root);
-  }
-  if (root_block == "equation") {
-    return std::make_unique<ContinuousReplicationModel>(file.v2_bytes, root);
-  }
-  if (root_block != "model") {
-    return fail("unsupported root block '" + root_block + "'");
-  }
 
-  bool has_process = false;
-  bool has_atomic = false;
-  bool has_agent = false;
-  bool has_equation = false;
-  if (root->children() != nullptr) {
-    for (const Node* child : *root->children()) {
-      const std::string library = node_library(child);
-      const std::string block = node_block(child);
-      if (library == "process" && block != "resource") {
-        // Agent-centric process-library blocks declared directly under the
-        // model root.
-        has_process = true;
-      } else if (library == "devs") {
-        has_atomic = true;
-      } else if (library == "agent") {
-        has_agent = true;
-        // An agent whose body holds process-library blocks is a flow scope
-        // (agent-centric: agent Main { source ...; couple ... }).
-        if (child->children() != nullptr) {
-          for (const Node* member : *child->children()) {
-            if (std::strcmp(node_library(member), "process") == 0 &&
-                std::strcmp(node_block(member), "resource") != 0) {
-              has_process = true;
-            }
-          }
-        }
-      } else if (library == "sd") {
-        has_equation = true;
-      }
-    }
+  // Kernel-native methods (devs/agent/sd) are always available; method
+  // libraries such as methods/process register themselves at driver startup.
+  register_builtin_methods();
+
+  const std::string method =
+      resolve_method_name(file.v2_root->root());
+  if (method.empty()) {
+    return fail("no executable model under the core/model root");
   }
-  if (has_process) {
-    return build_process_model(root, error);
+  MethodRegistry& registry = MethodRegistry::instance();
+  if (!registry.contains(method)) {
+    return fail("no registered method runtime for '" + method +
+                "' (link the method library and register it)");
   }
-  if (has_agent && !has_atomic && !has_equation) {
-    return std::make_unique<AgentReplicationModel>(file.v2_bytes, root);
+  auto runtime = registry.create(method);
+  if (runtime == nullptr) {
+    return fail("method registry returned a null runtime for '" + method +
+                "'");
   }
-  if (has_atomic && !has_agent && !has_equation) {
-    return std::make_unique<DevsReplicationModel>(file.v2_bytes, root);
-  }
-  if (has_equation && !has_atomic && !has_agent) {
-    return std::make_unique<ContinuousReplicationModel>(file.v2_bytes, root);
-  }
-  return fail("no executable model under the core/model root");
+  return runtime->to_replication_model(file, error);
 }
 
 bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
@@ -592,12 +289,12 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
   const Node* source = nullptr;
   const Node* service = nullptr;
   for (const Node* stage : flow_stages) {
-      const std::string block = node_block(stage);
-      if (block == "source") {
-        source = stage;
-      } else if (block == "service") {
-        service = stage;
-      }
+    const std::string block = node_block(stage);
+    if (block == "source") {
+      source = stage;
+    } else if (block == "service") {
+      service = stage;
+    }
   }
   if (source == nullptr || service == nullptr) {
     return fail("process flow requires a source and a service stage");

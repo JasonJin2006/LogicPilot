@@ -13,12 +13,19 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/ir_dump.h"
+#include "process_runtime.h"
 
 using namespace logicpilot;
 using namespace logicpilot::dsl;
 namespace v2 = logicpilot::ir::v2;
 
 namespace {
+
+// Register the method runtimes (process + kernel-native) once per process;
+// the lowering test runs the compiled process model through the registry.
+struct EnsureMethodsRegistered {
+  EnsureMethodsRegistered() { register_all_methods(); }
+} ensure_methods_registered;
 
 constexpr const char* kGoldenDir = LOGICPILOT_DSL_GOLDEN_DIR;
 constexpr const char* kMm1Path = LOGICPILOT_EXAMPLES_DIR "/mm1.lp";

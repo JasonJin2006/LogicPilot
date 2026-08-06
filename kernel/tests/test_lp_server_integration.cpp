@@ -31,6 +31,7 @@
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/dsl/compile.h"
+#include "process_runtime.h"
 #include "server.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
@@ -42,6 +43,12 @@ using tcp = asio::ip::tcp;
 namespace wire = logicpilot::wire;
 
 namespace {
+
+// Register the method runtimes (process + kernel-native) once per process;
+// the server's batch run path lowers models through the registry.
+struct EnsureMethodsRegistered {
+  EnsureMethodsRegistered() { logicpilot::register_all_methods(); }
+} ensure_methods_registered;
 
 // --- embedded WebSocket client ------------------------------------------------
 

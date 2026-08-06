@@ -13,6 +13,8 @@
 
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
+  src/runtime/method_registry.cpp
+  src/runtime/runtime_manager.cpp
 )
 target_include_directories(logicpilot_kernel PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -59,6 +61,7 @@ add_library(logicpilot_phase1b STATIC
   src/devs/mm1.cpp
   src/devs/process_flow.cpp
   src/devs/ir_loader.cpp
+  src/runtime/builtin_methods.cpp
 )
 target_link_libraries(logicpilot_phase1b PUBLIC
   logicpilot_kernel
@@ -76,6 +79,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_devs.cpp
     tests/test_ir_loader.cpp
     tests/test_process_flow.cpp
+    tests/test_method_registry.cpp
     tests/test_mm1_acceptance.cpp
     tests/test_mm1_failure.cpp
     tests/test_continuous.cpp
@@ -84,6 +88,7 @@ if(LOGICPILOT_BUILD_TESTS)
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE
     logicpilot_phase1b
+    logicpilot_methods
     Catch2::Catch2WithMain
   )
   target_compile_definitions(logicpilot_phase1b_tests PRIVATE
@@ -122,6 +127,7 @@ target_include_directories(lp_server_core PUBLIC
 )
 target_link_libraries(lp_server_core PUBLIC
   logicpilot_phase1b
+  logicpilot_methods
   Boost::headers
   fmt::fmt
 )

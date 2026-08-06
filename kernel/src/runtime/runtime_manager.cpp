@@ -1,0 +1,59 @@
+// RuntimeManager implementation (see runtime_manager.h).
+#include "logicpilot/runtime/runtime_manager.h"
+
+#include <utility>
+
+#include "logicpilot/devs/ir_loader.h"
+
+namespace logicpilot {
+
+bool RuntimeManager::add(std::unique_ptr<SimulationMethod> method,
+                         std::string* error) {
+  if (method == nullptr) {
+    if (error != nullptr) {
+      *error = "null method runtime";
+    }
+    return false;
+  }
+  const std::string_view name = method->method_name();
+  for (const auto& attached : methods_) {
+    if (attached->method_name() == name) {
+      if (error != nullptr) {
+        *error = "method '" + std::string(name) + "' is already attached";
+      }
+      return false;
+    }
+  }
+  methods_.push_back(std::move(method));
+  return true;
+}
+
+bool RuntimeManager::initialize(const IrModelFile& model,
+                                std::string* error) {
+  context_.variables().clear();
+  for (auto& method : methods_) {
+    std::string local_error;
+    if (!method->initialize(context_, model, &local_error)) {
+      if (error != nullptr) {
+        *error = "method '" + std::string(method->method_name()) + "': " +
+                 (local_error.empty() ? "initialize failed" : local_error);
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+void RuntimeManager::advance(SimTime until) {
+  for (auto& method : methods_) {
+    method->advance(until);
+  }
+}
+
+void RuntimeManager::shutdown() {
+  for (auto& method : methods_) {
+    method->shutdown();
+  }
+}
+
+}  // namespace logicpilot

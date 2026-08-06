@@ -9,6 +9,7 @@
 #include <fmt/format.h>
 
 #include "builtin_registry.h"
+#include "process_runtime.h"
 #include "run_command.h"
 
 #ifdef LOGICPILOT_HAS_DSL
@@ -34,6 +35,9 @@ void print_root_usage() {
 int main(int argc, char** argv) {
   std::vector<std::string> args(argv + 1, argv + argc);
   logicpilot::cli::register_builtin_models();
+  // Method Runtime Layer: register every linked method runtime (process is
+  // the first; devs/agent/sd are kernel-native).
+  logicpilot::register_all_methods();
 
   if (args.empty()) {
     print_root_usage();

@@ -13,12 +13,19 @@
 #include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
+#include "process_runtime.h"
 
 using namespace logicpilot;
 namespace v2 = logicpilot::ir::v2;
 using Catch::Approx;
 
 namespace {
+
+// Register the method runtimes (process + kernel-native) once per process;
+// lowering in this test file exercises the registry-driven path.
+struct EnsureMethodsRegistered {
+  EnsureMethodsRegistered() { register_all_methods(); }
+} ensure_methods_registered;
 
 flatbuffers::Offset<v2::Distribution> distribution(
     flatbuffers::FlatBufferBuilder& builder, std::uint8_t kind,

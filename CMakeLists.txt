@@ -48,6 +48,11 @@ include(cmake/codegen.cmake)
 
 add_subdirectory(kernel)
 
+# Method Runtime Layer: per-method plugin libraries (process today; agent,
+# system dynamics, statechart, and third-party methods register through the
+# same MethodRegistry). See docs/specs/method-runtime.md.
+add_subdirectory(methods)
+
 # DSL compiler + vendored tree-sitter runtime (Phase 2, ADR-0005/0008).
 if(LOGICPILOT_BUILD_DSL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dsl/CMakeLists.txt")
   add_subdirectory(dsl)

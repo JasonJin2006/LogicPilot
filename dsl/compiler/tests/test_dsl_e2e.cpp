@@ -19,6 +19,7 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/dsl/compile.h"
+#include "process_runtime.h"
 
 using namespace logicpilot;
 using logicpilot::testing::json_number;
@@ -26,6 +27,12 @@ using logicpilot::testing::json_section;
 using logicpilot::testing::read_text_file;
 
 namespace {
+
+// Register the method runtimes (process + kernel-native) once per process;
+// this test lowers the compiled model through the registry.
+struct EnsureMethodsRegistered {
+  EnsureMethodsRegistered() { register_all_methods(); }
+} ensure_methods_registered;
 
 constexpr const char* kExamplesDir = LOGICPILOT_EXAMPLES_DIR;
 

@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 
 #include "logicpilot/devs/ir_loader.h"
+#include "process_runtime.h"
 #include "server.h"
 
 #if defined(_WIN32)
@@ -123,6 +124,10 @@ bool parent_process_alive(DWORD pid) {
 int main(int argc, char** argv) {
   std::span<char*> raw(argv + 1, static_cast<std::size_t>(argc - 1));
   std::vector<std::string> args(raw.begin(), raw.end());
+
+  // Method Runtime Layer: register every linked method runtime (process is
+  // the first; devs/agent/sd are kernel-native).
+  logicpilot::register_all_methods();
 
   logicpilot::server::ServerConfig config;
   std::string model_file;

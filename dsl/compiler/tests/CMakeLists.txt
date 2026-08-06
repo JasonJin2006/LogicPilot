@@ -13,6 +13,7 @@ add_executable(logicpilot_dsl_tests
 )
 target_link_libraries(logicpilot_dsl_tests PRIVATE
   logicpilot_dsl
+  logicpilot_methods
   Catch2::Catch2WithMain
 )
 target_include_directories(logicpilot_dsl_tests PRIVATE

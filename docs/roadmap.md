@@ -249,15 +249,33 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    v1（`LPIR`）已全量移除：`schemas/ir.fbs`、v1↔v2 转换器、`--ir-version 1`、
    interop/TS 的 v1 绑定全部删除；loader/process 路径原生吃 v2。
 
+10. **Method Runtime Layer（多方法仿真平台架构）**
+    现状：kernel 被 Process Flow 绑架——`process_flow.cpp`、Queue/Service
+    语义、IR 中 process 库解析逻辑全部内建在 kernel。目标是把 kernel 降级为
+    “仿真世界”（只负责时间/事件/调度/生命周期），Process / Agent /
+    System Dynamics / Statechart 变成同级方法插件（`docs/specs/method-runtime.md`）。
+    **Phase 1（抽象隔离）✅ 已完成（2026-08-06）：** 新增 `kernel/runtime`
+    （`SimulationMethod` 生命周期接口、`RuntimeContext`、`RuntimeManager`、
+    `MethodRegistry` 插件注册表）与 `kernel/state`（`VariableStore` 跨方法
+    共享状态）；新增顶层 `methods/process`（`ProcessRuntime` 包装既有
+    QueueingFlowSim / ProcessFlowSim，注册为第一个方法插件，功能不变）；
+    `build_replication_model` 改为注册表驱动（按 IR `SemanticsRef{library,
+    block}` = method+component 解析并委托），kernel 不再含 process 专属降级
+    代码；lpcli / lp-server 启动时 `register_all_methods()`；182 ctest 全绿。
+    后续：Phase 3 把 process Engine 模块化为 Source/Queue/Service/Delay/Sink
+    block 并实现增量 advance；Phase 4 接入第二种方法（Statechart）验证架构。
+    验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
+    子类+注册函数；不破坏 F1/F2 冻结契约。
+
 ### P2 — 扩展（远期）
 
-10. **行业模型库**：制造（Machine/Robot/AGV/Warehouse）、物流（Truck/Route/Demand）、
+11. **行业模型库**：制造（Machine/Robot/AGV/Warehouse）、物流（Truck/Route/Demand）、
     交通模板；以 `SemanticsRef` 库注册表形式交付（引擎注册表已就绪）。
-11. **2D/3D 场景与可视化增强**：更多 2D 视图（人群/交通）、3D 数字孪生（Three.js/GLTF）。
-12. **跨工具链确定性黄金值**：libm 超越函数跨 MSVC/clang 不保证逐位一致（评审 m4）；
+12. **2D/3D 场景与可视化增强**：更多 2D 视图（人群/交通）、3D 数字孪生（Three.js/GLTF）。
+13. **跨工具链确定性黄金值**：libm 超越函数跨 MSVC/clang 不保证逐位一致（评审 m4）；
     需自研位精确 log/sqrt 或把 bit-exact 限定为"同构建内"（文档已限定）。
-13. **AI 自动优化增强**：多变量/GA 参数化、约束、目标组合；瓶颈归因深化。
-14. **分布式/GPU/时间弯曲**：ADR-0006/0007 已明确推迟，接口预留（引擎注册表），不排期。
+14. **AI 自动优化增强**：多变量/GA 参数化、约束、目标组合；瓶颈归因深化。
+15. **分布式/GPU/时间弯曲**：ADR-0006/0007 已明确推迟，接口预留（引擎注册表），不排期。
 
 ## 5. 推进方式
 
