@@ -357,3 +357,28 @@ code {
   font-family: var(--font-mono);
   font-size: 0.92em;
 }
+
+/* --- text selection ------------------------------------------------------- */
+/* The IDE chrome is application UI, not a document: tags, titles, buttons,
+   tabs, tree rows and menus must not highlight on click-drag. Only genuine
+   content - editors, form fields, console and AI output - keeps selection. */
+.app {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.app input,
+.app textarea,
+.app select,
+.app [contenteditable='true'],
+.app .dsl-source,
+.app .console-log,
+.app .ai-dsl,
+.app .ai-run,
+.app .ai-scores,
+.app .ai-findings,
+.app .ai-meta,
+.app .ai-error {
+  user-select: text;
+  -webkit-user-select: text;
+}
