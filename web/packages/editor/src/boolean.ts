@@ -46,15 +46,15 @@ function nodeToPolygon(node: GraphicNode): Point2[][] | null {
   return null;
 }
 
-function ringsToCommands(rings: Point2[][]): string[] {
+function ringsToCommands(rings: Point2[][], ox: number, oy: number): string[] {
   const commands: string[] = [];
   for (const ring of rings) {
     if (ring.length === 0) {
       continue;
     }
-    commands.push(`M ${ring[0]![0]} ${ring[0]![1]}`);
+    commands.push(`M ${ring[0]![0] - ox} ${ring[0]![1] - oy}`);
     for (let i = 1; i < ring.length; i++) {
-      commands.push(`L ${ring[i]![0]} ${ring[i]![1]}`);
+      commands.push(`L ${ring[i]![0] - ox} ${ring[i]![1] - oy}`);
     }
     commands.push('Z');
   }
@@ -113,6 +113,6 @@ export function booleanShapes(nodes: GraphicNode[], op: BooleanOp): GraphicNode 
     style: nodes[0]!.style
       ? { ...nodes[0]!.style, stroke: { ...nodes[0]!.style.stroke } }
       : defaultGraphicStyle(),
-    path: { commands: ringsToCommands(rings) },
+    path: { commands: ringsToCommands(rings, minX, minY) },
   };
 }

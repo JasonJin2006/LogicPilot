@@ -38,6 +38,8 @@ export { computeFrameLayout } from './layout.js';
 export type { FramePlacement } from './layout.js';
 export { booleanShapes } from './boolean.js';
 export type { BooleanOp } from './boolean.js';
+export { parsePathCommands, pathPointList, removePathPoint, updatePathPoint } from './path.js';
+export type { PathCommand, PathPoint } from './path.js';
 export type {
   GraphicFill,
   GraphicNode,

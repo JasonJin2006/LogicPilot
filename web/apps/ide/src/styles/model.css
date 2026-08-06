@@ -242,6 +242,75 @@
   fill: var(--accent);
 }
 
+/* Pen tool toolbar + draft + path point editing. */
+.canvas-tools {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  z-index: 20;
+}
+
+.canvas-tools button {
+  padding: 3px 10px;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.canvas-tools button.active {
+  background: var(--accent-dim);
+  color: var(--accent-text);
+}
+
+.canvas-tool-hint {
+  position: absolute;
+  top: 42px;
+  left: 10px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  z-index: 20;
+  pointer-events: none;
+}
+
+.model-shapes .shape-path-editor {
+  pointer-events: all;
+}
+
+.model-shapes .shape-path-point {
+  fill: var(--surface-2);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  cursor: move;
+}
+
+.model-shapes .shape-path-point:hover {
+  fill: var(--accent);
+}
+
+.model-shapes .pen-draft polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
+
+.model-shapes .pen-draft circle {
+  fill: var(--accent);
+}
+
 .model-grid {
   position: absolute;
   inset: 0;

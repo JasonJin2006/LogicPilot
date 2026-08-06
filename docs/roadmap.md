@@ -199,7 +199,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 3（部分）：Boolean 运算 ✅ 已完成**（2026-08-06）：形状（矩形/
    椭圆/多边形）转多边形后用 polygon-clipping 求 Union/Subtract/Intersect/
    Exclude，结果落成 path 节点；多选 ≥2 时 Inspector 提供四个布尔按钮，
-   可撤销。待办：Pen 工具、路径节点编辑、Constraints、更多绑定变量。
+   可撤销（路径命令为局部坐标，渲染不双重平移）。
+   **Phase 3（收尾）：Pen 工具 + 路径节点编辑 ✅ 已完成**（2026-08-06）：
+   画布左上 Select/Pen 工具切换；Pen 模式下点击加锚点、Enter 结束、Esc
+   取消，草稿实时预览；路径节点选中后可拖动/双击删除锚点（`path.ts` 提供
+   可测的命令解析/改点/删点）。待办：Constraints、更多绑定变量与 runtime
+   动画。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

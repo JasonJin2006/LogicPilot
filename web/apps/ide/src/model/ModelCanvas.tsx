@@ -9,7 +9,14 @@ import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
-import { createGraphicNode } from '@logicpilot/editor';
+import {
+  createGraphicNode,
+  pathNode,
+  pathPointList,
+  removePathPoint,
+  updatePathPoint,
+  type PathPoint,
+} from '@logicpilot/editor';
 import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd';
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
@@ -170,6 +177,11 @@ export function ModelCanvas() {
   const shapeIds = useShapeSelection((state) => state.ids);
   const [imageTargetId, setImageTargetId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // Pen tool: click-to-add-points path drawing.
+  const [tool, setTool] = useState<'select' | 'pen'>('select');
+  const [penPoints, setPenPoints] = useState<Array<{ x: number; y: number }>>([]);
+  // Active path-point drag on a selected path node.
+  const [pathEdit, setPathEdit] = useState<{ id: string; point: PathPoint } | null>(null);
 
   // Delete/Backspace removes the selected block (unless typing in a field).
   useEffect(() => {
@@ -215,6 +227,20 @@ export function ModelCanvas() {
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       const doc = () => useModelStore.getState().document;
+
+      if (tool === 'pen') {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          finishPen();
+          setTool('select');
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelPen();
+          return;
+        }
+      }
 
       if (mod && key === 'c') {
         const node = doc().nodes.find((entry) => entry.id === selectedId);
@@ -289,7 +315,7 @@ export function ModelCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, shapeIds, editingTextId, addBlock, moveBlock, select]);
+  }, [selectedId, shapeIds, editingTextId, tool, penPoints, addBlock, moveBlock, select]);
 
   const drag = useRef<{
     startX: number;
@@ -350,6 +376,11 @@ export function ModelCanvas() {
         '.model-block, .model-shape, .canvas-view-pill, .model-canvas button',
       )
     ) {
+      return;
+    }
+    if (tool === 'pen') {
+      const world = clientToWorld(event.clientX, event.clientY);
+      setPenPoints((points) => [...points, world]);
       return;
     }
     drag.current = {
@@ -500,6 +531,82 @@ export function ModelCanvas() {
     setTransformDrag({ id, kind: 'resize', handle, startTransform: object.transform });
   const startShapeRotate = (id: string, object: GraphicNode) =>
     setTransformDrag({ id, kind: 'rotate', startTransform: object.transform });
+
+  // Finish the pen draft as a path node (commands are local to the bounds).
+  const finishPen = () => {
+    if (penPoints.length === 0) {
+      return;
+    }
+    const pts = penPoints;
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const maxX = Math.max(...xs);
+    const maxY = Math.max(...ys);
+    const commands = pts.map((p, index) =>
+      index === 0 ? `M ${p.x - minX} ${p.y - minY}` : `L ${p.x - minX} ${p.y - minY}`,
+    );
+    addBlock({
+      kind: 'curve',
+      name: 'path',
+      x: minX,
+      y: minY,
+      params: {},
+      library: 'presentation',
+      presentation: pathNode(
+        minX,
+        minY,
+        commands,
+        Math.max(1, maxX - minX),
+        Math.max(1, maxY - minY),
+      ),
+    });
+    setPenPoints([]);
+  };
+  const cancelPen = () => {
+    setPenPoints([]);
+    setTool('select');
+  };
+
+  // Dragging a path point rewrites its command (window-level, undoable).
+  useEffect(() => {
+    if (!pathEdit) {
+      return;
+    }
+    const onMove = (event: PointerEvent) => {
+      const world = clientToWorld(event.clientX, event.clientY);
+      const node = visibleDocument.nodes.find((entry) => entry.id === pathEdit.id);
+      const object = node?.presentation;
+      if (!node?.presentation?.path || !object) {
+        return;
+      }
+      const t = object.transform;
+      const rad = (t.rotation * Math.PI) / 180;
+      const sx = (world.x - t.x) / t.scaleX;
+      const sy = (world.y - t.y) / t.scaleY;
+      const cx = t.width / 2;
+      const cy = t.height / 2;
+      const rx = sx - cx;
+      const ry = sy - cy;
+      const localX = rx * Math.cos(-rad) - ry * Math.sin(-rad) + cx;
+      const localY = rx * Math.sin(-rad) + ry * Math.cos(-rad) + cy;
+      const commands = updatePathPoint(
+        node.presentation.path.commands,
+        pathEdit.point,
+        localX,
+        localY,
+      );
+      setPresentation(node.id, { ...object, path: { commands } });
+    };
+    const onUp = () => setPathEdit(null);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [pathEdit, setPresentation, visibleDocument, view]);
 
   useEffect(() => {
     if (!transformDrag) return;
@@ -744,12 +851,14 @@ export function ModelCanvas() {
       }
     : undefined;
   let shapesView: ReactElement | null = null;
-  if (shapeNodes.length > 0) {
+  if (shapeNodes.length > 0 || penPoints.length > 0) {
     const pad = 80;
-    const minX = Math.min(...shapeNodes.map((node) => node.x)) - pad;
-    const minY = Math.min(...shapeNodes.map((node) => node.y)) - pad;
-    const maxX = Math.max(...shapeNodes.map((node) => node.x)) + pad;
-    const maxY = Math.max(...shapeNodes.map((node) => node.y)) + pad;
+    const allX = [...shapeNodes.map((node) => node.x), ...penPoints.map((point) => point.x)];
+    const allY = [...shapeNodes.map((node) => node.y), ...penPoints.map((point) => point.y)];
+    const minX = Math.min(...allX) - pad;
+    const minY = Math.min(...allY) - pad;
+    const maxX = Math.max(...allX) + pad;
+    const maxY = Math.max(...allY) + pad;
     shapesView = (
       <svg
         className="model-shapes"
@@ -839,9 +948,48 @@ export function ModelCanvas() {
                   }}
                 />
               )}
+              {selected && tool === 'select' && shapeObject.type === 'path' && (
+                <g
+                  className="shape-path-editor"
+                  transform={`translate(${shapeObject.transform.x - minX},${shapeObject.transform.y - minY}) rotate(${shapeObject.transform.rotation} ${shapeObject.transform.width / 2} ${shapeObject.transform.height / 2}) scale(${shapeObject.transform.scaleX},${shapeObject.transform.scaleY})`}
+                >
+                  {pathPointList(shapeObject.path?.commands ?? []).map((point, index) => (
+                    <circle
+                      key={index}
+                      className="shape-path-point"
+                      cx={point.x}
+                      cy={point.y}
+                      r={4}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setPathEdit({ id: node.id, point });
+                      }}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        setPresentation(node.id, {
+                          ...shapeObject,
+                          path: {
+                            commands: removePathPoint(shapeObject.path?.commands ?? [], point),
+                          },
+                        });
+                      }}
+                    />
+                  ))}
+                </g>
+              )}
             </g>
           );
         })}
+        {penPoints.length > 0 && (
+          <g className="pen-draft">
+            <polyline
+              points={penPoints.map((point) => `${point.x - minX},${point.y - minY}`).join(' ')}
+            />
+            {penPoints.map((point, index) => (
+              <circle key={index} cx={point.x - minX} cy={point.y - minY} r={3} />
+            ))}
+          </g>
+        )}
       </svg>
     );
   }
@@ -1013,6 +1161,27 @@ export function ModelCanvas() {
       </div>
       {visibleNodes.length === 0 && (
         <div className="model-empty">Drag blocks from the palette to build a model.</div>
+      )}
+      <div className="canvas-tools">
+        <button
+          className={tool === 'select' ? 'active' : ''}
+          onClick={() => {
+            if (tool === 'pen') {
+              finishPen();
+            }
+            setTool('select');
+          }}
+        >
+          Select
+        </button>
+        <button className={tool === 'pen' ? 'active' : ''} onClick={() => setTool('pen')}>
+          Pen
+        </button>
+      </div>
+      {tool === 'pen' && (
+        <div className="canvas-tool-hint">
+          Click to add points · Enter to finish · Esc to cancel
+        </div>
       )}
       <input
         ref={imageInputRef}
