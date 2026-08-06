@@ -42,6 +42,12 @@ $cmake = if ($env:CMAKE) { $env:CMAKE } else {
 $ninja = if ($env:NINJA) { $env:NINJA } else {
     Find-Tool 'ninja' @(Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Ninja-build.Ninja_*\ninja.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)
 }
+# setup-ninja can expose ninja through a relative PATH entry (ninja_bin/ninja).
+# CMAKE_MAKE_PROGRAM must be absolute: CMake resolves a relative path against
+# the build directory (build/interop), where the binary does not exist.
+if ($ninja -and -not [System.IO.Path]::IsPathRooted($ninja)) {
+    $ninja = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $ninja))
+}
 if (-not $env:VCPKG_ROOT -and (Test-Path (Join-Path $root '.deps\vcpkg\vcpkg.exe'))) {
     $env:VCPKG_ROOT = Join-Path $root '.deps\vcpkg'
 }
