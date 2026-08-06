@@ -69,6 +69,7 @@ export function PropertiesPanel() {
       <PresentationInspector
         object={node.presentation}
         onChange={(object) => setPresentation(node.id, object)}
+        onUngroup={() => useModelStore.getState().ungroupShape(node.id)}
       />
     );
   }

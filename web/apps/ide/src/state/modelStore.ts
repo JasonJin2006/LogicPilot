@@ -10,13 +10,16 @@ import {
   connect,
   createDocument,
   disconnect,
+  freshId,
   moveNode,
   removeNode,
   renameNode,
   setParam,
   type AddNodeInput,
   type ModelDocument,
+  type ModelNode,
   type PresentationObject,
+  defaultPresentationStyle,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
 
@@ -24,6 +27,10 @@ const MAX_HISTORY = 100;
 // Rapid successive edits (drag moves, typing) within this window collapse
 // into a single undo step.
 const COALESCE_MS = 600;
+
+/** Presentation object type -> canvas node kind (the palette names ovals
+ *  'oval' while the scene-graph type is 'ellipse'). */
+const PRESENTATION_KIND_BY_TYPE: Record<string, string> = { ellipse: 'oval' };
 
 // Validate a hydrated document: must be an object with `nodes` and `edges`
 // arrays. Older builds (or hand-edited localStorage) can leave a partial
@@ -63,6 +70,12 @@ interface ModelState {
   /** Replace a node's vector presentation object (undoable). Keeps the
    *  node's x/y in sync with the object's transform. */
   setPresentation: (id: string, object: PresentationObject) => void;
+  /** Merge presentation nodes into one `group` node (undoable). Returns the
+   *  new node's id, or null when fewer than two nodes were given. */
+  groupShapes: (ids: string[]) => string | null;
+  /** Expand a `group` node back into its children (undoable). Returns the
+   *  first child id (for selection), or null. */
+  ungroupShape: (id: string) => string | null;
   loadDocument: (document: ModelDocument) => void;
   undo: () => void;
   redo: () => void;
@@ -186,6 +199,99 @@ export const useModelStore = create<ModelState>()((set) => ({
       };
       return found ? commit(state, document) : {};
     }),
+  groupShapes: (ids) => {
+    const state = useModelStore.getState();
+    const members = ids
+      .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
+      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+    if (members.length < 2) {
+      return null;
+    }
+    const minX = Math.min(...members.map((m) => m.presentation.transform.x));
+    const minY = Math.min(...members.map((m) => m.presentation.transform.y));
+    const maxX = Math.max(
+      ...members.map((m) => m.presentation.transform.x + m.presentation.transform.width),
+    );
+    const maxY = Math.max(
+      ...members.map((m) => m.presentation.transform.y + m.presentation.transform.height),
+    );
+    const children = members.map((m) => ({
+      ...m.presentation,
+      transform: {
+        ...m.presentation.transform,
+        x: m.presentation.transform.x - minX,
+        y: m.presentation.transform.y - minY,
+      },
+    }));
+    const groupId = freshId('group');
+    const groupNode: ModelNode = {
+      id: groupId,
+      kind: 'group',
+      name: 'group',
+      x: minX,
+      y: minY,
+      params: {},
+      library: 'presentation',
+      presentation: {
+        type: 'group',
+        transform: {
+          x: minX,
+          y: minY,
+          width: Math.max(1, maxX - minX),
+          height: Math.max(1, maxY - minY),
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+        },
+        style: defaultPresentationStyle(),
+        children,
+      },
+    };
+    const memberIds = new Set(members.map((m) => m.id));
+    const document: ModelDocument = {
+      ...state.document,
+      nodes: [...state.document.nodes.filter((n) => !memberIds.has(n.id)), groupNode],
+    };
+    set({ ...commit(state, document), selectedId: groupId });
+    return groupId;
+  },
+  ungroupShape: (id) => {
+    const state = useModelStore.getState();
+    const group = state.document.nodes.find(
+      (node) => node.id === id && node.presentation?.type === 'group',
+    );
+    const children = group?.presentation?.children;
+    if (!group?.presentation || !children || children.length === 0) {
+      return null;
+    }
+    const g = group.presentation.transform;
+    const newNodes: ModelNode[] = children.map((child) => {
+      const kind = PRESENTATION_KIND_BY_TYPE[child.type] ?? child.type;
+      return {
+        id: freshId(kind),
+        kind,
+        name: kind,
+        x: g.x + child.transform.x,
+        y: g.y + child.transform.y,
+        params: {},
+        library: 'presentation',
+        presentation: {
+          ...child,
+          transform: {
+            ...child.transform,
+            x: g.x + child.transform.x,
+            y: g.y + child.transform.y,
+          },
+        },
+      };
+    });
+    const document: ModelDocument = {
+      ...state.document,
+      nodes: [...state.document.nodes.filter((n) => n.id !== id), ...newNodes],
+    };
+    set({ ...commit(state, document), selectedId: newNodes[0]?.id ?? null });
+    return newNodes[0]?.id ?? null;
+  },
   loadDocument: (document) => set((state) => commit(state, sanitizeDocument(document))),
   undo: () =>
     set((state) => {

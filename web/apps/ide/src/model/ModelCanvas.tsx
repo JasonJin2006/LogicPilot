@@ -39,6 +39,9 @@ const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
 // the axes, arrowheads and tick labels are fully visible on first load.
 const VIEW_MARGIN = 48;
 
+// Cross-shape clipboard for Ctrl+C / Ctrl+V on presentation objects.
+let shapeClipboard: { kind: string; object: PresentationObject } | null = null;
+
 // Ports the canvas shows for a node: every catalog port, including the
 // conditional ones (outTimeout / outPreempted / preparedUnits / wrapUp) at
 // their AnyLogic green-dot positions, matching the palette preview. Wiring a
@@ -166,6 +169,12 @@ export function ModelCanvas() {
     handle?: ResizeHandleName;
     startTransform: PresentationTransform;
   } | null>(null);
+  // Presentation editing UI state: inline text editing, shift-click
+  // multi-selection and the image file picker target.
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [shapeMulti, setShapeMulti] = useState<Set<string>>(new Set());
+  const [imageTargetId, setImageTargetId] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   // Delete/Backspace removes the selected block (unless typing in a field).
   useEffect(() => {
@@ -202,6 +211,83 @@ export function ModelCanvas() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [undo, redo]);
+
+  // Presentation editing shortcuts: copy/paste/duplicate shapes, group/
+  // ungroup, arrow-key nudge and Escape to clear the selection.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      const doc = () => useModelStore.getState().document;
+
+      if (mod && key === 'c') {
+        const node = doc().nodes.find((entry) => entry.id === selectedId);
+        if (node?.presentation) {
+          shapeClipboard = { kind: node.kind, object: node.presentation };
+          event.preventDefault();
+        }
+        return;
+      }
+      if (mod && (key === 'v' || key === 'd')) {
+        if (!shapeClipboard) return;
+        event.preventDefault();
+        const t = shapeClipboard.object.transform;
+        addBlock({
+          kind: shapeClipboard.kind,
+          name: shapeClipboard.kind,
+          x: t.x + 24,
+          y: t.y + 24,
+          params: {},
+          library: 'presentation',
+          presentation: {
+            ...shapeClipboard.object,
+            transform: { ...t, x: t.x + 24, y: t.y + 24 },
+          },
+        });
+        return;
+      }
+      if (mod && key === 'g' && !event.shiftKey) {
+        event.preventDefault();
+        const ids = new Set(shapeMulti);
+        const current = doc().nodes.find((entry) => entry.id === selectedId);
+        if (current?.presentation) {
+          ids.add(current.id);
+        }
+        if (useModelStore.getState().groupShapes([...ids])) {
+          setShapeMulti(new Set());
+        }
+        return;
+      }
+      if (mod && event.shiftKey && key === 'g') {
+        event.preventDefault();
+        const node = doc().nodes.find((entry) => entry.id === selectedId);
+        if (node?.presentation?.type === 'group') {
+          useModelStore.getState().ungroupShape(node.id);
+        }
+        return;
+      }
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        if (!selectedId) return;
+        event.preventDefault();
+        const node = doc().nodes.find((entry) => entry.id === selectedId);
+        if (!node?.presentation) return;
+        const step = event.shiftKey ? 10 : 1;
+        const dx = key === 'arrowright' ? step : key === 'arrowleft' ? -step : 0;
+        const dy = key === 'arrowdown' ? step : key === 'arrowup' ? -step : 0;
+        moveBlock(node.id, node.x + dx, node.y + dy);
+        return;
+      }
+      if (event.key === 'Escape') {
+        setEditingTextId(null);
+        setShapeMulti(new Set());
+        select(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId, shapeMulti, editingTextId, addBlock, moveBlock, select]);
+
   const drag = useRef<{
     startX: number;
     startY: number;
@@ -662,19 +748,74 @@ export function ModelCanvas() {
             node.presentation ??
             defaultPresentationObject(node.kind as PresentationType, node.x, node.y);
           const selected = node.id === selectedId;
+          const multi = shapeMulti.has(node.id);
+          const t = shapeObject.transform;
           return (
             <g
               key={node.id}
-              className={`model-shape kind-${node.kind}${selected ? ' selected' : ''}`}
-              onPointerDown={(event) => onElementPointerDown(event, node)}
+              className={`model-shape kind-${node.kind}${selected ? ' selected' : ''}${multi ? ' multi-selected' : ''}`}
+              onPointerDown={(event) => {
+                if (event.shiftKey) {
+                  event.stopPropagation();
+                  setShapeMulti((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(node.id)) {
+                      next.delete(node.id);
+                    } else {
+                      next.add(node.id);
+                    }
+                    return next;
+                  });
+                  select(node.id);
+                  return;
+                }
+                onElementPointerDown(event, node);
+              }}
               onPointerMove={(event) => onElementPointerMove(event, node)}
               onPointerUp={(event) => onElementPointerUp(event, node)}
               onPointerCancel={() => {
                 elementDrag.current = null;
                 setDraggingId(null);
               }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                if (node.kind === 'text') {
+                  setEditingTextId(node.id);
+                  select(node.id);
+                } else if (node.kind === 'image') {
+                  setImageTargetId(node.id);
+                  imageInputRef.current?.click();
+                }
+              }}
             >
               <PresentationRenderer object={shapeObject} ox={minX} oy={minY} />
+              {node.id === editingTextId && shapeObject.type === 'text' && (
+                <foreignObject
+                  x={0}
+                  y={-2}
+                  width={Math.max(40, t.width)}
+                  height={Math.max(20, t.height + 4)}
+                >
+                  <textarea
+                    className="shape-text-editor"
+                    value={shapeObject.text ?? ''}
+                    autoFocus
+                    style={{
+                      fontFamily: shapeObject.textStyle?.fontFamily,
+                      fontSize: shapeObject.textStyle?.fontSize,
+                      fontWeight: shapeObject.textStyle?.fontWeight,
+                    }}
+                    onChange={(event) =>
+                      setPresentation(node.id, { ...shapeObject, text: event.target.value })
+                    }
+                    onBlur={() => setEditingTextId(null)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === 'Escape') setEditingTextId(null);
+                    }}
+                  />
+                </foreignObject>
+              )}
               {selected && (
                 <TransformHandles
                   object={shapeObject}
@@ -865,6 +1006,30 @@ export function ModelCanvas() {
       {visibleNodes.length === 0 && (
         <div className="model-empty">Drag blocks from the palette to build a model.</div>
       )}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file || !imageTargetId) return;
+          const node = visibleDocument.nodes.find((entry) => entry.id === imageTargetId);
+          if (!node?.presentation) return;
+          const base = node.presentation;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const src = String(reader.result ?? '');
+            setPresentation(imageTargetId, {
+              ...base,
+              image: { src, width: base.transform.width, height: base.transform.height },
+            });
+          };
+          reader.readAsDataURL(file);
+          setImageTargetId(null);
+        }}
+      />
     </div>
   );
 }

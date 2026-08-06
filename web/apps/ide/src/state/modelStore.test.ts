@@ -169,4 +169,52 @@ describe('modelStore undo/redo', () => {
     expect(after.presentation!.transform.x).toBe(55);
     expect(after.presentation!.transform.y).toBe(66);
   });
+
+  it('groups and ungroups presentation shapes', () => {
+    const store = useModelStore.getState();
+    store.addBlock({
+      kind: 'rect',
+      name: 'rect',
+      x: 0,
+      y: 0,
+      library: 'presentation',
+      presentation: {
+        type: 'rect',
+        transform: { x: 0, y: 0, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    store.addBlock({
+      kind: 'oval',
+      name: 'oval',
+      x: 200,
+      y: 100,
+      library: 'presentation',
+      presentation: {
+        type: 'ellipse',
+        transform: { x: 200, y: 100, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    const ids = useModelStore.getState().document.nodes.map((node) => node.id);
+    const groupId = useModelStore.getState().groupShapes(ids);
+    expect(groupId).not.toBeNull();
+    const grouped = useModelStore.getState().document;
+    expect(grouped.nodes).toHaveLength(1);
+    expect(grouped.nodes[0]!.presentation?.type).toBe('group');
+    expect(grouped.nodes[0]!.presentation?.children).toHaveLength(2);
+    expect(grouped.nodes[0]!.x).toBe(0);
+    expect(grouped.nodes[0]!.presentation?.transform.width).toBe(320);
+    expect(grouped.nodes[0]!.presentation?.transform.height).toBe(180);
+    expect(useModelStore.getState().selectedId).toBe(groupId);
+
+    useModelStore.getState().ungroupShape(groupId!);
+    const ungrouped = useModelStore.getState().document;
+    expect(ungrouped.nodes).toHaveLength(2);
+    expect(ungrouped.nodes.some((node) => node.presentation?.type === 'rect')).toBe(true);
+    expect(ungrouped.nodes.some((node) => node.kind === 'oval')).toBe(true);
+    expect(
+      ungrouped.nodes.some((node) => node.x === 200 && node.presentation?.type === 'ellipse'),
+    ).toBe(true);
+  });
 });

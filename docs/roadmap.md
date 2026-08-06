@@ -172,12 +172,14 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    assembler/count，均配图标与 in/out 端口；新增块的常用字段进 Properties
    （delay.time、seize/release.resource、split.copies、batch.size 等）；
    DSL 会照常生成（内核尚未注册的新块编译时报 LP2004）。
-   **Presentation 矢量编辑器 Phase 1–2 🔶 进行中**（2026-08-06）：拖入的表现层
+   **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/
    fill/stroke/strokeWidth/opacity/文字），全部走现有 undo/redo；画布文件升
-   v3 持久化形状（`presentation/main.canvas.json` 的 `shapes`）。待办：文字
-   双击编辑、图片资源、group/layer、复制粘贴/对齐分布。
+   v3 持久化形状（`presentation/main.canvas.json` 的 `shapes`）。
+   **Phase 3–4 🔶 进行中**（2026-08-06）：文字双击内联编辑、图片嵌入
+   （文件 → data URL 持久化）、Ctrl+C/V/D 复制粘贴、方向键微调、Esc 取消、
+   Shift 多选 + Ctrl+G 分组 / Inspector Ungroup。待办：对齐/分布、图层管理。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

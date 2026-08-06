@@ -190,6 +190,24 @@
   stroke: var(--accent);
 }
 
+.model-shapes .model-shape.multi-selected {
+  filter: drop-shadow(0 0 2px var(--accent));
+}
+
+/* Inline text editor for presentation text objects (double-click). */
+.shape-text-editor {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  color: var(--text);
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+}
+
 /* Selection chrome for the active presentation object (Figma-style). */
 .model-shapes .shape-selection-box {
   fill: none;

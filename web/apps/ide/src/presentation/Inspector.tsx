@@ -8,6 +8,8 @@ import type { PresentationObject } from '@logicpilot/editor';
 interface InspectorProps {
   object: PresentationObject;
   onChange: (next: PresentationObject) => void;
+  /** Expand a selected `group` back into its children. */
+  onUngroup?: () => void;
 }
 
 function numField(
@@ -34,7 +36,7 @@ function numField(
   );
 }
 
-export function PresentationInspector({ object, onChange }: InspectorProps) {
+export function PresentationInspector({ object, onChange, onUngroup }: InspectorProps) {
   const t = object.transform;
   const s = object.style;
   const patchTransform = (patch: Partial<PresentationObject['transform']>) =>
@@ -124,6 +126,36 @@ export function PresentationInspector({ object, onChange }: InspectorProps) {
             </select>
           </label>
         </>
+      )}
+      {object.type === 'image' && (
+        <label className="props-field">
+          <span className="props-field-name">Image</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () =>
+                onChange({
+                  ...object,
+                  image: {
+                    src: String(reader.result ?? ''),
+                    width: object.transform.width,
+                    height: object.transform.height,
+                  },
+                });
+              reader.readAsDataURL(file);
+            }}
+          />
+        </label>
+      )}
+      {object.type === 'group' && onUngroup && (
+        <button className="props-delete" onClick={onUngroup}>
+          Ungroup
+        </button>
       )}
     </div>
   );
