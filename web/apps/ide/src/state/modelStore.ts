@@ -34,6 +34,8 @@ const PRESENTATION_KIND_BY_TYPE: Record<string, string> = { ellipse: 'oval' };
 
 /** Alignment axis for the multi-selected presentation shapes. */
 export type AlignAxis = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+/** Distribution axis: equal spacing along the union span. */
+export type DistributeAxis = 'horizontal' | 'vertical';
 
 // Validate a hydrated document: must be an object with `nodes` and `edges`
 // arrays. Older builds (or hand-edited localStorage) can leave a partial
@@ -81,6 +83,8 @@ interface ModelState {
   ungroupShape: (id: string) => string | null;
   /** Align ≥2 presentation shapes along an axis (undoable). */
   alignShapes: (ids: string[], axis: AlignAxis) => void;
+  /** Evenly space ≥3 shapes along the union span (undoable). */
+  distributeShapes: (ids: string[], axis: DistributeAxis) => void;
   /** Move a node to the end of the render order (on top). */
   bringToFront: (id: string) => void;
   /** Move a node to the start of the render order (behind everything). */
@@ -336,6 +340,38 @@ export const useModelStore = create<ModelState>()((set) => ({
         x,
         y,
         presentation: { ...target.presentation, transform: { ...tr, x, y } },
+      };
+    });
+    set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  distributeShapes: (ids, axis) => {
+    const state = useModelStore.getState();
+    const targets = ids
+      .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
+      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+    if (targets.length < 3) {
+      return;
+    }
+    const key = axis === 'horizontal' ? 'x' : 'y';
+    const sorted = [...targets].sort(
+      (a, b) => a.presentation.transform[key] - b.presentation.transform[key],
+    );
+    const min = sorted[0]!.presentation.transform[key];
+    const max = sorted[sorted.length - 1]!.presentation.transform[key];
+    const step = (max - min) / (sorted.length - 1);
+    const positions = new Map(sorted.map((target, index) => [target.id, min + index * step]));
+    const nodes = state.document.nodes.map((node) => {
+      const position = positions.get(node.id);
+      if (position === undefined || !node.presentation) {
+        return node;
+      }
+      const tr = node.presentation.transform;
+      const next = axis === 'horizontal' ? { x: position, y: tr.y } : { x: tr.x, y: position };
+      return {
+        ...node,
+        x: next.x,
+        y: next.y,
+        presentation: { ...node.presentation, transform: { ...tr, ...next } },
       };
     });
     set({ ...commit(state, { ...state.document, nodes }) });

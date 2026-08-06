@@ -251,4 +251,31 @@ describe('modelStore undo/redo', () => {
     nodes = useModelStore.getState().document.nodes;
     expect(nodes[nodes.length - 1]!.id).toBe(ids[0]);
   });
+
+  it('distributes shapes evenly along the union span', () => {
+    const store = useModelStore.getState();
+    const rect = (x: number) => ({
+      kind: 'rect' as const,
+      name: 'rect',
+      x,
+      y: 0,
+      library: 'presentation' as const,
+      presentation: {
+        type: 'rect' as const,
+        transform: { x, y: 0, width: 100, height: 50, rotation: 0, scaleX: 1, scaleY: 1 },
+        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+      },
+    });
+    store.addBlock(rect(0));
+    store.addBlock(rect(300));
+    store.addBlock(rect(400));
+    const ids = useModelStore.getState().document.nodes.map((node) => node.id);
+
+    useModelStore.getState().distributeShapes(ids, 'horizontal');
+    const xs = useModelStore
+      .getState()
+      .document.nodes.map((node) => node.presentation!.transform.x)
+      .sort((a, b) => a - b);
+    expect(xs).toEqual([0, 200, 400]);
+  });
 });

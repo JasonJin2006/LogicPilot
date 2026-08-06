@@ -4,7 +4,7 @@
 // PresentationObject; the modelStore action commits it (undoable).
 
 import type { PresentationObject } from '@logicpilot/editor';
-import type { AlignAxis } from '../state/modelStore';
+import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
 interface InspectorProps {
   object: PresentationObject;
@@ -14,6 +14,7 @@ interface InspectorProps {
   /** Multi-selected shape ids (for alignment). */
   alignIds?: string[];
   onAlign?: (axis: AlignAxis) => void;
+  onDistribute?: (axis: DistributeAxis) => void;
   onBringToFront?: () => void;
   onSendToBack?: () => void;
 }
@@ -48,6 +49,7 @@ export function PresentationInspector({
   onUngroup,
   alignIds,
   onAlign,
+  onDistribute,
   onBringToFront,
   onSendToBack,
 }: InspectorProps) {
@@ -212,6 +214,24 @@ export function PresentationInspector({
               </button>
             ))}
           </div>
+          {(alignIds?.length ?? 0) >= 3 && onDistribute && (
+            <div className="props-align-row" style={{ marginTop: 6 }}>
+              <button
+                className="props-align-btn"
+                title="Distribute horizontally"
+                onClick={() => onDistribute('horizontal')}
+              >
+                ⇔ H
+              </button>
+              <button
+                className="props-align-btn"
+                title="Distribute vertically"
+                onClick={() => onDistribute('vertical')}
+              >
+                ⇕ V
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
