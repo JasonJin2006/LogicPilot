@@ -56,8 +56,16 @@ class BlockContext {
   // downstream on the port leaves the system.
   virtual bool emit(const Entity& entity, const char* port) = 0;
 
-  // Schedule this block's depart event at now + hold_ns.
-  virtual void schedule_depart(std::int64_t hold_ns) = 0;
+  // Schedule this block's depart event for `entity_id` at now + hold_ns.
+  virtual void schedule_depart(std::int64_t hold_ns,
+                               std::uint64_t entity_id) = 0;
+
+  // Schedule a resource failure / repair event for `entity_id` (the entity
+  // occupying the failing unit) at now + hold_ns.
+  virtual void schedule_failure(std::int64_t hold_ns,
+                                std::uint64_t entity_id) = 0;
+  virtual void schedule_repair(std::int64_t hold_ns,
+                               std::uint64_t entity_id) = 0;
 
   // Uniform [0,1) draw from the replication RNG (deterministic order).
   virtual double rng01() = 0;
@@ -104,8 +112,12 @@ class ProcessBlock {
   // One progress step at the current simulation time. Returns true when the
   // block consumed/forwarded an entity (the engine keeps stepping).
   virtual bool update(BlockContext& ctx) = 0;
-  // The block's depart event fired: finish the oldest in-service entity.
-  virtual void complete(BlockContext& ctx) = 0;
+  // The block's depart event fired: finish the in-service entity with this
+  // id (multi-unit blocks route by id, not FIFO).
+  virtual void complete(BlockContext& ctx, std::uint64_t entity_id) = 0;
+  // The unit occupied by `entity_id` failed / was repaired.
+  virtual void on_failure(BlockContext& ctx, std::uint64_t entity_id) = 0;
+  virtual void on_repair(BlockContext& ctx, std::uint64_t entity_id) = 0;
   // Re-push entities this block emitted but a downstream rejected. Returns
   // true when at least one was accepted.
   virtual bool retry_outgoing(BlockContext& ctx) = 0;
@@ -122,6 +134,7 @@ class ProcessBlock {
   [[nodiscard]] virtual std::int64_t pool_capacity() const = 0;
   [[nodiscard]] virtual double area_occupancy() const = 0;
   [[nodiscard]] virtual double area_busy() const = 0;
+  [[nodiscard]] virtual double area_down() const { return 0.0; }
   virtual void accumulate_areas(std::int64_t dt_ns) = 0;
 
   virtual void reset_stats() = 0;
@@ -173,6 +186,7 @@ class BufferedBlock : public ProcessBlock {
     return area_occupancy_;
   }
   [[nodiscard]] double area_busy() const final { return area_busy_; }
+  [[nodiscard]] double area_down() const override { return area_down_; }
 
   void accumulate_areas(std::int64_t dt_ns) override {
     area_occupancy_ +=
@@ -204,7 +218,9 @@ class BufferedBlock : public ProcessBlock {
     return false;
   }
 
-  void complete(BlockContext&) override {}
+  void complete(BlockContext&, std::uint64_t) override {}
+  void on_failure(BlockContext&, std::uint64_t) override {}
+  void on_repair(BlockContext&, std::uint64_t) override {}
 
   double sample_gap(Xoshiro256PlusPlus&) override { return 0.0; }
 
@@ -218,6 +234,7 @@ class BufferedBlock : public ProcessBlock {
   std::uint64_t departed_{0};
   double area_occupancy_{0.0};
   double area_busy_{0.0};
+  double area_down_{0.0};
 };
 
 }  // namespace logicpilot::process

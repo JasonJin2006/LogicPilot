@@ -195,6 +195,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    `state <name> = <值>` 声明实体属性，selectOutput/hold 条件可按属性
    路由（LP5006 同步放行），`examples/attribute_routing.lp` 冒烟全绿；
    match 按属性配对（agent1.attr == agent2.attr）与实体类型系统为后续。
+   **通用引擎故障模型 ✅ 已完成**（2026-08-06）：service 在 ProcessFlowSim
+   路径遵守 resource 的 failure_rate/repair_rate（忙时故障+修复，抢占式
+   重启，availability 进 metrics.json）；depart 按实体 id 派发；新增
+   `examples/failure_line.lp` 冒烟。理论验收仍由专用路径（mm1_failure）
+   承担，通用引擎统计口径对齐为后续项。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

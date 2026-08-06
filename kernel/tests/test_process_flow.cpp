@@ -20,6 +20,8 @@ namespace {
 
 using logicpilot::ReplicationConfig;
 using logicpilot::ReplicationMetrics;
+using logicpilot::ReplicationSummary;
+using logicpilot::summarize_replications;
 using namespace logicpilot::ir::v2;
 
 flatbuffers::Offset<Distribution> dist(flatbuffers::FlatBufferBuilder& b,
@@ -663,4 +665,139 @@ TEST_CASE("process flow: source entity attributes drive condition routing",
   REQUIRE(model != nullptr);
   const ReplicationMetrics blocked = run_once(*model, 7, 10, 0);
   REQUIRE(blocked.departures == 0);
+}
+
+TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
+          "[process_flow][acceptance][failure]") {
+  // Milestone-1 busy-time failure semantics (preemptive-repeat) wired into
+  // the generic ProcessFlowSim engine. The dedicated QueueingFlowSim path
+  // keeps its M/G/1 acceptance (test_mm1_failure); here we verify the
+  // mechanics: no lost jobs, downtime fraction, preemption-aware wait
+  // ordering, failure-induced congestion and bit-exact determinism.
+  constexpr double kLambda = 0.8;
+  constexpr double kMu = 1.0;
+  constexpr double kFailure = 0.1;
+  constexpr double kRepair = 1.0;
+  constexpr std::uint64_t kArrivals = 8000;
+  constexpr std::uint64_t kWarmup = 800;
+  constexpr std::uint64_t kReps = 16;
+
+  const double availability = kRepair / (kFailure + kRepair);
+
+  const auto build_model = [&](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
+    const auto queue = block(builder, "Q", "queue",
+                             {var_int(builder, "capacity", 1000000)}, {});
+    const auto resource = block(
+        builder, "Server", "resource",
+        {var_int(builder, "capacity", 1),
+         var_float(builder, "failure_rate", kFailure),
+         var_float(builder, "repair_rate", kRepair)},
+        {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 3, {kMu})),
+         var_string(builder, "resource", "Server")},
+        {});
+    const auto count = block(builder, "C", "count", {}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, queue, service, count, sink},
+        {couple(builder, "In", "out", "Q", "in"),
+         couple(builder, "Q", "out", "S", "in"),
+         couple(builder, "S", "out", "C", "in"),
+         couple(builder, "C", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return model;
+  };
+
+  std::vector<ReplicationMetrics> results;
+  results.reserve(kReps);
+  for (std::uint64_t rep = 0; rep < kReps; ++rep) {
+    flatbuffers::FlatBufferBuilder builder;
+    auto model = build_model(builder);
+    const ReplicationMetrics metrics = run_once(*model, 42, kArrivals, kWarmup);
+    REQUIRE(metrics.departures == kArrivals);  // preemption never loses a job
+    results.push_back(metrics);
+  }
+
+  const ReplicationSummary summary =
+      summarize_replications(results, 0.95);
+  // Downtime fraction tracks the repair/(failure+repair) law within a band
+  // (the pool is busy ~88% of the time, so the raw fraction is a bit lower).
+  REQUIRE(summary.availability.mean > 0.88);
+  REQUIRE(summary.availability.mean < 0.95);
+  // Preemption-aware wait: sojourn includes failed attempts + repairs.
+  REQUIRE(summary.mean_sojourn.mean > summary.mean_wait.mean);  // W > Wq
+
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics first = run_once(*model, 42, kArrivals, kWarmup);
+  const ReplicationMetrics second = run_once(*model, 42, kArrivals, kWarmup);
+  REQUIRE(first.mean_wait == second.mean_wait);
+  REQUIRE(first.mean_sojourn == second.mean_sojourn);
+  REQUIRE(first.availability == second.availability);
+  REQUIRE(first.utilization == second.utilization);
+
+  // Failures add congestion: the same model without failures is strictly
+  // less congested and never goes down.
+  const auto run_no_failure = [&](double failure_rate) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
+    const auto queue = block(builder, "Q", "queue",
+                             {var_int(builder, "capacity", 1000000)}, {});
+    const auto resource = block(
+        builder, "Server", "resource",
+        {var_int(builder, "capacity", 1),
+         var_float(builder, "failure_rate", failure_rate),
+         var_float(builder, "repair_rate", kRepair)},
+        {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 3, {kMu})),
+         var_string(builder, "resource", "Server")},
+        {});
+    const auto count = block(builder, "C", "count", {}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, queue, service, count, sink},
+        {couple(builder, "In", "out", "Q", "in"),
+         couple(builder, "Q", "out", "S", "in"),
+         couple(builder, "S", "out", "C", "in"),
+         couple(builder, "C", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 42, kArrivals, kWarmup);
+  };
+  const ReplicationMetrics clean = run_no_failure(0.0);
+  const ReplicationMetrics failing = run_no_failure(kFailure);
+  REQUIRE(clean.availability == 1.0);
+  REQUIRE(failing.availability < 0.98);
+  REQUIRE(failing.mean_wait > clean.mean_wait);
 }

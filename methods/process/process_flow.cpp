@@ -46,6 +46,15 @@ using logicpilot::ir_v2_util::node_string_param;
 
 constexpr EventType kArriveEvent = 20;
 constexpr EventType kDepartEvent = 21;
+constexpr EventType kFailureEvent = 22;
+constexpr EventType kRepairEvent = 23;
+
+// ResourcePool spec: capacity plus the milestone-1 busy-time failure law.
+struct PoolSpec {
+  std::int64_t capacity{1};
+  double failure_rate{0.0};
+  double repair_rate{1.0};
+};
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
@@ -87,13 +96,13 @@ std::string block_string_param(const Node* stage, const char* name) {
 // pre-modular engine's parameter mapping verbatim.
 std::unique_ptr<ProcessBlock> make_block(
     const Node* stage, const std::string& kind, const std::string& name,
-    const std::unordered_map<std::string, std::int64_t>& resource_capacity,
+    const std::unordered_map<std::string, PoolSpec>& pools,
     std::string* error) {
   const auto pool_servers = [&](const char* resource_name) -> std::int64_t {
     const std::string pool =
         resource_name != nullptr ? resource_name : name;
-    const auto it = resource_capacity.find(pool);
-    return it != resource_capacity.end() ? it->second : 1;
+    const auto it = pools.find(pool);
+    return it != pools.end() ? it->second.capacity : 1;
   };
   if (kind == "source") {
     TimeSampler sampler = make_sampler(node_dist_param(stage, "arrival"), error);
@@ -143,9 +152,27 @@ std::unique_ptr<ProcessBlock> make_block(
     if (!sampler) {
       return nullptr;
     }
+    TimeSampler failure;
+    TimeSampler repair;
+    const char* resource = node_string_param(stage, "resource");
+    const std::string pool = resource != nullptr ? resource : name;
+    const auto it = pools.find(pool);
+    if (it != pools.end() && it->second.failure_rate > 0.0) {
+      const double f = it->second.failure_rate;
+      const double r =
+          it->second.repair_rate > 0.0 ? it->second.repair_rate : 1.0;
+      failure = [f](Xoshiro256PlusPlus& engine) {
+        Exponential<Xoshiro256PlusPlus> dist{f};
+        return dist(engine);
+      };
+      repair = [r](Xoshiro256PlusPlus& engine) {
+        Exponential<Xoshiro256PlusPlus> dist{r};
+        return dist(engine);
+      };
+    }
     return std::make_unique<ServiceBlock>(
         name, pool_servers(node_string_param(stage, "resource")),
-        std::move(sampler), false);
+        std::move(sampler), false, std::move(failure), std::move(repair));
   }
   if (kind == "seize") {
     const char* resource = node_string_param(stage, "resource");
@@ -239,7 +266,10 @@ class Engine final : public BlockContext {
                       child->metadata()->name() != nullptr
                   ? child->metadata()->name()->str()
                   : "";
-          resource_capacity_[name] = node_int_param(child, "capacity", 1);
+          resource_pools_[name] =
+              PoolSpec{node_int_param(child, "capacity", 1),
+                       node_float_param(child, "failure_rate", 0.0),
+                       node_float_param(child, "repair_rate", 1.0)};
         }
       }
     }
@@ -252,7 +282,7 @@ class Engine final : public BlockContext {
       }
       const std::string name = stage->metadata()->name()->str();
       const std::string kind = stage->semantics()->block()->str();
-      auto block = make_block(stage, kind, name, resource_capacity_, error);
+      auto block = make_block(stage, kind, name, resource_pools_, error);
       if (block == nullptr) {
         return;
       }
@@ -339,11 +369,15 @@ class Engine final : public BlockContext {
       block->reset_stats();
       servers_total_ += block->pool_capacity();
     }
-    for (const auto& [resource, capacity] : resource_capacity_) {
-      available_[resource] = capacity;
+    for (const auto& [resource, spec] : resource_pools_) {
+      available_[resource] = spec.capacity;
     }
     depart_handler_ =
         handlers().add([this](const Event& event) { on_depart(event); });
+    failure_handler_ =
+        handlers().add([this](const Event& event) { on_failure(event); });
+    repair_handler_ =
+        handlers().add([this](const Event& event) { on_repair(event); });
     arrive_handler_ =
         handlers().add([this](const Event& event) { on_arrive(event); });
     for (const std::size_t source : sources_) {
@@ -402,7 +436,13 @@ class Engine final : public BlockContext {
       metrics.utilization =
           busy_area / static_cast<double>(horizon_ns) /
           static_cast<double>(servers_total_);
-      metrics.availability = 1.0;
+      double down_area = 0.0;
+      for (const auto& block : blocks_) {
+        down_area += block->area_down();
+      }
+      metrics.availability =
+          1.0 - down_area / static_cast<double>(horizon_ns) /
+                static_cast<double>(servers_total_);
     }
     return metrics;
   }
@@ -433,9 +473,25 @@ class Engine final : public BlockContext {
     return push_downstream(current_, entity, port);
   }
 
-  void schedule_depart(std::int64_t hold_ns) override {
+  void schedule_depart(std::int64_t hold_ns,
+                       std::uint64_t entity_id) override {
     scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                         kDepartEvent, depart_handler_, current_);
+                         kDepartEvent, depart_handler_,
+                         self_payload(current_, entity_id));
+  }
+
+  void schedule_failure(std::int64_t hold_ns,
+                        std::uint64_t entity_id) override {
+    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
+                         kFailureEvent, failure_handler_,
+                         self_payload(current_, entity_id));
+  }
+
+  void schedule_repair(std::int64_t hold_ns,
+                       std::uint64_t entity_id) override {
+    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
+                         kRepairEvent, repair_handler_,
+                         self_payload(current_, entity_id));
   }
 
   void leave_system(const Entity& entity) override {
@@ -550,11 +606,35 @@ class Engine final : public BlockContext {
   }
 
   void on_depart(const Event& event) {
-    const std::size_t block = static_cast<std::size_t>(event.payload);
+    const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
+    const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
     accumulate_areas(clock().now().as_ns());
     current_ = block;
-    blocks_[block]->complete(*this);
+    blocks_[block]->complete(*this, entity_id);
     pump(block);
+  }
+
+  void on_failure(const Event& event) {
+    const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
+    const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    accumulate_areas(clock().now().as_ns());
+    current_ = block;
+    blocks_[block]->on_failure(*this, entity_id);
+    pump(block);
+  }
+
+  void on_repair(const Event& event) {
+    const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
+    const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    accumulate_areas(clock().now().as_ns());
+    current_ = block;
+    blocks_[block]->on_repair(*this, entity_id);
+    pump(block);
+  }
+
+  static std::uint64_t self_payload(std::size_t block,
+                                    std::uint64_t entity_id) {
+    return (static_cast<std::uint64_t>(block) << 32) | entity_id;
   }
 
   // Deliver `entity` from `from` through the edges of `port`. Accepted
@@ -652,12 +732,14 @@ class Engine final : public BlockContext {
   std::unordered_map<std::string, std::size_t> index_;
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
-  std::unordered_map<std::string, std::int64_t> resource_capacity_;
+  std::unordered_map<std::string, PoolSpec> resource_pools_;
   std::unordered_map<std::string, std::int64_t> available_;
   std::vector<std::size_t> resource_seizers_;
   Xoshiro256PlusPlus engine_{0};
   HandlerId arrive_handler_{0};
   HandlerId depart_handler_{0};
+  HandlerId failure_handler_{0};
+  HandlerId repair_handler_{0};
   std::vector<std::size_t> work_;
   std::uint64_t emitted_{0};
   std::uint64_t departures_{0};

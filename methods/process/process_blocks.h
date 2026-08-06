@@ -6,6 +6,7 @@
 // existing semantics. Behavior mirrors the pre-modular engine exactly.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <deque>
@@ -13,9 +14,11 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
 #include "logicpilot/core/random/xoshiro256pp.h"
+#include "logicpilot/core/random/distributions.h"
 #include "logicpilot/devs/mm1.h"  // TimeSampler
 #include "process_block.h"
 
@@ -103,17 +106,25 @@ class DelayBlock final : public BufferedBlock {
     entity.service_start_ns = ctx.now().as_ns();
     in_service_.push_back(entity);
     const double hold = delay_time_(ctx.rng());
-    ctx.schedule_depart(static_cast<std::int64_t>(
-        std::llround(hold * 1e9)));
+    ctx.schedule_depart(static_cast<std::int64_t>(std::llround(hold * 1e9)),
+                        entity.id);
     return true;
   }
 
-  void complete(BlockContext& ctx) override {
+  void complete(BlockContext& ctx, std::uint64_t entity_id) override {
     if (in_service_.empty()) {
       return;
     }
-    Entity entity = in_service_.front();
-    in_service_.pop_front();
+    const auto it =
+        std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == in_service_.end()) {
+      return;
+    }
+    Entity entity = *it;
+    in_service_.erase(it);
     ++departed_;
     if (!ctx.emit(entity, "out")) {
       outgoing_.push_back(entity);
@@ -137,11 +148,14 @@ class DelayBlock final : public BufferedBlock {
 class ServiceBlock final : public BufferedBlock {
  public:
   ServiceBlock(std::string name, std::int64_t servers,
-               TimeSampler service_time, bool seize)
+               TimeSampler service_time, bool seize,
+               TimeSampler failure = {}, TimeSampler repair = {})
       : BufferedBlock(seize ? "seize" : "service", std::move(name), -1),
         servers_(servers),
         service_time_(std::move(service_time)),
-        seize_(seize) {}
+        seize_(seize),
+        failure_(std::move(failure)),
+        repair_(std::move(repair)) {}
 
   bool can_accept() const override {
     return units_in_use_ < servers_;
@@ -160,19 +174,25 @@ class ServiceBlock final : public BufferedBlock {
     in_service_.push_back(entity);
     ++units_in_use_;
     ++busy_;
-    const double hold =
-        seize_ ? 0.0 : service_time_(ctx.rng());
-    ctx.schedule_depart(static_cast<std::int64_t>(
-        std::llround(hold * 1e9)));
+    if (seize_) {
+      ctx.schedule_depart(0, entity.id);
+      return true;
+    }
+    schedule_service(ctx, entity.id);
     return true;
   }
 
-  void complete(BlockContext& ctx) override {
-    if (in_service_.empty()) {
+  void complete(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it =
+        std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == in_service_.end()) {
       return;
     }
-    Entity entity = in_service_.front();
-    in_service_.pop_front();
+    Entity entity = *it;
+    in_service_.erase(it);
     ++departed_;
     --units_in_use_;
     --busy_;
@@ -184,6 +204,38 @@ class ServiceBlock final : public BufferedBlock {
     }
   }
 
+  // Milestone-1 busy-time failure semantics: while a unit is in service it
+  // may fail (exponential time-to-failure); the service is preempted and
+  // restarts from scratch after the repair (preemptive-repeat).
+  void on_failure(BlockContext& ctx, std::uint64_t entity_id) override {
+    if (!down_.insert(entity_id).second) {
+      return;
+    }
+    --busy_;
+    const double repair = repair_(ctx.rng());
+    ctx.schedule_repair(static_cast<std::int64_t>(std::llround(repair * 1e9)),
+                        entity_id);
+  }
+
+  void on_repair(BlockContext& ctx, std::uint64_t entity_id) override {
+    if (down_.erase(entity_id) == 0) {
+      return;
+    }
+    // Preemption-aware wait accounting (matches QueueingFlowSim): the
+    // measured wait is arrival -> last (final) service start, so refresh the
+    // start stamp on every repair-triggered restart.
+    const auto it =
+        std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it != in_service_.end()) {
+      it->service_start_ns = ctx.now().as_ns();
+    }
+    ++busy_;
+    schedule_service(ctx, entity_id);
+  }
+
   [[nodiscard]] std::int64_t busy_units() const override { return busy_; }
   [[nodiscard]] std::int64_t pool_capacity() const override {
     return servers_;
@@ -192,11 +244,14 @@ class ServiceBlock final : public BufferedBlock {
   void accumulate_areas(std::int64_t dt_ns) override {
     BufferedBlock::accumulate_areas(dt_ns);
     area_busy_ += static_cast<double>(dt_ns) * static_cast<double>(busy_);
+    area_down_ +=
+        static_cast<double>(dt_ns) * static_cast<double>(down_.size());
   }
 
   void reset_stats() override {
     BufferedBlock::reset_stats();
     busy_ = 0;
+    area_down_ = 0.0;
   }
 
   void clear_buffers() override {
@@ -204,13 +259,32 @@ class ServiceBlock final : public BufferedBlock {
     in_service_.clear();
     units_in_use_ = 0;
     busy_ = 0;
+    down_.clear();
   }
 
  private:
+  void schedule_service(BlockContext& ctx, std::uint64_t entity_id) {
+    const double hold = service_time_(ctx.rng());
+    if (failure_) {
+      const double failure_time = failure_(ctx.rng());
+      if (failure_time < hold) {
+        ctx.schedule_failure(
+            static_cast<std::int64_t>(std::llround(failure_time * 1e9)),
+            entity_id);
+        return;
+      }
+    }
+    ctx.schedule_depart(static_cast<std::int64_t>(std::llround(hold * 1e9)),
+                        entity_id);
+  }
+
   std::int64_t servers_{1};
   TimeSampler service_time_;
   bool seize_{false};
+  TimeSampler failure_;
+  TimeSampler repair_;
   std::deque<Entity> in_service_;
+  std::unordered_set<std::uint64_t> down_;
   std::int64_t units_in_use_{0};
   std::int64_t busy_{0};
 };

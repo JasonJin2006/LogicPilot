@@ -109,6 +109,12 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 （位置/装配语义为后续工作）。示例：`examples/seize_release.lp`、
 `examples/batch_unbatch.lp`、`examples/combine_time.lp`。
 
+`service` 现在在**通用流程引擎**（`ProcessFlowSim`）里也遵守资源池的故障语义：
+`resource` 的 `failure_rate` / `repair_rate` 按「忙时故障 + 修复」建模
+（抢占式重启服务，与专用 M/M/1 路径一致）；`availability` 指标输出到
+`lpcli run` 与 `metrics.json`。示例：`examples/failure_line.lp`（用 `count`
+强制走通用引擎，可用性 < 1、无丢件）。
+
 ## 表达式与参数
 
 数值字段接受**编译期常量表达式**（`+ - * /`、一元负、括号），并可通过
@@ -226,5 +232,6 @@ use manufacturing
 | `examples/batch_unbatch.lp` | 临时批：batch→unbatch 还原 agent |
 | `examples/combine_time.lp` | combine 同步两流 + timeMeasure 测量 |
 | `examples/attribute_routing.lp` | 实体属性声明 + selectOutput 按属性路由 |
+| `examples/failure_line.lp` | 通用引擎故障模型（failure/repair + availability） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

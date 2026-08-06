@@ -81,6 +81,15 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   `selectOutput`/`hold` 条件可引用属性名（LP5006 校验同步放行）并按属性
   路由；split 拷贝、combine/batch 保留首个原件属性；新增内核路由测试、
   语义测试与 `examples/attribute_routing.lp` 冒烟。
+- **通用引擎故障模型已落地（2026-08-06）**：`failure_rate`/`repair_rate`
+  接入 `ProcessFlowSim` 的 `service`（忙时故障 + 修复，抢占式重启，
+  与 QueueingFlowSim 专用路径同一套语义）；`availability` 指标随
+  metrics.json 输出；depart 事件改为按实体 id 派发（顺带修正多单元
+  delay/service 的完成顺序）；新增故障机制测试（无丢件/可用性带/W>Wq/
+  故障加剧拥堵/逐位确定）与 `examples/failure_line.lp` 冒烟。
+  **已知差异**：通用引擎的绝对 Wq 与 M/G/1 理论存在既有偏差（纯 M/M/1
+  也偏差，非本轮引入），理论验收仍以专用路径（test_mm1_failure）为准，
+  通用引擎的统计口径对齐留待后续。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 
