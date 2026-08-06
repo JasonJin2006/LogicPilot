@@ -94,6 +94,9 @@ export interface GraphicNode {
   image?: { src: string; width: number; height: number };
   path?: GraphicPath;
   children?: GraphicNode[];
+  /** Simulation binding: live transform/style property -> expression over
+   *  runtime variables (queueLength, busy, servers, downServers, tick). */
+  binding?: { properties: Record<string, string> };
 }
 
 // ---------------------------------------------------------------------------
@@ -375,6 +378,9 @@ export function normalizeGraphicNode(value: unknown): GraphicNode | null {
     node.children = raw.children
       .map((child) => normalizeGraphicNode(child))
       .filter((child): child is GraphicNode => child !== null);
+  }
+  if (raw.binding && typeof raw.binding === 'object') {
+    node.binding = raw.binding as GraphicNode['binding'];
   }
   return node;
 }

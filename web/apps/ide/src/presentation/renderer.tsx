@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react';
 import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
+import { resolveGraphicBindings } from '@logicpilot/editor';
 
 interface RendererProps {
   object: GraphicNode;
@@ -12,6 +13,8 @@ interface RendererProps {
   className?: string;
   /** Stable id for gradient/filter element ids (pass the node id). */
   uid?: string;
+  /** Live simulation variables (queueLength, busy, ...) to resolve bindings. */
+  runtime?: Record<string, number>;
 }
 
 function fillPaint(style: GraphicStyle, uid: string | undefined): string {
@@ -25,7 +28,11 @@ function fillPaint(style: GraphicStyle, uid: string | undefined): string {
   return `url(#grad-${uid})`;
 }
 
-function shapeFor(object: GraphicNode, uid: string | undefined): ReactNode {
+function shapeFor(
+  object: GraphicNode,
+  uid: string | undefined,
+  runtime?: Record<string, number>,
+): ReactNode {
   const t = object.transform;
   const s = object.style;
   const w = t.width;
@@ -134,6 +141,7 @@ function shapeFor(object: GraphicNode, uid: string | undefined): ReactNode {
               ox={0}
               oy={0}
               uid={uid ? `${uid}-c${index}` : undefined}
+              runtime={runtime}
             />
           ))}
         </>
@@ -191,19 +199,20 @@ function shapeDefs(object: GraphicNode, uid: string | undefined): ReactNode {
   return defs.length > 0 ? <defs>{defs}</defs> : null;
 }
 
-export function PresentationRenderer({ object, ox, oy, className, uid }: RendererProps) {
-  const t = object.transform;
+export function PresentationRenderer({ object, ox, oy, className, uid, runtime }: RendererProps) {
+  const resolved = runtime && object.binding ? resolveGraphicBindings(object, runtime) : object;
+  const t = resolved.transform;
   const x = t.x - ox;
   const y = t.y - oy;
-  const filter = object.style.shadow || object.style.blur ? `url(#fx-${uid})` : undefined;
+  const filter = resolved.style.shadow || resolved.style.blur ? `url(#fx-${uid})` : undefined;
   return (
     <g
       className={className}
       transform={`translate(${x},${y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2}) scale(${t.scaleX},${t.scaleY}) skewX(${t.skewX}) skewY(${t.skewY})`}
       filter={filter}
     >
-      {shapeDefs(object, uid)}
-      {shapeFor(object, uid)}
+      {shapeDefs(resolved, uid)}
+      {shapeFor(resolved, uid, runtime)}
     </g>
   );
 }

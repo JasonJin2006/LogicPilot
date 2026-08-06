@@ -32,6 +32,7 @@ export {
   shapeNode,
   textNode,
 } from './presentation.js';
+export { evalBindingExpression, resolveGraphicBindings } from './binding.js';
 export type {
   GraphicFill,
   GraphicNode,

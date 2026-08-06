@@ -734,6 +734,15 @@ export function ModelCanvas() {
   // Presentation shapes: rendered as real drawing shapes in a bounds-fitted
   // svg inside the world layer (canvas annotations, not process blocks).
   const shapeNodes = visibleNodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
+  const runtime = live
+    ? {
+        queueLength: vizState.queueLength,
+        busy: vizState.busy ? 1 : 0,
+        servers: vizState.servers,
+        downServers: vizState.downServers,
+        tick: vizState.tickVersion,
+      }
+    : undefined;
   let shapesView: ReactElement | null = null;
   if (shapeNodes.length > 0) {
     const pad = 80;
@@ -781,7 +790,13 @@ export function ModelCanvas() {
                 }
               }}
             >
-              <PresentationRenderer object={shapeObject} ox={minX} oy={minY} uid={node.id} />
+              <PresentationRenderer
+                object={shapeObject}
+                ox={minX}
+                oy={minY}
+                uid={node.id}
+                runtime={runtime}
+              />
               {node.id === editingTextId && shapeObject.type === 'text' && (
                 <foreignObject
                   x={0}

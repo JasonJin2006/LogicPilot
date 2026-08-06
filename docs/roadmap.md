@@ -187,8 +187,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    path），圆角是 rectangle 的 `radius` 属性；transform 增加 skew；style
    升级为 fill（solid/渐变）/ stroke（dash/join/cap）/ shadow / blur；
    旧画布 v3 对象经 `normalizeGraphicNode` 自动迁移。渲染器支持渐变填充与
-   阴影/模糊滤镜，Inspector 增加 radius/渐变/阴影/模糊编辑。待办：Pen 工具、
-   Boolean 运算、Frame/Auto layout、Simulation Binding。
+   阴影/模糊滤镜，Inspector 增加 radius/渐变/阴影/模糊编辑。
+   **Phase 5：Simulation Binding ✅ 已完成**（2026-08-06）：图形对象的
+   width/height/opacity/x/y/rotation 可绑定运行时表达式（安全算术求值器，
+   变量 queueLength/busy/servers/downServers/tick），渲染时叠加、不改存储
+   对象；Inspector 提供绑定编辑。待办：Pen 工具、Boolean 运算、Frame/Auto
+   layout、更多绑定变量（吞吐/等待）。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

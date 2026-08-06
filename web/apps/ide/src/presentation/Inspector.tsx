@@ -67,6 +67,10 @@ export function PresentationInspector({
   const shapeType = object.type === 'shape' ? object.geometry?.shapeType : undefined;
   const shadow = s.shadow;
   const fill = s.fill;
+  const binding = object.binding;
+  const bindings = binding?.properties ?? {};
+  const patchBinding = (properties: Record<string, string>) =>
+    onChange({ ...object, binding: { properties } });
 
   return (
     <div className="side-panel-body properties">
@@ -318,6 +322,37 @@ export function PresentationInspector({
           Ungroup
         </button>
       )}
+      <div className="props-section">
+        <div className="props-section-title">Simulation binding</div>
+        <label className="props-field">
+          <span className="props-field-name">Enabled</span>
+          <input
+            type="checkbox"
+            checked={!!binding}
+            onChange={(event) =>
+              event.target.checked
+                ? patchBinding({ width: 'queueLength * 10' })
+                : onChange({ ...object, binding: undefined })
+            }
+          />
+        </label>
+        {binding && (
+          <>
+            <p className="side-hint">Variables: queueLength, busy, servers, downServers, tick</p>
+            {(['width', 'height', 'opacity', 'x', 'y', 'rotation'] as const).map((key) => (
+              <label className="props-field" key={key}>
+                <span className="props-field-name">{key}</span>
+                <input
+                  type="text"
+                  value={bindings[key] ?? ''}
+                  placeholder="e.g. queueLength * 10"
+                  onChange={(event) => patchBinding({ ...bindings, [key]: event.target.value })}
+                />
+              </label>
+            ))}
+          </>
+        )}
+      </div>
       {(onBringToFront || onSendToBack) && (
         <div className="props-section">
           <div className="props-section-title">Arrange</div>
