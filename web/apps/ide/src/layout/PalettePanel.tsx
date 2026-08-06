@@ -223,7 +223,7 @@ export function PalettePanel() {
                 {(() => {
                   // Port dots at the glyph's real port anchors (AnyLogic
                   // green-dot positions), scaled to the 30px chip icon
-                  // (icon origin at (5,5), scale 0.75). Custom-library
+                  // (icon centre at (15,15), scale 0.75). Custom-library
                   // blocks keep the old in/out edge dots via the fallback.
                   const inPorts = block.inPorts?.length ? block.inPorts : block.in ? ['in'] : [];
                   const outPorts = block.outPorts?.length
@@ -238,7 +238,7 @@ export function PalettePanel() {
                       <span
                         key={name}
                         className={`palette-port port-${direction}`}
-                        style={{ left: 5 + (px - 20) * 0.75, top: 5 + (py - 20) * 0.75 }}
+                        style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
                         aria-hidden
                       />
                     );
