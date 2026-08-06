@@ -738,13 +738,19 @@ void Session::enqueue(OutMessage message) {
     write_queue_.pop_front();
     ++dropped_frames_;
     wire::FrameKind dropped_kind;
-    if (dropped.binary &&
-        frame_kind(dropped.binary_data, dropped_kind) &&
-        dropped_kind == wire::FrameKind_Tick && !write_queue_.empty() &&
+    const bool dropped_flow =
+        dropped.binary && frame_kind(dropped.binary_data, dropped_kind) &&
+        (dropped_kind == wire::FrameKind_Tick ||
+         dropped_kind == wire::FrameKind_Counters);
+    // A Tick and its paired Counters must leave together. When the front is a
+    // Counters its Tick was already written to the client, so the following
+    // Tick goes too - otherwise the client would see two Ticks in a row.
+    if (dropped_flow && !write_queue_.empty() &&
         write_queue_.front().binary) {
       wire::FrameKind next_kind;
       if (frame_kind(write_queue_.front().binary_data, next_kind) &&
-          next_kind == wire::FrameKind_Counters) {
+          (next_kind == wire::FrameKind_Tick ||
+           next_kind == wire::FrameKind_Counters)) {
         write_queue_.pop_front();
         ++dropped_frames_;
       }
