@@ -106,3 +106,61 @@ TEST_CASE("AgentReplicationModel is deterministic (positions + metrics)",
     REQUIRE(first_positions[i].y == second_positions[i].y);
   }
 }
+
+TEST_CASE("AgentReplicationModel parallel tick is bit-exact deterministic "
+          "(100k agents)",
+          "[agent][determinism][parallel]") {
+  // Population >= 65536 with multiple cores routes flip/bounce through the
+  // parallel_for_entities partition; the same run must reproduce identical
+  // positions and state regardless of thread interleaving.
+  constexpr const char* kLargeSwarm = R"lp(
+model Swarm {
+  agent Drone {
+    count = 100000
+    state active = true
+    on_tick { flip active }
+    on_tick { bounce }
+  }
+}
+)lp";
+  const dsl::CompileResult compiled =
+      dsl::compile_source(kLargeSwarm, "large_swarm.lp");
+  REQUIRE(compiled.ok);
+  IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  std::string error;
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+  const auto* agent = dynamic_cast<const AgentReplicationModel*>(model.get());
+  REQUIRE(agent != nullptr);
+
+  ReplicationConfig config;
+  config.seed = 1;
+  config.arrivals = 5;  // tick budget (flip x5 + bounce each tick)
+  const ReplicationMetrics first = model->run(config, nullptr);
+  const std::vector<Position> first_positions = agent->last_positions();
+  REQUIRE(first.arrivals == 5);
+  REQUIRE(agent->agent_count() == 100000);
+
+  const ReplicationMetrics second = model->run(config, nullptr);
+  const std::vector<Position> second_positions = agent->last_positions();
+  REQUIRE(second.arrivals == 5);
+  REQUIRE(first_positions.size() == second_positions.size());
+  REQUIRE(first_positions.size() == 100000);
+
+  for (std::size_t i = 0; i < first_positions.size(); ++i) {
+    REQUIRE(first_positions[i].x == second_positions[i].x);
+    REQUIRE(first_positions[i].y == second_positions[i].y);
+    REQUIRE(first_positions[i].x >= 0.0F);
+    REQUIRE(first_positions[i].x <= 1.0F);
+    REQUIRE(first_positions[i].y >= 0.0F);
+    REQUIRE(first_positions[i].y <= 1.0F);
+  }
+  // Five flips from active=true -> false, checked on the parallel path.
+  REQUIRE(std::get<bool>(agent->agent_state(0).values.at("active")) == false);
+  REQUIRE(std::get<bool>(agent->agent_state(99999).values.at("active")) ==
+          false);
+}

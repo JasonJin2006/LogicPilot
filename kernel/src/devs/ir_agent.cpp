@@ -1,9 +1,13 @@
 // IR agent runtime: AgentReplicationModel tick loop (see ir_agent.h).
 #include "logicpilot/devs/ir_agent.h"
 
+#include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include "logicpilot/agent/agent_runtime.h"
 
@@ -27,6 +31,42 @@ std::optional<IrValue> v2_var_value(const v2::Var* var) {
       return IrValue{var->float_value()};
     default:
       return std::nullopt;
+  }
+}
+
+// Parallel per-entity pass (ADR-0009 Phase B): flip/bounce touch each
+// entity independently, so partitioning the range preserves the exact
+// per-entity computation and bit-exact results. Small populations and
+// single-core hosts stay sequential.
+template <typename Fn>
+void parallel_for_entities(std::int64_t count, Fn&& fn) {
+  const unsigned hw = std::thread::hardware_concurrency();
+  const std::size_t threads =
+      count < 65536 || hw <= 1
+          ? 1
+          : std::min<std::size_t>(static_cast<std::size_t>(hw), 8);
+  if (threads == 1) {
+    for (std::int64_t i = 0; i < count; ++i) {
+      fn(i);
+    }
+    return;
+  }
+  std::atomic<std::int64_t> next{0};
+  std::vector<std::thread> workers;
+  workers.reserve(threads);
+  for (std::size_t w = 0; w < threads; ++w) {
+    workers.emplace_back([&] {
+      for (;;) {
+        const std::int64_t i = next.fetch_add(1);
+        if (i >= count) {
+          break;
+        }
+        fn(i);
+      }
+    });
+  }
+  for (std::thread& worker : workers) {
+    worker.join();
   }
 }
 
@@ -145,20 +185,20 @@ ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
   for (std::uint64_t tick = 0; tick < budget; ++tick) {
     for (const Behavior& behavior : behaviors) {
       if (behavior.handler == "flip") {
-        for (const entt::entity entity : entities) {
+        parallel_for_entities(count, [&](std::int64_t i) {
           ModelAgentState& state = runtime.registry().get<ModelAgentState>(
-              entity);
+              entities[static_cast<std::size_t>(i)]);
           const auto it = state.values.find(behavior.arg);
           if (it != state.values.end() && std::holds_alternative<bool>(it->second)) {
             it->second = !std::get<bool>(it->second);
           }
-        }
+        });
       }
       // noop: nothing to do.
     }
     runtime.update_kinematics(kDt);
     if (bounce) {
-      for (std::int64_t i = 0; i < count; ++i) {
+      parallel_for_entities(count, [&](std::int64_t i) {
         Position position = runtime.store().position(i);
         Velocity velocity = runtime.store().velocity(i);
         if (position.x < 0.0F) {
@@ -177,7 +217,7 @@ ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
         }
         runtime.store().set_position(i, position);
         runtime.store().set_velocity(i, velocity);
-      }
+      });
     }
   }
 
