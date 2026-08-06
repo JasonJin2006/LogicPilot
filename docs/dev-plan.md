@@ -9,9 +9,9 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 知识推理」方向判定为**不适用，不纳入**；其建议按仿真平台的真实缺口重新翻译，
 按 P0 → P3 分阶段推进。
 
-## P0 核心闭环补齐（进行中）
+## P0 核心闭环补齐（✅ 已落地 2026-08-06）
 
-### P0-1 Kernel 运行时稳定性与错误体系
+### P0-1 Kernel 运行时稳定性与错误体系 ✅
 
 - **结构化诊断**：新增 `kernel/runtime/runtime_diagnostics.h`
   （`RuntimeSeverity` / `RuntimeDiagnostic{severity, code, message}`），
@@ -24,14 +24,14 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 - **生命周期契约文档**：`docs/specs/method-runtime.md` 增补
   load → initialize → advance* → shutdown → metrics 的执行契约与错误约定。
 
-### P0-2 测试与基准补齐
+### P0-2 测试与基准补齐 ✅
 
 - 内核不变量测试：departures == arrivals 守恒、队列不溢出、多方法组合回归、
   profiler/诊断接线单测。
 - 基准门禁：新增 `bench/process_flow_bench.cpp`（通用 ProcessFlowSim 吞吐），
   接入 CI bench job 冒烟。
 
-### P0-3 DSL 定型确认
+### P0-3 DSL 定型确认 ✅
 
 - 新增 `docs/specs/dsl-freeze.md`：冻结边界（永不添加：函数定义 / 模块导入 /
   pattern matching / 逻辑规则语法）与扩展点（库注册表、表达式、`instance`
