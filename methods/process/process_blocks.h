@@ -666,6 +666,71 @@ class AssemblerBlock final : public BufferedBlock {
   std::deque<Entity> in_service_;
 };
 
+// MoveTo (AnyLogic): moves the agent, spending `tripTime` (explicit) or
+// distance/speed in the block. The lplib carries a single `xYZ` coordinate,
+// so the speed mode moves along the x axis (|target - current| / speed);
+// with neither set the agent jumps instantly (MODE_PLACE_TO).
+class MoveToBlock final : public BufferedBlock {
+ public:
+  MoveToBlock(std::string name, std::int64_t trip_time_ns, double speed,
+              double target_x)
+      : BufferedBlock("moveTo", std::move(name), -1),
+        trip_time_ns_(trip_time_ns),
+        speed_(speed),
+        target_x_(target_x) {}
+
+  bool update(BlockContext& ctx) override {
+    if (input_.empty()) {
+      return false;
+    }
+    Entity entity = input_.front();
+    input_.pop_front();
+    entity.service_start_ns = ctx.now().as_ns();
+    in_service_.push_back(entity);
+    std::int64_t hold_ns = trip_time_ns_;
+    if (hold_ns <= 0 && speed_ > 0.0) {
+      const double distance = std::abs(target_x_ - entity.x);
+      hold_ns = static_cast<std::int64_t>(
+          std::llround(distance / speed_ * 1e9));
+    }
+    ctx.schedule_depart(hold_ns, entity.id);
+    return true;
+  }
+
+  void complete(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it =
+        std::find_if(in_service_.begin(), in_service_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == in_service_.end()) {
+      return;
+    }
+    Entity entity = *it;
+    in_service_.erase(it);
+    entity.x = target_x_;
+    ++departed_;
+    if (!ctx.emit(entity, "out")) {
+      outgoing_.push_back(entity);
+    }
+  }
+
+  [[nodiscard]] bool has_in_service() const override {
+    return !in_service_.empty();
+  }
+
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    in_service_.clear();
+  }
+
+ private:
+  std::int64_t trip_time_ns_{0};
+  double speed_{0.0};
+  double target_x_{0.0};
+  std::deque<Entity> in_service_;
+};
+
 // Remaining kinds with their existing semantics: selectOutput (RNG routing),
 // split (clone to outCopy), hold (frozen = blocked), count/release/pass-
 // through (immediate forward).

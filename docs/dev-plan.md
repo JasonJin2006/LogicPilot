@@ -118,6 +118,10 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   quantity125 数量）到齐后装配 delayTime 秒输出主件（多装配并行）；
   新增内核测试（正常装配/部件不足）与 `examples/assembler_line.lp` 冒烟；
   装配期资源占用为后续项。至此 process 库仅剩 moveTo 为直通占位。
+- **moveTo 语义已落地（2026-08-07）**：`tripTime` 显式行程时间、
+  `speed`+`xYZ` 沿轴位移（距离/速度）、缺省零时跳转；Entity 增加位置
+  字段；新增内核测试与 `examples/move_route.lp` 冒烟。至此 process 库
+  23 块全部有内核语义（完整 node/path 空间建模为后续项）。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

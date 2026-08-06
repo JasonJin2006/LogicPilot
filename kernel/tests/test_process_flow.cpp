@@ -1388,3 +1388,43 @@ TEST_CASE("process flow: composed blocks conserve entities end-to-end",
   REQUIRE(metrics.departures == 1000);
   REQUIRE(metrics.mean_in_queue > 0.0);  // agents wait at the batch
 }
+
+TEST_CASE("process flow: moveTo spends tripTime or distance/speed",
+          "[process_flow][moveTo][des_blocks]") {
+  const auto run_move = [&](double trip_time, double speed, double target_x) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto move = block(
+        builder, "M", "moveTo",
+        {var_float(builder, "tripTime", trip_time),
+         var_float(builder, "speed", speed),
+         var_float(builder, "xYZ", target_x)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, move, sink},
+        {couple(builder, "In", "out", "M", "in"),
+         couple(builder, "M", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 3, 0);
+  };
+
+  // Explicit trip time: every agent spends exactly 2.0s moving.
+  const ReplicationMetrics timed = run_move(2.0, 0.0, 0.0);
+  REQUIRE(timed.departures == 3);
+  REQUIRE(timed.mean_sojourn == 2.0);
+
+  // Speed mode: 10 units at 5 units/s -> 2.0s.
+  const ReplicationMetrics moving = run_move(0.0, 5.0, 10.0);
+  REQUIRE(moving.departures == 3);
+  REQUIRE(moving.mean_sojourn == 2.0);
+
+  // No trip time or speed: instant jump.
+  const ReplicationMetrics jump = run_move(0.0, 0.0, 0.0);
+  REQUIRE(jump.departures == 3);
+  REQUIRE(jump.mean_sojourn == 0.0);
+}

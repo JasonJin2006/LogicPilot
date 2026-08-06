@@ -37,6 +37,9 @@ struct Entity {
   // Numeric entity attributes declared on the emitting source block
   // (`state <name> = <value>`); runtime conditions may reference them.
   std::unordered_map<std::string, double> attributes;
+  // Spatial position (moveTo travel time = distance / speed).
+  double x{0.0};
+  double y{0.0};
   // TimeMeasureStart/End pair: timestamp set by the start block and
   // measured when the entity reaches the paired end block.
   std::int64_t measure_start_ns{0};

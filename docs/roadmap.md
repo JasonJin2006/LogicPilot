@@ -234,6 +234,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    块新增 Entity attributes 编辑区（新增/重命名/删除 int/float/bool 属性，
    对应 DSL `state <name>: <type>`）；editor 包新增 removeParam/renameParam
    图操作，IDE modelStore 新增对应动作；editor 54 + IDE 69 vitest 全绿。
+   **moveTo ✅ 已完成**（2026-08-07）：tripTime / speed+xYZ（距离/速度）/
+   缺省零时跳转；Entity 增加位置字段；`examples/move_route.lp` 冒烟。
+   **process 库 23 块全部有内核语义**（node/path 空间建模为后续项）。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

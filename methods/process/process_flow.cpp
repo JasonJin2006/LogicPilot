@@ -236,6 +236,12 @@ std::unique_ptr<ProcessBlock> make_block(
         name, to_ns(node_float_param(stage, "delayTime", 0.0)),
         node_int_param(stage, "quantity125", 1));
   }
+  if (kind == "moveTo") {
+    return std::make_unique<MoveToBlock>(
+        name, to_ns(node_float_param(stage, "tripTime", 0.0)),
+        node_float_param(stage, "speed", 0.0),
+        node_float_param(stage, "xYZ", 0.0));
+  }
   if (kind == "split") {
     return std::make_unique<GenericBlock>(
         kind, name, 0.5, node_int_param(stage, "copies", 2), false);
@@ -276,8 +282,7 @@ std::unique_ptr<ProcessBlock> make_block(
   if (kind == "timeMeasureEnd") {
     return std::make_unique<TimeMeasureEndBlock>(name);
   }
-  // count / moveTo / ... pass tokens through with counters
-  // maintained (location/assembly semantics are future work).
+  // count / ... pass tokens through with counters maintained.
   return std::make_unique<GenericBlock>(kind, name, 0.5, 2, false);
 }
 

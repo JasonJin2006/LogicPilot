@@ -84,9 +84,10 @@ process 库 23 块中 22 块已有内核真语义（以 AnyLogic 官方文档为
 seize 持有期故障）、`seize/release`（资源持有与归还）、`batch/unbatch`
 （临时/永久批）、`combine`、`match`（纯同步或按属性配对）、
 `selectOutput/hold`（运行时条件，支持 `==`/`!=`）、`exit`、`enter`、
-`timeMeasureStart/End`、`assembler`；实体属性（source `state` 声明）驱动
-条件路由、优先级排队与抢占（`outTimeout`/`outPreempted`）。仅 `moveTo`
-为直通占位（依赖位置/网络模型）。组合模型见 `examples/des_shop.lp`。
+`timeMeasureStart/End`、`assembler`、`moveTo`（tripTime/速度位移）；
+实体属性（source `state` 声明）驱动条件路由、优先级排队与抢占
+（`outTimeout`/`outPreempted`）。**process 库 23 块全部有内核语义**
+（完整 node/path 空间建模为后续项）。组合模型见 `examples/des_shop.lp`。
 
 ## 仓库结构
 

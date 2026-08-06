@@ -241,7 +241,7 @@ set_tests_properties(lpcli_compile_rejects_bad_experiment PROPERTIES
 
 # DES block semantics end-to-end: the DSL -> IR -> generic ProcessFlowSim
 # chain for Seize/Release, Batch/Unbatch and Combine+TimeMeasure.
-foreach(example seize_release batch_unbatch combine_time attribute_routing failure_line wait_timeout priority_preempt match_attr seize_failure flow_exit assembler_line des_shop)
+foreach(example seize_release batch_unbatch combine_time attribute_routing failure_line wait_timeout priority_preempt match_attr seize_failure flow_exit assembler_line des_shop move_route)
   add_test(NAME lpcli_compile_${example}
     COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/${example}.lp"
             -o "${CMAKE_CURRENT_BINARY_DIR}/${example}.ir.bin")
