@@ -54,6 +54,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          # v5 auto-caching detects the root packageManager (pnpm) and needs
+          # pnpm on PATH; this job installs no packages, so opt out.
+          package-manager-cache: false
 
       - name: CMake configure
         run: cmake --preset ${{ matrix.preset }}
@@ -163,6 +166,9 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          # v5 auto-caching detects the root packageManager (pnpm) and needs
+          # pnpm on PATH; this job installs via npm, so opt out.
+          package-manager-cache: false
 
       - name: Install tree-sitter CLI
         working-directory: dsl/tree-sitter-logicpilot
