@@ -96,6 +96,8 @@ export function PropertiesPanel() {
   const setPresentation = useModelStore((state) => state.setPresentation);
   const alignIds = useShapeSelection((state) => state.ids);
   const removeBlock = useModelStore((state) => state.removeBlock);
+  const [newAttrName, setNewAttrName] = useState('');
+  const [newAttrType, setNewAttrType] = useState('int');
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
   if (!node) {
@@ -144,8 +146,6 @@ export function PropertiesPanel() {
           return { key, name, type, value };
         })
     : [];
-  const [newAttrName, setNewAttrName] = useState('');
-  const [newAttrType, setNewAttrType] = useState('int');
 
   const setAttributeValue = (key: string, type: string, raw: string) => {
     if (type === 'bool') {
