@@ -15,7 +15,10 @@
 namespace logicpilot::dsl::testing {
 
 inline std::string read_golden(const std::string& path) {
-  std::ifstream in(path, std::ios::binary);
+  // Text mode: Windows checkouts carry CRLF while goldens are committed as
+  // LF; the CRT translates CRLF -> LF so the byte-exact snapshot comparison
+  // holds on every runner (kernel's expect_json.h reads the same way).
+  std::ifstream in(path);
   if (!in) {
     return {};
   }

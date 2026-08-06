@@ -30,6 +30,7 @@
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
+#include <wire_generated.h>
 
 #ifdef LOGICPILOT_HAS_DSL
 #include "logicpilot/dsl/compile.h"
@@ -40,6 +41,7 @@ namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
 namespace asio = boost::asio;
+namespace wire = ::logicpilot::wire;
 using tcp = asio::ip::tcp;
 
 namespace logicpilot::server {
@@ -82,6 +84,23 @@ std::string base64_decode(const std::string& input) {
     }
   }
   return out;
+}
+
+// Read the kind of a queued size-prefixed wire frame. Returns false when the
+// payload is not a wire frame (e.g. a text control ack).
+bool frame_kind(
+    const std::shared_ptr<const std::vector<std::uint8_t>>& frame,
+    wire::FrameKind& kind) {
+  if (!frame || frame->size() < 4) {
+    return false;
+  }
+  const wire::Frame* root = wire::GetSizePrefixedFrame(frame->data());
+  const wire::FrameHeader* header = root != nullptr ? root->header() : nullptr;
+  if (header == nullptr) {
+    return false;
+  }
+  kind = header->kind();
+  return true;
 }
 
 }  // namespace
@@ -711,9 +730,25 @@ void Session::enqueue(OutMessage message) {
   // Bound memory for slow/stuck clients: drop the oldest pending frames. The
   // in-flight frame lives in in_flight_ (popped by do_write), so dropping the
   // queue front can never orphan the buffer the current async_write uses.
+  // Drop whole Tick+Counters steps: removing only one frame of a step breaks
+  // the strict Tick/Counters alternation the wire contract and the browser
+  // renderer rely on (a slow client would observe two Counters in a row).
   while (write_queue_.size() > server_.config.write_queue_limit) {
+    const OutMessage dropped = std::move(write_queue_.front());
     write_queue_.pop_front();
     ++dropped_frames_;
+    wire::FrameKind dropped_kind;
+    if (dropped.binary &&
+        frame_kind(dropped.binary_data, dropped_kind) &&
+        dropped_kind == wire::FrameKind_Tick && !write_queue_.empty() &&
+        write_queue_.front().binary) {
+      wire::FrameKind next_kind;
+      if (frame_kind(write_queue_.front().binary_data, next_kind) &&
+          next_kind == wire::FrameKind_Counters) {
+        write_queue_.pop_front();
+        ++dropped_frames_;
+      }
+    }
   }
   if (!writing_) {
     do_write();

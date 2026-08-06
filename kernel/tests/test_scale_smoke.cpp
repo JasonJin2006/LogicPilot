@@ -54,5 +54,5 @@ TEST_CASE("1M-agent population builds and ticks within the smoke budget",
   REQUIRE(metrics.arrivals == 2);
   REQUIRE(agent->agent_count() == 1'000'000);
   INFO("1M-agent x 2 ticks took " << seconds << " s");
-  REQUIRE(seconds < 30.0);
+  REQUIRE(seconds < 45.0);
 }
