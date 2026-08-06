@@ -305,3 +305,32 @@ TEST_CASE("parser: syntax errors become LP0001 diagnostics", "[dsl][parser]") {
     REQUIRE(!parsed.ok());
   }
 }
+
+TEST_CASE("parser: adversarial nesting fails gracefully instead of "
+          "overflowing the stack",
+          "[dsl][parser][robustness]") {
+  // tree-sitter is iterative, but the AST walker recurses per expression
+  // level; thousands of nested parentheses must yield a diagnostic, not a
+  // stack overflow.
+  constexpr int kDepth = 10000;
+  std::string source = "model M { param x: float = ";
+  source.append(kDepth, '(');
+  source.push_back('1');
+  source.append(kDepth, ')');
+  source.append(" }\n");
+
+  const ParseOutput parsed = parse_source(source, "deep.lp");
+  REQUIRE_FALSE(parsed.ok());
+  REQUIRE_FALSE(parsed.diagnostics.empty());
+  REQUIRE(parsed.diagnostics.front().code == "LP0001");
+
+  // A reasonable depth still parses cleanly.
+  std::string sane = "model M { param x: float = ";
+  sane.append(32, '(');
+  sane.push_back('1');
+  sane.append(32, ')');
+  sane.append(" }\n");
+  const ParseOutput ok = parse_source(sane, "ok.lp");
+  REQUIRE(ok.ok());
+  REQUIRE(ok.diagnostics.empty());
+}

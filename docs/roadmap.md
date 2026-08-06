@@ -97,6 +97,14 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    验收：全部示例/测试/AI provider 同步，147 ctest 不回归。
    入口：`docs/specs/dsl-v2.md`、`dsl/tree-sitter-logicpilot/grammar.js`、
    `dsl/compiler/src/{parser,semantic,lowering}.cpp`。
+   **2026-08-06 工具链审计整改 ✅：** CI `dsl-grammar` 新增生成同步门禁
+   （`tree-sitter generate` + `git diff --exit-code -- src/` + 未跟踪文件
+   检查，防止 grammar.js 与 parser.c 漂移）；compile 入口新增 16 MiB 输入
+   上限（`LP0003`）；AST 提取加深度上限（表达式 256 层 / 声明 64 层，
+   `LP0001`）且语法错误收集改为迭代遍历，对抗性深嵌套不再栈溢出；新增
+   语义多错误聚合测试与健壮性测试。194 ctest 全绿。分层（parser /
+   semantic / lowering / compile）与生成文件入库（ADR-0005）经核实为既有
+   设计，不改动；Linux 构建由 CI 的 ubuntu job 覆盖。
 
 6. **IDE 自研面板系统（P1-6 前置）**
    现状：IDE 是单页固定布局（header + 画布 + 右侧堆叠面板）；拖拽建模、多视图与

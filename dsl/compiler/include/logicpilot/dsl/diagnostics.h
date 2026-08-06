@@ -5,6 +5,7 @@
 //
 //   LP0001  syntax error (tree-sitter ERROR / MISSING node, bad literal)
 //   LP0002  io error (source file unreadable)
+//   LP0003  source exceeds the compiler input size limit
 //   LP1001  duplicate declaration (model member or process stage)
 //   LP1002  duplicate field inside a declaration body
 //   LP2001  missing required field

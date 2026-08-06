@@ -128,3 +128,15 @@ TEST_CASE("E2E: DSL compile -> IR load -> replication stats match "
   REQUIRE(summary.mean_sojourn.mean > summary.mean_wait.mean);  // W > Wq
   REQUIRE(summary.mean_in_system.mean > 1.0);
 }
+
+TEST_CASE("compile: oversized source is rejected up front with LP0003",
+          "[dsl][compile][robustness]") {
+  // The input-size guard fires before parsing: a 16 MiB + 1 byte source must
+  // yield one structured diagnostic, not a parse attempt.
+  const std::string huge(16 * 1024 * 1024 + 1, 'x');
+  const dsl::CompileResult result = dsl::compile_source(huge, "huge.lp");
+  REQUIRE_FALSE(result.ok);
+  REQUIRE(result.diagnostics.size() == 1);
+  REQUIRE(result.diagnostics.front().code == "LP0003");
+  REQUIRE(result.v2_bytes.empty());
+}

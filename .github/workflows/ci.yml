@@ -174,6 +174,18 @@ jobs:
         working-directory: dsl/tree-sitter-logicpilot
         run: npm ci --no-audit --no-fund
 
+      - name: Generated parser is in sync with grammar.js
+        # Audit gate (P0): a grammar.js change must regenerate parser.c and
+        # friends in the same change. tree-sitter generate is deterministic
+        # for the locked CLI (0.26.11), so any diff here is real drift; the
+        # untracked check catches brand-new generated files as well.
+        working-directory: dsl/tree-sitter-logicpilot
+        run: |
+          npm run generate
+          git diff --exit-code -- src/
+          test -z "$(git ls-files --others --exclude-standard)" || \
+            { echo "tree-sitter generate produced untracked files"; exit 1; }
+
       - name: Run corpus tests
         # tree-sitter test exercises test/corpus/*.txt against the checked-in
         # parser.c; a grammar regression fails CI instead of being caught only

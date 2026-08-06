@@ -65,38 +65,53 @@ void each_named_child(const TSNode& node, Fn&& fn) {
 }
 
 // ---------------------------------------------------------------------------
-// Syntax error collection (cursor DFS; stops descending into ERROR nodes)
+// Syntax error collection (iterative cursor DFS with an explicit stack; the
+// walk stops descending into ERROR nodes). Iterative on purpose: adversarial
+// inputs can nest thousands of levels deep (tree-sitter itself is
+// iterative), and a recursive walk would overflow the C++ stack.
 // ---------------------------------------------------------------------------
 
 void collect_syntax_errors(const TSNode& node, const std::string& source,
                            std::vector<Diagnostic>& out) {
-  if (ts_node_is_error(node) || ts_node_is_missing(node)) {
-    Diagnostic diagnostic;
-    diagnostic.severity = Severity::kError;
-    diagnostic.code = "LP0001";
-    diagnostic.span = span_of(node);
-    if (ts_node_is_missing(node)) {
-      diagnostic.message =
-          std::string("syntax error: missing '") + ts_node_type(node) + "'";
-    } else {
-      const uint32_t start = ts_node_start_byte(node);
-      const uint32_t end = ts_node_end_byte(node);
-      std::string snippet = source.substr(start, std::min(end - start, 24u));
-      if (snippet.empty()) {
-        snippet = ts_node_type(node);
+  std::vector<TSNode> stack{node};
+  while (!stack.empty()) {
+    const TSNode current = stack.back();
+    stack.pop_back();
+    if (ts_node_is_error(current) || ts_node_is_missing(current)) {
+      Diagnostic diagnostic;
+      diagnostic.severity = Severity::kError;
+      diagnostic.code = "LP0001";
+      diagnostic.span = span_of(current);
+      if (ts_node_is_missing(current)) {
+        diagnostic.message =
+            std::string("syntax error: missing '") + ts_node_type(current) +
+            "'";
+      } else {
+        const uint32_t start = ts_node_start_byte(current);
+        const uint32_t end = ts_node_end_byte(current);
+        std::string snippet =
+            source.substr(start, std::min(end - start, 24u));
+        if (snippet.empty()) {
+          snippet = ts_node_type(current);
+        }
+        diagnostic.message = "syntax error near '" + snippet + "'";
       }
-      diagnostic.message = "syntax error near '" + snippet + "'";
+      out.push_back(std::move(diagnostic));
+      continue;  // do not descend; one diagnostic per error region
     }
-    out.push_back(std::move(diagnostic));
-    return;  // do not descend; one diagnostic per error region
+    // Push children in reverse so the pre-order walk keeps source order.
+    std::vector<TSNode> children;
+    TSTreeCursor cursor = ts_tree_cursor_new(current);
+    if (ts_tree_cursor_goto_first_child(&cursor) > 0) {
+      do {
+        children.push_back(ts_tree_cursor_current_node(&cursor));
+      } while (ts_tree_cursor_goto_next_sibling(&cursor) > 0);
+      for (auto it = children.rbegin(); it != children.rend(); ++it) {
+        stack.push_back(*it);
+      }
+    }
+    ts_tree_cursor_delete(&cursor);
   }
-  TSTreeCursor cursor = ts_tree_cursor_new(node);
-  if (ts_tree_cursor_goto_first_child(&cursor) > 0) {
-    do {
-      collect_syntax_errors(ts_tree_cursor_current_node(&cursor), source, out);
-    } while (ts_tree_cursor_goto_next_sibling(&cursor) > 0);
-  }
-  ts_tree_cursor_delete(&cursor);
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +261,22 @@ class Extractor {
   Value extract_value(const TSNode& node) {
     Value value;
     value.span = span_of(node);
+    if (too_deep_) {
+      return value;
+    }
+    if (expr_depth_ >= kMaxExpressionDepth) {
+      // Deep-nesting guard: extract_value recurses once per expression
+      // level, so an adversarial input (e.g. thousands of nested
+      // parentheses) would otherwise overflow the C++ stack. tree-sitter
+      // itself is iterative and survives; the AST walker fails gracefully
+      // with LP0001 instead of crashing.
+      too_deep_ = true;
+      error(node, "LP0001",
+            "expression nesting exceeds the " +
+                std::to_string(kMaxExpressionDepth) + "-level limit");
+      return value;
+    }
+    ++expr_depth_;
     const TSNode child = ts_node_named_child(node, 0);
     if (node_is(child, "value_literal")) {
       const TSNode token = ts_node_named_child(child, 0);
@@ -291,6 +322,7 @@ class Extractor {
       value.kind = ValueKind::kParen;
       value.operands.push_back(extract_value(field(child, "value")));
     }
+    --expr_depth_;
     return value;
   }
 
@@ -462,13 +494,23 @@ class Extractor {
     return block;
   }
 
-  Node extract_node(const TSNode& decl) {
+  Node extract_node(const TSNode& decl, int depth = 0) {
     Node node;
     node.span = span_of(decl);
     node.kind = text_of(field(decl, "kind"));
     node.name = text_of(field(decl, "name"));
     node.name_span = span_of(field(decl, "name"));
     const TSNode body = field(decl, "body");
+    if (depth >= kMaxDeclarationDepth) {
+      // Nested-declaration guard: extract_node recurses per declaration
+      // level (member := declaration); cap it so adversarial inputs cannot
+      // overflow the C++ stack.
+      too_deep_ = true;
+      error(decl, "LP0001",
+            "declaration nesting exceeds the " +
+                std::to_string(kMaxDeclarationDepth) + "-level limit");
+      return node;
+    }
     each_named_child(body, [&](const TSNode& member) {
       if (node_is(member, "field")) {
         // `range = min..max` parses as a field node wrapping a range_field
@@ -492,7 +534,7 @@ class Extractor {
       } else if (node_is(member, "couple_declaration")) {
         node.couplings.push_back(extract_couple(member));
       } else if (node_is(member, "declaration")) {
-        node.children.push_back(extract_node(member));
+        node.children.push_back(extract_node(member, depth + 1));
       }
     });
     return node;
@@ -546,6 +588,10 @@ class Extractor {
     return experiment;
   }
 
+  static constexpr int kMaxExpressionDepth = 256;
+  static constexpr int kMaxDeclarationDepth = 64;
+  int expr_depth_{0};
+  bool too_deep_{false};
   const std::string& source_;
   std::vector<Diagnostic>& diagnostics_;
 };

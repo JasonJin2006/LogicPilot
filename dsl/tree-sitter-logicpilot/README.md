@@ -90,6 +90,19 @@ After any `grammar.js` change, regenerate and commit the output (`src/parser.c`,
 `src/grammar.json`, `src/node-types.json`, `src/tree_sitter/parser.h`) in the
 same change (ADR-0005).
 
+**CI enforces the sync** (`dsl-grammar` job): `npm run generate` followed by
+`git diff --exit-code -- src/` (plus an untracked-files check), so a
+`grammar.js` edit without a committed regeneration fails the build. The CLI
+is pinned to 0.26.11, so generation is deterministic.
+
+## Input hardening
+
+The compiler rejects sources larger than 16 MiB up front (`LP0003`), and the
+AST walkers are depth-capped (`LP0001` for expression nesting > 256 levels or
+declaration nesting > 64 levels) with iterative cursor traversal, so
+adversarial inputs cannot overflow the C++ stack or consume unbounded
+resources.
+
 ## Running the corpus tests
 
 ```powershell

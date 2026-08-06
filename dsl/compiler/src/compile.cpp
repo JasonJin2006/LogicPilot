@@ -11,9 +11,27 @@
 
 namespace logicpilot::dsl {
 
+// Hard input guard (toolchain hardening): tree-sitter is iterative and
+// robust to deep nesting, but unbounded inputs still cost memory/time on
+// the host. Reject oversized sources up front with a structured diagnostic
+// instead of letting the parser chew through them.
+inline constexpr std::size_t kMaxSourceBytes = 16 * 1024 * 1024;  // 16 MiB
+
 CompileResult compile_source(const std::string& source,
                              const std::string& path) {
   CompileResult result;
+
+  if (source.size() > kMaxSourceBytes) {
+    Diagnostic diagnostic;
+    diagnostic.severity = Severity::kError;
+    diagnostic.code = "LP0003";
+    diagnostic.message =
+        "source is " + std::to_string(source.size()) + " bytes, exceeding " +
+        "the " + std::to_string(kMaxSourceBytes) +
+        "-byte input limit (LP0003)";
+    result.diagnostics.push_back(std::move(diagnostic));
+    return result;
+  }
 
   ParseOutput parsed = parse_source(source, path);
   if (!parsed.ok()) {

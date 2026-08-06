@@ -1,5 +1,6 @@
 // Semantic analysis tests: structured checks + golden diagnostic snapshots
 // (dsl/compiler/tests/golden/diag_*.txt).
+#include <set>
 #include <string>
 #include <vector>
 
@@ -359,4 +360,26 @@ TEST_CASE("semantic: diagnostics carry spans and machine-readable codes",
   REQUIRE(format_diagnostic("input.lp", diagnostic) ==
           "input.lp:2:16: error[LP2005]: unknown field 'bogus' in resource "
           "'R'");
+}
+
+TEST_CASE("semantic: independent errors are all reported, not fail-fast",
+          "[dsl][semantic]") {
+  // Unknown kind, unknown field and an undeclared identifier in one model:
+  // the analyzer accumulates every independent diagnostic (sorted by span).
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  wat X { foo = 1 }\n"
+      "  resource Server { nope = 1 }\n"
+      "  source A { arrival = rate(bogus) }\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  std::set<std::string> codes;
+  for (const Diagnostic& diagnostic : diags) {
+    codes.insert(diagnostic.code);
+  }
+  REQUIRE(codes.count("LP2004") == 1);  // unknown kind
+  REQUIRE(codes.count("LP2005") == 1);  // unknown field
+  REQUIRE(codes.count("LP2006") == 1);  // undeclared identifier
 }
