@@ -1,66 +1,74 @@
-// Presentation scene-graph renderer: draws a PresentationObject as a real
-// SVG shape inside the canvas shapes layer. Coordinates are world-based;
-// `ox`/`oy` are the layer origin so shapes render inside the bounds-fitted
-// svg that ModelCanvas mounts.
+// Vector graphics scene-graph renderer. Draws a GraphicNode (shape with
+// geometry, path, text, image or group) as real SVG inside the canvas shapes
+// layer. Coordinates are world-based; `ox`/`oy` are the layer origin.
 
 import type { ReactNode } from 'react';
-import type { PresentationObject } from '@logicpilot/editor';
+import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
 
 interface RendererProps {
-  object: PresentationObject;
+  object: GraphicNode;
   ox: number;
   oy: number;
   className?: string;
+  /** Stable id for gradient/filter element ids (pass the node id). */
+  uid?: string;
 }
 
-function shapeFor(object: PresentationObject): ReactNode {
+function fillPaint(style: GraphicStyle, uid: string | undefined): string {
+  const fill = style.fill;
+  if (fill.kind === 'solid') {
+    return fill.color;
+  }
+  if (fill.kind === 'image') {
+    return `url(#pattern-${uid})`;
+  }
+  return `url(#grad-${uid})`;
+}
+
+function shapeFor(object: GraphicNode, uid: string | undefined): ReactNode {
   const t = object.transform;
   const s = object.style;
   const w = t.width;
   const h = t.height;
   const stroke = {
-    stroke: s.stroke,
-    strokeWidth: s.strokeWidth,
-    strokeDasharray: s.dash,
-    fill: s.fill,
-    opacity: s.opacity,
+    stroke: s.stroke.color,
+    strokeWidth: s.stroke.width,
+    strokeDasharray: s.stroke.dash.length > 0 ? s.stroke.dash.join(' ') : undefined,
+    strokeLinejoin: s.stroke.join,
+    strokeLinecap: s.stroke.cap,
   };
+  const fill = fillPaint(s, uid);
   switch (object.type) {
-    case 'rect':
-      return <rect x={0} y={0} width={w} height={h} {...stroke} />;
-    case 'roundedRect':
-      return <rect x={0} y={0} width={w} height={h} rx={Math.min(12, w / 2, h / 2)} {...stroke} />;
-    case 'ellipse':
-      return <ellipse cx={w / 2} cy={h / 2} rx={w / 2} ry={h / 2} {...stroke} />;
-    case 'line':
-      return (
-        <line
-          x1={0}
-          y1={0}
-          x2={w}
-          y2={0}
-          stroke={s.stroke}
-          strokeWidth={s.strokeWidth}
-          strokeDasharray={s.dash}
-          opacity={s.opacity}
-        />
-      );
-    case 'polyline':
-      return (
-        <polyline
-          points={`${0},${h * 0.25} ${w * 0.33},${h * 0.75} ${w * 0.66},${h * 0.4} ${w},${h}`}
-          {...stroke}
-        />
-      );
-    case 'arc':
-      return <path d={`M 0 ${h / 2} A ${w / 2} ${h / 2} 0 1 1 ${w} ${h / 2}`} {...stroke} />;
-    case 'curve':
-      return (
-        <path
-          d={`M 0 ${h * 0.75} C ${w * 0.33} ${h * 0.25}, ${w * 0.66} ${h * 0.75}, ${w} ${h * 0.25}`}
-          {...stroke}
-        />
-      );
+    case 'shape': {
+      const g = object.geometry;
+      if (g?.shapeType === 'ellipse') {
+        return <ellipse cx={w / 2} cy={h / 2} rx={w / 2} ry={h / 2} fill={fill} {...stroke} />;
+      }
+      if (g?.shapeType === 'polygon') {
+        const points = (g.points ?? []).map((p) => `${p.x * w},${p.y * h}`).join(' ');
+        return <polygon points={points} fill={fill} {...stroke} />;
+      }
+      if (g?.shapeType === 'line') {
+        return (
+          <line
+            x1={0}
+            y1={0}
+            x2={w}
+            y2={0}
+            stroke={s.stroke.color}
+            strokeWidth={s.stroke.width}
+            strokeDasharray={stroke.strokeDasharray}
+            opacity={s.opacity}
+          />
+        );
+      }
+      const radius = Math.min(g?.radius ?? 0, w / 2, h / 2);
+      return <rect x={0} y={0} width={w} height={h} rx={radius} fill={fill} {...stroke} />;
+    }
+    case 'path': {
+      const d = object.path?.commands.join(' ') ?? '';
+      return <path d={d} fill={fill} {...stroke} />;
+    }
     case 'text': {
       const ts = object.textStyle;
       const anchor = ts?.align === 'left' ? 'start' : ts?.align === 'right' ? 'end' : 'middle';
@@ -70,9 +78,9 @@ function shapeFor(object: PresentationObject): ReactNode {
           y={h / 2}
           textAnchor={anchor}
           dominantBaseline="central"
-          fill={s.fill}
-          stroke={s.strokeWidth > 0 ? s.stroke : 'none'}
-          strokeWidth={s.strokeWidth}
+          fill={s.fill.kind === 'solid' ? s.fill.color : s.stroke.color}
+          stroke={s.stroke.width > 0 ? s.stroke.color : 'none'}
+          strokeWidth={s.stroke.width}
           fontFamily={ts?.fontFamily}
           fontSize={ts?.fontSize}
           fontWeight={ts?.fontWeight}
@@ -97,9 +105,10 @@ function shapeFor(object: PresentationObject): ReactNode {
       }
       return (
         <>
-          <rect x={0} y={0} width={w} height={h} rx={4} {...stroke} />
+          <rect x={0} y={0} width={w} height={h} rx={4} fill={fill} {...stroke} />
           <path
             d={`M ${w * 0.15} ${h * 0.78} l ${w * 0.25} -${h * 0.42} ${w * 0.18} ${h * 0.26} ${w * 0.12} -${h * 0.18} ${w * 0.18} ${h * 0.34}`}
+            fill="none"
             {...stroke}
           />
         </>
@@ -114,13 +123,18 @@ function shapeFor(object: PresentationObject): ReactNode {
             width={w}
             height={h}
             rx={6}
+            fill="none"
             {...stroke}
-            strokeDasharray={s.dash ?? '6 4'}
+            strokeDasharray={s.stroke.dash.length > 0 ? s.stroke.dash.join(' ') : '6 4'}
           />
           {object.children?.map((child, index) => (
-            <g key={index} transform={`translate(${child.transform.x},${child.transform.y})`}>
-              {shapeFor(child)}
-            </g>
+            <PresentationRenderer
+              key={index}
+              object={child}
+              ox={0}
+              oy={0}
+              uid={uid ? `${uid}-c${index}` : undefined}
+            />
           ))}
         </>
       );
@@ -129,16 +143,67 @@ function shapeFor(object: PresentationObject): ReactNode {
   }
 }
 
-export function PresentationRenderer({ object, ox, oy, className }: RendererProps) {
+/** SVG defs for gradients, patterns, shadows and blur, keyed by uid. */
+function shapeDefs(object: GraphicNode, uid: string | undefined): ReactNode {
+  if (!uid) {
+    return null;
+  }
+  const s = object.style;
+  const t = object.transform;
+  const defs: ReactNode[] = [];
+  if (s.fill.kind === 'gradient') {
+    defs.push(
+      <linearGradient key="grad" id={`grad-${uid}`} gradientTransform={`rotate(${s.fill.angle})`}>
+        {s.fill.stops.map((stop, index) => (
+          <stop key={index} offset={`${stop.offset * 100}%`} stopColor={stop.color} />
+        ))}
+      </linearGradient>,
+    );
+  }
+  if (s.fill.kind === 'image' && s.fill.src) {
+    defs.push(
+      <pattern
+        key="pattern"
+        id={`pattern-${uid}`}
+        width={t.width}
+        height={t.height}
+        patternUnits="userSpaceOnUse"
+      >
+        <image href={s.fill.src} width={t.width} height={t.height} />
+      </pattern>,
+    );
+  }
+  if (s.shadow || s.blur) {
+    defs.push(
+      <filter key="fx" id={`fx-${uid}`} x="-50%" y="-50%" width="200%" height="200%">
+        {s.shadow && (
+          <feDropShadow
+            dx={s.shadow.x}
+            dy={s.shadow.y}
+            stdDeviation={s.shadow.blur}
+            floodColor={s.shadow.color}
+          />
+        )}
+        {s.blur ? <feGaussianBlur stdDeviation={s.blur} /> : null}
+      </filter>,
+    );
+  }
+  return defs.length > 0 ? <defs>{defs}</defs> : null;
+}
+
+export function PresentationRenderer({ object, ox, oy, className, uid }: RendererProps) {
   const t = object.transform;
   const x = t.x - ox;
   const y = t.y - oy;
+  const filter = object.style.shadow || object.style.blur ? `url(#fx-${uid})` : undefined;
   return (
     <g
       className={className}
-      transform={`translate(${x},${y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2}) scale(${t.scaleX},${t.scaleY})`}
+      transform={`translate(${x},${y}) rotate(${t.rotation} ${t.width / 2} ${t.height / 2}) scale(${t.scaleX},${t.scaleY}) skewX(${t.skewX}) skewY(${t.skewY})`}
+      filter={filter}
     >
-      {shapeFor(object)}
+      {shapeDefs(object, uid)}
+      {shapeFor(object, uid)}
     </g>
   );
 }

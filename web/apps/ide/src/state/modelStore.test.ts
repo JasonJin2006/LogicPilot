@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useModelStore } from './modelStore';
+import { createGraphicNode, type GraphicNode } from '@logicpilot/editor';
+
+function shape(kind: string, x: number, y: number, width = 120, height = 80): GraphicNode {
+  const node = createGraphicNode(kind, x, y);
+  return { ...node, transform: { ...node.transform, width, height } };
+}
 
 function resetStore(): void {
   useModelStore.setState({
@@ -124,11 +130,7 @@ describe('modelStore undo/redo', () => {
       x: 10,
       y: 10,
       library: 'presentation',
-      presentation: {
-        type: 'rect',
-        transform: { x: 10, y: 10, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
+      presentation: shape('rect', 10, 10),
     });
     const node = useModelStore.getState().document.nodes[0]!;
     useModelStore.setState({ lastCommitAt: 0 }); // separate undo steps
@@ -156,11 +158,7 @@ describe('modelStore undo/redo', () => {
       x: 0,
       y: 0,
       library: 'presentation',
-      presentation: {
-        type: 'ellipse',
-        transform: { x: 0, y: 0, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
+      presentation: shape('oval', 0, 0),
     });
     const node = useModelStore.getState().document.nodes[0]!;
     store.moveBlock(node.id, 55, 66);
@@ -178,11 +176,7 @@ describe('modelStore undo/redo', () => {
       x: 0,
       y: 0,
       library: 'presentation',
-      presentation: {
-        type: 'rect',
-        transform: { x: 0, y: 0, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
+      presentation: shape('rect', 0, 0),
     });
     store.addBlock({
       kind: 'oval',
@@ -190,11 +184,7 @@ describe('modelStore undo/redo', () => {
       x: 200,
       y: 100,
       library: 'presentation',
-      presentation: {
-        type: 'ellipse',
-        transform: { x: 200, y: 100, width: 120, height: 80, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
+      presentation: shape('oval', 200, 100),
     });
     const ids = useModelStore.getState().document.nodes.map((node) => node.id);
     const groupId = useModelStore.getState().groupShapes(ids);
@@ -211,29 +201,39 @@ describe('modelStore undo/redo', () => {
     useModelStore.getState().ungroupShape(groupId!);
     const ungrouped = useModelStore.getState().document;
     expect(ungrouped.nodes).toHaveLength(2);
-    expect(ungrouped.nodes.some((node) => node.presentation?.type === 'rect')).toBe(true);
+    expect(
+      ungrouped.nodes.some(
+        (node) =>
+          node.presentation?.type === 'shape' &&
+          node.presentation.geometry?.shapeType === 'rectangle',
+      ),
+    ).toBe(true);
     expect(ungrouped.nodes.some((node) => node.kind === 'oval')).toBe(true);
     expect(
-      ungrouped.nodes.some((node) => node.x === 200 && node.presentation?.type === 'ellipse'),
+      ungrouped.nodes.some(
+        (node) => node.x === 200 && node.presentation?.geometry?.shapeType === 'ellipse',
+      ),
     ).toBe(true);
   });
 
   it('aligns and reorders presentation shapes', () => {
     const store = useModelStore.getState();
-    const rect = (x: number, y: number) => ({
-      kind: 'rect' as const,
+    store.addBlock({
+      kind: 'rect',
       name: 'rect',
-      x,
-      y,
-      library: 'presentation' as const,
-      presentation: {
-        type: 'rect' as const,
-        transform: { x, y, width: 100, height: 50, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
+      x: 0,
+      y: 0,
+      library: 'presentation',
+      presentation: shape('rect', 0, 0, 100, 50),
     });
-    store.addBlock(rect(0, 0));
-    store.addBlock(rect(300, 200));
+    store.addBlock({
+      kind: 'rect',
+      name: 'rect',
+      x: 300,
+      y: 200,
+      library: 'presentation',
+      presentation: shape('rect', 300, 200, 100, 50),
+    });
     const ids = useModelStore.getState().document.nodes.map((node) => node.id);
 
     useModelStore.getState().alignShapes(ids, 'left');
@@ -254,21 +254,16 @@ describe('modelStore undo/redo', () => {
 
   it('distributes shapes evenly along the union span', () => {
     const store = useModelStore.getState();
-    const rect = (x: number) => ({
-      kind: 'rect' as const,
-      name: 'rect',
-      x,
-      y: 0,
-      library: 'presentation' as const,
-      presentation: {
-        type: 'rect' as const,
-        transform: { x, y: 0, width: 100, height: 50, rotation: 0, scaleX: 1, scaleY: 1 },
-        style: { fill: '#ffffff', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
-      },
-    });
-    store.addBlock(rect(0));
-    store.addBlock(rect(300));
-    store.addBlock(rect(400));
+    for (const x of [0, 300, 400]) {
+      store.addBlock({
+        kind: 'rect',
+        name: 'rect',
+        x,
+        y: 0,
+        library: 'presentation',
+        presentation: shape('rect', x, 0),
+      });
+    }
     const ids = useModelStore.getState().document.nodes.map((node) => node.id);
 
     useModelStore.getState().distributeShapes(ids, 'horizontal');

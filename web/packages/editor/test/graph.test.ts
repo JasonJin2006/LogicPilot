@@ -3,9 +3,10 @@ import {
   addNode,
   connect,
   createDocument,
-  defaultPresentationObject,
+  createGraphicNode,
   disconnect,
   moveNode,
+  normalizeGraphicNode,
   removeNode,
   renameNode,
   setParam,
@@ -13,7 +14,7 @@ import {
 
 describe('graph document operations', () => {
   it('attaches a presentation object to presentation nodes', () => {
-    const object = defaultPresentationObject('rect', 30, 40);
+    const object = createGraphicNode('rect', 30, 40);
     const doc = addNode(createDocument('M'), {
       kind: 'rect',
       name: 'rect',
@@ -25,14 +26,32 @@ describe('graph document operations', () => {
     expect(doc.nodes[0]!.presentation).toBe(object);
     expect(doc.nodes[0]!.presentation!.transform.width).toBe(120);
     expect(doc.nodes[0]!.presentation!.transform.height).toBe(80);
-    expect(doc.nodes[0]!.presentation!.style.stroke).toBe('#333333');
+    expect(doc.nodes[0]!.presentation!.style.stroke.color).toBe('#333333');
+    expect(doc.nodes[0]!.presentation!.type).toBe('shape');
+    expect(doc.nodes[0]!.presentation!.geometry?.shapeType).toBe('rectangle');
   });
 
   it('default text presentation carries editable text and style', () => {
-    const text = defaultPresentationObject('text', 0, 0);
+    const text = createGraphicNode('text', 0, 0);
     expect(text.text).toBe('Text');
     expect(text.textStyle?.fontSize).toBe(16);
     expect(text.transform.height).toBe(24);
+  });
+
+  it('normalizes legacy shape objects to the unified model', () => {
+    const legacy = {
+      type: 'roundedRect',
+      transform: { x: 10, y: 20, width: 100, height: 60, rotation: 0, scaleX: 1, scaleY: 1 },
+      style: { fill: '#ff0000', stroke: '#00ff00', strokeWidth: 3, opacity: 0.5 },
+    };
+    const normalized = normalizeGraphicNode(legacy)!;
+    expect(normalized.type).toBe('shape');
+    expect(normalized.geometry?.shapeType).toBe('rectangle');
+    expect(normalized.geometry?.radius).toBe(12);
+    expect(normalized.style.fill).toEqual({ kind: 'solid', color: '#ff0000' });
+    expect(normalized.style.stroke.color).toBe('#00ff00');
+    expect(normalized.style.stroke.width).toBe(3);
+    expect(normalized.style.opacity).toBe(0.5);
   });
 
   it('adds nodes with fresh ids and copied params', () => {

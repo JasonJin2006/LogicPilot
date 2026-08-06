@@ -5,7 +5,7 @@
 // the object. Drag math lives in ModelCanvas (it owns the view transform).
 
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import type { PresentationObject } from '@logicpilot/editor';
+import type { GraphicNode } from '@logicpilot/editor';
 
 export type ResizeHandleName = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
@@ -35,7 +35,7 @@ export const RESIZE_CURSOR: Record<ResizeHandleName, string> = {
 };
 
 interface TransformHandlesProps {
-  object: PresentationObject;
+  object: GraphicNode;
   ox: number;
   oy: number;
   onResizeStart: (handle: ResizeHandleName, event: ReactPointerEvent<SVGRectElement>) => void;

@@ -5,7 +5,7 @@ import { useModelStore } from '../state/modelStore';
 import { useCanvasView } from '../state/canvasView';
 import { BLOCK_DEFAULTS } from './blockDefs';
 import { PRESENTATION_KINDS } from './blockDefs';
-import { defaultPresentationObject, type PresentationType } from '@logicpilot/editor';
+import { createGraphicNode } from '@logicpilot/editor';
 
 let cascade = 0;
 
@@ -49,7 +49,7 @@ export function insertBlockAt(
     // Presentation shapes start as real vector objects (resizable, styleable)
     // instead of the old fixed 120x80 placeholder.
     ...(PRESENTATION_KINDS.has(kind)
-      ? { presentation: defaultPresentationObject(kind as PresentationType, pos.x, pos.y) }
+      ? { presentation: createGraphicNode(kind, pos.x, pos.y) }
       : {}),
   });
 }

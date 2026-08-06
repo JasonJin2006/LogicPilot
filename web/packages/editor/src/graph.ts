@@ -5,7 +5,7 @@
 // the IDE can layer undo/redo and diagnostics on top without mutating
 // shared state.
 
-import type { PresentationObject } from './presentation.js';
+import type { GraphicNode } from './presentation.js';
 
 // Any DSL v2 member kind: the five kernel blocks, container kinds and
 // library-registered or still-unknown kinds (the latter render as
@@ -36,10 +36,10 @@ export interface ModelNode {
    *  model and the DSL round-trip (never dropped), shown as a grey
    *  placeholder frame. */
   placeholder?: boolean;
-  /** Vector drawing object (AnyLogic presentation / Figma-style layer).
+  /** Vector drawing object (Figma-style vector graphics node).
    *  Present exactly for presentation-library nodes; geometry and style
    *  live here while `x`/`y` mirror `transform.x`/`transform.y`. */
-  presentation?: PresentationObject;
+  presentation?: GraphicNode;
 }
 
 /** A coupling between two block instances (process flow). `fromPort` /
@@ -68,7 +68,7 @@ export interface AddNodeInput {
   container?: string;
   library?: string;
   /** Vector drawing object for presentation-library nodes. */
-  presentation?: PresentationObject;
+  presentation?: GraphicNode;
 }
 
 let nextId = 1;

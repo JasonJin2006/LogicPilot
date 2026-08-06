@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNode, connect, createDocument, defaultPresentationObject } from '@logicpilot/editor';
+import { addNode, connect, createDocument, createGraphicNode } from '@logicpilot/editor';
 import type { ModelDocument } from '@logicpilot/editor';
 import { parseProjectSource } from './projectTree';
 import {
@@ -363,7 +363,7 @@ describe('project bundle', () => {
 
   it('round-trips presentation shapes through the project bundle', () => {
     let document = buildSample();
-    const shape = defaultPresentationObject('rect', 300, 200);
+    const shape = createGraphicNode('rect', 300, 200);
     document = addNode(document, {
       kind: 'rect',
       name: 'rect',
@@ -386,6 +386,6 @@ describe('project bundle', () => {
     expect(restored).toBeDefined();
     expect(restored!.presentation?.transform.x).toBe(300);
     expect(restored!.presentation?.transform.width).toBe(120);
-    expect(restored!.presentation?.style.fill).toBe('#ffffff');
+    expect(restored!.presentation?.style.fill).toEqual({ kind: 'solid', color: '#ffffff' });
   });
 });

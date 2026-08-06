@@ -181,6 +181,14 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    （文件 → data URL 持久化）、Ctrl+C/V/D 复制粘贴、方向键微调、Esc 取消、
    Shift 多选 + Ctrl+G 分组 / Inspector Ungroup、对齐（Inspector 6 向）、
    置顶/置底（Ctrl+] / Ctrl+[ 与 Inspector）。待办：图层面板、动画绑定 API。
+   **Phase 0：Vector Graphics Engine 数据模型 ✅ 已完成**（2026-08-06）：
+   拆除「组件类型」抽象（rect/roundedRect/oval 不再是独立 kind 语义），
+   对象模型统一为 `GraphicNode`（shape + geometry / text / image / group /
+   path），圆角是 rectangle 的 `radius` 属性；transform 增加 skew；style
+   升级为 fill（solid/渐变）/ stroke（dash/join/cap）/ shadow / blur；
+   旧画布 v3 对象经 `normalizeGraphicNode` 自动迁移。渲染器支持渐变填充与
+   阴影/模糊滤镜，Inspector 增加 radius/渐变/阴影/模糊编辑。待办：Pen 工具、
+   Boolean 运算、Frame/Auto layout、Simulation Binding。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

@@ -8,14 +8,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
-import type {
-  BlockKind,
-  ModelNode,
-  PresentationObject,
-  PresentationTransform,
-  PresentationType,
-} from '@logicpilot/editor';
-import { defaultPresentationObject } from '@logicpilot/editor';
+import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
+import { createGraphicNode } from '@logicpilot/editor';
 import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd';
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
@@ -41,7 +35,7 @@ const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
 const VIEW_MARGIN = 48;
 
 // Cross-shape clipboard for Ctrl+C / Ctrl+V on presentation objects.
-let shapeClipboard: { kind: string; object: PresentationObject } | null = null;
+let shapeClipboard: { kind: string; object: GraphicNode } | null = null;
 
 // Ports the canvas shows for a node: every catalog port, including the
 // conditional ones (outTimeout / outPreempted / preparedUnits / wrapUp) at
@@ -168,7 +162,7 @@ export function ModelCanvas() {
     id: string;
     kind: 'resize' | 'rotate';
     handle?: ResizeHandleName;
-    startTransform: PresentationTransform;
+    startTransform: GraphicTransform;
   } | null>(null);
   // Presentation editing UI state: inline text editing, shift-click
   // multi-selection and the image file picker target.
@@ -502,9 +496,9 @@ export function ModelCanvas() {
   // Resize / rotate gestures on the selected presentation object. The drag
   // runs on window pointer events; resize happens in the object's unrotated
   // local frame around its centre so rotation stays stable.
-  const startShapeResize = (id: string, handle: ResizeHandleName, object: PresentationObject) =>
+  const startShapeResize = (id: string, handle: ResizeHandleName, object: GraphicNode) =>
     setTransformDrag({ id, kind: 'resize', handle, startTransform: object.transform });
-  const startShapeRotate = (id: string, object: PresentationObject) =>
+  const startShapeRotate = (id: string, object: GraphicNode) =>
     setTransformDrag({ id, kind: 'rotate', startTransform: object.transform });
 
   useEffect(() => {
@@ -753,9 +747,7 @@ export function ModelCanvas() {
         style={{ left: minX, top: minY, width: maxX - minX, height: maxY - minY }}
       >
         {shapeNodes.map((node) => {
-          const shapeObject =
-            node.presentation ??
-            defaultPresentationObject(node.kind as PresentationType, node.x, node.y);
+          const shapeObject = node.presentation ?? createGraphicNode(node.kind, node.x, node.y);
           const selected = node.id === selectedId;
           const multi = shapeIds.includes(node.id);
           const t = shapeObject.transform;
@@ -789,7 +781,7 @@ export function ModelCanvas() {
                 }
               }}
             >
-              <PresentationRenderer object={shapeObject} ox={minX} oy={minY} />
+              <PresentationRenderer object={shapeObject} ox={minX} oy={minY} uid={node.id} />
               {node.id === editingTextId && shapeObject.type === 'text' && (
                 <foreignObject
                   x={0}

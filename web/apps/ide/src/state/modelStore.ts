@@ -16,10 +16,10 @@ import {
   renameNode,
   setParam,
   type AddNodeInput,
+  defaultGraphicStyle,
+  type GraphicNode,
   type ModelDocument,
   type ModelNode,
-  type PresentationObject,
-  defaultPresentationStyle,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
 
@@ -28,9 +28,26 @@ const MAX_HISTORY = 100;
 // into a single undo step.
 const COALESCE_MS = 600;
 
-/** Presentation object type -> canvas node kind (the palette names ovals
- *  'oval' while the scene-graph type is 'ellipse'). */
-const PRESENTATION_KIND_BY_TYPE: Record<string, string> = { ellipse: 'oval' };
+/** GraphicNode -> canvas node kind for ungrouped children (the palette names
+ *  shapes by their legacy kinds: rect / oval / polyline / curve). */
+function presentationKindFor(child: GraphicNode): string {
+  if (child.type === 'shape') {
+    switch (child.geometry?.shapeType) {
+      case 'rectangle':
+        return 'rect';
+      case 'ellipse':
+        return 'oval';
+      case 'polygon':
+        return 'polyline';
+      default:
+        return 'line';
+    }
+  }
+  if (child.type === 'path') {
+    return 'curve';
+  }
+  return child.type; // text / image / group
+}
 
 /** Alignment axis for the multi-selected presentation shapes. */
 export type AlignAxis = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
@@ -74,7 +91,7 @@ interface ModelState {
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
   /** Replace a node's vector presentation object (undoable). Keeps the
    *  node's x/y in sync with the object's transform. */
-  setPresentation: (id: string, object: PresentationObject) => void;
+  setPresentation: (id: string, object: GraphicNode) => void;
   /** Merge presentation nodes into one `group` node (undoable). Returns the
    *  new node's id, or null when fewer than two nodes were given. */
   groupShapes: (ids: string[]) => string | null;
@@ -216,7 +233,7 @@ export const useModelStore = create<ModelState>()((set) => ({
     const state = useModelStore.getState();
     const members = ids
       .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
-      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+      .filter((node): node is ModelNode & { presentation: GraphicNode } => !!node);
     if (members.length < 2) {
       return null;
     }
@@ -255,8 +272,10 @@ export const useModelStore = create<ModelState>()((set) => ({
           rotation: 0,
           scaleX: 1,
           scaleY: 1,
+          skewX: 0,
+          skewY: 0,
         },
-        style: defaultPresentationStyle(),
+        style: defaultGraphicStyle(),
         children,
       },
     };
@@ -279,7 +298,7 @@ export const useModelStore = create<ModelState>()((set) => ({
     }
     const g = group.presentation.transform;
     const newNodes: ModelNode[] = children.map((child) => {
-      const kind = PRESENTATION_KIND_BY_TYPE[child.type] ?? child.type;
+      const kind = presentationKindFor(child);
       return {
         id: freshId(kind),
         kind,
@@ -309,7 +328,7 @@ export const useModelStore = create<ModelState>()((set) => ({
     const state = useModelStore.getState();
     const targets = ids
       .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
-      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+      .filter((node): node is ModelNode & { presentation: GraphicNode } => !!node);
     if (targets.length < 2) {
       return;
     }
@@ -348,7 +367,7 @@ export const useModelStore = create<ModelState>()((set) => ({
     const state = useModelStore.getState();
     const targets = ids
       .map((id) => state.document.nodes.find((node) => node.id === id && node.presentation))
-      .filter((node): node is ModelNode & { presentation: PresentationObject } => !!node);
+      .filter((node): node is ModelNode & { presentation: GraphicNode } => !!node);
     if (targets.length < 3) {
       return;
     }

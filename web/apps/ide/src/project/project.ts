@@ -4,8 +4,14 @@
 // (docs/specs/project-format.md) so it can later be unpacked to disk without
 // data loss.
 
-import { createDocument, freshId, generateDsl, parseDsl } from '@logicpilot/editor';
-import type { ModelDocument, ModelEdge, ModelNode, PresentationObject } from '@logicpilot/editor';
+import {
+  createDocument,
+  freshId,
+  generateDsl,
+  normalizeGraphicNode,
+  parseDsl,
+} from '@logicpilot/editor';
+import type { GraphicNode, ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
 import { insertMember, parseProjectMembers, parseProjectSource, replaceSpan } from './projectTree';
 
 /** Container kinds reload with a nested structure (one scene file each). */
@@ -413,7 +419,7 @@ export function canvasLayoutJson(document: ModelDocument): string {
     .map((node) => ({
       kind: node.kind,
       name: node.name,
-      object: node.presentation as PresentationObject,
+      object: node.presentation as GraphicNode,
     }));
   return JSON.stringify(
     { schema: 'logicpilot.canvas', version: 3, layout, edges, shapes },
@@ -606,8 +612,8 @@ function applyCanvasLayout(document: ModelDocument, text: string): void {
       }
       const kind = typeof shape.kind === 'string' ? shape.kind : 'rect';
       const name = typeof shape.name === 'string' ? shape.name : kind;
-      const object = shape.object as PresentationObject;
-      if (!object || typeof object.transform !== 'object') {
+      const object = normalizeGraphicNode(shape.object);
+      if (!object) {
         continue;
       }
       const existing = document.nodes.find(

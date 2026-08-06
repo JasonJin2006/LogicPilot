@@ -80,7 +80,8 @@ factory-twin.lpproj/                  # 一个工程 = 一个模型 + 它的世�
       "kind": "rect",
       "name": "rect",
       "object": {
-        "type": "rect",
+        "type": "shape",
+        "geometry": { "shapeType": "rectangle", "width": 120, "height": 80, "radius": 0 },
         "transform": {
           "x": 300,
           "y": 200,
@@ -88,9 +89,21 @@ factory-twin.lpproj/                  # 一个工程 = 一个模型 + 它的世�
           "height": 80,
           "rotation": 0,
           "scaleX": 1,
-          "scaleY": 1
+          "scaleY": 1,
+          "skewX": 0,
+          "skewY": 0
         },
-        "style": { "fill": "#ffffff", "stroke": "#333333", "strokeWidth": 1.5, "opacity": 1 }
+        "style": {
+          "fill": { "kind": "solid", "color": "#ffffff" },
+          "stroke": {
+            "color": "#333333",
+            "width": 1.5,
+            "dash": [],
+            "join": "miter",
+            "cap": "butt"
+          },
+          "opacity": 1
+        }
       }
     }
   ]
@@ -98,9 +111,10 @@ factory-twin.lpproj/                  # 一个工程 = 一个模型 + 它的世�
 ```
 
 `layout`/`edges` 按稳定节点路径记录过程块的坐标与连线；`shapes` 是 v3 新增的
-**矢量表现对象**（Presentation 编辑器）：完整几何与样式随画布文件持久化，
-打开工程时由 `applyCanvasLayout` 还原（这些节点不进 DSL）。旧 v2 文件仍可读，
-但会丢失表现层形状。
+**矢量图形对象**（Figma 式：`shape + geometry`，圆角是 rectangle 的 `radius`
+属性而非独立组件类型），打开工程时由 `applyCanvasLayout` 还原（这些节点不进
+DSL），旧格式对象经 `normalizeGraphicNode` 自动迁移。旧 v2 文件仍可读，但会
+丢失表现层形状。
 
 ## 5.1 模型片段（model parts）
 

@@ -22,16 +22,29 @@ export { generateDsl } from './dsl.js';
 export { parseDsl } from './parseDsl.js';
 export type { ParseResult } from './parseDsl.js';
 export {
-  defaultPresentationObject,
-  defaultPresentationStyle,
-  defaultPresentationTransform,
+  createGraphicNode,
+  defaultGraphicStyle,
+  defaultGraphicTransform,
+  groupNode,
+  imageNode,
+  normalizeGraphicNode,
+  pathNode,
+  shapeNode,
+  textNode,
 } from './presentation.js';
 export type {
-  PresentationObject,
-  PresentationStyle,
-  PresentationTextStyle,
-  PresentationTransform,
-  PresentationType,
+  GraphicFill,
+  GraphicNode,
+  GraphicPath,
+  GraphicShadow,
+  GraphicStroke,
+  GraphicStyle,
+  GraphicTextStyle,
+  GraphicTransform,
+  GraphicType,
+  Point,
+  ShapeGeometry,
+  ShapeType,
 } from './presentation.js';
 export { modelRunParams } from './runParams.js';
 export type { ModelRunParams } from './runParams.js';
