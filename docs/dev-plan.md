@@ -69,6 +69,13 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   比较运算（`< > <= >=`），`selectOutput` 按 `condition` 路由、`hold` 按
   `blockingCondition` 阻塞，条件原文随 IR 传递（编译时折叠常量比较，非折叠
   字段降级为字符串参数），运行时按 `t`/`time` + 块数值参数求值。
+- **DES 块真语义已落地（2026-08-06）**：通用流程引擎按 AnyLogic 语义补齐
+  `seize→release`（引擎级资源池持有/归还，不足时排队）、`batch/unbatch`
+  （permanent/temporary）、`combine`（in1/in2 合成）、`match`（双流同步，
+  out1/out2 原子输出）、`timeMeasureStart/End`（`measure` 指标进
+  metrics.json）；新增 6 个内核测试 + 3 个示例（seize_release / batch_unbatch
+  / combine_time）经 lpcli 编译运行冒烟。hold 的 `initiallyBlocked`/`freeze`
+  布尔字段此前读取失效，随 `node_bool_param` 一并修复。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

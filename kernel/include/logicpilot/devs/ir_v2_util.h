@@ -21,6 +21,7 @@ namespace logicpilot::ir_v2_util {
 using ir::v2::Distribution;
 using ir::v2::Node;
 using ir::v2::Var;
+using ir::v2::VarType_Bool;
 using ir::v2::VarType_Distribution;
 using ir::v2::VarType_Float;
 using ir::v2::VarType_Int;
@@ -80,6 +81,24 @@ inline std::int64_t node_int_param(const Node* node, const char* name,
     return var->int_value();
   }
   return fallback;
+}
+
+// Bool block parameters (`permanent`, `initiallyBlocked`, ...) lower to
+// VarType_Bool; also accept int-typed values for robustness.
+inline bool node_bool_param(const Node* node, const char* name,
+                            bool fallback) {
+  const Var* var = node_var(node, name);
+  if (var == nullptr) {
+    return fallback;
+  }
+  switch (var->type()) {
+    case VarType_Bool:
+      return var->bool_value();
+    case VarType_Int:
+      return var->int_value() != 0;
+    default:
+      return fallback;
+  }
 }
 
 inline const char* node_string_param(const Node* node, const char* name) {

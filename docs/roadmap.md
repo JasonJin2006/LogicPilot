@@ -186,6 +186,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    assembler/count，均配图标与 in/out 端口；新增块的常用字段进 Properties
    （delay.time、seize/release.resource、split.copies、batch.size 等）；
    DSL 会照常生成（内核尚未注册的新块编译时报 LP2004）。
+   **DES 块真语义 ✅ 已完成**（2026-08-06）：seize→release 引擎级资源池
+   持有/归还、batch/unbatch（permanent/temporary）、combine（in1/in2）、
+   match（双流同步 out1/out2）、timeMeasureStart/End（`measure` 指标）；
+   内核测试 + `examples/{seize_release,batch_unbatch,combine_time}.lp`
+   lpcli 冒烟全绿；enter/exit/moveTo/assembler 仍为直通占位。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

@@ -34,6 +34,10 @@ struct ReplicationMetrics {
   double mean_in_queue{0.0};     // Lq - time-average number waiting
   double mean_sojourn{0.0};      // W  - mean time in system (per customer)
   double mean_wait{0.0};         // Wq - mean wait before service
+  // TimeMeasureStart/End pair statistic (process library): mean time between
+  // the paired marker blocks, and how many agents were measured.
+  double mean_measure{0.0};
+  std::uint64_t measure_count{0};
   // Milestone 1d: server-pool health (0 for non-flow models).
   double utilization{0.0};       // busy servers / servers, time-averaged
   double availability{0.0};      // 1 - down servers / servers, time-averaged
@@ -97,6 +101,7 @@ struct ReplicationSummary {
   MetricSummary mean_in_queue;
   MetricSummary mean_sojourn;
   MetricSummary mean_wait;
+  MetricSummary mean_measure;
   MetricSummary utilization;
   MetricSummary availability;
   MetricSummary final_value;

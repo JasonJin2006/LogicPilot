@@ -71,6 +71,23 @@ hold Gate {
 同种子下结果确定。条件字段引用未声明的标识符会得到 `LP5006` 诊断（只允许
 `t`/`time` 与本块自身的数值字段）。
 
+### DES 块语义（batch/combine/match/seize/release/测量）
+
+通用流程引擎（`ProcessFlowSim`）已实现以下 AnyLogic 语义块的执行行为：
+
+- `batch` / `unbatch`：`batchSize` 个 agent 聚成一个批（`permanent = true`
+  丢弃原件；`false` 时原件作为批内容，`unbatch` 恢复为独立 agent）。
+- `combine`：等待 `in1`/`in2` 两个输入各一个 agent 后合成一个（零时间）。
+- `match`：同步两条流，双方都到齐时成对从 `out1`/`out2` 同时输出。
+- `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
+  单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
+- `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
+  `lpcli run` 输出与 `metrics.json`。
+
+`count` 继续直通计数；`enter`/`exit`/`moveTo`/`assembler` 暂为直通占位
+（位置/装配语义为后续工作）。示例：`examples/seize_release.lp`、
+`examples/batch_unbatch.lp`、`examples/combine_time.lp`。
+
 ## 表达式与参数
 
 数值字段接受**编译期常量表达式**（`+ - * /`、一元负、括号），并可通过
@@ -184,5 +201,8 @@ use manufacturing
 | `examples/pulse_chain.lp` | DEVS 原子链 |
 | `examples/agents.lp` | ABM 群体 |
 | `examples/decay.lp` / `examples/sir.lp` | 连续 ODE（解析解验收） |
+| `examples/seize_release.lp` | 资源抢占/归还（seize→delay→release） |
+| `examples/batch_unbatch.lp` | 临时批：batch→unbatch 还原 agent |
+| `examples/combine_time.lp` | combine 同步两流 + timeMeasure 测量 |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

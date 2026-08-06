@@ -1,6 +1,7 @@
 // lpcli `run` subcommand implementation.
 #include "run_command.h"
 
+#include <algorithm>
 #include <charconv>
 #include <ctime>
 #include <filesystem>
@@ -145,6 +146,13 @@ int write_results(const std::string& dir, const RunOptions& options,
     write_metric(out, "Lq", summary.mean_in_queue, false);
     write_metric(out, "W", summary.mean_sojourn, false);
     write_metric(out, "Wq", summary.mean_wait, false);
+    const bool has_measure =
+        std::any_of(results.begin(), results.end(), [](const ReplicationMetrics& m) {
+          return m.measure_count > 0;
+        });
+    if (has_measure) {
+      write_metric(out, "measure", summary.mean_measure, false);
+    }
     write_metric(out, "utilization", summary.utilization, false);
     write_metric(out, "availability", summary.availability, false);
     write_metric(out, "final_value", summary.final_value, false);
@@ -160,6 +168,7 @@ int write_results(const std::string& dir, const RunOptions& options,
           << ",\"Lq\":" << json_double(m.mean_in_queue)
           << ",\"W\":" << json_double(m.mean_sojourn)
           << ",\"Wq\":" << json_double(m.mean_wait)
+          << ",\"measure\":" << json_double(m.mean_measure)
           << ",\"utilization\":" << json_double(m.utilization)
           << ",\"availability\":" << json_double(m.availability)
           << ",\"final_value\":" << json_double(m.final_value) << "}";
@@ -541,6 +550,11 @@ int run_command(std::span<const std::string> args) {
   print_row("Lq", summary.mean_in_queue, theory.lq, is_builtin_mm1);
   print_row("W", summary.mean_sojourn, theory.w, is_builtin_mm1);
   print_row("Wq", summary.mean_wait, theory.wq, is_builtin_mm1);
+  if (std::any_of(results.begin(), results.end(), [](const ReplicationMetrics& m) {
+        return m.measure_count > 0;
+      })) {
+    print_row("measure", summary.mean_measure, 0.0, false);
+  }
   print_row("utilization", summary.utilization, theory.rho, is_builtin_mm1);
   print_row("availability", summary.availability, 0.0, false);
   print_row("final_value", summary.final_value, 0.0, false);

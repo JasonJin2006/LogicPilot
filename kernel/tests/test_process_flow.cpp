@@ -47,6 +47,12 @@ flatbuffers::Offset<Var> var_float(flatbuffers::FlatBufferBuilder& b,
                    0);
 }
 
+flatbuffers::Offset<Var> var_bool(flatbuffers::FlatBufferBuilder& b,
+                                  const char* name, bool value) {
+  return CreateVar(b, b.CreateString(name), VarType_Bool, value, 0, 0.0, 0,
+                   0);
+}
+
 flatbuffers::Offset<Var> var_string(flatbuffers::FlatBufferBuilder& b,
                                     const char* name, const char* value) {
   return CreateVar(b, b.CreateString(name), VarType_String, false, 0, 0.0,
@@ -388,4 +394,202 @@ TEST_CASE("process flow: hold blockingCondition blocks tokens while true",
       run_hold("t < 100000000");  // always -> tokens stay behind the hold
   REQUIRE(open.departures == 1000);
   REQUIRE(blocked.departures < 1000);
+}
+
+TEST_CASE("process flow: batch (permanent) groups batchSize agents into one",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto batch = block(
+      builder, "B", "batch",
+      {var_int(builder, "batchSize", 3), var_bool(builder, "permanent", true)},
+      {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, batch, sink},
+      {couple(builder, "In", "out", "B", "in"),
+       couple(builder, "B", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 9, 0);
+  // 9 agents -> 3 permanent batches.
+  REQUIRE(metrics.departures == 3);
+}
+
+TEST_CASE("process flow: batch (temporary) then unbatch restores agents",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto batch = block(
+      builder, "B", "batch",
+      {var_int(builder, "batchSize", 3),
+       var_bool(builder, "permanent", false)},
+      {});
+  const auto unbatch = block(builder, "U", "unbatch", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, batch, unbatch, sink},
+      {couple(builder, "In", "out", "B", "in"),
+       couple(builder, "B", "out", "U", "in"),
+       couple(builder, "U", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 9, 0);
+  // The temporary batch is split back into its 9 original agents.
+  REQUIRE(metrics.departures == 9);
+}
+
+TEST_CASE("process flow: combine waits for both inputs and emits one",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto in1 = block(
+      builder, "In1", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in2 = block(
+      builder, "In2", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto combine = block(builder, "C", "combine", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {in1, in2, combine, sink},
+      {couple(builder, "In1", "out", "C", "in1"),
+       couple(builder, "In2", "out", "C", "in2"),
+       couple(builder, "C", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
+  // 10 arrivals split 5/5 across the two streams -> 5 combined agents.
+  REQUIRE(metrics.departures == 5);
+}
+
+TEST_CASE("process flow: match synchronizes two streams (pure synchronizer)",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto in1 = block(
+      builder, "In1", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in2 = block(
+      builder, "In2", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto match = block(builder, "M", "match", {}, {});
+  const auto sink1 = block(builder, "K1", "sink", {}, {});
+  const auto sink2 = block(builder, "K2", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {in1, in2, match, sink1, sink2},
+      {couple(builder, "In1", "out", "M", "in1"),
+       couple(builder, "In2", "out", "M", "in2"),
+       couple(builder, "M", "out1", "K1", "in"),
+       couple(builder, "M", "out2", "K2", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 20, 0);
+  // Synchronized streams (same rate): every arrival pairs 1:1, so 20 agents
+  // (10 pairs) exit through the two branches.
+  REQUIRE(metrics.departures == 20);
+}
+
+TEST_CASE("process flow: seize holds pool units until release",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto resource = block(
+      builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+  const auto seize = block(
+      builder, "Grab", "seize",
+      {var_string(builder, "resource", "Server"),
+       var_int(builder, "numberOfUnits", 1)},
+      {});
+  const auto delay = block(
+      builder, "Work", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto release = block(builder, "Drop", "release", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder, {source, seize, delay, release, sink},
+      {couple(builder, "In", "out", "Grab", "in"),
+       couple(builder, "Grab", "out", "Work", "in"),
+       couple(builder, "Work", "out", "Drop", "in"),
+       couple(builder, "Drop", "out", "K", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
+  // One unit, 0.5s hold, arrivals every 0.1s: agents queue at the seize and
+  // all 10 complete once units are released.
+  REQUIRE(metrics.departures == 10);
+  REQUIRE(metrics.mean_in_queue > 0.0);
+}
+
+TEST_CASE("process flow: timeMeasureStart/End measure delay time",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto start = block(builder, "T0", "timeMeasureStart", {}, {});
+  const auto delay = block(
+      builder, "D", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto end = block(builder, "T1", "timeMeasureEnd", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, start, delay, end, sink},
+      {couple(builder, "In", "out", "T0", "in"),
+       couple(builder, "T0", "out", "D", "in"),
+       couple(builder, "D", "out", "T1", "in"),
+       couple(builder, "T1", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 4, 0);
+  // Constant 0.5s delay between the markers: every agent measures exactly 0.5s.
+  REQUIRE(metrics.measure_count == 4);
+  REQUIRE(metrics.mean_measure == 0.5);
+}
+
+TEST_CASE("process flow: hold with initiallyBlocked=true stays blocked",
+          "[process_flow][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto hold = block(
+      builder, "H", "hold",
+      {var_bool(builder, "initiallyBlocked", true)}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, hold, sink},
+      {couple(builder, "In", "out", "H", "in"),
+       couple(builder, "H", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
+  REQUIRE(metrics.departures == 0);  // blocked forever, no arrivals exit
 }

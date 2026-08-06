@@ -41,6 +41,7 @@ using logicpilot::ir_v2_util::make_sampler;
 using logicpilot::ir_v2_util::node_dist_param;
 using logicpilot::ir_v2_util::node_float_param;
 using logicpilot::ir_v2_util::node_int_param;
+using logicpilot::ir_v2_util::node_bool_param;
 using logicpilot::ir_v2_util::node_string_param;
 
 constexpr EventType kArriveEvent = 20;
@@ -123,9 +124,17 @@ std::unique_ptr<ProcessBlock> make_block(
         std::move(sampler), false);
   }
   if (kind == "seize") {
-    return std::make_unique<ServiceBlock>(
-        name, pool_servers(node_string_param(stage, "resource")),
-        TimeSampler{}, true);
+    const char* resource = node_string_param(stage, "resource");
+    std::int64_t capacity = node_int_param(stage, "capacity", 100);
+    if (node_bool_param(stage, "maximumCapacity", false)) {
+      capacity = -1;
+    }
+    return std::make_unique<SeizeBlock>(
+        name, resource != nullptr ? resource : name,
+        node_int_param(stage, "numberOfUnits", 0), capacity);
+  }
+  if (kind == "release") {
+    return std::make_unique<ReleaseBlock>(name);
   }
   if (kind == "queue" || kind == "wait") {
     std::int64_t capacity = node_int_param(stage, "capacity", -1);
@@ -148,15 +157,36 @@ std::unique_ptr<ProcessBlock> make_block(
         block_numeric_params(stage));
   }
   if (kind == "hold") {
-    const bool frozen = node_int_param(stage, "initiallyBlocked", 0) != 0 ||
-                        node_int_param(stage, "freeze", 0) != 0;
+    const bool frozen = node_bool_param(stage, "initiallyBlocked", false) ||
+                        node_bool_param(stage, "freeze", false);
     return std::make_unique<GenericBlock>(
         kind, name, 0.5, 2, frozen, "",
         block_string_param(stage, "blockingCondition"),
         block_numeric_params(stage));
   }
-  // count / release / enter / exit / batch / unbatch / combine / match /
-  // moveTo / ... pass tokens through with counters maintained.
+  if (kind == "batch") {
+    return std::make_unique<BatchBlock>(
+        name, node_int_param(stage, "batchSize", 10),
+        node_bool_param(stage, "permanent", false));
+  }
+  if (kind == "unbatch") {
+    return std::make_unique<UnbatchBlock>(name);
+  }
+  if (kind == "combine") {
+    return std::make_unique<CombineBlock>(
+        name, block_string_param(stage, "combineMode"));
+  }
+  if (kind == "match") {
+    return std::make_unique<MatchBlock>(name);
+  }
+  if (kind == "timeMeasureStart") {
+    return std::make_unique<TimeMeasureStartBlock>(name);
+  }
+  if (kind == "timeMeasureEnd") {
+    return std::make_unique<TimeMeasureEndBlock>(name);
+  }
+  // count / enter / exit / moveTo / assembler / ... pass tokens through with
+  // counters maintained (location/assembly semantics are future work).
   return std::make_unique<GenericBlock>(kind, name, 0.5, 2, false);
 }
 
@@ -171,7 +201,6 @@ class Engine final : public BlockContext {
       fail(error, "process flow has no blocks");
       return;
     }
-    std::unordered_map<std::string, std::int64_t> resource_capacity;
     if (root != nullptr && root->children() != nullptr) {
       for (const Node* child : *root->children()) {
         if (child != nullptr && child->semantics() != nullptr &&
@@ -186,7 +215,7 @@ class Engine final : public BlockContext {
                       child->metadata()->name() != nullptr
                   ? child->metadata()->name()->str()
                   : "";
-          resource_capacity[name] = node_int_param(child, "capacity", 1);
+          resource_capacity_[name] = node_int_param(child, "capacity", 1);
         }
       }
     }
@@ -199,13 +228,16 @@ class Engine final : public BlockContext {
       }
       const std::string name = stage->metadata()->name()->str();
       const std::string kind = stage->semantics()->block()->str();
-      auto block = make_block(stage, kind, name, resource_capacity, error);
+      auto block = make_block(stage, kind, name, resource_capacity_, error);
       if (block == nullptr) {
         return;
       }
       index_[name] = blocks_.size();
       if (kind == "source") {
         sources_.push_back(blocks_.size());
+      }
+      if (kind == "seize") {
+        resource_seizers_.push_back(blocks_.size());
       }
       blocks_.push_back(std::move(block));
     }
@@ -236,12 +268,15 @@ class Engine final : public BlockContext {
             coupling->from_port() != nullptr
                 ? coupling->from_port()->str()
                 : "out";
-        out_edges_[from_it->second].push_back({to_it->second, from_port});
+        const std::string to_port =
+            coupling->to_port() != nullptr ? coupling->to_port()->str() : "in";
+        out_edges_[from_it->second].push_back(
+            {to_it->second, from_port, to_port});
         in_edges_[to_it->second].push_back(from_it->second);
       }
     } else {
       for (std::size_t i = 0; i + 1 < blocks_.size(); ++i) {
-        out_edges_[i].push_back({i + 1, "out"});
+        out_edges_[i].push_back({i + 1, "out", "in"});
         in_edges_[i + 1].push_back(i);
       }
     }
@@ -271,11 +306,17 @@ class Engine final : public BlockContext {
     sojourn_count_ = 0;
     wait_sum_ = 0.0;
     wait_count_ = 0;
+    measure_sum_ = 0.0;
+    measure_count_ = 0;
     servers_total_ = 0;
+    available_.clear();
     for (auto& block : blocks_) {
       block->clear_buffers();
       block->reset_stats();
       servers_total_ += block->pool_capacity();
+    }
+    for (const auto& [resource, capacity] : resource_capacity_) {
+      available_[resource] = capacity;
     }
     depart_handler_ =
         handlers().add([this](const Event& event) { on_depart(event); });
@@ -329,6 +370,10 @@ class Engine final : public BlockContext {
     metrics.mean_wait = wait_count_ == 0
                             ? 0.0
                             : wait_sum_ / static_cast<double>(wait_count_);
+    metrics.mean_measure = measure_count_ == 0
+                               ? 0.0
+                               : measure_sum_ / static_cast<double>(measure_count_);
+    metrics.measure_count = measure_count_;
     if (horizon_ns > 0 && servers_total_ > 0) {
       metrics.utilization =
           busy_area / static_cast<double>(horizon_ns) /
@@ -389,10 +434,60 @@ class Engine final : public BlockContext {
     }
   }
 
+  bool try_seize(const std::string& resource,
+                 std::int64_t quantity) override {
+    const auto it = available_.find(resource);
+    if (it == available_.end()) {
+      // No declared pool: default to a single unit (mirrors the service
+      // fallback when `resource = R` is absent).
+      available_[resource] = 1;
+    }
+    std::int64_t& units = available_[resource];
+    if (units < quantity) {
+      return false;
+    }
+    units -= quantity;
+    return true;
+  }
+
+  void release_resources(const std::string& resource,
+                         std::int64_t quantity) override {
+    available_[resource] += quantity;
+    // A freed unit may unblock waiting Seize blocks; re-process them in this
+    // pump pass (blocked updates simply return false).
+    for (const std::size_t seizer : resource_seizers_) {
+      work_.push_back(seizer);
+    }
+  }
+
+  bool downstream_accepts(const Entity& entity, const char* port) override {
+    const auto it = out_edges_.find(current_);
+    if (it == out_edges_.end() || it->second.empty()) {
+      return true;  // no downstream on this port: the entity leaves
+    }
+    for (const Edge& edge : it->second) {
+      if (edge.from_port != port) {
+        continue;
+      }
+      if (!blocks_[edge.to]->can_accept()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void record_measure(const Entity& entity, double seconds) override {
+    if (entity.id >= warmup_) {
+      measure_sum_ += seconds;
+      ++measure_count_;
+    }
+  }
+
  private:
   struct Edge {
     std::size_t to;
     std::string from_port;
+    std::string to_port;
   };
 
   void accumulate_areas(std::int64_t now_ns) {
@@ -453,7 +548,7 @@ class Engine final : public BlockContext {
       if (edge.from_port != port) {
         continue;
       }
-      if (!push(edge.to, entity)) {
+      if (!push(edge.to, entity, edge.to_port)) {
         all = false;
       } else {
         work_.push_back(edge.to);
@@ -465,12 +560,13 @@ class Engine final : public BlockContext {
   // Accept an entity into block `to`, respecting its buffering rules.
   // Returns false when the block cannot take it right now (the caller keeps
   // it, so upstream capacity propagates backwards).
-  bool push(std::size_t to, const Entity& entity) {
+  bool push(std::size_t to, const Entity& entity,
+            const std::string& port) {
     ProcessBlock& block = *blocks_[to];
     if (!block.can_accept()) {
       return false;
     }
-    block.receive(entity);
+    block.receive(entity, port);
     return true;
   }
 
@@ -531,6 +627,9 @@ class Engine final : public BlockContext {
   std::unordered_map<std::string, std::size_t> index_;
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
+  std::unordered_map<std::string, std::int64_t> resource_capacity_;
+  std::unordered_map<std::string, std::int64_t> available_;
+  std::vector<std::size_t> resource_seizers_;
   Xoshiro256PlusPlus engine_{0};
   HandlerId arrive_handler_{0};
   HandlerId depart_handler_{0};
@@ -544,6 +643,8 @@ class Engine final : public BlockContext {
   std::uint64_t sojourn_count_{0};
   double wait_sum_{0.0};
   std::uint64_t wait_count_{0};
+  double measure_sum_{0.0};
+  std::uint64_t measure_count_{0};
   std::uint64_t warmup_{0};
   std::uint64_t servers_total_{0};
   std::size_t current_{0};

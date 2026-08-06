@@ -238,3 +238,21 @@ add_test(NAME lpcli_compile_rejects_bad_experiment
           -o "${CMAKE_CURRENT_BINARY_DIR}/bad3.ir.bin")
 set_tests_properties(lpcli_compile_rejects_bad_experiment PROPERTIES
   PASS_REGULAR_EXPRESSION "error\\[LP7001\\]")
+
+# DES block semantics end-to-end: the DSL -> IR -> generic ProcessFlowSim
+# chain for Seize/Release, Batch/Unbatch and Combine+TimeMeasure.
+foreach(example seize_release batch_unbatch combine_time)
+  add_test(NAME lpcli_compile_${example}
+    COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/${example}.lp"
+            -o "${CMAKE_CURRENT_BINARY_DIR}/${example}.ir.bin")
+  set_tests_properties(lpcli_compile_${example} PROPERTIES
+    PASS_REGULAR_EXPRESSION "compiled")
+
+  add_test(NAME lpcli_run_${example}
+    COMMAND lpcli run --model-file
+            "${CMAKE_CURRENT_BINARY_DIR}/${example}.ir.bin"
+            --seed=42 --reps=1 --arrivals=60 --warmup=0)
+  set_tests_properties(lpcli_run_${example} PROPERTIES
+    DEPENDS lpcli_compile_${example}
+    PASS_REGULAR_EXPRESSION "summary: 1 replications")
+endforeach()

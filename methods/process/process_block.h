@@ -17,6 +17,8 @@
 #include <deque>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/core/time/sim_time.h"
@@ -28,6 +30,14 @@ struct Entity {
   std::uint64_t id{0};
   std::int64_t created_ns{0};        // source emission time
   std::int64_t service_start_ns{0};  // last service/delay start
+  // Temporary batch contents (Batch with permanent=false; restored by
+  // Unbatch) and resource units held by Seize until Release.
+  std::vector<Entity> contents;
+  std::unordered_map<std::string, std::int64_t> resources;
+  // TimeMeasureStart/End pair: timestamp set by the start block and
+  // measured when the entity reaches the paired end block.
+  std::int64_t measure_start_ns{0};
+  bool has_measure{false};
 };
 
 // Engine-side facilities handed to blocks during update/complete/retry.
@@ -54,6 +64,20 @@ class BlockContext {
 
   // A service completion happened: record wait statistics.
   virtual void record_service_wait(const Entity& entity) = 0;
+
+  // Resource-pool operations (Seize / Release). `resource` is the ResourcePool
+  // block name; units are held on the entity until Release returns them.
+  virtual bool try_seize(const std::string& resource, std::int64_t quantity) = 0;
+  virtual void release_resources(const std::string& resource,
+                                 std::int64_t quantity) = 0;
+
+  // Whether every downstream edge on `port` can currently accept `entity`
+  // (no side effects; used for atomic multi-port emissions like Match).
+  virtual bool downstream_accepts(const Entity& entity,
+                                  const char* port) = 0;
+
+  // TimeMeasureEnd measurement (seconds between paired start/end blocks).
+  virtual void record_measure(const Entity& entity, double seconds) = 0;
 };
 
 // One process-library block (source / queue / delay / service / sink / ...).
@@ -68,6 +92,12 @@ class ProcessBlock {
   [[nodiscard]] virtual bool can_accept() const = 0;
   // Buffer an entity (caller checked can_accept; capacity rules per kind).
   virtual void receive(const Entity& entity) = 0;
+  // Port-aware receive (multi-input blocks: combine in1/in2, match in1/in2).
+  // Defaults to the plain receive.
+  virtual void receive(const Entity& entity, std::string_view port) {
+    (void)port;
+    receive(entity);
+  }
   // One progress step at the current simulation time. Returns true when the
   // block consumed/forwarded an entity (the engine keeps stepping).
   virtual bool update(BlockContext& ctx) = 0;
