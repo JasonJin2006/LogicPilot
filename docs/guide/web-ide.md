@@ -70,4 +70,4 @@ lp-server (C++) ── WebSocket(wire.fbs, LPWR) ──► SimClient ──► v
 ```
 
 帧协议为冻结契约 F2（FlatBuffers size-prefixed），C++ 与 TS 双向互操作由
-CI 逐字段校验（见[确定性与契约](./06-determinism)）。
+CI 逐字段校验（见[确定性与契约](./determinism)）。

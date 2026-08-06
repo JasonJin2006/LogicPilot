@@ -63,7 +63,7 @@ summary: 3 replications, 95% CI
 ```
 
 每行末尾的 `theory=... covered` 表示该指标落在理论解析解的置信区间内
-（验收纪律，见 [确定性复现与契约](./06-determinism)）。
+（验收纪律，见 [确定性复现与契约](./determinism)）。
 
 也可以用内置模型快速体验：`lpcli run --model built-in:mm1`。
 
@@ -82,10 +82,10 @@ pnpm install
 pnpm dev      # http://localhost:5173
 ```
 
-页面点 **Connect** → 设置参数 → **Start**，即可看到队列动画、实时图表与运行统计（详见 [Web IDE 使用](./04-web-ide)）。
+页面点 **Connect** → 设置参数 → **Start**，即可看到队列动画、实时图表与运行统计（详见 [Web IDE 使用](./web-ide)）。
 
 ## 下一步
 
-- 想看语言能力：[DSL 语言速查](./03-dsl)
-- 想让 AI 帮你建模型：[AI Copilot](./05-ai-copilot)
-- 想了解如何保证可复现：[确定性复现与契约](./06-determinism)
+- 想看语言能力：[DSL 语言速查](./dsl)
+- 想让 AI 帮你建模型：[AI Copilot](./ai-copilot)
+- 想了解如何保证可复现：[确定性复现与契约](./determinism)

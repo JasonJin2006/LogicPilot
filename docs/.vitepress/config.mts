@@ -37,6 +37,7 @@ const logicpilotLanguage = {
 export default defineConfig({
   lang: 'zh-CN',
   title: 'LogicPilot',
+  titleTemplate: ':title · LogicPilot',
   description:
     'AI 原生、Web 化、高性能的多方法仿真平台（离散事件 / DEVS / Agent / 连续）',
   lastUpdated: true,
@@ -51,34 +52,81 @@ export default defineConfig({
   themeConfig: {
     logo: '/logo.svg',
     nav: [
-      { text: '用户手册', link: '/manual/01-quickstart' },
-      { text: '开发文档', link: '/specs/dsl-spec' },
-      { text: '示例模型', link: '/manual/03-dsl#示例模型' },
+      { text: '用户手册', link: '/guide/quickstart' },
+      { text: '开发文档', link: '/roadmap' },
+      { text: '示例模型', link: '/guide/dsl#示例模型' },
+      {
+        text: '仓库',
+        items: [
+          {
+            text: 'GitHub',
+            link: 'https://github.com/JasonJin2006/LogicPilot',
+          },
+        ],
+      },
     ],
     sidebar: [
       {
         text: '用户手册',
+        collapsed: false,
         items: [
-          { text: '快速开始', link: '/manual/01-quickstart' },
-          { text: 'lpcli 命令参考', link: '/manual/02-cli' },
-          { text: 'DSL 语言速查', link: '/manual/03-dsl' },
-          { text: 'Web IDE 使用', link: '/manual/04-web-ide' },
-          { text: 'AI Copilot', link: '/manual/05-ai-copilot' },
-          { text: '确定性复现与契约', link: '/manual/06-determinism' },
-          { text: 'FAQ / 排错', link: '/manual/07-faq' },
+          { text: '快速开始', link: '/guide/quickstart' },
+          { text: 'lpcli 命令参考', link: '/guide/cli' },
+          { text: 'DSL 语言速查', link: '/guide/dsl' },
+          { text: 'Web IDE 使用', link: '/guide/web-ide' },
+          { text: 'AI Copilot', link: '/guide/ai-copilot' },
+          { text: '确定性复现与契约', link: '/guide/determinism' },
+          { text: 'FAQ / 排错', link: '/guide/faq' },
         ],
       },
       {
         text: '开发文档',
+        collapsed: false,
         items: [
-          { text: '总计划与现状', link: '/roadmap' },
-          { text: 'DSL 规范', link: '/specs/dsl-spec' },
-          { text: 'DSL v2 设计', link: '/specs/dsl-v2' },
-          { text: 'IR v2 迁移设计', link: '/specs/ir-v2' },
-          { text: '工程格式 v2（Project Format v2）', link: '/specs/project-format-v2' },
-          { text: 'AI 建模闭环', link: '/specs/ai-loop' },
-          { text: '里程碑 1 故障模型', link: '/specs/milestone1-failure-model' },
-          { text: '性能预算', link: '/performance-budget' },
+          {
+            text: '总览',
+            collapsed: true,
+            items: [
+              { text: '总计划与现状', link: '/roadmap' },
+              { text: '性能预算', link: '/performance-budget' },
+            ],
+          },
+          {
+            text: '规范（现行）',
+            collapsed: true,
+            items: [
+              { text: 'DSL 规范', link: '/specs/dsl-spec' },
+              { text: '工程格式 v2', link: '/specs/project-format-v2' },
+              { text: 'Method Runtime Layer', link: '/specs/method-runtime' },
+              { text: '流程库图标规范', link: '/specs/process-library-icons' },
+              { text: 'Agent-centric 模型结构', link: '/specs/agent-centric' },
+              { text: 'AI 建模闭环', link: '/specs/ai-loop' },
+            ],
+          },
+          {
+            text: '设计记录（历史）',
+            collapsed: true,
+            items: [
+              { text: 'DSL v2 设计', link: '/specs/dsl-v2' },
+              { text: 'IR v2 迁移设计', link: '/specs/ir-v2' },
+              { text: 'IDE 布局与面板系统', link: '/specs/ide-layout' },
+              { text: '里程碑 1 故障模型', link: '/specs/milestone1-failure-model' },
+            ],
+          },
+          {
+            text: '架构决策（ADR）',
+            collapsed: true,
+            items: [
+              { text: '0001 C++20 无模块', link: '/adr/0001-cpp20-no-modules' },
+              { text: '0002 CMake + vcpkg', link: '/adr/0002-cmake-vcpkg-package-management' },
+              { text: '0003 最小 C++ 依赖集', link: '/adr/0003-cpp-dependency-minimal-set' },
+              { text: '0004 FlatBuffers IR/wire', link: '/adr/0004-flatbuffers-ir-wire' },
+              { text: '0005 tree-sitter 生成物入库', link: '/adr/0005-tree-sitter-parser-checked-in' },
+              { text: '0006 推迟 GPU/分布式时间弯曲', link: '/adr/0006-defer-gpu-distributed-timewarp' },
+              { text: '0007 保守并行优先', link: '/adr/0007-conservative-parallelism-first' },
+              { text: '0008 vendored tree-sitter runtime', link: '/adr/0008-vendored-tree-sitter-runtime' },
+            ],
+          },
         ],
       },
     ],

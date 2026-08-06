@@ -59,7 +59,7 @@ usage: lpcli run [options]
 - `--results-dir <path>`：把运行配置（`run.json`）与汇总指标（`metrics.json`）
   落盘到该目录；使用 `--project` 时默认写到 `<工程名>.results/`
 - `--trajectory`：连续模型（`continuous` 块）输出采样轨迹 JSON，供 AI 面板/脚本绘制 ODE 曲线
-- 同一种子 + 相同参数 → 逐位相同结果（见 [确定性复现](./06-determinism)）
+- 同一种子 + 相同参数 → 逐位相同结果（见 [确定性复现](./determinism)）
 
 ## serve
 

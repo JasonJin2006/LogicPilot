@@ -8,10 +8,10 @@ hero:
   actions:
     - theme: brand
       text: 快速开始
-      link: /manual/01-quickstart
+      link: /guide/quickstart
     - theme: alt
       text: DSL 语言速查
-      link: /manual/03-dsl
+      link: /guide/dsl
 
 features:
   - title: 多方法统一

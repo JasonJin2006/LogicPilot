@@ -38,7 +38,7 @@ corepack pnpm install
 
 ## 两次运行结果不一样？
 
-确认使用相同 `--seed` 与相同构建产物；连续模型额外确认 `--arrivals`（步数）一致。跨工具链（MSVC/clang）不承诺逐位一致，见 [确定性复现](./06-determinism)。
+确认使用相同 `--seed` 与相同构建产物；连续模型额外确认 `--arrivals`（步数）一致。跨工具链（MSVC/clang）不承诺逐位一致，见 [确定性复现](./determinism)。
 
 ## 浏览器看不到动画？
 
