@@ -6,8 +6,10 @@ export {
   findNode,
   freshId,
   moveNode,
+  removeParam,
   removeNode,
   renameNode,
+  renameParam,
   setParam,
 } from './graph.js';
 export type {

@@ -12,8 +12,10 @@ import {
   disconnect,
   freshId,
   moveNode,
+  removeParam,
   removeNode,
   renameNode,
+  renameParam,
   setParam,
   booleanShapes,
   type BooleanOp,
@@ -91,6 +93,10 @@ interface ModelState {
   select: (id: string | null) => void;
   renameBlock: (id: string, name: string) => void;
   setBlockParam: (id: string, key: string, value: string | number | boolean) => void;
+  /** Remove a param (entity attribute editing). */
+  removeBlockParam: (id: string, key: string) => void;
+  /** Rename a param key, keeping its value (entity attribute editing). */
+  renameBlockParam: (id: string, oldKey: string, newKey: string) => void;
   /** Replace a node's vector presentation object (undoable). Keeps the
    *  node's x/y in sync with the object's transform. */
   setPresentation: (id: string, object: GraphicNode) => void;
@@ -214,6 +220,10 @@ export const useModelStore = create<ModelState>()((set) => ({
   renameBlock: (id, name) => set((state) => commit(state, renameNode(state.document, id, name))),
   setBlockParam: (id, key, value) =>
     set((state) => commit(state, setParam(state.document, id, key, value))),
+  removeBlockParam: (id, key) =>
+    set((state) => commit(state, removeParam(state.document, id, key))),
+  renameBlockParam: (id, oldKey, newKey) =>
+    set((state) => commit(state, renameParam(state.document, id, oldKey, newKey))),
   setPresentation: (id, object) =>
     set((state) => {
       let found = false;

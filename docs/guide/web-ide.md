@@ -30,6 +30,9 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
   - `statechart` / `action`：状态图与行动图元素（画布建模，语义落内核为后续）。
 - 画布：滚轮缩放、空白拖动平移、坐标网格；端口拖出连线（点击连线删除）。
 - **Properties**（右侧）：选中块后编辑名称与字段（AnyLogic 风格参数）。
+  - `source` 块额外有 **Entity attributes** 区：新增/重命名/删除实体属性
+    （int/float/bool），生成 DSL 里的 `state <name>: <type> = <值>`，可被
+    selectOutput/hold 条件、match 配对、优先级排队引用。
 - **DSL 编辑区**：画布右侧可收起的代码区，Show DSL / Compile（诊断回显
   Console）。
 - 撤销/重做：`Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z`；Project 面板可新建模型。

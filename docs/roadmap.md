@@ -230,6 +230,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **AI 模板适配 DES ✅ 已完成**（2026-08-07）：规则 provider 按关键词生成
    priority/measure/seize/batch/assembly/timeout 模板（8 种组合全部编译
    通过），`test-ai-build.mjs` 新增特征断言，`ai_build_smoke` ctest 覆盖。
+   **Palette 属性编辑 ✅ 已完成**（2026-08-07）：Properties 面板为 source
+   块新增 Entity attributes 编辑区（新增/重命名/删除 int/float/bool 属性，
+   对应 DSL `state <name>: <type>`）；editor 包新增 removeParam/renameParam
+   图操作，IDE modelStore 新增对应动作；editor 54 + IDE 69 vitest 全绿。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

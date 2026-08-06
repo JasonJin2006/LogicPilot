@@ -149,6 +149,48 @@ export function setParam(
   };
 }
 
+export function removeParam(
+  document: ModelDocument,
+  id: string,
+  key: string,
+): ModelDocument {
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => {
+      if (node.id !== id) {
+        return node;
+      }
+      const params = { ...node.params };
+      delete params[key];
+      return { ...node, params };
+    }),
+  };
+}
+
+export function renameParam(
+  document: ModelDocument,
+  id: string,
+  oldKey: string,
+  newKey: string,
+): ModelDocument {
+  if (oldKey === newKey) {
+    return document;
+  }
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => {
+      if (node.id !== id || !(oldKey in node.params)) {
+        return node;
+      }
+      const params = { ...node.params };
+      const value = params[oldKey]!;
+      delete params[oldKey];
+      params[newKey] = value;
+      return { ...node, params };
+    }),
+  };
+}
+
 export interface ConnectResult {
   document: ModelDocument;
   /** Rejected connections carry the reason; the document is unchanged. */

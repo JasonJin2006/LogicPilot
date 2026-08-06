@@ -744,6 +744,36 @@
   color: var(--error);
 }
 
+.props-attribute {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.props-attribute .props-attr-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.props-attribute input,
+.props-attribute select {
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.props-attribute input[type='checkbox'] {
+  width: auto;
+}
+
+.props-attr-add,
+.props-attr-remove {
+  background: transparent;
+  line-height: 1;
+}
+
 .props-align-row {
   display: flex;
   flex-wrap: wrap;

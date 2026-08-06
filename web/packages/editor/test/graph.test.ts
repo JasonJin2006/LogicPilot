@@ -7,8 +7,10 @@ import {
   disconnect,
   moveNode,
   normalizeGraphicNode,
+  removeParam,
   removeNode,
   renameNode,
+  renameParam,
   setParam,
 } from '../src/index.js';
 
@@ -133,5 +135,19 @@ describe('graph document operations', () => {
     doc = connect(doc, doc.nodes[0]!.id, doc.nodes[1]!.id).document;
     doc = disconnect(doc, doc.edges[0]!.id);
     expect(doc.edges).toHaveLength(0);
+  });
+
+  it('removes and renames params immutably', () => {
+    let doc = createDocument();
+    doc = addNode(doc, { kind: 'source', name: 'S', x: 0, y: 0 });
+    const id = doc.nodes[0]!.id;
+    doc = setParam(doc, id, 'state priority: float', 3);
+    doc = setParam(doc, id, 'arrival', 'rate(1.0)');
+    doc = removeParam(doc, id, 'arrival');
+    expect(doc.nodes[0]!.params['arrival']).toBeUndefined();
+    expect(doc.nodes[0]!.params['state priority: float']).toBe(3);
+    doc = renameParam(doc, id, 'state priority: float', 'state kind: int');
+    expect(doc.nodes[0]!.params['state priority: float']).toBeUndefined();
+    expect(doc.nodes[0]!.params['state kind: int']).toBe(3);
   });
 });

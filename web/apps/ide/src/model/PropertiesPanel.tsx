@@ -8,6 +8,7 @@ import { useModelStore } from '../state/modelStore';
 import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockDefs';
 import { PresentationInspector } from '../presentation/Inspector';
 import { useShapeSelection } from '../presentation/selectionStore';
+import { useState } from 'react';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
@@ -48,11 +49,27 @@ const SECTION_LABELS: Record<string, string> = {
 
 const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set(['expression']);
 
+/** Entity attributes are stored as `state <name>: <type>` params on the
+ *  source block (the DSL form generated/parsed by the editor round-trip). */
+const ATTRIBUTE_PREFIX = 'state ';
+
+function attributeKey(name: string, type: string): string {
+  return type ? `${ATTRIBUTE_PREFIX}${name}: ${type}` : `${ATTRIBUTE_PREFIX}${name}`;
+}
+
+function inferAttributeType(value: string | number | boolean): string {
+  if (typeof value === 'boolean') return 'bool';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'int' : 'float';
+  return 'int';
+}
+
 export function PropertiesPanel() {
   const document = useModelStore((state) => state.document);
   const selectedId = useModelStore((state) => state.selectedId);
   const renameBlock = useModelStore((state) => state.renameBlock);
   const setBlockParam = useModelStore((state) => state.setBlockParam);
+  const removeBlockParam = useModelStore((state) => state.removeBlockParam);
+  const renameBlockParam = useModelStore((state) => state.renameBlockParam);
   const setPresentation = useModelStore((state) => state.setPresentation);
   const alignIds = useShapeSelection((state) => state.ids);
   const removeBlock = useModelStore((state) => state.removeBlock);
@@ -92,6 +109,45 @@ export function PropertiesPanel() {
   const valueFor = (field: BlockPropertyDef) =>
     node.params[field.name] ?? BLOCK_DEFAULTS[node.kind]?.[field.name] ?? '';
   const sections = ['basic', 'advanced', 'actions'];
+  const isSource = node.kind === 'source';
+  const attributeEntries = isSource
+    ? Object.entries(node.params)
+        .filter(([key]) => key.startsWith(ATTRIBUTE_PREFIX))
+        .map(([key, value]) => {
+          const rest = key.slice(ATTRIBUTE_PREFIX.length);
+          const colon = rest.indexOf(':');
+          const name = colon >= 0 ? rest.slice(0, colon).trim() : rest.trim();
+          const type = colon >= 0 ? rest.slice(colon + 1).trim() : inferAttributeType(value);
+          return { key, name, type, value };
+        })
+    : [];
+  const [newAttrName, setNewAttrName] = useState('');
+  const [newAttrType, setNewAttrType] = useState('int');
+
+  const setAttributeValue = (key: string, type: string, raw: string) => {
+    if (type === 'bool') {
+      setBlockParam(node.id, key, raw === 'true');
+      return;
+    }
+    const parsed = Number(raw);
+    setBlockParam(node.id, key, raw.trim() !== '' && Number.isFinite(parsed) ? parsed : raw);
+  };
+
+  const renameAttribute = (oldKey: string, name: string, type: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    renameBlockParam(node.id, oldKey, attributeKey(clean, type));
+  };
+
+  const changeAttributeType = (oldKey: string, name: string, newType: string, value: string | number | boolean) => {
+    const key = attributeKey(name, newType);
+    renameBlockParam(node.id, oldKey, key);
+    if (newType === 'bool' && typeof value !== 'boolean') {
+      setBlockParam(node.id, key, true);
+    } else if (newType !== 'bool' && typeof value === 'boolean') {
+      setBlockParam(node.id, key, value ? 1 : 0);
+    }
+  };
   const visibleBySection = new Map<string, BlockPropertyDef[]>();
   for (const section of sections) {
     visibleBySection.set(
@@ -164,6 +220,88 @@ export function PropertiesPanel() {
         <span className="props-field-name">Name</span>
         <input value={node.name} onChange={(event) => renameBlock(node.id, event.target.value)} />
       </label>
+      {isSource && (
+        <div className="props-section">
+          <div className="props-section-title">Entity attributes</div>
+          {attributeEntries.map((attribute) => (
+            <div className="props-attribute" key={attribute.key}>
+              <input
+                className="props-attr-name"
+                value={attribute.name}
+                onChange={(event) =>
+                  renameAttribute(attribute.key, event.target.value, attribute.type)
+                }
+              />
+              <select
+                value={attribute.type}
+                onChange={(event) =>
+                  changeAttributeType(
+                    attribute.key,
+                    attribute.name,
+                    event.target.value,
+                    attribute.value,
+                  )
+                }
+              >
+                <option value="int">int</option>
+                <option value="float">float</option>
+                <option value="bool">bool</option>
+              </select>
+              {attribute.type === 'bool' ? (
+                <input
+                  type="checkbox"
+                  checked={attribute.value === true}
+                  onChange={(event) =>
+                    setBlockParam(node.id, attribute.key, event.target.checked)
+                  }
+                />
+              ) : (
+                <input
+                  type={attribute.type === 'int' || attribute.type === 'float' ? 'number' : 'text'}
+                  value={String(attribute.value)}
+                  onChange={(event) =>
+                    setAttributeValue(attribute.key, attribute.type, event.target.value)
+                  }
+                />
+              )}
+              <button
+                type="button"
+                className="props-attr-remove"
+                title="Remove attribute"
+                onClick={() => removeBlockParam(node.id, attribute.key)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          <div className="props-attribute">
+            <input
+              className="props-attr-name"
+              placeholder="new attribute"
+              value={newAttrName}
+              onChange={(event) => setNewAttrName(event.target.value)}
+            />
+            <select value={newAttrType} onChange={(event) => setNewAttrType(event.target.value)}>
+              <option value="int">int</option>
+              <option value="float">float</option>
+              <option value="bool">bool</option>
+            </select>
+            <button
+              type="button"
+              className="props-attr-add"
+              title="Add attribute"
+              onClick={() => {
+                const name = newAttrName.trim();
+                if (!name) return;
+                setBlockParam(node.id, attributeKey(name, newAttrType), newAttrType === 'bool' ? true : 0);
+                setNewAttrName('');
+              }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+      )}
       {sections.map(
         (section) =>
           (visibleBySection.get(section)?.length ?? 0) > 0 && (
