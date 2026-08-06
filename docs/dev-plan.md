@@ -76,6 +76,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   metrics.json）；新增 6 个内核测试 + 3 个示例（seize_release / batch_unbatch
   / combine_time）经 lpcli 编译运行冒烟。hold 的 `initiallyBlocked`/`freeze`
   布尔字段此前读取失效，随 `node_bool_param` 一并修复。
+- **实体属性 + 条件路由已落地（2026-08-06）**：`source` 块内
+  `state <name> = <值>` 声明实体属性默认值（降级进 IR Node.state），
+  `selectOutput`/`hold` 条件可引用属性名（LP5006 校验同步放行）并按属性
+  路由；split 拷贝、combine/batch 保留首个原件属性；新增内核路由测试、
+  语义测试与 `examples/attribute_routing.lp` 冒烟。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

@@ -71,6 +71,27 @@ hold Gate {
 同种子下结果确定。条件字段引用未声明的标识符会得到 `LP5006` 诊断（只允许
 `t`/`time` 与本块自身的数值字段）。
 
+### 实体属性（entity attributes）
+
+`source` 块可以用 `state <name>: <type> = <值>` 声明**实体属性默认值**，每个
+被它发射的 agent 都会携带该属性（AnyLogic 的 agent 字段语义）：
+
+```logicpilot
+source Jobs {
+  arrival = rate(2.0)
+  state size: int = 10
+  state priority: float = 1.0
+}
+selectOutput Route {
+  condition = size > 5        // 按实体属性路由（运行时求值）
+}
+```
+
+运行时条件（`selectOutput.condition` / `hold.blockingCondition`）可引用任意
+source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时属性随拷贝，
+`combine`/`batch` 生成的实体保留第一个原件的属性。属性目前为数值型
+（int/float/bool）。
+
 ### DES 块语义（batch/combine/match/seize/release/测量）
 
 通用流程引擎（`ProcessFlowSim`）已实现以下 AnyLogic 语义块的执行行为：
@@ -204,5 +225,6 @@ use manufacturing
 | `examples/seize_release.lp` | 资源抢占/归还（seize→delay→release） |
 | `examples/batch_unbatch.lp` | 临时批：batch→unbatch 还原 agent |
 | `examples/combine_time.lp` | combine 同步两流 + timeMeasure 测量 |
+| `examples/attribute_routing.lp` | 实体属性声明 + selectOutput 按属性路由 |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

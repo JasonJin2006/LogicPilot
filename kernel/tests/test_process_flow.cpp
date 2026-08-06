@@ -71,6 +71,19 @@ flatbuffers::Offset<Node> block(flatbuffers::FlatBufferBuilder& b,
                     0, 0, 0, 0, 0);
 }
 
+flatbuffers::Offset<Node> block_with_state(
+    flatbuffers::FlatBufferBuilder& b, const char* name, const char* kind,
+    std::vector<flatbuffers::Offset<Var>> params,
+    std::vector<flatbuffers::Offset<Var>> state,
+    std::vector<flatbuffers::Offset<Port>> ports) {
+  return CreateNode(b, CreateMetadata(b, b.CreateString(name), 0, 0, 0),
+                    b.CreateVector(state), b.CreateVector(params),
+                    b.CreateVector(ports),
+                    CreateSemanticsRef(b, b.CreateString("process"),
+                                       b.CreateString(kind), 0, 0),
+                    0, 0, 0, 0, 0);
+}
+
 flatbuffers::Offset<Coupling> couple(flatbuffers::FlatBufferBuilder& b,
                                      const char* from, const char* from_port,
                                      const char* to, const char* to_port) {
@@ -592,4 +605,62 @@ TEST_CASE("process flow: hold with initiallyBlocked=true stays blocked",
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
   REQUIRE(metrics.departures == 0);  // blocked forever, no arrivals exit
+}
+
+TEST_CASE("process flow: source entity attributes drive condition routing",
+          "[process_flow][condition][attributes]") {
+  const auto run_route = [](const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block_with_state(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+        {var_int(builder, "size", 10)}, {});
+    const auto route = block(
+        builder, "R", "selectOutput",
+        {var_string(builder, "condition", condition)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "outT", "Slow", "in"),
+         couple(builder, "R", "outF", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 500, 0);
+  };
+
+  // Every source entity carries size = 10: `size > 5` always takes outT
+  // (1s delay), `size < 0` always takes outF (no delay).
+  const ReplicationMetrics big = run_route("size > 5");
+  const ReplicationMetrics small = run_route("size < 0");
+  REQUIRE(big.departures == 500);
+  REQUIRE(small.departures == 500);
+  REQUIRE(big.mean_sojourn > 0.5);
+  REQUIRE(small.mean_sojourn < 0.1);
+
+  // Hold conditions can reference attributes too: size = 10 is always
+  // blocked by `size > 5`, so nothing reaches the sink.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block_with_state(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+      {var_int(builder, "size", 10)}, {});
+  const auto hold = block(
+      builder, "H", "hold",
+      {var_string(builder, "blockingCondition", "size > 5")}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, hold, sink},
+      {couple(builder, "In", "out", "H", "in"),
+       couple(builder, "H", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics blocked = run_once(*model, 7, 10, 0);
+  REQUIRE(blocked.departures == 0);
 }

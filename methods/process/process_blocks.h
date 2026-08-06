@@ -24,9 +24,11 @@ namespace logicpilot::process {
 // Emits entities at the configured inter-arrival rate.
 class SourceBlock final : public BufferedBlock {
  public:
-  SourceBlock(std::string name, TimeSampler interarrival)
+  SourceBlock(std::string name, TimeSampler interarrival,
+              std::unordered_map<std::string, double> attributes)
       : BufferedBlock("source", std::move(name), -1),
-        interarrival_(std::move(interarrival)) {}
+        interarrival_(std::move(interarrival)),
+        attributes_(std::move(attributes)) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
@@ -45,8 +47,14 @@ class SourceBlock final : public BufferedBlock {
     return interarrival_(rng);
   }
 
+  [[nodiscard]] const std::unordered_map<std::string, double>&
+  attribute_defaults() const override {
+    return attributes_;
+  }
+
  private:
   TimeSampler interarrival_;
+  std::unordered_map<std::string, double> attributes_;
 };
 
 // FIFO buffer (queue / wait): forwards immediately when downstream accepts.
@@ -247,14 +255,18 @@ class GenericBlock final : public BufferedBlock {
     if (input_.empty()) {
       return false;
     }
-    const auto lookup = [this, &ctx](const std::string& id) -> double {
+    const Entity entity = input_.front();
+    const auto lookup = [this, &ctx, &entity](const std::string& id) -> double {
       if (id == "t" || id == "time") {
         return static_cast<double>(ctx.now().as_ns()) * 1e-9;
+      }
+      const auto attribute = entity.attributes.find(id);
+      if (attribute != entity.attributes.end()) {
+        return attribute->second;
       }
       const auto it = numeric_params_.find(id);
       return it != numeric_params_.end() ? it->second : 0.0;
     };
-    Entity entity = input_.front();
     if (kind_ == "selectOutput") {
       bool take_true;
       if (!condition_text_.empty()) {

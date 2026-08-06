@@ -191,6 +191,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    match（双流同步 out1/out2）、timeMeasureStart/End（`measure` 指标）；
    内核测试 + `examples/{seize_release,batch_unbatch,combine_time}.lp`
    lpcli 冒烟全绿；enter/exit/moveTo/assembler 仍为直通占位。
+   **实体属性 + 条件路由 ✅ 已完成**（2026-08-06）：source 的
+   `state <name> = <值>` 声明实体属性，selectOutput/hold 条件可按属性
+   路由（LP5006 同步放行），`examples/attribute_routing.lp` 冒烟全绿；
+   match 按属性配对（agent1.attr == agent2.attr）与实体类型系统为后续。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/

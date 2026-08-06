@@ -100,7 +100,31 @@ std::unique_ptr<ProcessBlock> make_block(
     if (!sampler) {
       return nullptr;
     }
-    return std::make_unique<SourceBlock>(name, std::move(sampler));
+    // Entity attribute defaults declared as `state <name> = <value>`.
+    std::unordered_map<std::string, double> attributes;
+    if (stage->state() != nullptr) {
+      for (const ir::v2::Var* var : *stage->state()) {
+        if (var == nullptr || var->name() == nullptr) {
+          continue;
+        }
+        switch (var->type()) {
+          case ir::v2::VarType_Int:
+            attributes[var->name()->str()] =
+                static_cast<double>(var->int_value());
+            break;
+          case ir::v2::VarType_Float:
+            attributes[var->name()->str()] = var->float_value();
+            break;
+          case ir::v2::VarType_Bool:
+            attributes[var->name()->str()] = var->bool_value() ? 1.0 : 0.0;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    return std::make_unique<SourceBlock>(name, std::move(sampler),
+                                         std::move(attributes));
   }
   if (kind == "delay") {
     TimeSampler sampler =
@@ -510,6 +534,7 @@ class Engine final : public BlockContext {
       entity.id = emitted_;
       entity.created_ns = clock().now().as_ns();
       entity.service_start_ns = entity.created_ns;
+      entity.attributes = blocks_[source]->attribute_defaults();
       ++emitted_;
       ++in_system_;
       if (!push_downstream(source, entity, "out")) {

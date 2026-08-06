@@ -480,3 +480,71 @@ TEST_CASE("semantic: runtime condition identifiers are validated (LP5006)",
   }
   REQUIRE(lp5006 >= 1);
 }
+
+TEST_CASE("semantic: source entity attributes are routable in conditions",
+          "[dsl][semantic][condition][attributes]") {
+  // A `state` declared on a source is an entity attribute default; runtime
+  // conditions may reference it.
+  const ParseOutput valid = parse_source(
+      "model M {\n"
+      "  source In {\n"
+      "    arrival = rate(1)\n"
+      "    state size: int = 10\n"
+      "  }\n"
+      "  selectOutput G {\n"
+      "    condition = size > 5\n"
+      "  }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.outT -> K.in\n"
+      "  couple G.outF -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(valid.ok());
+  const std::vector<Diagnostic> valid_diags = analyze_model(*valid.model);
+  for (const Diagnostic& diagnostic : valid_diags) {
+    REQUIRE_FALSE(diagnostic.code == "LP5006");
+    REQUIRE_FALSE(diagnostic.code == "LP2005");
+  }
+
+  // Unknown identifiers are still LP5006 even with attributes in scope.
+  const ParseOutput unknown = parse_source(
+      "model M {\n"
+      "  source In {\n"
+      "    arrival = rate(1)\n"
+      "    state size: int = 10\n"
+      "  }\n"
+      "  hold G { blockingCondition = missing > 5 }\n"
+      "  sink K { }\n"
+      "  couple In.out -> G.in\n"
+      "  couple G.out -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(unknown.ok());
+  int lp5006 = 0;
+  for (const Diagnostic& diagnostic : analyze_model(*unknown.model)) {
+    if (diagnostic.code == "LP5006") {
+      ++lp5006;
+    }
+  }
+  REQUIRE(lp5006 >= 1);
+
+  // `state` on a non-source process block stays LP2005.
+  const ParseOutput misplaced = parse_source(
+      "model M {\n"
+      "  source In { arrival = rate(1) }\n"
+      "  queue Q { capacity = 5; state x = 1 }\n"
+      "  sink K { }\n"
+      "  couple In.out -> Q.in\n"
+      "  couple Q.out -> K.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(misplaced.ok());
+  int lp2005 = 0;
+  for (const Diagnostic& diagnostic : analyze_model(*misplaced.model)) {
+    if (diagnostic.code == "LP2005") {
+      ++lp2005;
+    }
+  }
+  REQUIRE(lp2005 >= 1);
+}

@@ -77,11 +77,13 @@ class Analyzer {
         registry != nullptr ? registry : &builtin_process_registry();
     libraries_ = libraries;
     declared_resources_.clear();
+    entity_attribute_names_.clear();
     for (const Node& member : model.members) {
       if (member.kind == "resource") {
         declared_resources_.insert(member.name);
       }
     }
+    collect_entity_attributes(model.members);
     check_model_params(model);
     build_model_scope(model);
     for (const std::string& library : model.used_libraries) {
@@ -397,10 +399,19 @@ class Analyzer {
       return;
     }
     for (const VarDecl& var : node.vars) {
+      // `state <name> = <value>` inside a source declares the entity
+      // attribute defaults every emitted agent carries (AnyLogic agent
+      // fields); other process blocks cannot declare state.
+      if (node.kind == "source" && var.keyword == "state") {
+        continue;
+      }
       error("LP2005",
             "'" + var.keyword + "' is not allowed in " + node.kind + " '" +
                 node.name + "'",
             var.span);
+    }
+    if (node.kind == "source") {
+      validate_entity_attributes(node, scope);
     }
     const BlockShape* shape = registry_->resolve(node.kind);
     if (shape == nullptr) {
@@ -495,6 +506,9 @@ class Analyzer {
       const Field* condition = field_of(node, field_name);
       if (condition != nullptr && !value_is_constant(condition->value)) {
         std::unordered_set<std::string> known = {"t", "time"};
+        for (const std::string& attribute : entity_attribute_names_) {
+          known.insert(attribute);
+        }
         for (const Field& field : node.fields) {
           if (field.value.kind == ValueKind::kInt ||
               field.value.kind == ValueKind::kFloat) {
@@ -578,6 +592,45 @@ class Analyzer {
               "service '" + node.name +
                   "' references undeclared resource '" + node.name + "'",
               node.name_span);
+      }
+    }
+  }
+
+  // Entity attributes declared on source blocks: every emitted agent carries
+  // them, so runtime conditions (selectOutput/hold) may reference them.
+  void collect_entity_attributes(const std::vector<Node>& members) {
+    for (const Node& member : members) {
+      if (member.kind == "source") {
+        for (const VarDecl& var : member.vars) {
+          if (var.keyword == "state") {
+            entity_attribute_names_.insert(var.name);
+          }
+        }
+      }
+      collect_entity_attributes(member.children);
+    }
+  }
+
+  void validate_entity_attributes(const Node& node, const ParamScope& scope) {
+    std::unordered_map<std::string, Span> names;
+    for (const VarDecl& var : node.vars) {
+      if (var.keyword != "state") {
+        continue;
+      }
+      const auto [it, inserted] = names.emplace(var.name, var.name_span);
+      if (!inserted) {
+        error("LP1002",
+              "duplicate entity attribute '" + var.name + "' in source '" +
+                  node.name + "'",
+              var.name_span);
+      }
+      Value folded;
+      if (!fold_value(var.value, scope, folded) || !is_scalar(folded)) {
+        error("LP2006",
+              "entity attribute '" + var.name + "' in source '" + node.name +
+                  "' must be a compile-time constant (literals, params, "
+                  "arithmetic)",
+              var.span);
       }
     }
   }
@@ -1214,6 +1267,7 @@ class Analyzer {
 
   std::vector<Diagnostic> diagnostics_;
   std::unordered_set<std::string> declared_resources_;
+  std::unordered_set<std::string> entity_attribute_names_;
   ParamScope model_scope_;
   const LibraryRegistry* registry_{nullptr};
 };

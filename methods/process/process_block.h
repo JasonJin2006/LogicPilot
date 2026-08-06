@@ -34,6 +34,9 @@ struct Entity {
   // Unbatch) and resource units held by Seize until Release.
   std::vector<Entity> contents;
   std::unordered_map<std::string, std::int64_t> resources;
+  // Numeric entity attributes declared on the emitting source block
+  // (`state <name> = <value>`); runtime conditions may reference them.
+  std::unordered_map<std::string, double> attributes;
   // TimeMeasureStart/End pair: timestamp set by the start block and
   // measured when the entity reaches the paired end block.
   std::int64_t measure_start_ns{0};
@@ -127,6 +130,13 @@ class ProcessBlock {
   // Source blocks sample their inter-arrival gap here (default 0 for
   // non-source blocks; the engine only calls it for sources).
   virtual double sample_gap(Xoshiro256PlusPlus& rng) = 0;
+
+  // Attribute defaults the emitting source stamps on each created entity.
+  virtual const std::unordered_map<std::string, double>&
+  attribute_defaults() const {
+    static const std::unordered_map<std::string, double> kEmpty;
+    return kEmpty;
+  }
 };
 
 // Shared buffering/counter state for the common input -> forward model.

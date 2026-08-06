@@ -244,6 +244,17 @@ flatbuffers::Offset<v2::Node> v2_process_block(
         break;
     }
   }
+  // Entity attribute defaults: `state <name> = <value>` inside a source
+  // block is carried on every emitted agent (kernel Entity.attributes).
+  std::vector<flatbuffers::Offset<v2::Var>> state;
+  if (stage.kind == "source") {
+    for (const VarDecl& var : stage.vars) {
+      if (var.keyword == "state") {
+        state.push_back(v2_var_from_value(
+            builder, var.name, fold_or_raw(var.value, scope)));
+      }
+    }
+  }
   (void)resources;
   // Registered block ports (direction + event type), so the IR carries the
   // full connectable shape of every process stage.
@@ -265,7 +276,7 @@ flatbuffers::Offset<v2::Node> v2_process_block(
   }
   return v2::CreateNode(
       builder, v2_metadata(builder, stage.name, source_file),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(state),
       builder.CreateVector(params), builder.CreateVector(ports),
       v2_semantics(builder, "process", effective_kind.c_str()),
       0, 0, 0, 0, 0);
