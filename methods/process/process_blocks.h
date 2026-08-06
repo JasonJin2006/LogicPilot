@@ -81,6 +81,80 @@ class QueueBlock final : public BufferedBlock {
   }
 };
 
+// Wait: FIFO buffer with an optional exit-on-timeout (AnyLogic Wait with
+// enableTimeout). Each waiting entity gets a timeout event; when it fires,
+// entities still waiting leave through outTimeout instead of out.
+class WaitBlock final : public BufferedBlock {
+ public:
+  WaitBlock(std::string name, std::int64_t capacity,
+            std::int64_t timeout_ns, bool enable_timeout)
+      : BufferedBlock("wait", std::move(name), capacity),
+        timeout_ns_(timeout_ns),
+        enable_timeout_(enable_timeout) {}
+
+  bool update(BlockContext& ctx) override {
+    if (enable_timeout_ && timeout_ns_ > 0) {
+      for (const Entity& entity : input_) {
+        if (timed_.insert(entity.id).second) {
+          ctx.schedule_timeout(timeout_ns_, entity.id);
+        }
+      }
+    }
+    if (input_.empty()) {
+      return false;
+    }
+    Entity entity = input_.front();
+    if (!ctx.emit(entity, "out")) {
+      return false;
+    }
+    input_.pop_front();
+    ++departed_;
+    return true;
+  }
+
+  void on_timeout(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it =
+        std::find_if(input_.begin(), input_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == input_.end()) {
+      return;  // the entity already left before its timeout
+    }
+    Entity entity = *it;
+    input_.erase(it);
+    timed_.erase(entity_id);
+    ++departed_;
+    if (!ctx.emit(entity, "outTimeout")) {
+      timeout_outgoing_.push_back(entity);
+    }
+  }
+
+  bool retry_outgoing(BlockContext& ctx) override {
+    if (!timeout_outgoing_.empty()) {
+      Entity entity = timeout_outgoing_.front();
+      if (ctx.emit(entity, "outTimeout")) {
+        timeout_outgoing_.pop_front();
+        return true;
+      }
+      return false;
+    }
+    return BufferedBlock::retry_outgoing(ctx);
+  }
+
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    timed_.clear();
+    timeout_outgoing_.clear();
+  }
+
+ private:
+  std::int64_t timeout_ns_{0};
+  bool enable_timeout_{false};
+  std::unordered_set<std::uint64_t> timed_;
+  std::deque<Entity> timeout_outgoing_;
+};
+
 // Hold-and-forward (delay): occupies a delay slot for the sampled duration.
 class DelayBlock final : public BufferedBlock {
  public:
@@ -410,14 +484,24 @@ class GenericBlock final : public BufferedBlock {
 class SeizeBlock final : public BufferedBlock {
  public:
   SeizeBlock(std::string name, std::string resource, std::int64_t quantity,
-             std::int64_t capacity)
+             std::int64_t capacity, std::int64_t timeout_ns = 0,
+             bool enable_timeout = false)
       : BufferedBlock("seize", std::move(name), capacity),
         resource_(std::move(resource)),
-        quantity_(quantity > 0 ? quantity : 1) {}
+        quantity_(quantity > 0 ? quantity : 1),
+        timeout_ns_(timeout_ns),
+        enable_timeout_(enable_timeout) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
+    }
+    if (enable_timeout_ && timeout_ns_ > 0) {
+      for (const Entity& entity : input_) {
+        if (timed_.insert(entity.id).second) {
+          ctx.schedule_timeout(timeout_ns_, entity.id);
+        }
+      }
     }
     if (!ctx.try_seize(resource_, quantity_)) {
       return false;  // pool exhausted: the entity stays in the queue
@@ -432,9 +516,49 @@ class SeizeBlock final : public BufferedBlock {
     return true;
   }
 
+  void on_timeout(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it =
+        std::find_if(input_.begin(), input_.end(),
+                     [entity_id](const Entity& entry) {
+                       return entry.id == entity_id;
+                     });
+    if (it == input_.end()) {
+      return;  // already seized before the timeout fired
+    }
+    Entity entity = *it;
+    input_.erase(it);
+    timed_.erase(entity_id);
+    ++departed_;
+    if (!ctx.emit(entity, "outTimeout")) {
+      timeout_outgoing_.push_back(entity);
+    }
+  }
+
+  bool retry_outgoing(BlockContext& ctx) override {
+    if (!timeout_outgoing_.empty()) {
+      Entity entity = timeout_outgoing_.front();
+      if (ctx.emit(entity, "outTimeout")) {
+        timeout_outgoing_.pop_front();
+        return true;
+      }
+      return false;
+    }
+    return BufferedBlock::retry_outgoing(ctx);
+  }
+
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    timed_.clear();
+    timeout_outgoing_.clear();
+  }
+
  private:
   std::string resource_;
   std::int64_t quantity_{1};
+  std::int64_t timeout_ns_{0};
+  bool enable_timeout_{false};
+  std::unordered_set<std::uint64_t> timed_;
+  std::deque<Entity> timeout_outgoing_;
 };
 
 // Release: return every resource unit the entity holds to its pool (zero

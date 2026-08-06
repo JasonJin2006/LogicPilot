@@ -102,6 +102,9 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - `match`：同步两条流，双方都到齐时成对从 `out1`/`out2` 同时输出。
 - `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
+- `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
+  `timeout` 秒的 agent 从 `outTimeout` 出口离开（AnyLogic 语义；couple 到
+  `outTimeout` 时编译器要求 `enableTimeout` 为 true）。
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
@@ -233,5 +236,6 @@ use manufacturing
 | `examples/combine_time.lp` | combine 同步两流 + timeMeasure 测量 |
 | `examples/attribute_routing.lp` | 实体属性声明 + selectOutput 按属性路由 |
 | `examples/failure_line.lp` | 通用引擎故障模型（failure/repair + availability） |
+| `examples/wait_timeout.lp` | wait 退出超时（outTimeout 出口） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

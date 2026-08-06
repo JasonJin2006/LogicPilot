@@ -89,6 +89,11 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   16 reps，CI 覆盖理论 Wq=8.73，同 test_mm1_failure 验收规则）与
   `examples/failure_line.lp` 冒烟。统计口径经实测与理论一致
   （此前小样本读数属方差噪声，非系统性偏差）。
+- **wait/seize 退出超时已落地（2026-08-06）**：`enableTimeout`+`timeout`
+  字段驱动 `outTimeout` 条件端口——等待超过 `timeout` 的 agent 从
+  `outTimeout` 离开（AnyLogic 语义；couple 到 outTimeout 时编译期要求
+  enableTimeout=true，LP5003）；新增 wait/seize 超时内核测试（含无超时
+  差分）与 `examples/wait_timeout.lp` 冒烟。
 
 ## P2 开发者生态（✅ 已落地 2026-08-06）
 

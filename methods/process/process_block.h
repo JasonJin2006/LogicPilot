@@ -67,6 +67,12 @@ class BlockContext {
   virtual void schedule_repair(std::int64_t hold_ns,
                                std::uint64_t entity_id) = 0;
 
+  // Schedule a queue-timeout event for `entity_id` (Wait/Seize) at now +
+  // hold_ns; the block decides whether the entity is still waiting when it
+  // fires (exits through outTimeout) or already left (no-op).
+  virtual void schedule_timeout(std::int64_t hold_ns,
+                                std::uint64_t entity_id) = 0;
+
   // Uniform [0,1) draw from the replication RNG (deterministic order).
   virtual double rng01() = 0;
 
@@ -118,6 +124,8 @@ class ProcessBlock {
   // The unit occupied by `entity_id` failed / was repaired.
   virtual void on_failure(BlockContext& ctx, std::uint64_t entity_id) = 0;
   virtual void on_repair(BlockContext& ctx, std::uint64_t entity_id) = 0;
+  // The queue-timeout event for `entity_id` fired.
+  virtual void on_timeout(BlockContext& ctx, std::uint64_t entity_id) = 0;
   // Re-push entities this block emitted but a downstream rejected. Returns
   // true when at least one was accepted.
   virtual bool retry_outgoing(BlockContext& ctx) = 0;
@@ -221,6 +229,7 @@ class BufferedBlock : public ProcessBlock {
   void complete(BlockContext&, std::uint64_t) override {}
   void on_failure(BlockContext&, std::uint64_t) override {}
   void on_repair(BlockContext&, std::uint64_t) override {}
+  void on_timeout(BlockContext&, std::uint64_t) override {}
 
   double sample_gap(Xoshiro256PlusPlus&) override { return 0.0; }
 

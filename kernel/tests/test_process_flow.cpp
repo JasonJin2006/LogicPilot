@@ -822,3 +822,129 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
   REQUIRE(failing.availability < 0.98);
   REQUIRE(failing.mean_wait > clean.mean_wait);
 }
+
+TEST_CASE("process flow: wait exit-on-timeout routes through outTimeout",
+          "[process_flow][timeout][des_blocks]") {
+  const auto build_wait = [&](bool enable_timeout,
+                              flatbuffers::FlatBufferBuilder& builder) {
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto wait = block(
+        builder, "W", "wait",
+        {var_int(builder, "capacity", 100),
+         var_bool(builder, "enableTimeout", enable_timeout),
+         var_float(builder, "timeout", 1.0)},
+        {});
+    const auto resource = block(
+        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto late = block(builder, "Late", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, wait, service, sink, late},
+        {couple(builder, "In", "out", "W", "in"),
+         couple(builder, "W", "out", "S", "in"),
+         couple(builder, "W", "outTimeout", "Late", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 5, 0);
+  };
+
+  flatbuffers::FlatBufferBuilder with_timeout_builder;
+  const ReplicationMetrics timed =
+      build_wait(true, with_timeout_builder);
+  // The downstream service has zero capacity (never accepts), so every
+  // agent waits in the wait block and exits via outTimeout after 1.0s.
+  REQUIRE(timed.departures == 5);
+  REQUIRE(timed.mean_sojourn == 1.0);
+  REQUIRE(timed.mean_in_queue > 0.0);
+
+  flatbuffers::FlatBufferBuilder no_timeout_builder;
+  const ReplicationMetrics stuck = build_wait(false, no_timeout_builder);
+  // Without exit-on-timeout the four waiting agents never leave.
+  REQUIRE(stuck.departures == 0);
+
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder again_builder;
+  const ReplicationMetrics again = build_wait(true, again_builder);
+  REQUIRE(again.departures == timed.departures);
+  REQUIRE(again.mean_sojourn == timed.mean_sojourn);
+}
+
+TEST_CASE("process flow: seize exit-on-timeout releases waiting agents",
+          "[process_flow][timeout][des_blocks]") {
+  const auto build_seize = [&](bool enable_timeout,
+                               flatbuffers::FlatBufferBuilder& builder) {
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource = block(
+        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(
+        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
+    const auto seize = block(
+        builder, "Grab", "seize",
+        {var_string(builder, "resource", "Server"),
+         var_int(builder, "numberOfUnits", 1),
+         var_bool(builder, "enableTimeout", enable_timeout),
+         var_float(builder, "timeout", 0.5)},
+        {});
+    const auto service = block(
+        builder, "S", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Blocked")},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto late = block(builder, "Late", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, seize, service, sink, late},
+        {couple(builder, "In", "out", "Grab", "in"),
+         couple(builder, "Grab", "out", "S", "in"),
+         couple(builder, "Grab", "outTimeout", "Late", "in"),
+         couple(builder, "S", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 5, 0);
+  };
+
+  flatbuffers::FlatBufferBuilder with_timeout_builder;
+  const ReplicationMetrics timed =
+      build_seize(true, with_timeout_builder);
+  // The first agent seizes the (single) unit but its downstream service has
+  // zero capacity, so the other four wait 0.5s at the seize then exit via
+  // outTimeout. (The first agent stays blocked in the seize's outgoing.)
+  REQUIRE(timed.departures == 4);
+  REQUIRE(timed.mean_sojourn == 0.5);
+
+  flatbuffers::FlatBufferBuilder no_timeout_builder;
+  const ReplicationMetrics stuck = build_seize(false, no_timeout_builder);
+  REQUIRE(stuck.departures == 0);
+}

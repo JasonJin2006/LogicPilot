@@ -48,6 +48,7 @@ constexpr EventType kArriveEvent = 20;
 constexpr EventType kDepartEvent = 21;
 constexpr EventType kFailureEvent = 22;
 constexpr EventType kRepairEvent = 23;
+constexpr EventType kTimeoutEvent = 24;
 
 // ResourcePool spec: capacity plus the milestone-1 busy-time failure law.
 struct PoolSpec {
@@ -182,17 +183,28 @@ std::unique_ptr<ProcessBlock> make_block(
     }
     return std::make_unique<SeizeBlock>(
         name, resource != nullptr ? resource : name,
-        node_int_param(stage, "numberOfUnits", 0), capacity);
+        node_int_param(stage, "numberOfUnits", 0), capacity,
+        to_ns(node_float_param(stage, "timeout", 100.0)),
+        node_bool_param(stage, "enableTimeout", false));
   }
   if (kind == "release") {
     return std::make_unique<ReleaseBlock>(name);
   }
-  if (kind == "queue" || kind == "wait") {
+  if (kind == "queue") {
     std::int64_t capacity = node_int_param(stage, "capacity", -1);
     if (capacity == 0) {
       capacity = -1;  // 0 = unbounded in the kernel paths
     }
-    return std::make_unique<QueueBlock>(name, capacity, kind);
+    return std::make_unique<QueueBlock>(name, capacity, "queue");
+  }
+  if (kind == "wait") {
+    std::int64_t capacity = node_int_param(stage, "capacity", 100);
+    if (node_bool_param(stage, "maximumCapacity", false) || capacity == 0) {
+      capacity = -1;
+    }
+    return std::make_unique<WaitBlock>(
+        name, capacity, to_ns(node_float_param(stage, "timeout", 100.0)),
+        node_bool_param(stage, "enableTimeout", false));
   }
   if (kind == "sink") {
     return std::make_unique<SinkBlock>(name);
@@ -378,6 +390,8 @@ class Engine final : public BlockContext {
         handlers().add([this](const Event& event) { on_failure(event); });
     repair_handler_ =
         handlers().add([this](const Event& event) { on_repair(event); });
+    timeout_handler_ =
+        handlers().add([this](const Event& event) { on_timeout(event); });
     arrive_handler_ =
         handlers().add([this](const Event& event) { on_arrive(event); });
     for (const std::size_t source : sources_) {
@@ -491,6 +505,13 @@ class Engine final : public BlockContext {
                        std::uint64_t entity_id) override {
     scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
                          kRepairEvent, repair_handler_,
+                         self_payload(current_, entity_id));
+  }
+
+  void schedule_timeout(std::int64_t hold_ns,
+                        std::uint64_t entity_id) override {
+    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
+                         kTimeoutEvent, timeout_handler_,
                          self_payload(current_, entity_id));
   }
 
@@ -632,6 +653,15 @@ class Engine final : public BlockContext {
     pump(block);
   }
 
+  void on_timeout(const Event& event) {
+    const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
+    const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    accumulate_areas(clock().now().as_ns());
+    current_ = block;
+    blocks_[block]->on_timeout(*this, entity_id);
+    pump(block);
+  }
+
   static std::uint64_t self_payload(std::size_t block,
                                     std::uint64_t entity_id) {
     return (static_cast<std::uint64_t>(block) << 32) | entity_id;
@@ -740,6 +770,7 @@ class Engine final : public BlockContext {
   HandlerId depart_handler_{0};
   HandlerId failure_handler_{0};
   HandlerId repair_handler_{0};
+  HandlerId timeout_handler_{0};
   std::vector<std::size_t> work_;
   std::uint64_t emitted_{0};
   std::uint64_t departures_{0};

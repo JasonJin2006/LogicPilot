@@ -200,6 +200,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    重启，availability 进 metrics.json）；depart 按实体 id 派发；新增
    M/G/1 理论验收（2 万 arrivals × 16 reps，CI 覆盖理论 Wq）与
    `examples/failure_line.lp` 冒烟；两条引擎路径的统计口径实测一致。
+   **wait/seize 退出超时 ✅ 已完成**（2026-08-06）：enableTimeout+timeout
+   驱动 outTimeout 条件端口（编译期 LP5003 门禁），内核差分测试 +
+   `examples/wait_timeout.lp` 冒烟；outPreempted（抢占优先级）为后续项。
    **Presentation 矢量编辑器 Phase 1–2 ✅ 已完成**（2026-08-06）：拖入的表现层
    形状升级为真正的矢量对象（`ModelNode.presentation`，几何/样式/旋转/缩放），
    支持选中框 + 8 向缩放 + 旋转手柄、Figma 式 Inspector（位置/尺寸/旋转/
