@@ -1353,3 +1353,38 @@ TEST_CASE("process flow: assembler waits for parts, delays, then outputs",
   const ReplicationMetrics starved = run_assembler(10.0, 2, 1.0);
   REQUIRE(starved.departures == 0);
 }
+
+TEST_CASE("process flow: composed blocks conserve entities end-to-end",
+          "[process_flow][composition][des_blocks]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block_with_state(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+      {var_int(builder, "priority", 5)}, {});
+  const auto route = block(
+      builder, "R", "selectOutput",
+      {var_string(builder, "condition", "priority > 3")}, {});
+  const auto batch = block(
+      builder, "B", "batch",
+      {var_int(builder, "batchSize", 2),
+       var_bool(builder, "permanent", false)},
+      {});
+  const auto unbatch = block(builder, "U", "unbatch", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto late_sink = block(builder, "K2", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, route, batch, unbatch, sink, late_sink},
+      {couple(builder, "In", "out", "R", "in"),
+       couple(builder, "R", "outT", "B", "in"),
+       couple(builder, "R", "outF", "K2", "in"),
+       couple(builder, "B", "out", "U", "in"),
+       couple(builder, "U", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  // Every arrival takes outT (priority 5 > 3), is batched in pairs and
+  // restored by unbatch: conservation holds through the composition.
+  const ReplicationMetrics metrics = run_once(*model, 7, 1000, 0);
+  REQUIRE(metrics.departures == 1000);
+  REQUIRE(metrics.mean_in_queue > 0.0);  // agents wait at the batch
+}

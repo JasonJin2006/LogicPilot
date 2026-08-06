@@ -77,6 +77,17 @@ pnpm --filter @logicpilot/ide dev          # http://localhost:5173
 库）、DSL 编译诊断、实时运行可视化、AI 面板生成/优化/归因。桌面客户端见
 [desktop/README.md](desktop/README.md)。
 
+### 离散事件（process）块语义
+
+process 库 23 块中 22 块已有内核真语义（以 AnyLogic 官方文档为参考）：
+`source/queue/wait/delay/service/sink`、`resource`（含故障/修复与
+seize 持有期故障）、`seize/release`（资源持有与归还）、`batch/unbatch`
+（临时/永久批）、`combine`、`match`（纯同步或按属性配对）、
+`selectOutput/hold`（运行时条件，支持 `==`/`!=`）、`exit`、`enter`、
+`timeMeasureStart/End`、`assembler`；实体属性（source `state` 声明）驱动
+条件路由、优先级排队与抢占（`outTimeout`/`outPreempted`）。仅 `moveTo`
+为直通占位（依赖位置/网络模型）。组合模型见 `examples/des_shop.lp`。
+
 ## 仓库结构
 
 | 目录 | 内容 |
