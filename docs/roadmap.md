@@ -191,8 +191,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 5：Simulation Binding ✅ 已完成**（2026-08-06）：图形对象的
    width/height/opacity/x/y/rotation 可绑定运行时表达式（安全算术求值器，
    变量 queueLength/busy/servers/downServers/tick），渲染时叠加、不改存储
-   对象；Inspector 提供绑定编辑。待办：Pen 工具、Boolean 运算、Frame/Auto
-   layout、更多绑定变量（吞吐/等待）。
+   对象；Inspector 提供绑定编辑。
+   **Phase 4：Frame + Auto Layout ✅ 已完成**（2026-08-06）：新增 `frame`
+   容器节点（背景/裁剪/内边距/水平垂直自动排布，`computeFrameLayout` 纯函数
+   可测），渲染时按 layout 摆放子对象并按内容自适应尺寸；Inspector 提供
+   clip/padding/direction/gap 与增删子对象。待办：Pen 工具、Boolean 运算、
+   Constraints、更多绑定变量（吞吐/等待）。
    **流程块语义字段 ✅ 已完成**（2026-08-05）：按 AnyLogic 属性表补全新块的
    Properties 与 DSL 字段——delay(time,capacity)、split(copies)、combine
    (agents)、batch(size,permanent)、seize/release(resource,quantity)、

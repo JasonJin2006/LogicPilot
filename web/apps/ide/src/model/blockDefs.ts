@@ -142,6 +142,7 @@ const PRESENTATION_DEFS: BlockDef[] = (
     ['text', 'Text'],
     ['image', 'Image'],
     ['group', 'Group'],
+    ['frame', 'Frame'],
   ] as const
 ).map(([kind, name]) => ({
   kind,

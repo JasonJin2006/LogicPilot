@@ -10,7 +10,7 @@
 // 'roundedRect', 'ellipse', ...) to the unified model so existing projects
 // keep rendering.
 
-export type GraphicType = 'shape' | 'text' | 'image' | 'group' | 'path';
+export type GraphicType = 'shape' | 'text' | 'image' | 'group' | 'path' | 'frame';
 export type ShapeType = 'rectangle' | 'ellipse' | 'polygon' | 'line';
 
 export interface Point {
@@ -97,6 +97,10 @@ export interface GraphicNode {
   /** Simulation binding: live transform/style property -> expression over
    *  runtime variables (queueLength, busy, servers, downServers, tick). */
   binding?: { properties: Record<string, string> };
+  /** Frame container options (type 'frame'): auto-layout + clipping. */
+  layout?: { direction: 'horizontal' | 'vertical'; gap: number; padding: number };
+  /** Clip children to the frame bounds. */
+  clip?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +168,25 @@ export function groupNode(x: number, y: number, children: GraphicNode[] = []): G
   };
 }
 
+export function frameNode(
+  x: number,
+  y: number,
+  children: GraphicNode[] = [
+    shapeNode('rectangle', 0, 0, 80, 48, 6),
+    shapeNode('ellipse', 0, 0, 48, 48),
+    shapeNode('rectangle', 0, 0, 96, 40, 6),
+  ],
+): GraphicNode {
+  return {
+    type: 'frame',
+    transform: defaultGraphicTransform(x, y, 280, 64),
+    style: defaultGraphicStyle(),
+    layout: { direction: 'horizontal', gap: 12, padding: 16 },
+    clip: false,
+    children,
+  };
+}
+
 export function pathNode(
   x: number,
   y: number,
@@ -215,6 +238,8 @@ export function createGraphicNode(kind: string, x: number, y: number): GraphicNo
       return imageNode(x, y);
     case 'group':
       return groupNode(x, y);
+    case 'frame':
+      return frameNode(x, y);
     default:
       return shapeNode('rectangle', x, y, 120, 80);
   }
@@ -381,6 +406,12 @@ export function normalizeGraphicNode(value: unknown): GraphicNode | null {
   }
   if (raw.binding && typeof raw.binding === 'object') {
     node.binding = raw.binding as GraphicNode['binding'];
+  }
+  if (raw.layout && typeof raw.layout === 'object') {
+    node.layout = raw.layout as GraphicNode['layout'];
+  }
+  if (typeof raw.clip === 'boolean') {
+    node.clip = raw.clip;
   }
   return node;
 }

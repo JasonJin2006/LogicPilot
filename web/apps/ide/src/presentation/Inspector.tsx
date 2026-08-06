@@ -5,6 +5,7 @@
 // Pure: every edit calls back with a fresh GraphicNode; the model store
 // commits it (undoable).
 
+import { createGraphicNode } from '@logicpilot/editor';
 import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
@@ -71,6 +72,10 @@ export function PresentationInspector({
   const bindings = binding?.properties ?? {};
   const patchBinding = (properties: Record<string, string>) =>
     onChange({ ...object, binding: { properties } });
+  const patchLayout = (patch: Partial<NonNullable<GraphicNode['layout']>>) =>
+    onChange({ ...object, layout: { ...object.layout!, ...patch } });
+  const addChild = (kind: 'rect' | 'oval' | 'text') =>
+    onChange({ ...object, children: [...(object.children ?? []), createGraphicNode(kind, 0, 0)] });
 
   return (
     <div className="side-panel-body properties">
@@ -321,6 +326,55 @@ export function PresentationInspector({
         <button className="props-delete" onClick={onUngroup}>
           Ungroup
         </button>
+      )}
+      {object.type === 'frame' && (
+        <div className="props-section">
+          <div className="props-section-title">Frame</div>
+          <label className="props-field">
+            <span className="props-field-name">Clip content</span>
+            <input
+              type="checkbox"
+              checked={object.clip === true}
+              onChange={(event) => onChange({ ...object, clip: event.target.checked })}
+            />
+          </label>
+          <label className="props-field">
+            <span className="props-field-name">Auto layout</span>
+            <select
+              value={object.layout?.direction ?? 'horizontal'}
+              onChange={(event) =>
+                patchLayout({
+                  direction: event.target.value as 'horizontal' | 'vertical',
+                })
+              }
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </label>
+          {numField('Padding', object.layout?.padding ?? 0, (padding) => patchLayout({ padding }))}
+          {numField('Gap', object.layout?.gap ?? 0, (gap) => patchLayout({ gap }))}
+          <div className="props-align-row">
+            <button className="props-align-btn" onClick={() => addChild('rect')}>
+              + Rect
+            </button>
+            <button className="props-align-btn" onClick={() => addChild('oval')}>
+              + Oval
+            </button>
+            <button className="props-align-btn" onClick={() => addChild('text')}>
+              + Text
+            </button>
+            <button
+              className="props-align-btn"
+              onClick={() =>
+                onChange({ ...object, children: (object.children ?? []).slice(0, -1) })
+              }
+              disabled={(object.children?.length ?? 0) === 0}
+            >
+              − Last
+            </button>
+          </div>
+        </div>
       )}
       <div className="props-section">
         <div className="props-section-title">Simulation binding</div>

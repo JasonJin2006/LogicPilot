@@ -444,6 +444,13 @@ export function BlockIcon({ kind }: { kind: string }) {
           <rect x="16" y="16" width="16" height="16" rx="2" opacity="0.6" />
         </Glyph>
       );
+    case 'frame':
+      return (
+        <Glyph>
+          <rect x="7" y="7" width="26" height="26" rx="3" />
+          <rect x="12" y="12" width="16" height="16" rx="2" strokeDasharray="4 3" opacity="0.7" />
+        </Glyph>
+      );
     case 'state':
       return (
         <Glyph>

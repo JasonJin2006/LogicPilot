@@ -25,6 +25,7 @@ export {
   createGraphicNode,
   defaultGraphicStyle,
   defaultGraphicTransform,
+  frameNode,
   groupNode,
   imageNode,
   normalizeGraphicNode,
@@ -33,6 +34,8 @@ export {
   textNode,
 } from './presentation.js';
 export { evalBindingExpression, resolveGraphicBindings } from './binding.js';
+export { computeFrameLayout } from './layout.js';
+export type { FramePlacement } from './layout.js';
 export type {
   GraphicFill,
   GraphicNode,

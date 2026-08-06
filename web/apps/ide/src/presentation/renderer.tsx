@@ -4,7 +4,7 @@
 
 import type { ReactNode } from 'react';
 import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
-import { resolveGraphicBindings } from '@logicpilot/editor';
+import { computeFrameLayout, resolveGraphicBindings } from '@logicpilot/editor';
 
 interface RendererProps {
   object: GraphicNode;
@@ -15,6 +15,10 @@ interface RendererProps {
   uid?: string;
   /** Live simulation variables (queueLength, busy, ...) to resolve bindings. */
   runtime?: Record<string, number>;
+  /** Layout override: render at this position instead of transform.x/y
+   *  (used by frame auto-layout for children). */
+  offsetX?: number;
+  offsetY?: number;
 }
 
 function fillPaint(style: GraphicStyle, uid: string | undefined): string {
@@ -146,6 +150,41 @@ function shapeFor(
           ))}
         </>
       );
+    case 'frame': {
+      const { width: frameWidth, height: frameHeight, placements } = computeFrameLayout(object);
+      return (
+        <>
+          <rect
+            x={0}
+            y={0}
+            width={frameWidth}
+            height={frameHeight}
+            rx={6}
+            fill={fill}
+            {...stroke}
+          />
+          {object.clip && (
+            <clipPath id={`clip-${uid}`}>
+              <rect x={0} y={0} width={frameWidth} height={frameHeight} rx={6} />
+            </clipPath>
+          )}
+          <g clipPath={object.clip ? `url(#clip-${uid})` : undefined}>
+            {placements.map(({ child, x, y }, index) => (
+              <PresentationRenderer
+                key={index}
+                object={child}
+                ox={0}
+                oy={0}
+                uid={uid ? `${uid}-c${index}` : undefined}
+                runtime={runtime}
+                offsetX={x}
+                offsetY={y}
+              />
+            ))}
+          </g>
+        </>
+      );
+    }
     default:
       return null;
   }
@@ -199,11 +238,20 @@ function shapeDefs(object: GraphicNode, uid: string | undefined): ReactNode {
   return defs.length > 0 ? <defs>{defs}</defs> : null;
 }
 
-export function PresentationRenderer({ object, ox, oy, className, uid, runtime }: RendererProps) {
+export function PresentationRenderer({
+  object,
+  ox,
+  oy,
+  className,
+  uid,
+  runtime,
+  offsetX,
+  offsetY,
+}: RendererProps) {
   const resolved = runtime && object.binding ? resolveGraphicBindings(object, runtime) : object;
   const t = resolved.transform;
-  const x = t.x - ox;
-  const y = t.y - oy;
+  const x = (offsetX ?? t.x) - ox;
+  const y = (offsetY ?? t.y) - oy;
   const filter = resolved.style.shadow || resolved.style.blur ? `url(#fx-${uid})` : undefined;
   return (
     <g
