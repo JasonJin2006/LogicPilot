@@ -29,7 +29,9 @@ export function insertBlockAt(
   };
   cascade += 1;
 
-  const isStage = kind !== 'resource' && (library === undefined || library === 'process');
+  const isStage =
+    kind !== 'resource' &&
+    (library === undefined || library === 'process' || library === 'statechart');
   let container: string | undefined;
   if (isStage) {
     if (view) {

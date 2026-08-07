@@ -83,4 +83,28 @@ describe('modelRunParams', () => {
     expect(params.ok).toBe(false);
     expect(params.error).toContain('Missing');
   });
+
+  it('accepts a standalone statechart model without driver params', () => {
+    let doc = createDocument('TrafficLight');
+    doc = addNode(doc, {
+      kind: 'statechart',
+      name: 'Light',
+      x: 0,
+      y: 0,
+      library: 'statechart',
+      params: {},
+    });
+    doc = addNode(doc, {
+      kind: 'state',
+      name: 'Red',
+      x: 0,
+      y: 40,
+      library: 'statechart',
+      container: 'Light',
+      params: {},
+    });
+    const params = modelRunParams(doc);
+    expect(params.ok).toBe(true);
+    expect(params.lambda).toBeUndefined();
+  });
 });

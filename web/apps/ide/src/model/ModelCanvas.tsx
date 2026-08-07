@@ -21,7 +21,13 @@ import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
 import { syncCanvasFromProject } from '../state/projectSync';
-import { BLOCK_DEFAULTS, blockPorts, portAnchor, PRESENTATION_KINDS } from './blockDefs';
+import {
+  BLOCK_DEFAULTS,
+  blockPorts,
+  portAnchor,
+  PRESENTATION_KINDS,
+  STATECHART_KINDS,
+} from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
@@ -996,6 +1002,107 @@ export function ModelCanvas() {
     );
   }
 
+  // Statechart elements render as AnyLogic-style shapes (rounded state
+  // boxes, circles for initial/final/history, diamond branches); transition
+  // blocks draw as arrows between their `from`/`to` states (by name).
+  const scNodes = visibleNodes.filter((node) => STATECHART_KINDS.has(node.kind));
+  const scEdges: Array<{ id: string; name: string; a: { x: number; y: number }; b: { x: number; y: number } }> =
+    [];
+  for (const node of scNodes) {
+    if (node.kind !== 'transition') continue;
+    const fromName = String(node.params['from'] ?? '');
+    const toName = String(node.params['to'] ?? '');
+    if (!fromName || !toName) continue;
+    const from = visibleNodes.find((entry) => entry.name === fromName);
+    const to = visibleNodes.find((entry) => entry.name === toName);
+    if (!from || !to) continue;
+    scEdges.push({ id: node.id, name: node.name, a: { x: from.x, y: from.y }, b: { x: to.x, y: to.y } });
+  }
+  const scBounds =
+    scEdges.length > 0
+      ? {
+          minX: Math.min(...scEdges.flatMap((edge) => [edge.a.x, edge.b.x])) - 24,
+          minY: Math.min(...scEdges.flatMap((edge) => [edge.a.y, edge.b.y])) - 24,
+          maxX: Math.max(...scEdges.flatMap((edge) => [edge.a.x, edge.b.x])) + 24,
+          maxY: Math.max(...scEdges.flatMap((edge) => [edge.a.y, edge.b.y])) + 24,
+        }
+      : null;
+  const scEdgesView =
+    scBounds !== null ? (
+      <svg
+        className="model-sc-edges"
+        style={{
+          left: scBounds.minX,
+          top: scBounds.minY,
+          width: scBounds.maxX - scBounds.minX,
+          height: scBounds.maxY - scBounds.minY,
+        }}
+      >
+        {scEdges.map((edge) => {
+          const dx = edge.b.x - edge.a.x;
+          const dy = edge.b.y - edge.a.y;
+          const len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len;
+          const uy = dy / len;
+          // Shorten the arrow so it stops at the target state's border.
+          const tipX = edge.b.x - ux * 26;
+          const tipY = edge.b.y - uy * 26;
+          const tailX = edge.a.x + ux * 26;
+          const tailY = edge.a.y + uy * 26;
+          const d = `M ${tailX - scBounds.minX} ${tailY - scBounds.minY} L ${tipX - scBounds.minX} ${tipY - scBounds.minY}`;
+          const head = `M ${tipX - scBounds.minX} ${tipY - scBounds.minY} L ${tipX - ux * 9 - uy * 4.5 - scBounds.minX} ${tipY - uy * 9 + ux * 4.5 - scBounds.minY} L ${tipX - ux * 9 + uy * 4.5 - scBounds.minX} ${tipY - uy * 9 - ux * 4.5 - scBounds.minY} Z`;
+          const mx = (tailX + tipX) / 2 - scBounds.minX;
+          const my = (tailY + tipY) / 2 - scBounds.minY;
+          return (
+            <g
+              key={edge.id}
+              className="model-sc-transition"
+              onClick={() => select(edge.id)}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <path className="sc-edge-hit" d={d} strokeWidth={10 / view.scale} />
+              <path className="sc-edge-line" d={d} strokeWidth={1.5 / view.scale} />
+              <path className="sc-edge-head" d={head} />
+              <text className="sc-edge-label" x={mx} y={my - 4} textAnchor="middle">
+                {edge.name}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    ) : null;
+  const scShapesView = (
+    <>
+      {scNodes
+        .filter(
+          (node) =>
+            node.kind !== 'transition' ||
+            !scEdges.some((edge) => edge.id === node.id),
+        )
+        .map((node) => {
+          const selected = node.id === selectedId;
+          return (
+            <div
+              key={node.id}
+              className={`model-sc-shape kind-${node.kind}${selected ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+              style={{ left: node.x, top: node.y }}
+              onPointerDown={(event) => onElementPointerDown(event, node)}
+              onPointerMove={(event) => onElementPointerMove(event, node)}
+              onPointerUp={(event) => onElementPointerUp(event, node)}
+              onPointerCancel={() => {
+                elementDrag.current = null;
+                setDraggingId(null);
+              }}
+              title={node.kind}
+            >
+              <span className="sc-shape-body" aria-hidden />
+              <span className="sc-shape-name">{node.name}</span>
+            </div>
+          );
+        })}
+    </>
+  );
+
   return (
     <div
       ref={viewportRef}
@@ -1063,8 +1170,10 @@ export function ModelCanvas() {
       >
         {edgesView}
         {shapesView}
+        {scEdgesView}
+        {scShapesView}
         {visibleNodes.map((node) => {
-          if (PRESENTATION_KINDS.has(node.kind)) {
+          if (PRESENTATION_KINDS.has(node.kind) || STATECHART_KINDS.has(node.kind)) {
             return null; // rendered as a real shape above
           }
           if (CANVAS_CONTAINER_KINDS.has(node.kind)) {

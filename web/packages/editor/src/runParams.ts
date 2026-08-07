@@ -40,6 +40,17 @@ function toNumber(value: string | number | boolean | undefined, fallback: number
 }
 
 export function modelRunParams(document: ModelDocument): ModelRunParams {
+  const hasProcessFlow = document.nodes.some(
+    (node) =>
+      node.library === 'process' ||
+      node.library === undefined ||
+      ['source', 'service', 'queue', 'resource'].includes(node.kind),
+  );
+  // Standalone method models (statechart / agent / continuous / DEVS) carry
+  // no process-flow blocks: the gateway runs them without M/M/1 parameters.
+  if (!hasProcessFlow) {
+    return { ok: true };
+  }
   const sources = document.nodes.filter((node) => node.kind === 'source');
   const services = document.nodes.filter((node) => node.kind === 'service');
   if (sources.length !== 1) {

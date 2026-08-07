@@ -260,4 +260,71 @@ describe('DSL v2 generation', () => {
     expect(regenerated).toBe(source);
   });
 
+  it('emits a canvas-built statechart container with children', () => {
+    let doc = createDocument('Untitled');
+    doc = addNode(doc, {
+      kind: 'statechart',
+      name: 'statechart',
+      x: 0,
+      y: 0,
+      library: 'statechart',
+      params: {},
+    });
+    doc = addNode(doc, {
+      kind: 'state',
+      name: 'Red',
+      x: 0,
+      y: 40,
+      library: 'statechart',
+      container: 'statechart',
+      params: {},
+    });
+    doc = addNode(doc, {
+      kind: 'state',
+      name: 'Green',
+      x: 0,
+      y: 100,
+      library: 'statechart',
+      container: 'statechart',
+      params: {},
+    });
+    doc = addNode(doc, {
+      kind: 'transition',
+      name: 'transition',
+      x: 0,
+      y: 70,
+      library: 'statechart',
+      container: 'statechart',
+      params: { from: 'Red', to: 'Green', triggeredBy: 'timeout', timeout: 3 },
+    });
+    doc = addNode(doc, {
+      kind: 'statechartEntryPoint',
+      name: 'statechartEntryPoint',
+      x: -100,
+      y: 40,
+      library: 'statechart',
+      container: 'statechart',
+      params: { target: 'Red' },
+    });
+
+    const source = generateDsl(doc);
+    expect(source).toContain('statechart statechart {');
+    expect(source).toContain('state Red { }');
+    expect(source).toContain('state Green { }');
+    expect(source).toContain('transition transition {');
+    expect(source).toContain('initial = Red');
+
+    // Save-time round-trip guard: the generated DSL must parse back to the
+    // same member set (LP4001 protects this in the IDE).
+    const parsed = parseDsl(source);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const members = new Set(
+      parsed.document.nodes.map((node) => `${node.kind}:${node.name}`),
+    );
+    for (const node of doc.nodes) {
+      expect(members.has(`${node.kind}:${node.name}`)).toBe(true);
+    }
+  });
+
 });

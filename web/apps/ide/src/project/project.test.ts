@@ -18,6 +18,7 @@ import {
   sceneContainerFromFile,
   splitModelSource,
 } from './project';
+import { saveProject } from './syncEngine';
 
 function buildSample(): ModelDocument {
   let document = createDocument('MM1');
@@ -57,6 +58,55 @@ function buildSample(): ModelDocument {
     params: {},
   });
   document = connect(document, document.nodes[1]!.id, document.nodes[2]!.id).document;
+  return document;
+}
+
+function buildStatechart(): ModelDocument {
+  let document = createDocument('Untitled');
+  document = addNode(document, {
+    kind: 'statechart',
+    name: 'statechart',
+    x: 0,
+    y: 0,
+    library: 'statechart',
+    params: {},
+  });
+  document = addNode(document, {
+    kind: 'state',
+    name: 'Red',
+    x: 0,
+    y: 40,
+    library: 'statechart',
+    container: 'statechart',
+    params: {},
+  });
+  document = addNode(document, {
+    kind: 'state',
+    name: 'Green',
+    x: 0,
+    y: 100,
+    library: 'statechart',
+    container: 'statechart',
+    params: {},
+  });
+  document = addNode(document, {
+    kind: 'transition',
+    name: 'transition',
+    x: 0,
+    y: 70,
+    library: 'statechart',
+    container: 'statechart',
+    params: { from: 'Red', to: 'Green', triggeredBy: 'timeout', timeout: 3 },
+  });
+  document = addNode(document, {
+    kind: 'statechartEntryPoint',
+    name: 'statechartEntryPoint',
+    x: -100,
+    y: 40,
+    library: 'statechart',
+    container: 'statechart',
+    params: { target: 'Red' },
+  });
   return document;
 }
 
@@ -387,5 +437,31 @@ describe('project bundle', () => {
     expect(restored!.presentation?.transform.x).toBe(300);
     expect(restored!.presentation?.transform.width).toBe(120);
     expect(restored!.presentation?.style.fill).toEqual({ kind: 'solid', color: '#ffffff' });
+  });
+
+  it('saves a canvas-built statechart without dropping members (LP4001)', () => {
+    const document = buildStatechart();
+    const saved = saveProject(document, null);
+    const errors = saved.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
+    expect(errors).toEqual([]);
+    const source = saved.files[DEFAULT_MODEL_PATH] ?? '';
+    expect(source).toContain('statechart statechart {');
+    expect(source).toContain('state Red { }');
+    expect(source).toContain('transition transition {');
+    expect(source).toContain('initial = Red');
+
+    // The saved bundle must reload to the same member set.
+    const json = bundleToJson(saved.bundle);
+    const parsed = parseProjectBundle(json);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const restored = projectToDocument(parsed.bundle!);
+    expect(restored.ok).toBe(true);
+    const kinds = new Set(
+      restored.document!.nodes.map((node) => `${node.kind}:${node.name}`),
+    );
+    for (const node of document.nodes) {
+      expect(kinds.has(`${node.kind}:${node.name}`)).toBe(true);
+    }
   });
 });

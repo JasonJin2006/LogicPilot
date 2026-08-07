@@ -175,22 +175,37 @@ export function generateDsl(document: ModelDocument): string {
     }
     const children = childrenOf(node.name, node.id);
     if (node.kind === 'statechart') {
-      // The statechart's initial state is derived from the edge leaving its
-      // entry point (or initial state pointer) inside the container.
-      const initial = document.edges
-        .map((edge) => {
-          const from = findNode(document, edge.from);
-          const to = findNode(document, edge.to);
-          if (!from || !to || from.container !== node.name) return null;
-          if (
-            from.kind !== 'statechartEntryPoint' &&
-            from.kind !== 'initialStatePointer'
-          ) {
-            return null;
-          }
-          return to;
-        })
-        .find((to): to is ModelNode => to !== null);
+      // The statechart's initial state comes from the entry point's Target
+      // property, falling back to an edge leaving the entry point (or
+      // initial state pointer) inside the container.
+      const pointers = document.nodes.filter(
+        (entry) =>
+          (entry.kind === 'statechartEntryPoint' ||
+            entry.kind === 'initialStatePointer') &&
+          entry.container === node.name,
+      );
+      const targetName = String(
+        pointers.find((entry) => typeof entry.params['target'] === 'string')
+          ?.params['target'] ?? '',
+      );
+      const initial =
+        (targetName !== ''
+          ? children.find((child) => child.name === targetName)
+          : undefined) ??
+        document.edges
+          .map((edge) => {
+            const from = findNode(document, edge.from);
+            const to = findNode(document, edge.to);
+            if (!from || !to || from.container !== node.name) return null;
+            if (
+              from.kind !== 'statechartEntryPoint' &&
+              from.kind !== 'initialStatePointer'
+            ) {
+              return null;
+            }
+            return to;
+          })
+          .find((to): to is ModelNode => to !== null);
       lines.push(`${indent}statechart ${node.name} {`);
       for (const [key, value] of Object.entries(node.params)) {
         lines.push(`${indent}  ${key} = ${fieldValue(value)}`);

@@ -492,6 +492,201 @@
   pointer-events: none;
 }
 
+/* ---------------------------------------------------------------------------
+   Statechart shapes (AnyLogic-style elements): rounded state boxes, circles
+   for initial/final/history, diamond branches; transitions draw as arrows
+   between their from/to states.
+--------------------------------------------------------------------------- */
+.model-sc-shape {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transform: translate(-50%, -50%);
+  cursor: var(--cursor-grab);
+  user-select: none;
+  color: var(--text);
+}
+
+.model-sc-shape.dragging {
+  cursor: var(--cursor-grabbing);
+}
+
+.sc-shape-body {
+  display: block;
+  position: relative;
+  color: var(--text);
+  transition: color 0.1s;
+}
+
+.sc-shape-name {
+  max-width: 120px;
+  font-size: 11px;
+  line-height: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.model-sc-shape:hover .sc-shape-body {
+  color: var(--text-secondary);
+}
+
+.model-sc-shape.selected .sc-shape-body,
+.model-sc-shape.selected .sc-shape-name {
+  color: var(--accent);
+}
+
+.model-sc-shape.selected .sc-shape-body {
+  filter: drop-shadow(0 0 4px var(--accent-dim));
+}
+
+/* State: rounded rectangle. */
+.model-sc-shape.kind-state .sc-shape-body {
+  width: 118px;
+  height: 46px;
+  border: 1.5px solid currentColor;
+  border-radius: 12px;
+  background: var(--bg-strong);
+}
+
+/* Final state: outer circle + filled inner dot. */
+.model-sc-shape.kind-finalState .sc-shape-body {
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.model-sc-shape.kind-finalState .sc-shape-body::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* History state: circle with an H. */
+.model-sc-shape.kind-historyState .sc-shape-body {
+  width: 28px;
+  height: 28px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.model-sc-shape.kind-historyState .sc-shape-body::after {
+  content: 'H';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Branch: diamond (rotated square). */
+.model-sc-shape.kind-branch .sc-shape-body {
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+/* Unresolved transition: a small arrow glyph so the block stays selectable
+   until its from/to states are set (then it renders as an edge arrow). */
+.model-sc-shape.kind-transition .sc-shape-body {
+  width: 32px;
+  height: 14px;
+  border-top: 1.5px solid currentColor;
+}
+
+.model-sc-shape.kind-transition .sc-shape-body::after {
+  content: '';
+  position: absolute;
+  right: -4px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left: 7px solid currentColor;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+}
+
+/* Statechart entry point / initial state pointer: filled circle with a
+   stub line and arrowhead pointing at the initial state. */
+.model-sc-shape.kind-statechartEntryPoint .sc-shape-body,
+.model-sc-shape.kind-initialStatePointer .sc-shape-body {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.model-sc-shape.kind-statechartEntryPoint .sc-shape-body::after,
+.model-sc-shape.kind-initialStatePointer .sc-shape-body::after {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  width: 18px;
+  height: 1.5px;
+  background: currentColor;
+}
+
+.model-sc-shape.kind-statechartEntryPoint .sc-shape-body::before,
+.model-sc-shape.kind-initialStatePointer .sc-shape-body::before {
+  content: '';
+  position: absolute;
+  left: 31px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left: 6px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+/* Transition arrows between states. */
+.model-sc-edges {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.model-sc-edges .model-sc-transition {
+  pointer-events: auto;
+  cursor: var(--cursor-pointer);
+  color: var(--text-muted);
+  transition: color 0.1s;
+}
+
+.model-sc-edges .model-sc-transition:hover {
+  color: var(--accent);
+}
+
+.sc-edge-line {
+  stroke: currentColor;
+  fill: none;
+}
+
+.sc-edge-head {
+  fill: currentColor;
+}
+
+.sc-edge-hit {
+  stroke: transparent;
+  fill: none;
+}
+
+.sc-edge-label {
+  fill: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  pointer-events: none;
+}
+
 /* Connection ports: small dots anchored on the glyph outline (positions come
    from PORT_LAYOUTS in blockDefs.ts, AnyLogic green-dot reference). */
 .model-port {

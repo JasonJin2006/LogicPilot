@@ -487,7 +487,10 @@ const STATECHART_DEFS: BlockDef[] = [
     name: 'Statechart Entry Point',
     hint: 'global initial state',
     ports: [{ name: 'out', direction: 'out', conditionalOn: null, description: '' }],
-    properties: commonProps([actionProp('action', 'Action')]),
+    properties: commonProps([
+      stringProp('target', 'Target state', ''),
+      actionProp('action', 'Action'),
+    ]),
   },
   {
     kind: 'initialStatePointer',
@@ -495,7 +498,10 @@ const STATECHART_DEFS: BlockDef[] = [
     name: 'Initial State Pointer',
     hint: 'initial state inside a composite',
     ports: [{ name: 'out', direction: 'out', conditionalOn: null, description: '' }],
-    properties: commonProps([actionProp('action', 'Action')]),
+    properties: commonProps([
+      stringProp('target', 'Target state', ''),
+      actionProp('action', 'Action'),
+    ]),
   },
   {
     kind: 'state',
@@ -521,6 +527,8 @@ const STATECHART_DEFS: BlockDef[] = [
       { name: 'out', direction: 'out', conditionalOn: null, description: '' },
     ],
     properties: commonProps([
+      stringProp('from', 'From', ''),
+      stringProp('to', 'To', ''),
       enumProp(
         'triggeredBy',
         'Triggered by',
@@ -1006,6 +1014,19 @@ export const BLOCK_DEFS: BlockDef[] = [
 export const PRESENTATION_KINDS: ReadonlySet<string> = new Set(
   PRESENTATION_DEFS.map((def) => def.kind),
 );
+
+/** Statechart element kinds render as AnyLogic-style shapes (rounded
+ *  state boxes, circles for initial/final/history, diamond branches)
+ *  instead of generic block cards. */
+export const STATECHART_KINDS: ReadonlySet<string> = new Set([
+  'state',
+  'finalState',
+  'historyState',
+  'branch',
+  'statechartEntryPoint',
+  'initialStatePointer',
+  'transition',
+]);
 
 /** The block's full port list (direction + conditional visibility). */
 export function blockPorts(kind: string): BlockPortDef[] {
