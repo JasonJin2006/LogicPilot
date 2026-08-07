@@ -58,6 +58,15 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 
 ## AI 面板（右侧）
 
+## 状态机连线与实时图表
+
+- **状态机过渡连线**：在 Statechart 画布中，状态（State）左右边缘有端口点。从源状态的
+  out 端口拖到目标状态的 in 端口即可创建一条过渡（Transition），箭头自动生成；点击箭头
+  可在 Properties 面板编辑触发方式 / 超时 / 条件 / 守卫 / 动作。
+- **实时图表（Analysis 库）**：Time Plot / Bar Chart / Pie Chart 等图表块绑定内核遥测流
+  （队列长度、吞吐、平均等待等），运行模型时在画布上实时滚动绘制。图表块的 `value`
+  属性选择指标，`title` 设置标题。
+
 | 按钮 | 作用 | 示例 |
 |---|---|---|
 | `generate + run` | 生成 DSL → 编译修复 → 运行；可 **Load to canvas** 加载进画布 | "build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0" |

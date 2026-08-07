@@ -28,6 +28,7 @@ import {
   PRESENTATION_KINDS,
   STATECHART_KINDS,
 } from './blockDefs';
+import { ChartWidget } from './ChartWidget';
 import { BlockIcon } from './BlockIcon';
 import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
@@ -58,6 +59,65 @@ let shapeClipboard: { kind: string; object: GraphicNode } | null = null;
 function visiblePorts(node: ModelNode): BlockPortDef[] {
   return blockPorts(node.kind);
 }
+
+/** World-space port anchor for statechart shape elements. State shapes are
+ *  larger than the 34px block cards, so their in/out ports sit on the
+ *  rounded-rectangle's left/right mid-edge instead of the icon rail. */
+function statechartPortAnchor(
+  node: ModelNode,
+  port: string,
+): { x: number; y: number } {
+  const halfWidth =
+    node.kind === 'state'
+      ? 59
+      : node.kind === 'finalState' || node.kind === 'historyState'
+        ? 14
+        : 16; // branch diamond
+  const bodyCenterY = -8.5; // body (46/28/30px) sits above the name line
+  return port === 'in'
+    ? { x: node.x - halfWidth, y: node.y + bodyCenterY }
+    : { x: node.x + halfWidth, y: node.y + bodyCenterY };
+}
+
+/** Local (div-content-box) position of a statechart shape port. The shape
+ *  div translates by half its own size, so these offsets are NOT the world
+ *  anchor; they place the dot on the body's edge before that transform. */
+function statechartPortLocal(node: ModelNode, port: string): { x: number; y: number } {
+  if (node.kind === 'finalState' || node.kind === 'historyState') {
+    return port === 'in' ? { x: 0, y: 14 } : { x: 28, y: 14 };
+  }
+  if (node.kind === 'branch') {
+    return port === 'in' ? { x: 0, y: 15 } : { x: 30, y: 15 };
+  }
+  return port === 'in' ? { x: 0, y: 23 } : { x: 118, y: 23 };
+}
+
+/** Ports the statechart linking tool exposes on shape elements. */
+function statechartShapePorts(node: ModelNode): string[] {
+  switch (node.kind) {
+    case 'state':
+    case 'historyState':
+    case 'branch':
+      return ['in', 'out'];
+    case 'finalState':
+      return ['in'];
+    default:
+      return [];
+  }
+}
+
+/** Analysis-library chart blocks render as live data widgets. */
+const ANALYSIS_CHART_KINDS: ReadonlySet<string> = new Set([
+  'timePlot',
+  'plot',
+  'barChart',
+  'stackChart',
+  'timeStackChart',
+  'timeColorChart',
+  'pieChart',
+  'histogram',
+  'histogram2D',
+]);
 
 /** Fallback port for edges without explicit ports: the primary in/out first,
  *  skipping conditional ports. */
@@ -480,6 +540,18 @@ export function ModelCanvas() {
     let bestDistance = tolerance;
     for (const node of visibleNodes) {
       if (node.id === fromId) continue;
+      if (STATECHART_KINDS.has(node.kind)) {
+        for (const port of statechartShapePorts(node)) {
+          if (port === 'out') continue;
+          const anchor = statechartPortAnchor(node, port);
+          const distance = Math.hypot(anchor.x - world.x, anchor.y - world.y);
+          if (distance <= bestDistance) {
+            bestDistance = distance;
+            best = { id: node.id, port };
+          }
+        }
+        continue;
+      }
       for (const port of visiblePorts(node)) {
         if (port.direction === 'out') continue;
         const anchor = portAnchor(node, port.name);
@@ -517,11 +589,47 @@ export function ModelCanvas() {
     if (moved) {
       const world = clientToWorld(event.clientX, event.clientY);
       const target = findWireTarget(world, draftWire.fromId);
-      if (target) connectBlocks(draftWire.fromId, target.id, draftWire.fromPort, target.port);
+      if (target) {
+        const from = visibleNodes.find((node) => node.id === draftWire.fromId);
+        const to = visibleNodes.find((node) => node.id === target.id);
+        if (
+          from !== undefined &&
+          to !== undefined &&
+          STATECHART_KINDS.has(from.kind) &&
+          STATECHART_KINDS.has(to.kind)
+        ) {
+          // State-to-state drag creates a transition (AnyLogic style) instead
+          // of a process-flow coupling.
+          createStatechartTransition(from, to);
+        } else {
+          connectBlocks(draftWire.fromId, target.id, draftWire.fromPort, target.port);
+        }
+      }
     }
     wireStart.current = null;
     setDraftWire(null);
     setWireTarget(null);
+  };
+
+  // Create a transition block between two statechart elements (from/to by
+  // name, positioned at the midpoint so the arrow edge renders).
+  const createStatechartTransition = (from: ModelNode, to: ModelNode) => {
+    const document = useModelStore.getState().document;
+    const count = document.nodes.filter(
+      (node) => node.kind === 'transition' && node.container === from.container,
+    ).length;
+    const name = count === 0 ? 'transition' : `transition${count + 1}`;
+    useModelStore.getState().addBlock({
+      kind: 'transition',
+      name,
+      x: (from.x + to.x) / 2,
+      y: (from.y + to.y) / 2,
+      params: { from: from.name, to: to.name, triggeredBy: 'timeout', timeout: 1.0 },
+      library: 'statechart',
+      container: from.container,
+    });
+    recordUse('transition');
+    select(null);
   };
 
   const cancelWire = () => {
@@ -1096,7 +1204,66 @@ export function ModelCanvas() {
               title={node.kind}
             >
               <span className="sc-shape-body" aria-hidden />
+              {statechartShapePorts(node).map((port) => {
+                const local = statechartPortLocal(node, port);
+                const isIn = port === 'in';
+                const targeted =
+                  isIn &&
+                  wireTarget !== null &&
+                  wireTarget.id === node.id &&
+                  wireTarget.port === port;
+                return (
+                  <span
+                    key={port}
+                    className={`model-port sc-shape-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
+                    data-port={port}
+                    title={`${port} port`}
+                    style={{
+                      left: local.x,
+                      top: local.y,
+                    }}
+                    onPointerDown={
+                      isIn
+                        ? (event) => event.stopPropagation()
+                        : (event) => startWire(event, node, port)
+                    }
+                    onPointerMove={moveWire}
+                    onPointerUp={endWire}
+                    onPointerCancel={cancelWire}
+                  />
+                );
+              })}
               <span className="sc-shape-name">{node.name}</span>
+            </div>
+          );
+        })}
+    </>
+  );
+
+  // Analysis-library chart blocks render as live widgets bound to the
+  // telemetry stream (queue length / throughput / mean wait ...).
+  const chartsView = (
+    <>
+      {visibleNodes
+        .filter((node) => ANALYSIS_CHART_KINDS.has(node.kind))
+        .map((node) => {
+          const selected = node.id === selectedId;
+          return (
+            <div
+              key={node.id}
+              className={`model-chart${selected ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+              style={{ left: node.x, top: node.y }}
+              onPointerDown={(event) => onElementPointerDown(event, node)}
+              onPointerMove={(event) => onElementPointerMove(event, node)}
+              onPointerUp={(event) => onElementPointerUp(event, node)}
+              onPointerCancel={() => {
+                elementDrag.current = null;
+                setDraggingId(null);
+              }}
+              onDoubleClick={() => select(node.id)}
+              title={`${node.name} - live ${String(node.params['value'] ?? 'queueLength')}`}
+            >
+              <ChartWidget kind={node.kind} params={node.params} name={node.name} />
             </div>
           );
         })}
@@ -1172,8 +1339,13 @@ export function ModelCanvas() {
         {shapesView}
         {scEdgesView}
         {scShapesView}
+        {chartsView}
         {visibleNodes.map((node) => {
-          if (PRESENTATION_KINDS.has(node.kind) || STATECHART_KINDS.has(node.kind)) {
+          if (
+            PRESENTATION_KINDS.has(node.kind) ||
+            STATECHART_KINDS.has(node.kind) ||
+            ANALYSIS_CHART_KINDS.has(node.kind)
+          ) {
             return null; // rendered as a real shape above
           }
           if (CANVAS_CONTAINER_KINDS.has(node.kind)) {

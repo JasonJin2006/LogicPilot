@@ -544,6 +544,19 @@
   filter: drop-shadow(0 0 4px var(--accent-dim));
 }
 
+/* Port dots on statechart shapes: sit on the rounded-rectangle's edges so
+   the user can drag from a state to create a transition (AnyLogic style). */
+.model-sc-shape .sc-shape-port {
+  z-index: 2;
+  background: var(--accent);
+  border-color: var(--bg);
+}
+
+.model-sc-shape .sc-shape-port.port-in:hover {
+  transform: translate(-50%, -50%) scale(1.4);
+  border-color: var(--accent);
+}
+
 /* State: rounded rectangle. */
 .model-sc-shape.kind-state .sc-shape-body {
   width: 118px;
@@ -685,6 +698,77 @@
   font-family: var(--font-mono);
   font-size: 10px;
   pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Live chart widgets (analysis-library chart blocks): a dark panel with the
+   metric's scrolling line/bars, bound to the 10 Hz telemetry stream.
+--------------------------------------------------------------------------- */
+.model-chart {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  cursor: var(--cursor-grab);
+  user-select: none;
+  width: 216px;
+  height: 136px;
+  background: var(--bg-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow);
+}
+
+.model-chart.dragging {
+  cursor: var(--cursor-grabbing);
+}
+
+.model-chart.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim), var(--shadow);
+}
+
+.chart-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 6px 3px;
+  height: 100%;
+  box-sizing: border-box;
+  color: var(--text);
+}
+
+.chart-widget-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-svg {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  display: block;
+}
+
+.chart-widget-kind {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  color: var(--text-muted);
+}
+
+.chart-donut {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.chart-donut .chart-svg {
+  width: 64px;
+  height: 64px;
 }
 
 /* Connection ports: small dots anchored on the glyph outline (positions come
