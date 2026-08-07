@@ -6,6 +6,7 @@
 // and per-run state come from an arena and are released in one shot.
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -28,6 +29,9 @@ class Arena {
   // is exhausted (allocation failure is a caller bug in hot paths).
   [[nodiscard]] std::byte* allocate(std::size_t bytes,
                                     std::size_t align = alignof(std::max_align_t)) {
+    // The rounding trick below requires a power-of-two alignment (all
+    // callers pass alignof(T), which always is one).
+    assert((align & (align - 1)) == 0 && "alignment must be a power of two");
     const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(block_.get());
     const std::uintptr_t raw = base + offset_;
     const std::uintptr_t aligned = (raw + align - 1) & ~(align - 1);

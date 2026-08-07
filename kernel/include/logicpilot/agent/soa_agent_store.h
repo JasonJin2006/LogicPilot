@@ -53,6 +53,12 @@ class SoaAgentStore : public IAgentStore {
   // Per-slot liveness flags (1 = live). Separate from data columns so batch
   // kernels never touch them on the hot loop.
   std::vector<std::uint8_t> alive_;
+  // Live slot indices: integrate() iterates only live slots (O(alive)
+  // instead of O(high-watermark) under create/destroy churn). Swap-and-pop
+  // removal is O(1) via alive_pos_.
+  std::vector<AgentSlot> alive_indices_;
+  // Each live slot's position inside alive_indices_ (valid while alive).
+  std::vector<std::size_t> alive_pos_;
   // Free-list links for dead slots (valid only when !alive_[slot]).
   std::vector<std::uint32_t> next_free_;
 

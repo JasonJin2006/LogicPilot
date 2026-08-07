@@ -71,7 +71,14 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
 
   // Recursive flattening: registers atoms, creates endpoint edges per scope.
   const auto flatten_scope = [&](const CoupledModel& model, auto& self,
-                                 std::uint32_t scope, bool is_root) -> void {
+                                 std::uint32_t scope, bool is_root,
+                                 std::size_t depth) -> void {
+    // Recursion guard: absurdly deep coupled-model trees must fail cleanly
+    // instead of overflowing the call stack.
+    if (depth > 256) {
+      throw std::overflow_error(
+          "DevsExecutor: coupled-model nesting exceeds 256 levels");
+    }
     // Child name -> (atom index | child scope, is_atomic).
     struct ChildRef {
       std::uint32_t index;
@@ -134,10 +141,10 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
     }
 
     for (auto& [child_model, child_scope] : nested) {
-      self(*child_model, self, child_scope, false);
+      self(*child_model, self, child_scope, false, depth + 1);
     }
   };
-  flatten_scope(root, flatten_scope, 0, true);
+  flatten_scope(root, flatten_scope, 0, true, 0);
 
   // Collect AtomOut sources (every output coupling origin).
   for (const auto& [ep, targets] : flat.edges) {

@@ -21,8 +21,16 @@ class SlabPool {
   static_assert(sizeof(T) >= sizeof(void*),
                 "SlabPool blocks must hold the intrusive free-list pointer");
 
+  // Aligned release for the over-aligned allocation below (works for any
+  // alignof(T), including the default new alignment).
+  struct AlignedDelete {
+    void operator()(T* ptr) const noexcept {
+      ::operator delete(ptr, std::align_val_t{alignof(T)});
+    }
+  };
+
   struct Chunk {
-    std::unique_ptr<std::byte[]> storage;
+    std::unique_ptr<T[], AlignedDelete> storage;
   };
 
  public:
@@ -84,8 +92,13 @@ class SlabPool {
 
   void grow_chunk(std::size_t blocks) {
     Chunk chunk;
-    chunk.storage = std::make_unique<std::byte[]>(blocks * sizeof(T));
-    std::byte* base = chunk.storage.get();
+    // `std::make_unique<std::byte[]>` only guarantees default new alignment
+    // (typically 16); types with extended alignment (e.g. SIMD vectors)
+    // would make placement-new UB. Over-aligned operator new honours
+    // alignof(T) for any T.
+    chunk.storage.reset(static_cast<T*>(
+        ::operator new(blocks * sizeof(T), std::align_val_t{alignof(T)})));
+    std::byte* base = reinterpret_cast<std::byte*>(chunk.storage.get());
     std::memset(base, 0, blocks * sizeof(T));  // deterministic fresh blocks
     for (std::size_t i = 0; i < blocks; ++i) {
       push_free(base + i * sizeof(T));

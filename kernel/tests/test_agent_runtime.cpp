@@ -52,6 +52,30 @@ TEST_CASE("SoA store recycles slots and keeps columns consistent",
   REQUIRE_THAT(store.position(s2).y, WithinAbs(8.0, 1e-6));
 }
 
+TEST_CASE("SoA store churn keeps integrate O(alive) and consistent",
+          "[agent]") {
+  SoaAgentStore store;
+  store.reserve(4096);
+  std::vector<AgentSlot> slots;
+  for (std::size_t wave = 0; wave < 4; ++wave) {
+    slots.clear();
+    for (std::size_t i = 0; i < 3000; ++i) {
+      slots.push_back(
+          store.create(Position{0.0F, 0.0F}, Velocity{1.0F, 0.5F}, {}));
+    }
+    store.integrate(store.size(), 0.5F);
+    for (std::size_t i = 0; i < slots.size(); i += 2) {
+      store.destroy(slots[i]);
+    }
+    REQUIRE(store.size() == slots.size() - slots.size() / 2);
+    store.integrate(store.size(), 0.5F);
+    for (std::size_t i = 1; i < slots.size(); i += 2) {
+      store.destroy(slots[i]);
+    }
+  }
+  REQUIRE(store.size() == 0);
+}
+
 TEST_CASE("Batch kinematics update streams SoA columns", "[agent]") {
   AgentRuntime runtime;
   const AgentHandle a =
