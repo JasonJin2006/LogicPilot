@@ -146,7 +146,7 @@ export function NewProjectDialog() {
           </div>
           <p className="dialog-hint">
             {desktop
-              ? 'Creates <folder>/<name>/ with logicpilot.json, model/main.lp, presentation/main.canvas.json, build/ and results/ (IR schema v2).'
+              ? 'Creates <folder>/<name>/ with logicpilot.json, model/main.lp and presentation/main.canvas.json (IR schema v2).'
               : 'Creates an empty project (IR schema v2). Model source and canvas layout are saved together as a .lpproj bundle.'}
           </p>
           <div className="dialog-actions">

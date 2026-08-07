@@ -1,8 +1,9 @@
-// Side panel (Explorer view): the project's file tree. Source files come
-// from the open *.lpproj bundle; build/ and results/ are derived-artifact
-// folders. Right-click on a folder creates a file, on a file renames or
-// deletes it - all edits update the bundle in place (the Project panel
-// re-parses the changed DSL automatically) and mark the project dirty.
+// Side panel (Explorer view): the project's file tree. With an on-disk
+// project the tree mirrors the real folder contents exactly; in-memory
+// bundles show the bundle files. Right-click on a folder creates a file, on
+// a file renames or deletes it - all edits update the bundle in place (the
+// Project panel re-parses the changed DSL automatically) and mark the
+// project dirty.
 
 import { useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
@@ -48,24 +49,6 @@ interface TreeFolder {
 }
 
 type TreeEntry = TreeFile | TreeFolder;
-
-const ARTIFACT_ROWS: TreeFolder[] = [
-  {
-    name: 'build',
-    path: 'build/',
-    muted: true,
-    children: [
-      { name: 'main.lpir', path: 'build/main.lpir', kind: 'ir' },
-      { name: 'schema.sha256', path: 'build/schema.sha256', kind: 'muted' },
-    ],
-  },
-  {
-    name: 'results',
-    path: 'results/',
-    muted: true,
-    children: [{ name: '(empty)', path: 'results/', kind: 'muted' }],
-  },
-];
 
 export function isFolder(entry: TreeEntry): entry is TreeFolder {
   return 'children' in entry;
@@ -582,17 +565,6 @@ export function ExplorerPanel() {
           />
         ),
       )}
-      {!diskFiles &&
-        ARTIFACT_ROWS.map((entry) => (
-          <FolderRow
-            key={entry.path}
-            folder={entry}
-            indent={1}
-            collapsed={collapsed}
-            activePath={activePath}
-            onToggle={toggleFolder}
-          />
-        ))}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />
       )}

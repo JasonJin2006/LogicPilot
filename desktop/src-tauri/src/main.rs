@@ -41,10 +41,9 @@ struct ProjectDirRead {
 // ---------------------------------------------------------------------------
 // Project directory I/O commands: create_project_dir materializes the blank
 // *.lpproj structure on disk (logicpilot.json + model/main.lp +
-// presentation/main.canvas.json + build/ + results/); write_project_files
-// updates an existing project directory (File > Save). Paths come from the
-// native folder picker or a previously created project; path-safety lives in
-// project_fs.rs.
+// presentation/main.canvas.json); write_project_files updates an existing
+// project directory (File > Save). Paths come from the native folder picker
+// or a previously created project; path-safety lives in project_fs.rs.
 
 // Create <base_dir>/<name> with the blank project structure and the given
 // files. Returns the absolute project directory on success.
@@ -66,10 +65,9 @@ fn create_project_dir(
     std::fs::create_dir_all(&project_dir)
         .map_err(|error| format!("cannot create '{}': {}", project_dir.display(), error))?;
     write_project_files_impl(&project_dir, &files)?;
-    // Blank-project structure: derived artifacts and run results folders.
-    let _ = std::fs::create_dir_all(project_dir.join("build"));
-    let _ = std::fs::create_dir_all(project_dir.join("results"));
     // Container scene files (one per container node) live under model/scenes/.
+    // build/ and results/ are NOT pre-created: the Explorer tree mirrors the
+    // real folder exactly, and nothing writes into them yet.
     let _ = std::fs::create_dir_all(project_dir.join("model").join("scenes"));
     Ok(project_dir.to_string_lossy().into_owned())
 }
