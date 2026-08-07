@@ -5,6 +5,7 @@ add_executable(logicpilot_kernel_tests
   test_scheduler.cpp
   test_random.cpp
   test_memory.cpp
+  test_result.cpp
 )
 target_link_libraries(logicpilot_kernel_tests PRIVATE
   logicpilot_kernel
