@@ -556,6 +556,366 @@ export function BlockIcon({ kind }: { kind: string }) {
           </text>
         </Glyph>
       );
+    // ── Agent library ────────────────────────────────────────────────────
+    case 'parameter':
+      return (
+        <Glyph>
+          <rect x="10" y="10" width="20" height="20" rx="4" />
+          <text x="20" y="26" textAnchor="middle" fontSize="14" fill="currentColor" stroke="none">
+            P
+          </text>
+        </Glyph>
+      );
+    case 'event':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 13v7l5 3" />
+        </Glyph>
+      );
+    case 'dynamicEvent':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 13v7" />
+          <circle cx="20" cy="20" r="2" fill="currentColor" stroke="none" />
+          <path d="M20 24v3" />
+        </Glyph>
+      );
+    case 'variable':
+      return (
+        <Glyph>
+          <rect x="10" y="10" width="20" height="20" rx="4" />
+          <text x="20" y="26" textAnchor="middle" fontSize="14" fill="currentColor" stroke="none">
+            x
+          </text>
+        </Glyph>
+      );
+    case 'collection':
+      return (
+        <Glyph>
+          <rect x="8" y="10" width="8" height="20" rx="1" />
+          <rect x="16" y="10" width="8" height="14" rx="1" />
+          <rect x="24" y="10" width="8" height="8" rx="1" />
+        </Glyph>
+      );
+    case 'function':
+      return (
+        <Glyph>
+          <rect x="7" y="10" width="26" height="20" rx="4" />
+          <text x="20" y="25" textAnchor="middle" fontSize="12" fill="currentColor" stroke="none">
+            f(x)
+          </text>
+        </Glyph>
+      );
+    case 'tableFunction':
+      return (
+        <Glyph>
+          <rect x="8" y="9" width="24" height="22" rx="2" />
+          <path d="M8 17h24" />
+          <path d="M8 25h24" />
+          <path d="M14 9v13" />
+          <path d="M21 9v13" />
+          <path d="M14 21l4-3 3 2 5-5" />
+        </Glyph>
+      );
+    case 'customDistribution':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M10 30v-6" />
+          <path d="M16 30v-12" />
+          <path d="M22 30v-16" />
+          <path d="M28 30v-10" />
+          <path d="M12 18c3-6 5-6 7-2s5 4 8-2" />
+        </Glyph>
+      );
+    case 'schedule':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="11" />
+          <path d="M20 14v6l4 3" />
+          <path d="M14 8v4" />
+          <path d="M26 8v4" />
+        </Glyph>
+      );
+    case 'port':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="9" />
+          <path d="M14 20h9" />
+          <path d="M19 16.5l3.5 3.5-3.5 3.5" />
+        </Glyph>
+      );
+    case 'connector':
+      return (
+        <Glyph>
+          <circle cx="11" cy="20" r="3" />
+          <circle cx="29" cy="20" r="3" />
+          <path d="M14 20h12" />
+        </Glyph>
+      );
+    case 'linkToAgents':
+      return (
+        <Glyph>
+          <circle cx="10" cy="20" r="3" />
+          <circle cx="30" cy="20" r="3" />
+          <path d="M13 20h12" />
+          <path d="M21 16.5l3.5 3.5-3.5 3.5" />
+        </Glyph>
+      );
+    // ── Statechart additions ─────────────────────────────────────────────
+    case 'statechart':
+      return (
+        <Glyph>
+          <rect x="6" y="8" width="28" height="24" rx="4" />
+          <circle cx="13" cy="20" r="2" fill="currentColor" stroke="none" />
+          <path d="M15 20h3" />
+          <rect x="18" y="15" width="14" height="10" rx="5" />
+        </Glyph>
+      );
+    case 'statechartEntryPoint':
+      return (
+        <Glyph>
+          <circle cx="12" cy="20" r="4" fill="currentColor" stroke="none" />
+          <path d="M16 20h12" />
+          <path d="M24 16l4 4-4 4" />
+        </Glyph>
+      );
+    case 'initialStatePointer':
+      return (
+        <Glyph>
+          <circle cx="12" cy="20" r="3" fill="currentColor" stroke="none" />
+          <path d="M15 20h10" />
+          <path d="M21 16.5l3.5 3.5-3.5 3.5" />
+        </Glyph>
+      );
+    // ── Analysis library ─────────────────────────────────────────────────
+    case 'dataSet':
+      return (
+        <Glyph>
+          <rect x="7" y="7" width="26" height="26" rx="2" />
+          <path d="M7 17h26" />
+          <path d="M17 7v26" />
+          <circle cx="12" cy="25" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="21" cy="21" r="1.5" fill="currentColor" stroke="none" />
+          <circle cx="29" cy="15" r="1.5" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'statistics':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M10 30v-14" />
+          <path d="M16 30v-20" />
+          <path d="M22 30v-16" />
+          <path d="M28 30v-10" />
+          <path d="M8 22h24" strokeDasharray="3 2" />
+        </Glyph>
+      );
+    case 'histogramData':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M10 30v-8" />
+          <path d="M16 30v-14" />
+          <path d="M22 30v-18" />
+          <path d="M28 30v-11" />
+        </Glyph>
+      );
+    case 'histogram2DData':
+      return (
+        <Glyph>
+          <rect x="7" y="7" width="26" height="26" rx="2" />
+          <path d="M7 17h26" />
+          <path d="M17 7v26" />
+          <path d="M10 28v-4" />
+          <path d="M14 28v-7" />
+          <path d="M21 28v-5" />
+          <path d="M26 28v-9" />
+          <path d="M28 12v3" />
+          <path d="M28 18v3" />
+        </Glyph>
+      );
+    case 'output':
+      return (
+        <Glyph>
+          <rect x="9" y="13" width="18" height="14" rx="2" />
+          <path d="M27 20h7" />
+          <path d="M30 16.5l3.5 3.5-3.5 3.5" />
+        </Glyph>
+      );
+    case 'barChart':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <path d="M12 30v-8" />
+          <path d="M19 30v-14" />
+          <path d="M26 30v-18" />
+        </Glyph>
+      );
+    case 'stackChart':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <path d="M12 30v-8" />
+          <path d="M19 30v-14" />
+          <path d="M26 30v-18" />
+          <path d="M12 22h14" />
+          <path d="M19 16h7" />
+        </Glyph>
+      );
+    case 'pieChart':
+      return (
+        <Glyph>
+          <circle cx="20" cy="20" r="12" />
+          <path d="M20 20v-12a12 12 0 0 1 8.5 4.9z" fill="currentColor" stroke="none" />
+          <path d="M20 20l8.5-7.1" />
+        </Glyph>
+      );
+    case 'plot':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <circle cx="13" cy="24" r="1.8" fill="currentColor" stroke="none" />
+          <circle cx="20" cy="18" r="1.8" fill="currentColor" stroke="none" />
+          <circle cx="27" cy="12" r="1.8" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'timePlot':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <path d="M8 25l7-4 6 2 9-9" />
+          <circle cx="8" cy="25" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="21" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="21" cy="23" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="30" cy="14" r="1.6" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
+    case 'timeStackChart':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <path d="M8 26l7-4 6 2 9-9v15z" />
+          <path d="M8 21l7-4 6 2 9-6" />
+        </Glyph>
+      );
+    case 'timeColorChart':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <rect x="8" y="22" width="7" height="8" fill="currentColor" stroke="none" opacity="0.9" />
+          <rect x="15" y="16" width="6" height="14" fill="currentColor" stroke="none" opacity="0.6" />
+          <rect x="21" y="24" width="9" height="6" fill="currentColor" stroke="none" opacity="0.35" />
+        </Glyph>
+      );
+    case 'histogram':
+      return (
+        <Glyph>
+          <path d="M8 30h24" />
+          <path d="M8 8v22" />
+          <path d="M10 30v-7" />
+          <path d="M16 30v-13" />
+          <path d="M22 30v-17" />
+          <path d="M28 30v-10" />
+          <path d="M11 16c3-5 5-5 7-1s5 3 8-2" />
+        </Glyph>
+      );
+    case 'histogram2D':
+      return (
+        <Glyph>
+          <rect x="7" y="7" width="26" height="26" rx="2" />
+          <path d="M7 17h26" />
+          <path d="M17 7v26" />
+          <path d="M10 28v-4" />
+          <path d="M14 28v-8" />
+          <path d="M21 28v-6" />
+          <path d="M26 28v-10" />
+        </Glyph>
+      );
+    // ── Controls library ─────────────────────────────────────────────────
+    case 'button':
+      return (
+        <Glyph>
+          <rect x="7" y="13" width="26" height="14" rx="4" />
+          <text x="20" y="24" textAnchor="middle" fontSize="10" fill="currentColor" stroke="none">
+            OK
+          </text>
+        </Glyph>
+      );
+    case 'checkBox':
+      return (
+        <Glyph>
+          <rect x="10" y="15" width="10" height="10" rx="2" />
+          <path d="M12.5 20l2 2 3-4" />
+          <path d="M24 19h6" />
+        </Glyph>
+      );
+    case 'editBox':
+      return (
+        <Glyph>
+          <rect x="7" y="14" width="26" height="12" rx="2" />
+          <path d="M12 20h8" />
+          <path d="M25 20v5" />
+        </Glyph>
+      );
+    case 'radioButtons':
+      return (
+        <Glyph>
+          <circle cx="12" cy="14" r="3" />
+          <circle cx="12" cy="20" r="3" />
+          <circle cx="12" cy="26" r="3" fill="currentColor" stroke="none" />
+          <path d="M19 14h9" />
+          <path d="M19 20h9" />
+          <path d="M19 26h9" />
+        </Glyph>
+      );
+    case 'slider':
+      return (
+        <Glyph>
+          <path d="M8 20h24" />
+          <circle cx="14" cy="20" r="4" />
+          <path d="M12 15l4-4" />
+        </Glyph>
+      );
+    case 'comboBox':
+      return (
+        <Glyph>
+          <rect x="7" y="13" width="26" height="9" rx="2" />
+          <path d="M7 22l5 5 5-5" />
+          <rect x="7" y="22" width="26" height="8" rx="2" />
+        </Glyph>
+      );
+    case 'listBox':
+      return (
+        <Glyph>
+          <rect x="8" y="9" width="24" height="22" rx="2" />
+          <path d="M12 15h16" />
+          <path d="M12 20h16" />
+          <path d="M12 25h10" />
+        </Glyph>
+      );
+    case 'fileChooser':
+      return (
+        <Glyph>
+          <path d="M8 12h9l3 4h12v14H8z" />
+          <path d="M8 22h24" />
+        </Glyph>
+      );
+    case 'progressBar':
+      return (
+        <Glyph>
+          <rect x="7" y="16" width="26" height="8" rx="4" />
+          <rect x="9" y="18" width="16" height="4" rx="2" fill="currentColor" stroke="none" />
+        </Glyph>
+      );
     default:
       // Custom-library blocks fall back to a generic component glyph.
       return (

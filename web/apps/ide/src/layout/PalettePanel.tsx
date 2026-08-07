@@ -98,7 +98,14 @@ export function PalettePanel() {
     visible = BLOCK_DEFS.filter((block) => block.library === 'process')
       .map((block) => defs.get(block.kind))
       .filter((block): block is PaletteBlock => block !== undefined);
-  } else if (library === 'presentation' || library === 'statechart' || library === 'action') {
+  } else if (
+    library === 'presentation' ||
+    library === 'statechart' ||
+    library === 'action' ||
+    library === 'agent' ||
+    library === 'analysis' ||
+    library === 'controls'
+  ) {
     visible = BLOCK_DEFS.filter((block) => block.library === library)
       .map((block) => defs.get(block.kind))
       .filter((block): block is PaletteBlock => block !== undefined);
