@@ -22,10 +22,19 @@
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/flow_engine.h"
 
 namespace logicpilot {
 
 class RuntimeContext;
+
+// Event-type tags for the M/M/c flow engine. Declared in the header (not
+// the .cpp) so the streaming driver (lp-server sim_runner) shares the same
+// contract instead of re-declaring "must match" magic numbers.
+inline constexpr EventType kArriveEvent = 10;
+inline constexpr EventType kDepartEvent = 11;
+inline constexpr EventType kFailEvent = 12;
+inline constexpr EventType kRepairEvent = 13;
 
 // Samples one duration in seconds from the replication RNG stream.
 using TimeSampler = std::function<double(Xoshiro256PlusPlus&)>;
@@ -52,7 +61,7 @@ struct QueueingFlowSpec {
   TimeSampler repair;
 };
 
-class QueueingFlowSim : public ReplicationModel {
+class QueueingFlowSim : public FlowEngine {
  public:
   explicit QueueingFlowSim(QueueingFlowSpec spec);
 

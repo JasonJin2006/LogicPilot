@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/flow_engine.h"
 
 namespace logicpilot {
 class RuntimeContext;
@@ -31,7 +32,7 @@ struct Node;
 struct Coupling;
 }
 
-class ProcessFlowSim : public ReplicationModel {
+class ProcessFlowSim : public FlowEngine {
  public:
   // `stages` are the flow's process-library block nodes and `couplings`
   // their connections (from the model root or an agent body); `root`

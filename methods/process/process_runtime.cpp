@@ -40,13 +40,13 @@ using logicpilot::ir_v2_util::node_string_param;
 // couplings; alternatively an agent body may hold the flow (its members +
 // couplings). Resource pools come from the model root's
 // {process, resource} children.
-std::unique_ptr<ReplicationModel> lower_process_model(const Node* model_root,
-                                                      std::string* error) {
+std::unique_ptr<FlowEngine> lower_process_model(const Node* model_root,
+                                                std::string* error) {
   const auto fail = [&](const std::string& msg) {
     if (error != nullptr) {
       *error = msg;
     }
-    return std::unique_ptr<ReplicationModel>{};
+    return std::unique_ptr<FlowEngine>{};
   };
   if (model_root == nullptr) {
     return fail("no process model root");
@@ -273,14 +273,8 @@ bool ProcessRuntime::initialize(RuntimeContext& context,
   // advance(until) calls step the engine by simulation time (Phase 3). The
   // engine schedules into the kernel's facilities (SimulationKernel driver)
   // so multiple methods share one clock/scheduler.
-  if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
-    flow->attach(context);
-    flow->reset(context.config());
-  } else if (auto* queue =
-                 dynamic_cast<QueueingFlowSim*>(replication_.get())) {
-    queue->attach(context);
-    queue->reset(context.config());
-  }
+  replication_->attach(context);
+  replication_->reset(context.config());
   return true;
 }
 
@@ -288,38 +282,22 @@ void ProcessRuntime::advance(SimTime until) {
   if (replication_ == nullptr) {
     return;
   }
-  if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
-    flow->advance(until, nullptr);
-    last_metrics_ = flow->metrics();
-  } else if (auto* queue =
-                 dynamic_cast<QueueingFlowSim*>(replication_.get())) {
-    queue->advance(until, nullptr);
-    last_metrics_ = queue->metrics();
-  } else if (!ran_) {
-    // Unexpected engine type: fall back to the batch contract once.
-    ReplicationConfig config;
-    last_metrics_ = replication_->run(config, nullptr);
-    ran_ = true;
-  }
+  replication_->advance(until, nullptr);
+  last_metrics_ = replication_->metrics();
 }
 
 void ProcessRuntime::shutdown() {
   if (replication_ != nullptr) {
     // Finalize the metrics from the engine's current state (kernel-driven
     // runs never call advance(), so this is where they are settled).
-    if (auto* flow = dynamic_cast<ProcessFlowSim*>(replication_.get())) {
-      last_metrics_ = flow->metrics();
-    } else if (auto* queue =
-                   dynamic_cast<QueueingFlowSim*>(replication_.get())) {
-      last_metrics_ = queue->metrics();
-    }
+    last_metrics_ = replication_->metrics();
   }
   replication_.reset();
   context_ = nullptr;
   ran_ = false;
 }
 
-std::unique_ptr<ReplicationModel> ProcessRuntime::lower(
+std::unique_ptr<FlowEngine> ProcessRuntime::lower(
     const ir::v2::Node* model_root, std::string* error) {
   return lower_process_model(model_root, error);
 }

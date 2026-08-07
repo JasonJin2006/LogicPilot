@@ -15,6 +15,7 @@
 #include <string_view>
 
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/flow_engine.h"
 #include "logicpilot/runtime/simulation_method.h"
 
 namespace logicpilot {
@@ -53,11 +54,11 @@ class ProcessRuntime final : public SimulationMethod {
   // generic ProcessFlowSim engine). Shared by initialize() and
   // to_replication_model(); nullptr (with `error`) when the root is not a
   // runnable process flow.
-  static std::unique_ptr<ReplicationModel> lower(
+  static std::unique_ptr<FlowEngine> lower(
       const ir::v2::Node* model_root, std::string* error);
 
   RuntimeContext* context_{nullptr};
-  std::unique_ptr<ReplicationModel> replication_;
+  std::unique_ptr<FlowEngine> replication_;
   ReplicationMetrics last_metrics_;
   bool ran_{false};
 };

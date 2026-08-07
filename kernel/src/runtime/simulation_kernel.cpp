@@ -16,6 +16,18 @@ bool SimulationKernel::load(const IrModelFile& model, std::string* error) {
     return false;
   }
   bytes_.assign(model.v2_bytes.begin(), model.v2_bytes.end());
+  // Validate once up front: run() reuses this verified view for every
+  // replication instead of re-running the verifier per run (--reps N would
+  // otherwise verify the buffer N times).
+  IrLoadResult loaded = load_model_buffer(bytes_.data(), bytes_.size());
+  if (!loaded.ok()) {
+    if (error != nullptr) {
+      *error = "cannot validate the loaded model: " + loaded.message;
+    }
+    verified_ = IrModelFile{};
+    return false;
+  }
+  verified_ = std::move(loaded.file);
   return true;
 }
 
@@ -41,13 +53,11 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
   if (bytes_.empty()) {
     return fail("KR1001", "SimulationKernel has no loaded model");
   }
-  const IrLoadResult loaded =
-      load_model_buffer(bytes_.data(), bytes_.size());
-  if (!loaded.ok()) {
+  if (verified_.v2_root == nullptr) {
     return fail("KR1002",
-                "cannot re-validate the loaded model: " + loaded.message);
+                "the loaded model failed validation at load()");
   }
-  const std::vector<std::string> methods = resolve_method_names(loaded.file);
+  const std::vector<std::string> methods = resolve_method_names(verified_);
   if (methods.empty()) {
     return fail("KR1003",
                 "no executable modeling method under the model root");
@@ -73,7 +83,7 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
                   error != nullptr ? *error : "method attach failed");
     }
   }
-  if (!manager.initialize(loaded.file, error)) {
+  if (!manager.initialize(verified_, error)) {
     return fail("KR1006", error != nullptr ? *error : "initialize failed");
   }
 

@@ -44,6 +44,11 @@ bool RuntimeManager::initialize(const IrModelFile& model,
         *error = "method '" + std::string(method->method_name()) + "': " +
                  (local_error.empty() ? "initialize failed" : local_error);
       }
+      // Roll back: a partially initialized method may have registered
+      // handlers and scheduled events. They must not leak into a later run
+      // (the kernel clears these at the start of the next initialize()).
+      context_.handlers().clear();
+      context_.variables().clear();
       return false;
     }
   }

@@ -72,6 +72,9 @@ class SimulationKernel {
 
  private:
   std::vector<std::uint8_t> bytes_;
+  // Verified, parsed view of `bytes_` (built once in load(); run() reuses it
+  // instead of re-running the FlatBuffers verifier on every replication).
+  IrModelFile verified_;
   // Facilities owned by the kernel across runs.
   SimulationClock clock_;
   std::unique_ptr<BinaryHeapScheduler> scheduler_;

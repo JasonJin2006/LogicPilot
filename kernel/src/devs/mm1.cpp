@@ -24,11 +24,6 @@
 namespace logicpilot {
 namespace {
 
-constexpr EventType kArriveEvent = 10;
-constexpr EventType kDepartEvent = 11;
-constexpr EventType kFailEvent = 12;
-constexpr EventType kRepairEvent = 13;
-
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
 }
