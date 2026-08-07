@@ -109,8 +109,11 @@ module.exports = grammar({
 
     // Generic declaration: `kind name { ... }`. `kind` is resolved
     // semantically (core kinds or a registered library block name).
+    // `state`/`param` are also legal declaration kinds (statechart states,
+    // agent elements); the parser disambiguates by lookahead: `state x = ...`
+    // is a variable declaration, `state A { ... }` is a block declaration.
     declaration: $ => seq(
-      field('kind', $.identifier),
+      field('kind', choice($.identifier, 'state', 'param')),
       field('name', $.identifier),
       field('body', $.declaration_body),
     ),

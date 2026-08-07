@@ -180,6 +180,32 @@ std::string node_field_identifier(const Node& node, const char* name) {
   return "";
 }
 
+// Render a folded value back to source text for free-text IR fields.
+std::string value_text(const Value& value) {
+  switch (value.kind) {
+    case ValueKind::kIdentifier:
+    case ValueKind::kString:
+      return value.string_value;
+    case ValueKind::kInt:
+      return std::to_string(value.int_value);
+    case ValueKind::kFloat:
+      return std::to_string(value.float_value);
+    case ValueKind::kBool:
+      return value.bool_value ? "true" : "false";
+    default:
+      return "";
+  }
+}
+
+// Free-text field (`condition = t < 3`): rebuilt from the value.
+std::string node_field_text(const Node& node, const char* name) {
+  const Field* field = field_of(node, name);
+  if (field == nullptr) {
+    return "";
+  }
+  return value_text(field->value);
+}
+
 // ---------------------------------------------------------------------------
 // Process library blocks
 // ---------------------------------------------------------------------------
@@ -552,12 +578,114 @@ flatbuffers::Offset<v2::Experiment> v2_experiment(
       0);
 }
 
+// statechart -> {statechart, statechart} Node: states/transitions lower into
+// the IR Statechart behavior table; element markers (final/history/branch,
+// guard/action text) travel as typed semantics params so the kernel runtime
+// can execute them without a schema extension.
+flatbuffers::Offset<v2::Node> v2_statechart(
+    flatbuffers::FlatBufferBuilder& builder, const Node& statechart,
+    const ParamScope& scope, const std::string& source_file) {
+  std::vector<flatbuffers::Offset<v2::State>> states;
+  std::vector<flatbuffers::Offset<v2::Transition>> transitions;
+  std::vector<flatbuffers::Offset<v2::Var>> params;
+  std::string initial;
+
+  for (const Node& child : statechart.children) {
+    if (child.kind == "state" || child.kind == "finalState" ||
+        child.kind == "historyState" || child.kind == "branch") {
+      states.push_back(
+          v2::CreateState(builder, builder.CreateString(child.name)));
+      if (child.kind == "finalState") {
+        params.push_back(
+            v2_var_string(builder, "final", child.name));
+      } else if (child.kind == "historyState") {
+        params.push_back(
+            v2_var_string(builder, "history", child.name));
+        const std::string history_type =
+            node_field_identifier(child, "historyType");
+        if (!history_type.empty()) {
+          params.push_back(v2_var_string(
+              builder, "history_type", history_type));
+        }
+      } else if (child.kind == "branch") {
+        params.push_back(v2_var_string(builder, "branch", child.name));
+      }
+      continue;
+    }
+    if (child.kind == "transition") {
+      const std::string from = node_field_identifier(child, "from");
+      const std::string to = node_field_identifier(child, "to");
+      const std::string triggered_by =
+          node_field_identifier(child, "triggeredBy");
+      v2::TriggerKind trigger = v2::TriggerKind_Timeout;
+      if (triggered_by == "rate") {
+        trigger = v2::TriggerKind_Rate;
+      } else if (triggered_by == "message") {
+        trigger = v2::TriggerKind_Message;
+      } else if (triggered_by == "condition") {
+        trigger = v2::TriggerKind_Condition;
+      }
+      const double timeout =
+          float_field(child, "timeout", scope, 1.0);
+      const double rate = float_field(child, "rate", scope, 1.0);
+      const std::string message_type =
+          node_field_text(child, "messageType");
+      const std::string condition =
+          node_field_text(child, "condition");
+      const std::string guard = node_field_text(child, "guard");
+      if (!guard.empty()) {
+        params.push_back(v2_var_string(
+            builder, ("guard:" + child.name).c_str(), guard));
+      }
+      const std::string action = node_field_text(child, "action");
+      if (!action.empty()) {
+        params.push_back(v2_var_string(
+            builder, ("action:" + child.name).c_str(), action));
+      }
+      transitions.push_back(v2::CreateTransition(
+          builder, builder.CreateString(from),
+          builder.CreateString(to), trigger, timeout, 0, rate,
+          message_type.empty() ? 0 : builder.CreateString(message_type),
+          condition.empty() ? 0 : builder.CreateString(condition),
+          0));
+      continue;
+    }
+  }
+
+  initial = node_field_identifier(statechart, "initial");
+  if (initial.empty()) {
+    // Fall back to the first state when no entry point edge was encoded.
+    for (const Node& child : statechart.children) {
+      if (child.kind == "state" || child.kind == "finalState" ||
+          child.kind == "historyState" || child.kind == "branch") {
+        initial = child.name;
+        break;
+      }
+    }
+  }
+  params.push_back(v2_var_string(builder, "initial", initial));
+
+  const auto statechart_table = v2::CreateStatechart(
+      builder, builder.CreateVector(states),
+      builder.CreateVector(transitions),
+      initial.empty() ? 0 : builder.CreateString(initial));
+  return v2::CreateNode(
+      builder, v2_metadata(builder, statechart.name, source_file),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(params), 0,
+      v2_semantics(builder, "statechart", "statechart"), 0, 0,
+      statechart_table, 0, 0);
+}
+
 // One generic DSL Node -> IR v2 Node by kind (process blocks / containers).
 flatbuffers::Offset<v2::Node> v2_node(
     flatbuffers::FlatBufferBuilder& builder, const Node& node,
     const std::unordered_map<std::string, const Node*>& resources,
     const ParamScope& scope, const std::string& source_file,
     const LibraryRegistry& registry, const std::string* source_text) {
+  if (node.kind == "statechart") {
+    return v2_statechart(builder, node, scope, source_file);
+  }
   if (node.kind == "resource") {
     return v2_resource(builder, node, scope, source_file);
   }

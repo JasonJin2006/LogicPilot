@@ -167,7 +167,7 @@ describe('DSL v2 generation', () => {
     expect(source).toContain('rate = 1');
   });
 
-  it('skips drawing and behavior elements (non-process libraries)', () => {
+  it('skips drawing elements but emits statechart members', () => {
     let doc = createDocument();
     doc = addNode(doc, {
       kind: 'rect' as Parameters<typeof addNode>[1]['kind'],
@@ -185,7 +185,79 @@ describe('DSL v2 generation', () => {
     });
     const source = generateDsl(doc);
     expect(source).not.toContain('rect');
-    expect(source).not.toContain('state');
+    expect(source).toContain('state Idle { }');
+  });
+
+  it('round-trips a statechart container through the DSL', () => {
+    let doc = createDocument('TrafficLight');
+    doc = addNode(doc, {
+      kind: 'statechart',
+      name: 'Light',
+      x: 0,
+      y: 0,
+      library: 'statechart',
+      params: {},
+    });
+    const chart = doc.nodes[0]!;
+    doc = addNode(doc, {
+      kind: 'state',
+      name: 'Red',
+      x: 0,
+      y: 40,
+      library: 'statechart',
+      container: 'Light',
+      params: {},
+    });
+    doc = addNode(doc, {
+      kind: 'state',
+      name: 'Green',
+      x: 100,
+      y: 40,
+      library: 'statechart',
+      container: 'Light',
+      params: {},
+    });
+    const red = doc.nodes[1]!;
+    const green = doc.nodes[2]!;
+    doc = addNode(doc, {
+      kind: 'transition',
+      name: 'r_g',
+      x: 50,
+      y: 80,
+      library: 'statechart',
+      container: 'Light',
+      params: { from: 'Red', to: 'Green', triggeredBy: 'timeout', timeout: 3.0 },
+    });
+    doc = connect(doc, red.id, chart.id, 'out', 'in').document; // entry -> chart
+    doc = connect(doc, chart.id, green.id, 'in', 'in').document; // chart -> initial? no
+
+    const source = generateDsl(doc);
+    expect(source).toContain('statechart Light {');
+    expect(source).toContain('state Red { }');
+    expect(source).toContain('state Green { }');
+    expect(source).toContain('transition r_g {');
+    expect(source).toContain('from = Red');
+    expect(source).toContain('to = Green');
+    expect(source).toContain('timeout = 3');
+
+    const parsed = parseDsl(source);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const chartNode = parsed.document.nodes.find((node) => node.kind === 'statechart');
+    expect(chartNode).toBeDefined();
+    const states = parsed.document.nodes.filter(
+      (node) => node.kind === 'state' && node.container === 'Light',
+    );
+    expect(states.map((node) => node.name).sort()).toEqual(['Green', 'Red']);
+    const transitions = parsed.document.nodes.filter(
+      (node) => node.kind === 'transition' && node.container === 'Light',
+    );
+    expect(transitions).toHaveLength(1);
+    expect(transitions[0]!.params['from']).toBe('Red');
+    expect(transitions[0]!.params['to']).toBe('Green');
+    // Regenerate from the parsed document: lossless round trip.
+    const regenerated = generateDsl(parsed.document);
+    expect(regenerated).toBe(source);
   });
 
 });

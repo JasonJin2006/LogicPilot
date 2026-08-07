@@ -17,6 +17,20 @@ const CONTAINER_KINDS: ReadonlySet<string> = new Set([
   'experiment',
 ]);
 
+/** Statechart element kinds: emitted as nested declarations inside a
+ *  `statechart` container. `state` is a legal declaration kind in the DSL
+ *  (the grammar disambiguates `state A { }` from the typed state variable
+ *  `state x: type = value`). */
+const STATECHART_KINDS: ReadonlySet<string> = new Set([
+  'state',
+  'transition',
+  'statechartEntryPoint',
+  'initialStatePointer',
+  'finalState',
+  'historyState',
+  'branch',
+]);
+
 /** Serialize a field/param value. Parser-produced values are already
  *  verbatim (numbers as numbers, quoted strings, calls, expressions), while
  *  hand-built params follow the old rules: bare identifiers and distribution
@@ -92,10 +106,12 @@ export function generateDsl(document: ModelDocument): string {
   const lines: string[] = [];
   lines.push(`model ${modelName} {`);
 
-  // Drawing/behavior annotations (presentation/statechart/action libraries)
-  // are canvas-only and never emit.
+  // Drawing/behavior annotations (presentation/action libraries) are
+  // canvas-only and never emit; process and statechart members do.
   const emitCandidate = (node: ModelNode): boolean =>
-    node.library === undefined || node.library === 'process';
+    node.library === undefined ||
+    node.library === 'process' ||
+    node.library === 'statechart';
   const childrenOf = (name: string, excludeId?: string): ModelNode[] =>
     document.nodes.filter(
       (node) => node.container === name && node.id !== excludeId && emitCandidate(node),
@@ -158,6 +174,36 @@ export function generateDsl(document: ModelDocument): string {
       return;
     }
     const children = childrenOf(node.name, node.id);
+    if (node.kind === 'statechart') {
+      // The statechart's initial state is derived from the edge leaving its
+      // entry point (or initial state pointer) inside the container.
+      const initial = document.edges
+        .map((edge) => {
+          const from = findNode(document, edge.from);
+          const to = findNode(document, edge.to);
+          if (!from || !to || from.container !== node.name) return null;
+          if (
+            from.kind !== 'statechartEntryPoint' &&
+            from.kind !== 'initialStatePointer'
+          ) {
+            return null;
+          }
+          return to;
+        })
+        .find((to): to is ModelNode => to !== null);
+      lines.push(`${indent}statechart ${node.name} {`);
+      for (const [key, value] of Object.entries(node.params)) {
+        lines.push(`${indent}  ${key} = ${fieldValue(value)}`);
+      }
+      if (initial !== undefined) {
+        lines.push(`${indent}  initial = ${initial.name}`);
+      }
+      for (const child of children) {
+        emitNode(child, `${indent}  `);
+      }
+      lines.push(`${indent}}`);
+      return;
+    }
     const params = Object.entries(node.params);
     if (params.length === 0 && children.length === 0) {
       lines.push(`${indent}${node.kind} ${node.name} { }`);

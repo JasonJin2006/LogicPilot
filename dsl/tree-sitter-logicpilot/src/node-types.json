@@ -286,6 +286,14 @@
           {
             "type": "identifier",
             "named": true
+          },
+          {
+            "type": "param",
+            "named": false
+          },
+          {
+            "type": "state",
+            "named": false
           }
         ]
       },

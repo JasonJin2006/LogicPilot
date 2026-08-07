@@ -261,6 +261,10 @@ class Analyzer {
       check_path(node);
       return;
     }
+    if (kind == "statechart") {
+      check_statechart(node);
+      return;
+    }
     if (registry_ != nullptr && registry_->has_block(kind)) {
       // Process-library blocks (source/queue/service/... and resource) are
       // valid members of the model root and agent bodies (agent-centric
@@ -309,6 +313,78 @@ class Analyzer {
               field->span);
       }
     }
+  }
+
+  // ------------------------------------------------------------------
+  // Statecharts (AnyLogic Statechart palette)
+  // ------------------------------------------------------------------
+
+  // A statechart container holds state elements; transitions reference
+  // states by name (`from`/`to`), and `initial` names the entry state.
+  void check_statechart(const Node& node) {
+    const Field* initial = field_of(node, "initial");
+    if (initial != nullptr &&
+        initial->value.kind != ValueKind::kIdentifier) {
+      error("LP3001",
+            "statechart '" + node.name +
+                "' field 'initial' must reference a state by name",
+            initial->span);
+    }
+    std::unordered_set<std::string> state_names;
+    for (const Node& child : node.children) {
+      if (child.kind == "state" || child.kind == "finalState" ||
+          child.kind == "historyState" || child.kind == "branch") {
+        state_names.insert(child.name);
+        // Action fields accept any expression; nothing to validate yet.
+        continue;
+      }
+      if (child.kind == "transition") {
+        for (const char* ref : {"from", "to"}) {
+          const Field* field = field_of(child, ref);
+          if (field != nullptr &&
+              field->value.kind != ValueKind::kIdentifier) {
+            error("LP3001",
+                  "transition '" + child.name + "' field '" + ref +
+                      "' must reference a state by name",
+                  field->span);
+          }
+        }
+        const Field* triggered_by = field_of(child, "triggeredBy");
+        if (triggered_by != nullptr &&
+            (triggered_by->value.kind != ValueKind::kIdentifier ||
+             !is_statechart_trigger(triggered_by->value.string_value))) {
+          error("LP3001",
+                "transition '" + child.name +
+                "' field 'triggeredBy' must be one of "
+                    "timeout/rate/condition/message",
+                triggered_by->span);
+        }
+        continue;
+      }
+      if (child.kind == "statechartEntryPoint" ||
+          child.kind == "initialStatePointer") {
+        continue;
+      }
+      error("LP2004",
+            "statechart '" + node.name + "' contains unknown element kind '" +
+                child.kind + "' (statechart elements: state/transition/"
+                "branch/finalState/historyState/statechartEntryPoint/"
+                "initialStatePointer)",
+            child.name_span);
+    }
+    if (initial != nullptr &&
+        state_names.count(initial->value.string_value) == 0) {
+      error("LP3001",
+            "statechart '" + node.name + "' initial state '" +
+                initial->value.string_value +
+                "' is not a state inside the statechart",
+            initial->span);
+    }
+  }
+
+  static bool is_statechart_trigger(const std::string& value) {
+    return value == "timeout" || value == "rate" ||
+           value == "condition" || value == "message";
   }
 
   // ------------------------------------------------------------------

@@ -9,6 +9,7 @@ add_executable(logicpilot_dsl_tests
   test_dsl_semantic.cpp
   test_dsl_lowering.cpp
   test_dsl_e2e.cpp
+  test_dsl_statechart.cpp
   test_diagnostics_json.cpp
 )
 target_link_libraries(logicpilot_dsl_tests PRIVATE
@@ -136,6 +137,21 @@ add_test(NAME lpcli_run_ir_v2_atomic
           --seed=42 --reps=1 --arrivals=5 --warmup=0)
 set_tests_properties(lpcli_run_ir_v2_atomic PROPERTIES
   DEPENDS lpcli_compile_ir_v2_atomic
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
+# Statechart DSL: traffic-light cycle compiles and runs through lpcli.
+add_test(NAME lpcli_compile_statechart
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/traffic_light.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/traffic_light.ir.bin")
+set_tests_properties(lpcli_compile_statechart PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_statechart
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/traffic_light.ir.bin"
+          --seed=42 --reps=1 --arrivals=6 --warmup=0)
+set_tests_properties(lpcli_run_statechart PROPERTIES
+  DEPENDS lpcli_compile_statechart
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
 # Continuous DSL: decay example compiles (v2 default) and runs the ODE engine.

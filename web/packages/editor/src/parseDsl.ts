@@ -40,6 +40,7 @@ const CONTAINER_KINDS: ReadonlySet<string> = new Set([
   'atomic',
   'continuous',
   'experiment',
+  'statechart',
 ]);
 
 /** Kinds the canvas renders natively; everything else is a placeholder
@@ -50,7 +51,29 @@ const CANVAS_KINDS: ReadonlySet<string> = new Set([
   'queue',
   'service',
   'sink',
+  // Statechart elements render as canvas blocks.
+  'statechart',
+  'state',
+  'transition',
+  'statechartEntryPoint',
+  'initialStatePointer',
+  'finalState',
+  'historyState',
+  'branch',
   ...CONTAINER_KINDS,
+]);
+
+/** Statechart element kinds parsed from the DSL carry the statechart
+ *  library tag so the palette/placeholder logic treats them like blocks. */
+const STATECHART_KINDS: ReadonlySet<string> = new Set([
+  'statechart',
+  'state',
+  'transition',
+  'statechartEntryPoint',
+  'initialStatePointer',
+  'finalState',
+  'historyState',
+  'branch',
 ]);
 
 const PUNCT = '{}()=,;:/*+<->.';
@@ -603,6 +626,7 @@ export function parseDsl(source: string): ParseResult {
       params,
       container: parent,
       placeholder: !CANVAS_KINDS.has(member.kind),
+      library: STATECHART_KINDS.has(member.kind) ? 'statechart' : undefined,
     };
     nodes.push(node);
     for (const child of nested) {
