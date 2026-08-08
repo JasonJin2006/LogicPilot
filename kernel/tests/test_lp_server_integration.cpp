@@ -754,6 +754,89 @@ TEST_CASE("lp-server compiles DSL via the compile control command",
   server.stop();
 }
 
+TEST_CASE("lp-server streams generic process flows with per-block counters",
+          "[server][integration][flow]") {
+  // A delay-based flow (not the M/M/1 family) must run through the generic
+  // ProcessFlowSim streaming path and expose live per-block state so the IDE
+  // can badge blocks and animate tokens.
+  const std::string source = R"(model Flow {
+  source S { arrival = rate(1.0) }
+  delay D { delayTime = constant(0.5) maximumCapacity = true }
+  sink K { }
+  couple S.out -> D.in
+  couple D.out -> K.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "flow.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":20,"warmup":0,"speed":100000})");
+
+  bool completed = false;
+  std::map<std::string, double> last_counters;
+  bool saw_delay_in_service = false;
+  std::uint64_t counters_frames = 0;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;  // skip the control ack text frame
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        last_counters = counters_to_map(frame.counters->values());
+        ++counters_frames;
+        if (last_counters.count("block.D.in_service") != 0 &&
+            last_counters.at("block.D.in_service") > 0) {
+          saw_delay_in_service = true;
+        }
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for a flow run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  REQUIRE(counters_frames > 0);
+  // Live per-block telemetry must include every stage.
+  for (const char* key : {"block.S.buffered", "block.D.buffered",
+                          "block.D.in_service", "block.D.arrived",
+                          "block.K.arrived"}) {
+    INFO("missing counter " << key);
+    REQUIRE(last_counters.count(key) == 1);
+  }
+  REQUIRE(saw_delay_in_service);  // a slice caught the entity in the delay
+  REQUIRE(last_counters.at("block.D.arrived") >= 1);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server start honors per-run model parameter overrides",
           "[server][integration]") {
   logicpilot::server::SimServer server{make_test_config()};

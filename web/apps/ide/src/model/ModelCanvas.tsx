@@ -126,6 +126,16 @@ function firstInPort(node: ModelNode): string {
   return ins.find((port) => port.name === 'in')?.name ?? ins[0]?.name ?? 'in';
 }
 
+/** A token animating along one coupling (world-coordinate endpoints). */
+interface FlowToken {
+  id: number;
+  a: { x: number; y: number };
+  b: { x: number; y: number };
+  born: number;
+}
+
+const FLOW_TOKEN_MS = 700;
+
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
   0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500,
@@ -221,6 +231,16 @@ export function ModelCanvas() {
     port: string;
   } | null>(null);
   const wireStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Live flow tokens: circles animated along a coupling when a block's
+  // departed counter advances (generic process-flow telemetry).
+  const [tokens, setTokens] = useState<FlowToken[]>([]);
+  const tokenSeq = useRef(0);
+  const lastDeparted = useRef<Map<string, number>>(new Map());
+  const flowNodesRef = useRef(visibleNodes);
+  const flowEdgesRef = useRef(visibleEdges);
+  flowNodesRef.current = visibleNodes;
+  flowEdgesRef.current = visibleEdges;
   // Active resize/rotate gesture on a selected presentation object.
   const [transformDrag, setTransformDrag] = useState<{
     id: string;
@@ -781,6 +801,48 @@ export function ModelCanvas() {
   const live = vizState.tickVersion > 0;
   const queueLength = live ? vizState.queueLength : 0;
 
+  // Spawn flow tokens when a block's departed counter advances and prune
+  // expired ones. Reads the latest node/edge layout through refs so the
+  // animation loop can run at display rate without restarting.
+  useEffect(() => {
+    let raf = 0;
+    let lastSpawn = 0;
+    const tick = (now: number) => {
+      if (now - lastSpawn > 80) {
+        lastSpawn = now;
+        for (const [name, state] of vizState.blocks) {
+          const previous = lastDeparted.current.get(name) ?? 0;
+          if (state.departed <= previous) continue;
+          const delta = Math.min(state.departed - previous, 4);
+          lastDeparted.current.set(name, state.departed);
+          const fromNode = flowNodesRef.current.find((node) => node.name === name);
+          if (!fromNode) continue;
+          const outs = flowEdgesRef.current.filter((edge) => edge.from === fromNode.id);
+          if (outs.length === 0) continue;
+          for (let i = 0; i < delta; ++i) {
+            const edge = outs[i % outs.length]!;
+            const toNode = flowNodesRef.current.find((node) => node.id === edge.to);
+            if (!toNode) continue;
+            const a = portAnchor(
+              fromNode,
+              edge.fromPort ?? firstOutPort(fromNode),
+            );
+            const b = portAnchor(toNode, edge.toPort ?? firstInPort(toNode));
+            const id = tokenSeq.current++;
+            setTokens((prev) => [...prev.slice(-47), { id, a, b, born: now }]);
+          }
+        }
+      }
+      setTokens((prev) => {
+        const alive = prev.filter((token) => now - token.born < FLOW_TOKEN_MS);
+        return alive.length === prev.length ? prev : alive;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   // Drag a block card or presentation shape to move it in world coordinates;
   // a plain click (no movement) selects it instead.
   const onElementPointerDown = (
@@ -930,6 +992,20 @@ export function ModelCanvas() {
               <path className="edge-hit" d={d} strokeWidth={10 / view.scale} />
               <path className="edge-line" d={d} strokeWidth={1.5 / view.scale} />
             </g>
+          );
+        })}
+        {tokens.map((token) => {
+          const d = `M ${token.a.x - ox} ${token.a.y - oy} L ${token.b.x - ox} ${token.b.y - oy}`;
+          return (
+            <circle
+              key={token.id}
+              className="flow-token"
+              r={2.5 / view.scale}
+              style={{
+                offsetPath: `path('${d}')`,
+                animation: `flow-token ${FLOW_TOKEN_MS}ms linear forwards`,
+              }}
+            />
           );
         })}
         {draftWire && wireFrom && wireTo && (
@@ -1339,6 +1415,7 @@ export function ModelCanvas() {
         {scShapesView}
         {chartsView}
         {visibleNodes.map((node) => {
+          const nodeLive = live ? vizState.blocks.get(node.name) : undefined;
           if (
             PRESENTATION_KINDS.has(node.kind) ||
             STATECHART_KINDS.has(node.kind) ||
@@ -1429,6 +1506,15 @@ export function ModelCanvas() {
               <span className="model-block-name">{node.name}</span>
               {live && node.kind === 'queue' && queueLength > 0 && (
                 <span className="model-block-badge">{queueLength}</span>
+              )}
+              {live && nodeLive && nodeLive.buffered > 0 && (
+                <span className="model-block-badge">{nodeLive.buffered}</span>
+              )}
+              {live && nodeLive && nodeLive.inService > 0 && (
+                <span
+                  className="model-block-status busy"
+                  title={`${nodeLive.inService} in service`}
+                />
               )}
               {live && node.kind === 'service' && (
                 <span

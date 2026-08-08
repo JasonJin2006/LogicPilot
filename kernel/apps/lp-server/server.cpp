@@ -26,6 +26,7 @@
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/devs/flow_engine.h"
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
@@ -509,20 +510,50 @@ struct SimServer::Impl {
         emit(build_run_finished_frame(failed), trace_run_finished(failed));
         return;
       }
-      for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
-        ReplicationConfig rep_config;
-        rep_config.seed = streams.derive_state(rep)[0];
-        rep_config.arrivals = params.arrivals;
-        rep_config.warmup_arrivals = params.warmup;
-        results.push_back(model->run(rep_config, nullptr));
-        if (precision_reached()) {
-          break;
-        }
-        {
-          std::lock_guard lock{run_mutex_};
-          if (stop_request_) {
+      // Generic process flows (ProcessFlowSim) stream per slice so the IDE
+      // can show live per-block badges and animate tokens; every other
+      // generic model (agent/atomic/continuous) keeps the batch path.
+      if (auto* flow = dynamic_cast<FlowEngine*>(model.get()); flow != nullptr) {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          flow->reset(rep_config);
+          if (!stream_flow_replication(*flow, params, rep, run_limit)) {
             cancelled = true;
             break;
+          }
+          results.push_back(flow->metrics());
+          run_sim_offset_ns_ += static_cast<std::int64_t>(
+              flow->metrics().horizon_seconds * 1e9);
+          if (precision_reached()) {
+            break;
+          }
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } else {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          results.push_back(model->run(rep_config, nullptr));
+          if (precision_reached()) {
+            break;
+          }
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
           }
         }
       }
@@ -706,6 +737,88 @@ struct SimServer::Impl {
     counters.sim_time_ns = run_sim_offset_ns_ + runner_.now_ns();
     runner_.fill_counters(counters.values, rep + 1,
                           params.precision_reps ? params.max_reps : params.reps);
+    last_frame_sim_ns_ = counters.sim_time_ns;
+    emit(build_counters_frame(counters), trace_counters(counters));
+  }
+
+  // Pace one generic process-flow replication: advance the engine in
+  // emit_step_ns sim slices, emitting Counters with per-block live state.
+  // Returns false when the run was cancelled via stop.
+  bool stream_flow_replication(FlowEngine& flow, const RunParams& params,
+                               std::uint64_t rep, std::uint64_t run_limit) {
+    const std::int64_t step_ns = config.emit_step_ns > 0
+                                     ? config.emit_step_ns
+                                     : 100'000'000;
+    std::int64_t boundary_ns = 0;
+    auto deadline = std::chrono::steady_clock::now();
+    for (;;) {
+      bool step_once = false;
+      {
+        std::unique_lock lock{run_mutex_};
+        for (;;) {
+          if (stop_request_) {
+            return false;
+          }
+          if (state_ == RunState::kPaused) {
+            if (pending_step_) {
+              pending_step_ = false;
+              step_once = true;
+              break;
+            }
+            run_cv_.wait(lock);
+            continue;
+          }
+          break;
+        }
+      }
+
+      boundary_ns += step_ns;
+      flow.advance(SimTime::from_ns(boundary_ns), nullptr);
+      emit_flow_counters(flow, boundary_ns, rep, run_limit);
+      if (!flow.has_pending_events()) {
+        return true;
+      }
+      if (step_once) {
+        continue;  // single slice while paused; no wall-clock budget consumed
+      }
+
+      const double speed = speed_.load(std::memory_order_relaxed);
+      deadline += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(
+              static_cast<double>(step_ns) * 1e-9 / speed));
+      const auto now = std::chrono::steady_clock::now();
+      if (deadline > now) {
+        std::unique_lock lock{run_mutex_};
+        run_cv_.wait_until(lock, deadline, [&] {
+          return stop_request_ || state_ != RunState::kRunning;
+        });
+        if (stop_request_) {
+          return false;
+        }
+      } else {
+        deadline = now;  // behind schedule: catch up without sleeping
+      }
+    }
+  }
+
+  void emit_flow_counters(FlowEngine& flow, std::int64_t boundary_ns,
+                          std::uint64_t rep, std::uint64_t reps_total) {
+    CountersFrame counters;
+    counters.seq = ++seq_;
+    counters.sim_time_ns = run_sim_offset_ns_ + boundary_ns;
+    for (const BlockSnapshot& snapshot : flow.block_snapshots()) {
+      const std::string& name = snapshot.name;
+      counters.values.push_back(
+          {"block." + name + ".buffered", static_cast<double>(snapshot.buffered)});
+      counters.values.push_back(
+          {"block." + name + ".in_service", static_cast<double>(snapshot.in_service)});
+      counters.values.push_back(
+          {"block." + name + ".arrived", static_cast<double>(snapshot.arrived)});
+      counters.values.push_back(
+          {"block." + name + ".departed", static_cast<double>(snapshot.departed)});
+    }
+    counters.values.push_back({"rep", static_cast<double>(rep)});
+    counters.values.push_back({"reps", static_cast<double>(reps_total)});
     last_frame_sim_ns_ = counters.sim_time_ns;
     emit(build_counters_frame(counters), trace_counters(counters));
   }

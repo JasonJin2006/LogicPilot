@@ -584,6 +584,24 @@ class Engine final : public BlockContext {
 
   [[nodiscard]] bool valid() const { return valid_; }
 
+  std::vector<BlockSnapshot> block_snapshots() const {
+    std::vector<BlockSnapshot> out;
+    out.reserve(blocks_.size());
+    for (const auto& block : blocks_) {
+      BlockSnapshot snapshot;
+      snapshot.name = std::string(block->name());
+      snapshot.kind = std::string(block->kind());
+      snapshot.buffered = static_cast<std::int64_t>(block->buffered());
+      snapshot.in_service = block->busy_units();
+      snapshot.arrived = block->arrived();
+      snapshot.departed = block->departed();
+      out.push_back(std::move(snapshot));
+    }
+    return out;
+  }
+
+  bool has_pending_events() { return !scheduler().empty(); }
+
   // Build the spatial graph: nodes in stable order, path edges weighted by
   // Euclidean distance, all-pairs shortest paths (Floyd-Warshall).
   void build_spatial_graph() {
@@ -1350,6 +1368,20 @@ std::size_t ProcessFlowSim::advance(SimTime until, TraceRecorder* trace) {
     return 0;
   }
   return impl_->engine.advance(until, trace);
+}
+
+std::vector<BlockSnapshot> ProcessFlowSim::block_snapshots() const {
+  if (impl_ == nullptr) {
+    return {};
+  }
+  return impl_->engine.block_snapshots();
+}
+
+bool ProcessFlowSim::has_pending_events() {
+  if (impl_ == nullptr) {
+    return false;
+  }
+  return impl_->engine.has_pending_events();
 }
 
 ReplicationMetrics ProcessFlowSim::metrics() const {

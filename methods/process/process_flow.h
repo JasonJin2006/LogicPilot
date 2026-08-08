@@ -51,6 +51,10 @@ class ProcessFlowSim : public FlowEngine {
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
 
+  // Live per-block telemetry for streamed runs.
+  [[nodiscard]] std::vector<BlockSnapshot> block_snapshots() const override;
+  [[nodiscard]] bool has_pending_events() override;
+
   // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
   // facilities instead of per-engine owned ones.
   void attach(RuntimeContext& context);

@@ -841,6 +841,23 @@
   background: var(--error);
 }
 
+/* Live flow tokens: circles travel along a coupling when a block departs
+ * entities (generic process-flow telemetry). */
+.flow-token {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 2px var(--accent));
+  pointer-events: none;
+}
+
+@keyframes flow-token {
+  from {
+    offset-distance: 0%;
+  }
+  to {
+    offset-distance: 100%;
+  }
+}
+
 .palette-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

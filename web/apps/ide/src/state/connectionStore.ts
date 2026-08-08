@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import { MM1_STATE_SERVING, type WireFrame } from '@logicpilot/renderer2d';
 import { generateDsl, modelRunParams } from '@logicpilot/editor';
 import { SimClient, type ConnState, type StartOptions } from '../client/simClient';
-import { resetVizState, vizState, type VizAgent } from './vizState';
+import { parseBlockCounters, resetVizState, vizState, type VizAgent } from './vizState';
 import { useModelStore } from './modelStore';
 import { useRunStore } from './runStore';
 import { getAppConfig } from './appConfig';
@@ -191,6 +191,7 @@ function applyFrame(frame: WireFrame): void {
       vizState.queueLength = Math.max(0, Math.round(frame.payload.values['queue_length'] ?? 0));
       vizState.throughput = frame.payload.values['throughput'] ?? 0;
       vizState.meanWait = frame.payload.values['mean_wait'] ?? 0;
+      vizState.blocks = parseBlockCounters(frame.payload.values);
       break;
     }
     case 'run-finished': {

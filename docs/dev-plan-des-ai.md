@@ -61,6 +61,16 @@ source feeding several branches with backpressure re-emitted buffered entities
 into branches that already accepted them, duplicating entities and livelocking
 the flow; source emission is now atomic (all branches must accept).
 
+Progress (2026-08-09, live visualization): generic process flows now stream
+instead of running in batch. FlowEngine exposes per-block snapshots
+(buffered / in-service / arrived / departed) and the gateway advances
+ProcessFlowSim in emit-step slices, emitting `block.<name>.*` counters on
+every slice. The IDE badges every block with its live buffer count and busy
+state and animates tokens along the couplings whenever a block's departed
+counter advances (CSS offset-path, WebView2-compatible). A server integration
+test drives a delay flow over WebSocket and asserts the per-block counters and
+a mid-run busy slice.
+
 ### M2 — AI modeling tool loop
 
 - Treat `ModelPatch v1` as the only mutating command boundary.
