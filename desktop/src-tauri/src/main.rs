@@ -184,6 +184,16 @@ fn prepend_runtime_path(command: &mut Command, root: &std::path::Path) {
     }
 }
 
+#[cfg(windows)]
+fn no_window(command: &mut Command) {
+    // node.exe / taskkill.exe are console-subsystem binaries: launching them
+    // from the GUI process without CREATE_NO_WINDOW pops up a stray terminal
+    // next to the app window on every start (and exit).
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
 fn main() {
     let root = repo_root();
     let bundled_node = if cfg!(windows) {
@@ -214,6 +224,8 @@ fn main() {
         command.env("LP_SERVER", lp_server);
     }
     prepend_runtime_path(&mut command, &root);
+    #[cfg(windows)]
+    no_window(&mut command);
     let mut app_server = command
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -314,7 +326,9 @@ fn main() {
             #[cfg(windows)]
             {
                 let pid = app_server.id().to_string();
-                let _ = Command::new("taskkill")
+                let mut taskkill = Command::new("taskkill");
+                no_window(&mut taskkill);
+                let _ = taskkill
                     .arg("/PID")
                     .arg(&pid)
                     .arg("/T")
