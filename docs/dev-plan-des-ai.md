@@ -71,6 +71,24 @@ counter advances (CSS offset-path, WebView2-compatible). A server integration
 test drives a delay flow over WebSocket and asserts the per-block counters and
 a mid-run busy slice.
 
+Progress (2026-08-09, M2/M3 remaining): the rule-based model-patch provider
+now handles structural insertion ("add <kind> <name> between A and B",
+splicing into the existing coupling) and kind replacement with topology
+preservation. ai-explain reads metrics.json and attributes the bottleneck to
+the busiest block / largest queue occupancy per-block, with aggregate
+fallbacks; parameter variation accepts freeform value lists and seeded
+Monte Carlo sampling in addition to the Cartesian grid.
+
+Progress (2026-08-09, M4 remaining): crash cleanup is now tested end to end
+(hard-killing the app server and asserting lp-server's parent watchdog exits
+the gateway), the app-server smoke test forces the offline rule-based
+provider and asserts it completes the full AI DES loop, and the staged-runtime
+manifest test pins the platform/architecture upgrade contract. The user
+manual (quickstart / web-ide / dsl / ai-copilot) was synced to the streamed
+live visualization, the 26-block executable palette, pool-wide failures,
+selectOutput5/In/Out, structural AI edits, per-block explanations and
+parameter-variation sampling.
+
 ### M2 — AI modeling tool loop
 
 - Treat `ModelPatch v1` as the only mutating command boundary.

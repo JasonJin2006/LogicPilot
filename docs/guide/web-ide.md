@@ -24,8 +24,10 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 - **Palette**（左侧）：库选择条（All / Recent / process / presentation /
   statechart / action / 导入的自定义库），块拖到画布。
   - `process` 流程库：source / queue / delay / service / sink / split /
-    batch / seize / release 等 39 个块（23 常用 + 16 新增 AnyLogic PML 块），
-    带 in/out 端口可连线。
+    batch / seize / release / selectOutput5 / selectOutputIn/Out 等 26 个
+    已注册可执行块，带 in/out 端口可连线。其余 catalog-only 块
+    （restrictedArea* / pickup / resourceTask* 等）尚无内核实现，已从
+    palette 隐藏，避免拖入后编译失败。
   - `presentation` 演示库：矩形/椭圆/线/文本等绘图形状，渲染为真实 SVG。
   - `statechart` / `action`：状态图与行动图元素（画布建模，语义落内核为后续）。
 - 画布：滚轮缩放、空白拖动平移、坐标网格；端口拖出连线（点击连线删除）。
@@ -55,8 +57,11 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 画布左上角 **Run** 打开运行对话框：seed / reps / arrivals / warmup / speed
 参数 + Start / Pause / Resume / Step / Stop。空画布运行网关内置模型；有画布
 模型时先编译再带模型参数运行。M/M/c 指数流程在运行中显示实时队列长度与忙/闲
-状态点；其他 process 拓扑、Agent、Atomic 和 Continuous 模型目前完成批量复制后
-返回统计摘要，不提供 Pause/Step 粒度的 Tick 流。
+状态点（Tick 增量帧）。**泛型 process 流程**（delay/split/selectOutput/
+Service 共享资源池等拓扑）同样以分片方式流式执行：每个块实时显示缓冲徽标与
+忙/闲状态点，实体沿 coupling 连线以令牌动画流动，Pause / Step 粒度可用。
+Agent、Atomic 和 Continuous 模型目前完成批量复制后返回统计摘要，不提供
+Pause/Step 粒度的 Tick 流。
 
 ## AI 面板（右侧）
 

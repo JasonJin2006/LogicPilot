@@ -72,6 +72,20 @@ hold Gate {
 `t`/`time` 与本块自身的数值字段）。表达式支持等值比较 `==` / `!=`
 （如 `condition = priority == 5`），与 `< > <= >=` 同级。
 
+### 多出口路由（selectOutput5 / selectOutputIn / selectOutputOut）
+
+- `selectOutput5`：1 进 5 出。`type = conditions` 时按 `condition1..4`
+  顺序求值，首个为真的出口胜出，全假走默认出口 `out5`；`type =
+  probabilities` 按 `probability1..5` 随机；`type = exit_number` 按
+  `exitNumber` 表达式取出口（1..5，越界钳制）。条件可引用实体属性与
+  `t`/`time`（`LP5006` 校验）。示例：`examples/select_output5.lp`。
+- `selectOutputIn` / `selectOutputOut`：AnyLogic 的"准多出口"组合。
+  `selectOutputIn` 只有 `in` 端口，把每个 agent 路由到它关联的
+  `selectOutputOut`（后者按名字声明 `selectOutputIn = Route`，只带 `out`
+  端口），实体被直接转发到该出口的下游，不经图形连线。默认按各出口
+  `probability` 滚动；`conditionIsProbabilistic = false` 后按 `choice`
+  表达式取 1-based 出口序号。示例：`examples/select_output_quasi.lp`。
+
 ### 实体属性（entity attributes）
 
 `source` 块可以用 `state <name>: <type> = <值>` 声明**实体属性默认值**，每个
@@ -110,8 +124,11 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
 - **被 seize 持有的单元同样服从池故障**：资源池的 `failure_rate` /
   `repair_rate` 在单元被持有期间生效——池进入故障后不再放行新的 seize，
-  修复后恢复；`availability` 反映停机占比（故障期间已持有的 agent 不被
-  中断，为简化语义）。
+  修复后恢复；`availability` 反映停机占比。
+- **池级故障是全局的**：每个声明资源池只有一条忙时故障/修复时钟。多个
+  `service`/`seize` 共享同一故障池时，故障会同时中断所有消费者的在服任务
+  （抢占式重启：修复后任务重新计时），不会给每个消费者各画一条独立故障
+  曲线；停机时间按故障发生时刻持有的单元数折算进 `availability`。
 - `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
   `timeout` 秒的 agent 从 `outTimeout` 出口离开（AnyLogic 语义；couple 到
   `outTimeout` 时编译器要求 `enableTimeout` 为 true）。
@@ -336,5 +353,15 @@ use manufacturing
 | `examples/comparison_queue.lp` | 比较式排队（agent1IsPreferredToAgent2） |
 | `examples/task_preempt.lp` | service 任务抢占（outPreempted） |
 | `examples/move_route.lp` | moveTo 沿 path 网络最短路径位移 |
+| `examples/select_output5.lp` | selectOutput5 条件路由（首真胜出 / out5 默认） |
+| `examples/select_output_quasi.lp` | selectOutputIn/Out 准多出口路由 |
+| `examples/condition_statechart.lp` | 状态机条件迁移（表达式轮询） |
+| `examples/source-arrivals.lp` | source 到达模式（rate/interarrival/manual、限次） |
+| `examples/des-core-conformance.lp` | 确定性 DES 契约（Source→Service→Sink） |
+| `examples/des-shared-resource.lp` | 多消费者共享健康资源池仲裁 |
+| `examples/des-queue-fifo.lp` / `des-queue-lifo.lp` | 队列 FIFO/LIFO 确定性 |
+| `examples/des-queue-timeout-preempt.lp` | 队列超时 + 抢占出口确定性 |
+| `examples/des-parameter-variation.lp` | 声明式多轴参数变化 |
+| `examples/des-simulation-experiment.lp` | 声明式仿真实验（fixed/random 种子、精度复制） |
 
 完整文法与语义约束见 [DSL 规范](/specs/dsl-spec)。

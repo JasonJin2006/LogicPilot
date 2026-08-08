@@ -103,7 +103,10 @@ copyFile(lpserver, join(output, 'runtime', 'bin', process.platform === 'win32' ?
 // CMake places required non-system runtime DLLs beside each release binary.
 for (const directory of new Set([dirname(lpcli), dirname(lpserver)])) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.toLowerCase().endsWith('.dll')) {
+    // Skip test-only artifacts (e.g. logicpilot_test_cabi_plugin.dll) that
+    // CMake copies beside the release binaries; they must not ship.
+    if (entry.isFile() && entry.name.toLowerCase().endsWith('.dll') &&
+        !entry.name.toLowerCase().includes('test')) {
       copyFile(join(directory, entry.name), join(output, 'runtime', 'bin', entry.name));
     }
   }
