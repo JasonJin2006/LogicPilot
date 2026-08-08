@@ -5,6 +5,7 @@ import { useModelStore } from '../state/modelStore';
 import { useCanvasView } from '../state/canvasView';
 import { BLOCK_DEFAULTS } from './blockDefs';
 import { PRESENTATION_KINDS } from './blockDefs';
+import { isExecutableProcessKind } from './blockDefs';
 import { createGraphicNode } from '@logicpilot/editor';
 
 let cascade = 0;
@@ -21,6 +22,10 @@ export function insertBlockAt(
   library: string,
   world?: { x: number; y: number },
 ): void {
+  if (library === 'process' && !isExecutableProcessKind(kind)) {
+    console.warn(`block '${kind}' is not executable yet; refusing to insert`);
+    return;
+  }
   const { addBlock } = useModelStore.getState();
   const { view } = useCanvasView.getState();
   const pos = world ?? {

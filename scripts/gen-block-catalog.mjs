@@ -13,12 +13,33 @@ const catalog = JSON.parse(
   readFileSync(join(repoRoot, 'libraries', 'pml-catalog.json'), 'utf8'),
 );
 
+// Process-library blocks with an executable kernel registry entry. The
+// embedded stdlib (libraries/process.lplib) is the runtime source of truth:
+// catalog-only kinds (restrictedArea*, pickup/dropoff, resourceTask*, ...)
+// can be placed by the IDE but would fail DSL compilation with LP2004, so
+// the palette must not offer them until a kernel implementation lands.
+const lplibSource = readFileSync(
+  join(repoRoot, 'libraries', 'process.lplib'),
+  'utf8',
+);
+const executableKinds = [...lplibSource.matchAll(/^  block ([A-Za-z0-9_]+) \{/gm)]
+  .map((match) => match[1]);
+if (executableKinds.length < 20) {
+  throw new Error(`unexpected lplib block count: ${executableKinds.length}`);
+}
+
 const lines = [
   '// Generated from libraries/pml-catalog.json by',
   '// scripts/gen-block-catalog.mjs - DO NOT EDIT BY HAND.',
   '// Regenerate after editing the catalog:',
   '//   node scripts/gen-block-catalog.mjs',
   'import type { BlockPortDef, BlockPropertyDef } from \'./blockDefs\';',
+  '',
+  `// Process-library blocks registered in the kernel's embedded stdlib`,
+  `// (generated from libraries/process.lplib).`,
+  'export const EXECUTABLE_PROCESS_KINDS: ReadonlySet<string> = new Set([',
+  ...executableKinds.map((kind) => `  ${JSON.stringify(kind)},`),
+  ']);',
   '',
   'export interface CatalogBlock {',
   '  kind: string;',
@@ -80,3 +101,4 @@ const outPath = join(
 );
 writeFileSync(outPath, `${lines.join('\n')}\n`);
 console.log(`wrote ${outPath} (${catalog.blocks.length} blocks)`);
+console.log(`  executable process kinds: ${executableKinds.length}`);

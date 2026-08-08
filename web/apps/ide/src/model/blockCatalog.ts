@@ -4,6 +4,37 @@
 //   node scripts/gen-block-catalog.mjs
 import type { BlockPortDef, BlockPropertyDef } from './blockDefs';
 
+// Process-library blocks registered in the kernel's embedded stdlib
+// (generated from libraries/process.lplib).
+export const EXECUTABLE_PROCESS_KINDS: ReadonlySet<string> = new Set([
+  "resource",
+  "source",
+  "queue",
+  "delay",
+  "service",
+  "split",
+  "combine",
+  "batch",
+  "unbatch",
+  "seize",
+  "release",
+  "wait",
+  "hold",
+  "match",
+  "selectOutput",
+  "selectOutput5",
+  "selectOutputIn",
+  "selectOutputOut",
+  "enter",
+  "exit",
+  "moveTo",
+  "timeMeasureStart",
+  "timeMeasureEnd",
+  "assembler",
+  "count",
+  "sink",
+]);
+
 export interface CatalogBlock {
   kind: string;
   friendlyName: string;

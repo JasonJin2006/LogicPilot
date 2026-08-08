@@ -65,6 +65,11 @@ export function PalettePanel() {
 
   const defs = new Map<string, PaletteBlock>();
   for (const block of BLOCK_DEFS) {
+    // Catalog-only process kinds have no kernel registry entry yet; hiding
+    // them keeps the palette honest (dragging one would fail DSL compile).
+    if (block.library === 'process' && !block.executable) {
+      continue;
+    }
     defs.set(block.kind, {
       kind: block.kind,
       library: block.library,

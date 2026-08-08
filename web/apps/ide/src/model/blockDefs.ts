@@ -4,7 +4,7 @@
 // every block carries its full port list (with conditional visibility) and
 // the full AnyLogic property list. Presentation/statechart/action mirror
 // AnyLogic's drawing and behavior elements (canvas annotations, not DSL).
-import { BLOCK_CATALOG } from './blockCatalog';
+import { BLOCK_CATALOG, EXECUTABLE_PROCESS_KINDS } from './blockCatalog';
 
 export type LibraryId =
   'process' | 'presentation' | 'statechart' | 'action' | 'agent' | 'analysis' | 'controls';
@@ -52,6 +52,10 @@ export interface BlockDef {
   hint?: string;
   ports: BlockPortDef[];
   properties: BlockPropertyDef[];
+  /** Process blocks with a kernel registry entry (generated from the
+   *  embedded stdlib). Catalog-only kinds are hidden from the palette
+   *  because the DSL compiler rejects them (LP2004). */
+  executable?: boolean;
 }
 
 interface CatalogBlock {
@@ -87,7 +91,14 @@ function processDef(kind: string, hint: string): BlockDef {
     hint,
     ports: catalog?.ports ?? [],
     properties: catalog?.properties ?? [],
+    executable: EXECUTABLE_PROCESS_KINDS.has(kind),
   };
+}
+
+/** Whether a process-library block kind has an executable kernel registry
+ *  entry (and therefore compiles + runs through the generic flow engine). */
+export function isExecutableProcessKind(kind: string): boolean {
+  return EXECUTABLE_PROCESS_KINDS.has(kind);
 }
 
 const PROCESS_DEFS: BlockDef[] = [
@@ -992,7 +1003,11 @@ const ACTION_DEFS: BlockDef[] = (
 }));
 
 export const BLOCK_DEFS: BlockDef[] = [
-  ...PROCESS_DEFS,
+  // Catalog-only process kinds (restrictedArea*, pickup/dropoff, ...) have
+  // no kernel registry entry yet; keeping them out of BLOCK_DEFS means the
+  // palette, canvas insertion and recent list never offer a block whose DSL
+  // cannot compile (LP2004).
+  ...PROCESS_DEFS.filter((def) => def.executable !== false),
   ...PRESENTATION_DEFS,
   ...STATECHART_DEFS,
   ...ACTION_DEFS,

@@ -264,11 +264,20 @@ private:
             node.span);
       return;
     }
-    error("LP2004",
-          "unknown declaration kind '" + kind +
-              "' (core kinds: "
-              "agent/atomic/continuous/experiment/node/path; process library: "
-              "resource/source/queue/service/sink)",
+    std::string known = "core kinds: agent/atomic/continuous/experiment/node/path";
+    if (registry_ != nullptr) {
+      std::string process_kinds;
+      for (const BlockShape& shape : registry_->blocks()) {
+        if (!process_kinds.empty()) {
+          process_kinds += "/";
+        }
+        process_kinds += shape.kind;
+      }
+      known += "; process library: " + process_kinds;
+    } else {
+      known += "; process library: resource/source/queue/service/sink";
+    }
+    error("LP2004", "unknown declaration kind '" + kind + "' (" + known + ")",
           node.name_span);
   }
 
