@@ -206,6 +206,10 @@ export async function handleParameterVariation(req, res) {
     const result = await runParameterVariation({
       dsl,
       experimentName: payload?.experimentName,
+      axes: Array.isArray(payload?.axes) ? payload.axes : undefined,
+      sampling: payload?.sampling === 'monte_carlo' ? 'monte_carlo' : 'grid',
+      samples: Number.isSafeInteger(payload?.samples) ? payload.samples : 10,
+      seed: Number.isSafeInteger(payload?.seed) ? payload.seed : 1,
       arrivals: Number.isFinite(payload?.arrivals) ? payload.arrivals : 4000,
       warmup: Number.isFinite(payload?.warmup) ? payload.warmup : 400,
       concurrency: Number.isFinite(payload?.concurrency) ? payload.concurrency : undefined,

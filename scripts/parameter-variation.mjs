@@ -24,6 +24,13 @@ async function lpcli(lpcliPath, args) {
 }
 
 export function axisValues(axis) {
+  if (Array.isArray(axis.values)) {
+    if (axis.values.length === 0 ||
+        !axis.values.every((value) => typeof value === 'number' && Number.isFinite(value))) {
+      throw new Error(`axis '${axis.name}' values must be a non-empty number list`);
+    }
+    return axis.values.map((value) => Number(value.toPrecision(15)));
+  }
   const { min, max, step } = axis;
   if (![min, max, step].every(Number.isFinite) || step <= 0 || max < min) {
     throw new Error(`invalid axis '${axis.name}' range/step`);
@@ -51,6 +58,49 @@ export function cartesianPoints(axes) {
   return points;
 }
 
+// Deterministic Monte Carlo sampling over the axes (mulberry32 LCG). Each
+// point draws a uniform value per axis; when the axis declares a step the
+// value snaps to the nearest step and is clamped to [min, max].
+export function sampleMonteCarlo(axes, samples, seed = 1) {
+  if (!Number.isSafeInteger(samples) || samples < 1 || samples > 100000) {
+    throw new Error('samples must be an integer in [1, 100000]');
+  }
+  if (!Number.isSafeInteger(seed) || seed < 0) {
+    throw new Error('seed must be a non-negative integer');
+  }
+  let state = seed >>> 0;
+  const random = () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+  const points = [];
+  for (let sample = 0; sample < samples; ++sample) {
+    const point = {};
+    for (const axis of axes) {
+      if (Array.isArray(axis.values)) {
+        const index = Math.floor(random() * axis.values.length);
+        point[axis.variable] = Number(axis.values[index].toPrecision(15));
+        continue;
+      }
+      const { min, max, step } = axis;
+      if (![min, max].every(Number.isFinite) || max < min) {
+        throw new Error(`invalid axis '${axis.name}' range`);
+      }
+      let value = min + random() * (max - min);
+      if (Number.isFinite(step) && step > 0) {
+        value = min + Math.round((value - min) / step) * step;
+      }
+      value = Math.min(max, Math.max(min, value));
+      point[axis.variable] = Number(value.toPrecision(15));
+    }
+    points.push(point);
+  }
+  return points;
+}
+
 function runArgs(experiment) {
   const args = experiment.seed_mode === 'random'
     ? ['--random-seed']
@@ -70,6 +120,10 @@ function runArgs(experiment) {
 export async function runParameterVariation({
   dsl,
   experimentName,
+  axes: axesOverride,
+  sampling = 'grid',
+  samples = 10,
+  seed = 1,
   lpcliPath = findLpcli(),
   arrivals = 4000,
   warmup = 400,
@@ -82,6 +136,9 @@ export async function runParameterVariation({
   }
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
     throw new Error('concurrency must be a positive integer');
+  }
+  if (sampling !== 'grid' && sampling !== 'monte_carlo') {
+    throw new Error("sampling must be 'grid' or 'monte_carlo'");
   }
 
   const root = mkdtempSync(join(tmpdir(), 'logicpilot-variation-'));
@@ -101,7 +158,10 @@ export async function runParameterVariation({
         ? `parameter variation experiment '${experimentName}' not found`
         : 'model declares no parameter variation experiment');
     }
-    const points = cartesianPoints(experiment.axes ?? []);
+    const axes = axesOverride ?? experiment.axes ?? [];
+    const points = sampling === 'monte_carlo'
+      ? sampleMonteCarlo(axes, samples, seed)
+      : cartesianPoints(axes);
     const iterations = new Array(points.length);
     let cursor = 0;
     const worker = async () => {
@@ -130,7 +190,9 @@ export async function runParameterVariation({
       kind: 'parameter_variation',
       name: experiment.name,
       metric: experiment.metric,
-      axes: experiment.axes,
+      axes,
+      sampling,
+      seed: sampling === 'monte_carlo' ? seed : undefined,
       pointCount: points.length,
       iterations,
     };
