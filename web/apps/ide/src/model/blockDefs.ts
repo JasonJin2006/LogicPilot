@@ -123,8 +123,8 @@ const PROCESS_DEFS: BlockDef[] = [
   // AnyLogic PML full palette (added 2026-08-06; kernel execution support
   // lands per-block, until then the DSL compiler reports LP2004).
   processDef('selectOutput5', 'route to one of five outputs'),
-  processDef('selectOutputIn', 'merge up to five inputs'),
-  processDef('selectOutputOut', 'fan one input out to five branches'),
+  processDef('selectOutputIn', 'route to one of the associated exits'),
+  processDef('selectOutputOut', 'an exit of a SelectOutputIn block'),
   processDef('restrictedAreaStart', 'enter a restricted area'),
   processDef('restrictedAreaEnd', 'leave a restricted area'),
   processDef('pickup', 'pick agents from a queue into a container'),
@@ -1117,22 +1117,8 @@ const PORT_LAYOUTS: Record<string, Record<string, [number, number]>> = {
     out4: [31, 26],
     out5: [31, 32],
   },
-  selectOutputIn: {
-    in1: [9, 12],
-    in2: [9, 16],
-    in3: [9, 20],
-    in4: [9, 24],
-    in5: [9, 28],
-    out: [31, 20],
-  },
-  selectOutputOut: {
-    in: [9, 20],
-    out1: [31, 12],
-    out2: [31, 16],
-    out3: [31, 20],
-    out4: [31, 24],
-    out5: [31, 28],
-  },
+  selectOutputIn: { in: [9, 20] },
+  selectOutputOut: { out: [31, 20] },
   split: { in: [12, 12], out: [28, 12], outCopy: [28, 28] },
   combine: { in1: [12, 12], in2: [12, 28], out: [28, 28] },
   match: {

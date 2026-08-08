@@ -1,6 +1,6 @@
 // Block-shape registry tests: the embedded standard process library
 // (libraries/process.lplib, generated from libraries/pml-catalog.json) must
-// load and expose all 23 blocks with the expected shapes; LibraryRegistry
+// load and expose all 26 blocks with the expected shapes; LibraryRegistry
 // parses ports (with `when` conditions) and typed params.
 #include <string>
 #include <vector>
@@ -11,13 +11,14 @@
 
 using namespace logicpilot::dsl;
 
-TEST_CASE("registry: embedded process library loads the 23 blocks",
+TEST_CASE("registry: embedded process library loads the 26 blocks",
           "[dsl][registry]") {
   const LibraryRegistry& registry = builtin_process_registry();
-  REQUIRE(registry.blocks().size() == 23);
+  REQUIRE(registry.blocks().size() == 26);
   for (const char* kind : {"resource", "source", "queue", "delay", "service",
                            "split", "combine", "batch", "unbatch", "seize",
                            "release", "wait", "hold", "match", "selectOutput",
+                           "selectOutput5", "selectOutputOut", "selectOutputIn",
                            "enter", "exit", "moveTo", "timeMeasureStart",
                            "timeMeasureEnd", "assembler", "count", "sink"}) {
     REQUIRE(registry.has_block(kind));
@@ -63,6 +64,34 @@ TEST_CASE("registry: embedded process library loads the 23 blocks",
   REQUIRE(select_output->port("in")->direction == "in");
   REQUIRE(select_output->port("outT")->direction == "out");
   REQUIRE(select_output->port("outF")->direction == "out");
+
+  const BlockShape* select_output5 = registry.block("selectOutput5");
+  REQUIRE(select_output5->port("in")->direction == "in");
+  REQUIRE(select_output5->ports.size() == 6);
+  REQUIRE(select_output5->port("out5")->direction == "out");
+  REQUIRE(select_output5->param("type")->type == BlockParamType::kString);
+  REQUIRE(select_output5->param("condition1")->type ==
+          BlockParamType::kExpression);
+  REQUIRE(select_output5->param("exitNumber")->type ==
+          BlockParamType::kExpression);
+
+  const BlockShape* select_output_in = registry.block("selectOutputIn");
+  REQUIRE(select_output_in->ports.size() == 1);
+  REQUIRE(select_output_in->port("in")->direction == "in");
+  REQUIRE_FALSE(select_output_in->has_output_ports());
+  REQUIRE(select_output_in->param("conditionIsProbabilistic")->type ==
+          BlockParamType::kBool);
+  REQUIRE(select_output_in->param("choice")->type ==
+          BlockParamType::kExpression);
+
+  const BlockShape* select_output_out = registry.block("selectOutputOut");
+  REQUIRE(select_output_out->ports.size() == 1);
+  REQUIRE(select_output_out->port("out")->direction == "out");
+  REQUIRE_FALSE(select_output_out->has_input_ports());
+  REQUIRE(select_output_out->param("selectOutputIn")->type ==
+          BlockParamType::kRef);
+  REQUIRE(select_output_out->param("probability")->type ==
+          BlockParamType::kFloat);
 
   const BlockShape* sink = registry.block("sink");
   REQUIRE(sink->ports.size() == 1);

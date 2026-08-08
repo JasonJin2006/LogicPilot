@@ -160,6 +160,34 @@ TEST_CASE("process flow: source -> delay -> sink holds tokens for the delay",
   REQUIRE(metrics.mean_sojourn < 1.0);
 }
 
+TEST_CASE("process flow: delay maximumCapacity=true gives unlimited capacity",
+          "[process_flow]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_dist(builder, "arrival", dist(builder, 4, {1.0}))}, {});
+  const auto delay = block(
+      builder, "D", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 0, {10.0})),
+       var_int(builder, "capacity", 1),
+       var_bool(builder, "maximumCapacity", true)},
+      {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(
+      builder, {source, delay, sink},
+      {couple(builder, "In", "out", "D", "in"),
+       couple(builder, "D", "out", "K", "in")},
+      flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
+  REQUIRE(metrics.departures == 100);
+  REQUIRE(metrics.mean_sojourn > 5.0);
+  // Unlimited: every entity is delayed ~10s in parallel. With the bug the
+  // bool was ignored and a single server serialized all 100 (~500s mean).
+  REQUIRE(metrics.mean_sojourn < 30.0);
+}
+
 TEST_CASE("process flow: split clones each agent", "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
   const auto source = block(
@@ -381,6 +409,182 @@ TEST_CASE("process flow: selectOutput runtime condition routes "
   REQUIRE(slow.departures == 2000);
   REQUIRE(fast.mean_sojourn < 1.0);
   REQUIRE(slow.mean_sojourn > 50.0);
+}
+
+TEST_CASE("process flow: selectOutput5 conditions route first-true and "
+          "default to out5",
+          "[process_flow][condition]") {
+  const auto run_route = [](const char* condition) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(
+        builder, "R", "selectOutput5",
+        {var_string(builder, "type", "conditions"),
+         var_string(builder, "condition1", condition)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+         var_int(builder, "capacity", -1)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "out1", "Slow", "in"),
+         couple(builder, "R", "out5", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  // `t < 0` is never true -> all conditions false -> default out5 (no delay);
+  // `t < 1e8` is always true -> condition1 wins -> out1 (100s delay).
+  const ReplicationMetrics fast = run_route("t < 0");
+  const ReplicationMetrics slow = run_route("t < 100000000");
+  REQUIRE(fast.departures == 2000);
+  REQUIRE(slow.departures == 2000);
+  REQUIRE(fast.mean_sojourn < 1.0);
+  REQUIRE(slow.mean_sojourn > 50.0);
+}
+
+TEST_CASE("process flow: selectOutput5 exit-number expression picks exit",
+          "[process_flow][condition]") {
+  const auto run_exit = [](const char* exit_number) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(
+        builder, "R", "selectOutput5",
+        {var_string(builder, "type", "exit_number"),
+         var_string(builder, "exitNumber", exit_number)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+         var_int(builder, "capacity", -1)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "out1", "Slow", "in"),
+         couple(builder, "R", "out5", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  const ReplicationMetrics via_five = run_exit("5");
+  const ReplicationMetrics via_one = run_exit("1");
+  REQUIRE(via_five.departures == 2000);
+  REQUIRE(via_one.departures == 2000);
+  REQUIRE(via_five.mean_sojourn < 1.0);    // out5 -> sink
+  REQUIRE(via_one.mean_sojourn > 50.0);    // out1 -> 100s delay
+}
+
+TEST_CASE("process flow: selectOutput5 probabilities route with weights",
+          "[process_flow]") {
+  const auto run_probs = [](double p1, double p5) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(
+        builder, "R", "selectOutput5",
+        {var_string(builder, "type", "probabilities"),
+         var_float(builder, "probability1", p1),
+         var_float(builder, "probability2", 0.0),
+         var_float(builder, "probability3", 0.0),
+         var_float(builder, "probability4", 0.0),
+         var_float(builder, "probability5", p5)}, {});
+    const auto slow = block(
+        builder, "Slow", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+         var_int(builder, "capacity", -1)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, slow, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "R", "out1", "Slow", "in"),
+         couple(builder, "R", "out5", "K", "in"),
+         couple(builder, "Slow", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  const ReplicationMetrics all_fast = run_probs(0.0, 1.0);  // all -> out5
+  const ReplicationMetrics all_slow = run_probs(1.0, 0.0);  // all -> out1
+  REQUIRE(all_fast.departures == 2000);
+  REQUIRE(all_slow.departures == 2000);
+  REQUIRE(all_fast.mean_sojourn < 1.0);
+  REQUIRE(all_slow.mean_sojourn > 50.0);
+}
+
+TEST_CASE("process flow: selectOutputIn/Out quasi-select routes by "
+          "probability and choice",
+          "[process_flow][condition]") {
+  const auto run_quasi = [](bool probabilistic, const char* choice,
+                            double fast_prob) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source = block(
+        builder, "In", "source",
+        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(
+        builder, "R", "selectOutputIn",
+        {var_bool(builder, "conditionIsProbabilistic", probabilistic),
+         var_string(builder, "choice", choice)}, {});
+    const auto fast = block(
+        builder, "Fast", "selectOutputOut",
+        {var_string(builder, "selectOutputIn", "R"),
+         var_float(builder, "probability", fast_prob)}, {});
+    const auto slow = block(
+        builder, "Slow", "selectOutputOut",
+        {var_string(builder, "selectOutputIn", "R"),
+         var_float(builder, "probability", 1.0 - fast_prob)}, {});
+    const auto delay = block(
+        builder, "D", "delay",
+        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+         var_int(builder, "capacity", -1)},
+        {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, route, fast, slow, delay, sink},
+        {couple(builder, "In", "out", "R", "in"),
+         couple(builder, "Fast", "out", "D", "in"),
+         couple(builder, "Slow", "out", "K", "in"),
+         couple(builder, "D", "out", "K", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 7, 2000, 0);
+  };
+
+  // Probability mode: 0.7 of agents take the 100s delay through Fast.
+  const ReplicationMetrics via_prob = run_quasi(true, "", 0.7);
+  REQUIRE(via_prob.departures == 2000);
+  REQUIRE(via_prob.mean_sojourn > 50.0);
+
+  // All probability on Slow: every agent takes the fast branch.
+  const ReplicationMetrics prob_fast = run_quasi(true, "", 0.0);
+  REQUIRE(prob_fast.departures == 2000);
+  REQUIRE(prob_fast.mean_sojourn < 1.0);
+
+  // Explicit choice: 1 -> Fast (slow), 2 -> Slow (fast).
+  const ReplicationMetrics choice_fast = run_quasi(false, "1", 0.7);
+  const ReplicationMetrics choice_slow = run_quasi(false, "2", 0.7);
+  REQUIRE(choice_fast.departures == 2000);
+  REQUIRE(choice_slow.departures == 2000);
+  REQUIRE(choice_fast.mean_sojourn > 50.0);
+  REQUIRE(choice_slow.mean_sojourn < 1.0);
 }
 
 TEST_CASE("process flow: hold blockingCondition blocks tokens while true",

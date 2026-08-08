@@ -169,6 +169,36 @@ set_tests_properties(lpcli_run_condition_statechart PROPERTIES
   DEPENDS lpcli_compile_condition_statechart
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# SelectOutput5 condition routing compiles and runs through lpcli.
+add_test(NAME lpcli_compile_select_output5
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/select_output5.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/select_output5.ir.bin")
+set_tests_properties(lpcli_compile_select_output5 PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_select_output5
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/select_output5.ir.bin"
+          --seed=42 --reps=1 --arrivals=100 --warmup=0)
+set_tests_properties(lpcli_run_select_output5 PROPERTIES
+  DEPENDS lpcli_compile_select_output5
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
+# SelectOutputIn/Out quasi-select compiles and runs through lpcli.
+add_test(NAME lpcli_compile_select_output_quasi
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/select_output_quasi.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/select_output_quasi.ir.bin")
+set_tests_properties(lpcli_compile_select_output_quasi PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_select_output_quasi
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/select_output_quasi.ir.bin"
+          --seed=42 --reps=1 --arrivals=100 --warmup=0)
+set_tests_properties(lpcli_run_select_output_quasi PROPERTIES
+  DEPENDS lpcli_compile_select_output_quasi
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
 # Continuous DSL: decay example compiles (v2 default) and runs the ODE engine.
 add_test(NAME lpcli_compile_continuous
   COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/decay.lp"

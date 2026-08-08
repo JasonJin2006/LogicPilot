@@ -616,35 +616,51 @@ class Analyzer {
 
   // Kind-specific semantic rules on top of the registered shape (range
   // checks and the service resource reference).
+  // Runtime condition expressions are evaluated by the kernel with
+  // `t`/`time` and the block's own numeric fields in scope; anything else
+  // is a silent 0.0 at runtime, so unknown identifiers are rejected here.
+  void check_runtime_expression(const Node& node, const Field* condition) {
+    if (condition == nullptr || value_is_constant(condition->value)) {
+      return;
+    }
+    std::unordered_set<std::string> known = {"t", "time"};
+    for (const std::string& attribute : entity_attribute_names_) {
+      known.insert(attribute);
+    }
+    for (const Field& field : node.fields) {
+      if (field.value.kind == ValueKind::kInt ||
+          field.value.kind == ValueKind::kFloat) {
+        known.insert(field.name);
+      }
+    }
+    std::vector<std::string> unknown;
+    collect_unknown_identifiers(condition->value, known, unknown);
+    for (const std::string& id : unknown) {
+      error("LP5006",
+            "condition '" + condition->name + "' in " + node.kind + " '" +
+                node.name + "' references unknown identifier '" + id +
+                "' (expected 't'/'time' or a numeric block field)",
+            condition->span);
+    }
+  }
+
   void check_block_semantics(const Node& node, const ParamScope& scope) {
     if (node.kind == "selectOutput" || node.kind == "hold") {
-      // Runtime conditions (selectOutput.condition / hold.blockingCondition)
-      // are evaluated by the kernel with `t`/`time` and the block's own
-      // numeric fields in scope; anything else is a silent 0.0 at runtime.
+      // Runtime conditions (selectOutput.condition / hold.blockingCondition).
       const char* field_name =
           node.kind == "selectOutput" ? "condition" : "blockingCondition";
-      const Field* condition = field_of(node, field_name);
-      if (condition != nullptr && !value_is_constant(condition->value)) {
-        std::unordered_set<std::string> known = {"t", "time"};
-        for (const std::string& attribute : entity_attribute_names_) {
-          known.insert(attribute);
-        }
-        for (const Field& field : node.fields) {
-          if (field.value.kind == ValueKind::kInt ||
-              field.value.kind == ValueKind::kFloat) {
-            known.insert(field.name);
-          }
-        }
-        std::vector<std::string> unknown;
-        collect_unknown_identifiers(condition->value, known, unknown);
-        for (const std::string& id : unknown) {
-          error("LP5006",
-                "condition '" + condition->name + "' in " + node.kind + " '" +
-                    node.name + "' references unknown identifier '" + id +
-                    "' (expected 't'/'time' or a numeric block field)",
-                condition->span);
-        }
+      check_runtime_expression(node, field_of(node, field_name));
+    }
+    if (node.kind == "selectOutput5" || node.kind == "selectOutputOut") {
+      // SelectOutput5/SelectOutputOut routing conditions.
+      for (const char* field_name : {"condition1", "condition2", "condition3",
+                                     "condition4", "condition5"}) {
+        check_runtime_expression(node, field_of(node, field_name));
       }
+    }
+    if (node.kind == "selectOutputIn") {
+      // SelectOutputIn explicit choice expression (1-based exit index).
+      check_runtime_expression(node, field_of(node, "choice"));
     }
     if (node.kind == "match") {
       const Field* condition = field_of(node, "matchCondition");
@@ -837,7 +853,10 @@ class Analyzer {
         }
       }
       for (const auto& [name, stage] : stages) {
-        if (stage->kind != "source" && targets.count(name) == 0) {
+        // SelectOutputOut blocks are pure routing targets: agents reach them
+        // logically from their associated SelectOutputIn, never by coupling.
+        if (stage->kind != "source" && stage->kind != "selectOutputOut" &&
+            targets.count(name) == 0) {
           error("LP5004",
                 "process stage '" + name + "' in " + scope_name +
                     " has no incoming coupling and can never receive an "

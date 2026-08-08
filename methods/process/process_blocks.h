@@ -1024,6 +1024,185 @@ class GenericBlock final : public BufferedBlock {
   std::unordered_map<std::string, double> numeric_params_;
 };
 
+// SelectOutput5 (AnyLogic): one input, five outputs. Routing mode from
+// `type`: "conditions" evaluates condition1..4 (first true wins, out5 is
+// the default), "probabilities" rolls against probability1..5, and
+// "exit_number" evaluates the exitNumber expression (clamped to 1..5).
+class SelectOutput5Block final : public BufferedBlock {
+ public:
+  SelectOutput5Block(
+      std::string name, std::string type, std::vector<std::string> conditions,
+      std::vector<double> probabilities, std::string exit_number,
+      std::unordered_map<std::string, double> numeric_params = {})
+      : BufferedBlock("selectOutput5", std::move(name), -1),
+        type_(std::move(type)),
+        conditions_(std::move(conditions)),
+        probabilities_(std::move(probabilities)),
+        exit_number_(std::move(exit_number)),
+        numeric_params_(std::move(numeric_params)) {}
+
+  bool update(BlockContext& ctx) override {
+    if (input_.empty()) {
+      return false;
+    }
+    const Entity entity = input_.front();
+    const auto lookup = [this, &ctx, &entity](const std::string& id) -> double {
+      if (id == "t" || id == "time") {
+        return static_cast<double>(ctx.now().as_ns()) * 1e-9;
+      }
+      const auto attribute = entity.attributes.find(id);
+      if (attribute != entity.attributes.end()) {
+        return attribute->second;
+      }
+      const auto it = numeric_params_.find(id);
+      return it != numeric_params_.end() ? it->second : 0.0;
+    };
+
+    int exit = 5;  // default: last output
+    if (type_ == "exit_number" && !exit_number_.empty()) {
+      const ExpressionEvaluator evaluator{exit_number_};
+      if (evaluator.ok()) {
+        exit = std::clamp(static_cast<int>(evaluator.eval(lookup)), 1, 5);
+      }
+    } else if (type_ == "probabilities") {
+      const double roll =
+          static_cast<double>(ctx.rng()()) / static_cast<double>(UINT64_MAX);
+      double cumulative = 0.0;
+      exit = 5;
+      for (std::size_t i = 0; i < probabilities_.size(); ++i) {
+        cumulative += probabilities_[i];
+        if (roll < cumulative) {
+          exit = static_cast<int>(i) + 1;
+          break;
+        }
+      }
+    } else {
+      // conditions: first true wins; all false -> out5 (default).
+      for (std::size_t i = 0; i < conditions_.size(); ++i) {
+        if (conditions_[i].empty()) {
+          continue;
+        }
+        const ExpressionEvaluator evaluator{conditions_[i]};
+        if (evaluator.ok() && evaluator.eval(lookup) != 0.0) {
+          exit = static_cast<int>(i) + 1;
+          break;
+        }
+      }
+    }
+    const std::string port = "out" + std::to_string(exit);
+    if (!ctx.emit(entity, port.c_str())) {
+      return false;
+    }
+    input_.pop_front();
+    ++departed_;
+    return true;
+  }
+
+ private:
+  std::string type_;
+  std::vector<std::string> conditions_;
+  std::vector<double> probabilities_;
+  std::string exit_number_;
+  std::unordered_map<std::string, double> numeric_params_;
+};
+
+// SelectOutputIn (AnyLogic): one input, no outputs. The engine hands the
+// block its associated SelectOutputOut targets ({name, probability}); each
+// arriving agent is routed to exactly one target - by a probability roll
+// (conditionIsProbabilistic) or by the `choice` expression selecting the
+// 1-based target index - and the engine forwards it through that target's
+// downstream edge.
+class SelectOutputInBlock final : public BufferedBlock {
+ public:
+  SelectOutputInBlock(
+      std::string name, bool probabilistic, std::string choice,
+      std::unordered_map<std::string, double> numeric_params = {})
+      : BufferedBlock("selectOutputIn", std::move(name), -1),
+        probabilistic_(probabilistic),
+        choice_(std::move(choice)),
+        numeric_params_(std::move(numeric_params)) {}
+
+  void set_routing_targets(
+      const std::vector<std::pair<std::string, double>>& targets) override {
+    targets_ = targets;
+  }
+
+  bool update(BlockContext& ctx) override {
+    if (input_.empty()) {
+      return false;
+    }
+    const Entity entity = input_.front();
+    const std::string target = choose_target(ctx, entity);
+    if (target.empty()) {
+      // No associated SelectOutputOut: the agent has no route and leaves.
+      input_.pop_front();
+      ++departed_;
+      ctx.leave_system(entity);
+      return true;
+    }
+    if (!ctx.emit_via(entity, target.c_str())) {
+      return false;  // downstream rejected it; keep the entity buffered
+    }
+    input_.pop_front();
+    ++departed_;
+    return true;
+  }
+
+ private:
+  std::string choose_target(BlockContext& ctx, const Entity& entity) const {
+    if (targets_.empty()) {
+      return "";
+    }
+    if (!probabilistic_ && !choice_.empty()) {
+      const auto lookup = [this, &ctx, &entity](const std::string& id) -> double {
+        if (id == "t" || id == "time") {
+          return static_cast<double>(ctx.now().as_ns()) * 1e-9;
+        }
+        const auto attribute = entity.attributes.find(id);
+        if (attribute != entity.attributes.end()) {
+          return attribute->second;
+        }
+        const auto it = numeric_params_.find(id);
+        return it != numeric_params_.end() ? it->second : 0.0;
+      };
+      const ExpressionEvaluator evaluator{choice_};
+      int index = 1;
+      if (evaluator.ok()) {
+        index = static_cast<int>(evaluator.eval(lookup));
+      }
+      index = std::clamp(index, 1, static_cast<int>(targets_.size()));
+      return targets_[static_cast<std::size_t>(index - 1)].first;
+    }
+    const double roll = ctx.rng01();
+    double cumulative = 0.0;
+    for (const auto& [name, probability] : targets_) {
+      cumulative += probability;
+      if (roll < cumulative) {
+        return name;
+      }
+    }
+    return targets_.back().first;  // probabilities did not sum to 1
+  }
+
+  bool probabilistic_{true};
+  std::string choice_;
+  std::vector<std::pair<std::string, double>> targets_;
+  std::unordered_map<std::string, double> numeric_params_;
+};
+
+// SelectOutputOut (AnyLogic): one output, no inputs. A pure routing target
+// of a SelectOutputIn block - no entity physically enters this block, so it
+// never accepts anything; the engine forwards agents to its downstream.
+class SelectOutputOutBlock final : public BufferedBlock {
+ public:
+  explicit SelectOutputOutBlock(std::string name)
+      : BufferedBlock("selectOutputOut", std::move(name), -1) {}
+
+  bool can_accept(const Entity&) override { return false; }
+
+  bool update(BlockContext&) override { return false; }
+};
+
 // Seize: request `quantity` units from the named ResourcePool. The entity
 // waits (embedded queue, capacity) until the pool grants the units, then
 // leaves immediately with the units recorded on the entity; Release returns

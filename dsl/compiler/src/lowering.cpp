@@ -269,6 +269,13 @@ flatbuffers::Offset<v2::Node> v2_process_block(
             (field.name == "condition" ||
              field.name == "blockingCondition" ||
              field.name == "matchCondition" ||
+             field.name == "condition1" ||
+             field.name == "condition2" ||
+             field.name == "condition3" ||
+             field.name == "condition4" ||
+             field.name == "condition5" ||
+             field.name == "choice" ||
+             field.name == "exitNumber" ||
              field.name == "agent1IsPreferredToAgent2" ||
              field.name == "agent1MayPreemptAgent2") &&
             field.value.span.byte_length > 0 &&

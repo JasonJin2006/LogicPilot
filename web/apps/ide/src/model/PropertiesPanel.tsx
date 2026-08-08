@@ -55,6 +55,12 @@ const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set(['expression']);
  *  until the engine implements it. Keyed by `${blockKind}.${fieldName}`. */
 const EXECUTED_EXPRESSIONS: ReadonlySet<string> = new Set([
   'selectOutput.condition',
+  'selectOutput5.condition1',
+  'selectOutput5.condition2',
+  'selectOutput5.condition3',
+  'selectOutput5.condition4',
+  'selectOutput5.exitNumber',
+  'selectOutputIn.choice',
   'hold.blockingCondition',
   'match.matchCondition',
   'queue.agent1IsPreferredToAgent2',

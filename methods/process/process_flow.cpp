@@ -43,6 +43,7 @@ using logicpilot::ir_v2_util::node_float_param;
 using logicpilot::ir_v2_util::node_int_param;
 using logicpilot::ir_v2_util::node_bool_param;
 using logicpilot::ir_v2_util::node_string_param;
+using logicpilot::ir_v2_util::node_var;
 
 constexpr EventType kArriveEvent = 20;
 constexpr EventType kDepartEvent = 21;
@@ -103,6 +104,31 @@ std::string block_string_param(const Node* stage, const char* name) {
   return value != nullptr ? std::string(value) : "";
 }
 
+// Read an expression-typed block field that may have been lowered as a raw
+// text string (non-constant expression) or as a folded scalar (bool/int/
+// float). Returns the fallback when the field is absent.
+std::string block_expression_param(const Node* stage, const char* name,
+                                   const char* fallback) {
+  const char* text = node_string_param(stage, name);
+  if (text != nullptr) {
+    return text;
+  }
+  const ir::v2::Var* var = node_var(stage, name);
+  if (var != nullptr) {
+    switch (var->type()) {
+      case ir::v2::VarType_Bool:
+        return var->bool_value() ? "true" : "false";
+      case ir::v2::VarType_Int:
+        return std::to_string(var->int_value());
+      case ir::v2::VarType_Float:
+        return std::to_string(var->float_value());
+      default:
+        break;
+    }
+  }
+  return fallback;
+}
+
 // Builds the modular block for one process-library stage, carrying over the
 // pre-modular engine's parameter mapping verbatim.
 std::unique_ptr<ProcessBlock> make_block(
@@ -154,7 +180,7 @@ std::unique_ptr<ProcessBlock> make_block(
       return nullptr;
     }
     std::int64_t capacity = node_int_param(stage, "capacity", 1);
-    if (node_int_param(stage, "maximumCapacity", 0) != 0) {
+    if (node_bool_param(stage, "maximumCapacity", false)) {
       capacity = -1;
     }
     return std::make_unique<DelayBlock>(name, std::move(sampler), capacity);
@@ -296,6 +322,37 @@ std::unique_ptr<ProcessBlock> make_block(
         kind, name, node_float_param(stage, "probability", 0.5), 2, false,
         block_string_param(stage, "condition"), "",
         block_numeric_params(stage));
+  }
+  if (kind == "selectOutput5") {
+    std::vector<std::string> conditions;
+    for (const char* field : {"condition1", "condition2", "condition3",
+                              "condition4"}) {
+      conditions.push_back(block_expression_param(stage, field, ""));
+    }
+    std::vector<double> probabilities;
+    for (const char* field : {"probability1", "probability2", "probability3",
+                              "probability4", "probability5"}) {
+      probabilities.push_back(node_float_param(stage, field, 0.2));
+    }
+    const char* type = node_string_param(stage, "type");
+    return std::make_unique<SelectOutput5Block>(
+        name, type != nullptr ? type : "probabilities", std::move(conditions),
+        std::move(probabilities),
+        block_expression_param(stage, "exitNumber", "1"),
+        block_numeric_params(stage));
+  }
+  if (kind == "selectOutputIn") {
+    // Routes each agent to one associated SelectOutputOut block (by
+    // probability roll or the choice expression); the engine forwards it
+    // through the chosen target's downstream.
+    return std::make_unique<SelectOutputInBlock>(
+        name, node_bool_param(stage, "conditionIsProbabilistic", true),
+        block_expression_param(stage, "choice", "1"),
+        block_numeric_params(stage));
+  }
+  if (kind == "selectOutputOut") {
+    // Pure routing target of a SelectOutputIn; nothing enters it.
+    return std::make_unique<SelectOutputOutBlock>(name);
   }
   if (kind == "hold") {
     const bool frozen = node_bool_param(stage, "initiallyBlocked", false) ||
@@ -451,6 +508,37 @@ class Engine final : public BlockContext {
       for (std::size_t i = 0; i + 1 < blocks_.size(); ++i) {
         out_edges_[i].push_back({i + 1, "out", "in"});
         in_edges_[i + 1].push_back(i);
+      }
+    }
+    // SelectOutputIn/Out logical association (AnyLogic): each
+    // SelectOutputOut declares its owning SelectOutputIn by name; the
+    // engine hands every SelectOutputIn the sorted list of its targets
+    // ({name, probability}) for routing.
+    std::unordered_map<std::string, std::vector<std::pair<std::string, double>>>
+        in_targets;
+    for (const Node* stage : stages) {
+      if (stage == nullptr || stage->metadata() == nullptr ||
+          stage->metadata()->name() == nullptr ||
+          stage->semantics() == nullptr ||
+          stage->semantics()->block() == nullptr ||
+          stage->semantics()->block()->str() != "selectOutputOut") {
+        continue;
+      }
+      const char* in_name = node_string_param(stage, "selectOutputIn");
+      if (in_name == nullptr) {
+        continue;
+      }
+      in_targets[in_name].push_back(
+          {stage->metadata()->name()->str(),
+           node_float_param(stage, "probability", 1.0)});
+    }
+    for (std::size_t i = 0; i < blocks_.size(); ++i) {
+      if (blocks_[i]->kind() != "selectOutputIn") {
+        continue;
+      }
+      const auto it = in_targets.find(std::string(blocks_[i]->name()));
+      if (it != in_targets.end()) {
+        blocks_[i]->set_routing_targets(it->second);
       }
     }
   }
@@ -668,6 +756,14 @@ class Engine final : public BlockContext {
 
   bool emit(const Entity& entity, const char* port) override {
     return push_downstream(current_, entity, port);
+  }
+
+  bool emit_via(const Entity& entity, const char* target_block) override {
+    const auto it = index_.find(target_block);
+    if (it == index_.end() || it->second >= blocks_.size()) {
+      return false;
+    }
+    return push_downstream(it->second, entity, "out");
   }
 
   void schedule_depart(std::int64_t hold_ns,

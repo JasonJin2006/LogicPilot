@@ -59,6 +59,12 @@ class BlockContext {
   // downstream on the port leaves the system.
   virtual bool emit(const Entity& entity, const char* port) = 0;
 
+  // SelectOutputIn routing: push `entity` through the `out` edges of the
+  // named SelectOutputOut block (the agent is forwarded to that block's
+  // downstream without physically entering it). Returns false when the
+  // target is unknown or a downstream rejected the entity.
+  virtual bool emit_via(const Entity& entity, const char* target_block) = 0;
+
   // Schedule this block's depart event for `entity_id` at now + hold_ns.
   virtual void schedule_depart(std::int64_t hold_ns,
                                std::uint64_t entity_id) = 0;
@@ -165,6 +171,14 @@ class ProcessBlock {
 
   // The ResourcePool this block draws units from ("" for non-pool blocks).
   [[nodiscard]] virtual std::string pool_resource() const { return ""; }
+
+  // SelectOutputIn: the engine resolves the associated SelectOutputOut
+  // blocks (declared via `selectOutputIn` refs) after all blocks are built
+  // and hands them to the block as {name, probability} targets.
+  virtual void set_routing_targets(
+      const std::vector<std::pair<std::string, double>>& targets) {
+    (void)targets;
+  }
 };
 
 // Shared buffering/counter state for the common input -> forward model.

@@ -499,6 +499,58 @@ library process {
     onExitFalse: expression = ""
   }
 
+  // SelectOutput5 (AnyLogic): one input, five outputs. In conditions mode
+  // the conditions are evaluated in order and the agent exits through the
+  // first true output (all false -> out5, the default exit); in
+  // probabilities mode the exit is drawn from probability1..5; in exit
+  // number mode the exitNumber expression selects the exit (1..5).
+  block selectOutput5 {
+    in in: entity
+    out out1: entity
+    out out2: entity
+    out out3: entity
+    out out4: entity
+    out out5: entity
+
+    type: string = "probabilities"
+    condition1: expression = "true"
+    condition2: expression = "false"
+    condition3: expression = "false"
+    condition4: expression = "false"
+    probability1: float = 0.2
+    probability2: float = 0.2
+    probability3: float = 0.2
+    probability4: float = 0.2
+    probability5: float = 0.2
+    exitNumber: expression = "1"
+    onEnter: expression = ""
+  }
+
+  // SelectOutputIn (AnyLogic): one input, no outputs. Together with the
+  // SelectOutputOut blocks that declare it via `selectOutputIn`, it forms a
+  // quasi SelectOutput with any number of exits. Agents are routed either
+  // by the probabilities declared on the associated SelectOutputOut blocks
+  // (conditionIsProbabilistic = true) or by the `choice` expression, which
+  // selects the associated exit by 1-based index.
+  block selectOutputIn {
+    in in: entity
+
+    conditionIsProbabilistic: bool = true
+    choice: expression = "1"
+    onEnter: expression = ""
+  }
+
+  // SelectOutputOut (AnyLogic): one output, no inputs. Declares itself as a
+  // routing target of the named SelectOutputIn block; agents are forwarded
+  // directly to this block's downstream without physically entering it.
+  block selectOutputOut {
+    out out: entity
+
+    selectOutputIn: ref = ""
+    probability: float = 1.0
+    onExit: expression = ""
+  }
+
   // Enter (1 port(s), 21 properties)
   block enter {
     out out: entity
@@ -651,4 +703,3 @@ library process {
     onEnter: expression = ""
   }
 }
-
