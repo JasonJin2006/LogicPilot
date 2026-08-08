@@ -138,7 +138,13 @@ function ruleBasedPatch(prompt, model) {
   const decimal = '(\\d+(?:\\.\\d+)?)';
   const operations = [];
   const add = prompt.match(/(?:add|create)\s+(?:a\s+)?(source|queue|service|sink|resource|delay)\s+([a-z_][a-z0-9_]*)/i);
-  const addKind = add?.[1].toLowerCase() ?? null;
+  // Structural insertion: "add queue Q between A and B" (or before/after a
+  // single anchor). The new block is spliced into the existing coupling so
+  // the flow stays connected.
+  const insert = prompt.match(
+    /(?:add|insert|put)\s+(?:a\s+)?(source|queue|service|sink|resource|delay)\s+([a-z_][a-z0-9_]*)\s+(?:between|before|after)\s+([a-z_][a-z0-9_]*)(?:\s+(?:and|->)\s+([a-z_][a-z0-9_]*))?/i,
+  );
+  const addKind = (insert?.[1] ?? add?.[1])?.toLowerCase() ?? null;
   const addParams = {};
   const fields = [
     {
@@ -205,7 +211,45 @@ function ruleBasedPatch(prompt, model) {
     if (node) operations.push({ op: 'remove_block', target: node.id });
   }
 
-  if (add && !namedNode(model, add[2])) {
+  if (insert && !namedNode(model, insert[2])) {
+    const insertKind = insert[1].toLowerCase();
+    const insertName = insert[2];
+    const anchorA = namedNode(model, insert[3]);
+    const anchorB = insert[4] ? namedNode(model, insert[4]) : null;
+    const relation = insert[0].match(/between|before|after/i)?.[0].toLowerCase() ?? '';
+    const anchor = anchorA ?? anchorB;
+    const edges = anchor
+      ? model.edges.filter((edge) => {
+          if (relation === 'between') {
+            return (
+              anchorA !== null &&
+              anchorB !== null &&
+              ((edge.from === anchorA.id && edge.to === anchorB.id) ||
+                (edge.from === anchorB.id && edge.to === anchorA.id))
+            );
+          }
+          if (relation === 'after') return edge.from === anchor.id;
+          if (relation === 'before') return edge.to === anchor.id;
+          return false;
+        })
+      : [];
+    if (edges.length > 0) {
+      const edge = edges[0];
+      operations.push({ op: 'disconnect', edge: edge.id });
+      operations.push({
+        op: 'add_block',
+        kind: insertKind,
+        name: insertName,
+        ...(Object.keys(addParams).length > 0 ? { params: addParams } : {}),
+      });
+      const fromConnect = { op: 'connect', from: edge.from, to: insertName };
+      if (edge.fromPort !== undefined) fromConnect.fromPort = edge.fromPort;
+      operations.push(fromConnect);
+      const toConnect = { op: 'connect', from: insertName, to: edge.to };
+      if (edge.toPort !== undefined) toConnect.toPort = edge.toPort;
+      operations.push(toConnect);
+    }
+  } else if (add && !namedNode(model, add[2])) {
     if (addKind === 'service') {
       const resource = selectedNode(model, 'resource', prompt);
       if (resource) addParams.resource = resource.name;
@@ -246,6 +290,33 @@ function ruleBasedPatch(prompt, model) {
 
   const rename = prompt.match(/(?:rename model to|模型重命名为)\s*([\p{L}_][\p{L}\p{N}_]*)/iu);
   if (rename) operations.push({ op: 'rename_model', name: rename[1] });
+
+  // Kind replacement preserving topology: "replace queue Waiting with delay"
+  // / "change Waiting to delay". Edges are re-attached to the new block using
+  // the ports owned by the unchanged neighbors.
+  const replace = prompt.match(
+    /(?:replace|change|turn)\s+(?:(?:the\s+)?(source|queue|service|sink|resource|delay)\s+)?([a-z_][a-z0-9_]*)\s+(?:with|into|to)\s+(?:a\s+)?(source|queue|service|sink|resource|delay)/i,
+  );
+  if (replace) {
+    const target = namedNode(model, replace[2]);
+    const newKind = replace[3].toLowerCase();
+    if (target && target.kind !== newKind) {
+      const inEdges = model.edges.filter((edge) => edge.to === target.id);
+      const outEdges = model.edges.filter((edge) => edge.from === target.id);
+      operations.push({ op: 'remove_block', target: target.id });
+      operations.push({ op: 'add_block', kind: newKind, name: target.name });
+      for (const edge of inEdges) {
+        const connect = { op: 'connect', from: edge.from, to: target.name };
+        if (edge.fromPort !== undefined) connect.fromPort = edge.fromPort;
+        operations.push(connect);
+      }
+      for (const edge of outEdges) {
+        const connect = { op: 'connect', from: target.name, to: edge.to };
+        if (edge.toPort !== undefined) connect.toPort = edge.toPort;
+        operations.push(connect);
+      }
+    }
+  }
 
   return { version: 1, operations };
 }

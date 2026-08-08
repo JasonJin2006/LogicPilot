@@ -73,6 +73,58 @@ describe('ModelPatch', () => {
     expect(removed.document.edges).toHaveLength(0);
   });
 
+  it('splices a new block into an existing coupling (insertion intent)', () => {
+    let doc = createDocument();
+    doc = addNode(doc, { kind: 'source', name: 'S', x: 0, y: 0 });
+    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 200, y: 0 });
+    doc = connect(doc, doc.nodes[0]!.id, doc.nodes[1]!.id).document;
+    const edgeId = doc.edges[0]!.id;
+
+    const result = applyModelPatch(doc, {
+      version: 1,
+      operations: [
+        { op: 'disconnect', edge: edgeId },
+        { op: 'add_block', kind: 'delay', name: 'Buffer' },
+        { op: 'connect', from: 'S', to: 'Buffer' },
+        { op: 'connect', from: 'Buffer', to: 'Q' },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.document.nodes.map((node) => node.name)).toEqual(['S', 'Q', 'Buffer']);
+    expect(result.document.edges).toHaveLength(2);
+    expect(result.document.edges[0]!.to).toBe(result.document.nodes.find((n) => n.name === 'Buffer')!.id);
+    expect(result.document.edges[1]!.from).toBe(result.document.nodes.find((n) => n.name === 'Buffer')!.id);
+  });
+
+  it('replaces a block kind while preserving the flow topology', () => {
+    let doc = createDocument();
+    for (const [kind, name, x] of [
+      ['source', 'S', 0],
+      ['queue', 'Q', 200],
+      ['sink', 'K', 400],
+    ] as const) {
+      doc = addNode(doc, { kind, name, x, y: 0 });
+    }
+    doc = connect(doc, doc.nodes[0]!.id, doc.nodes[1]!.id).document;
+    doc = connect(doc, doc.nodes[1]!.id, doc.nodes[2]!.id).document;
+
+    const result = applyModelPatch(doc, {
+      version: 1,
+      operations: [
+        { op: 'remove_block', target: 'Q' },
+        { op: 'add_block', kind: 'delay', name: 'Q' },
+        { op: 'connect', from: 'S', to: 'Q' },
+        { op: 'connect', from: 'Q', to: 'K' },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.document.nodes).toHaveLength(3);
+    expect(result.document.nodes.find((node) => node.name === 'Q')?.kind).toBe('delay');
+    expect(result.document.edges).toHaveLength(2);
+    expect(generateDsl(result.document)).toContain('couple S.out -> Q.in');
+    expect(generateDsl(result.document)).toContain('couple Q.out -> K.in');
+  });
+
   it('diffs a generated model while preserving matching node ids and positions', () => {
     let current = addNode(createDocument('Old'), {
       kind: 'source',

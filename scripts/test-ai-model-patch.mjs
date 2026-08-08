@@ -65,6 +65,39 @@ assert.deepEqual(disconnect.patch.operations, [{ op: 'disconnect', edge: 'edge-1
 const removal = await proposeModelPatch({ prompt: 'remove block Done', model });
 assert.deepEqual(removal.patch.operations, [{ op: 'remove_block', target: 'k1' }]);
 
+const connected = {
+  ...model,
+  edges: [
+    { id: 'e1', from: 's1', to: 'q1' },
+    { id: 'e2', from: 'q1', to: 'w1' },
+    { id: 'e3', from: 'w1', to: 'k1' },
+  ],
+};
+
+// Structural insertion: the new block is spliced into the existing coupling.
+const insertion = await proposeModelPatch({
+  prompt: 'add queue Buffer between Patients and Waiting',
+  model: connected,
+});
+assert.deepEqual(insertion.patch.operations, [
+  { op: 'disconnect', edge: 'e1' },
+  { op: 'add_block', kind: 'queue', name: 'Buffer' },
+  { op: 'connect', from: 's1', to: 'Buffer' },
+  { op: 'connect', from: 'Buffer', to: 'q1' },
+]);
+
+// Kind replacement preserves the flow topology.
+const replacement = await proposeModelPatch({
+  prompt: 'replace queue Waiting with delay',
+  model: connected,
+});
+assert.deepEqual(replacement.patch.operations, [
+  { op: 'remove_block', target: 'q1' },
+  { op: 'add_block', kind: 'delay', name: 'Waiting' },
+  { op: 'connect', from: 's1', to: 'Waiting' },
+  { op: 'connect', from: 'Waiting', to: 'w1' },
+]);
+
 const unsupported = await proposeModelPatch({ prompt: 'make this model more realistic', model });
 assert.equal(unsupported.supported, false);
 assert.deepEqual(unsupported.patch.operations, []);
