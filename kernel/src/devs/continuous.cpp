@@ -13,21 +13,36 @@ namespace {
 
 namespace v2 = logicpilot::ir::v2;
 
+const v2::Node* find_sd_node(const v2::Node* node) {
+  if (node == nullptr)
+    return nullptr;
+  if (node->semantics() != nullptr && node->semantics()->library() != nullptr &&
+      node->semantics()->library()->str() == "sd" && node->continuous() != nullptr) {
+    return node;
+  }
+  if (node->children() != nullptr) {
+    for (const v2::Node* child : *node->children()) {
+      if (const v2::Node* found = find_sd_node(child); found != nullptr) {
+        return found;
+      }
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
 // ExpressionEvaluator
 // ---------------------------------------------------------------------------
 
-ExpressionEvaluator::ExpressionEvaluator(std::string text)
-    : text_{std::move(text)} {
+ExpressionEvaluator::ExpressionEvaluator(std::string text) : text_{std::move(text)} {
   parse();
 }
 
 void ExpressionEvaluator::parse() {
   root_ = parse_cmp();
-  while (pos_ < text_.size() &&
-         std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+  while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
     ++pos_;
   }
   if (pos_ < text_.size()) {
@@ -42,25 +57,20 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_cmp() {
     return nullptr;
   }
   for (;;) {
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
     Node::Kind kind = Node::Kind::kNumber;
-    if (pos_ + 1 < text_.size() && text_[pos_] == '<' &&
-        text_[pos_ + 1] == '=') {
+    if (pos_ + 1 < text_.size() && text_[pos_] == '<' && text_[pos_ + 1] == '=') {
       kind = Node::Kind::kLe;
       pos_ += 2;
-    } else if (pos_ + 1 < text_.size() && text_[pos_] == '>' &&
-               text_[pos_ + 1] == '=') {
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '>' && text_[pos_ + 1] == '=') {
       kind = Node::Kind::kGe;
       pos_ += 2;
-    } else if (pos_ + 1 < text_.size() && text_[pos_] == '=' &&
-               text_[pos_ + 1] == '=') {
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '=' && text_[pos_ + 1] == '=') {
       kind = Node::Kind::kEq;
       pos_ += 2;
-    } else if (pos_ + 1 < text_.size() && text_[pos_] == '!' &&
-               text_[pos_ + 1] == '=') {
+    } else if (pos_ + 1 < text_.size() && text_[pos_] == '!' && text_[pos_ + 1] == '=') {
       kind = Node::Kind::kNe;
       pos_ += 2;
     } else if (pos_ < text_.size() && text_[pos_] == '<') {
@@ -91,8 +101,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_expr() {
     return nullptr;
   }
   for (;;) {
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
     if (pos_ < text_.size() && (text_[pos_] == '+' || text_[pos_] == '-')) {
@@ -119,8 +128,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_term() {
     return nullptr;
   }
   for (;;) {
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
     if (pos_ < text_.size() && (text_[pos_] == '*' || text_[pos_] == '/')) {
@@ -142,8 +150,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_term() {
 }
 
 std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_factor() {
-  while (pos_ < text_.size() &&
-         std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+  while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
     ++pos_;
   }
   if (pos_ < text_.size() && text_[pos_] == '-') {
@@ -158,8 +165,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_factor() {
 }
 
 std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() {
-  while (pos_ < text_.size() &&
-         std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+  while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
     ++pos_;
   }
   if (pos_ >= text_.size()) {
@@ -170,8 +176,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
   if (c == '(') {
     ++pos_;
     auto inner = parse_cmp();
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
     if (pos_ < text_.size() && text_[pos_] == ')') {
@@ -189,8 +194,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
         ++end;
       } else if (ch == 'e' || ch == 'E') {
         ++end;
-        if (end < text_.size() &&
-            (text_[end] == '+' || text_[end] == '-')) {
+        if (end < text_.size() && (text_[end] == '+' || text_[end] == '-')) {
           ++end;
         }
       } else {
@@ -206,14 +210,12 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
   if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
     std::size_t end = pos_;
     while (end < text_.size() &&
-           (std::isalnum(static_cast<unsigned char>(text_[end])) ||
-            text_[end] == '_')) {
+           (std::isalnum(static_cast<unsigned char>(text_[end])) || text_[end] == '_')) {
       ++end;
     }
     std::string identifier = text_.substr(pos_, end - pos_);
     pos_ = end;
-    while (pos_ < text_.size() &&
-           std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+    while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
       ++pos_;
     }
     if (pos_ < text_.size() && text_[pos_] == '(') {
@@ -222,8 +224,7 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
       if (inner == nullptr) {
         return nullptr;
       }
-      while (pos_ < text_.size() &&
-             std::isspace(static_cast<unsigned char>(text_[pos_]))) {
+      while (pos_ < text_.size() && std::isspace(static_cast<unsigned char>(text_[pos_]))) {
         ++pos_;
       }
       if (pos_ >= text_.size() || text_[pos_] != ')') {
@@ -246,17 +247,15 @@ std::unique_ptr<ExpressionEvaluator::Node> ExpressionEvaluator::parse_primary() 
   return nullptr;
 }
 
-double ExpressionEvaluator::eval(
-    const std::function<double(const std::string&)>& lookup) const {
+double ExpressionEvaluator::eval(const std::function<double(const std::string&)>& lookup) const {
   if (root_ == nullptr) {
     return 0.0;
   }
   return eval_node(root_.get(), lookup);
 }
 
-double ExpressionEvaluator::eval_node(
-    const Node* node,
-    const std::function<double(const std::string&)>& lookup) {
+double ExpressionEvaluator::eval_node(const Node* node,
+                                      const std::function<double(const std::string&)>& lookup) {
   using Kind = Node::Kind;
   switch (node->kind) {
     case Kind::kNumber:
@@ -283,49 +282,31 @@ double ExpressionEvaluator::eval_node(
       return 0.0;
     }
     case Kind::kAdd:
-      return eval_node(node->left.get(), lookup) +
-             eval_node(node->right.get(), lookup);
+      return eval_node(node->left.get(), lookup) + eval_node(node->right.get(), lookup);
     case Kind::kSub:
-      return eval_node(node->left.get(), lookup) -
-             eval_node(node->right.get(), lookup);
+      return eval_node(node->left.get(), lookup) - eval_node(node->right.get(), lookup);
     case Kind::kMul:
-      return eval_node(node->left.get(), lookup) *
-             eval_node(node->right.get(), lookup);
+      return eval_node(node->left.get(), lookup) * eval_node(node->right.get(), lookup);
     case Kind::kDiv:
-      return eval_node(node->left.get(), lookup) /
-             eval_node(node->right.get(), lookup);
+      return eval_node(node->left.get(), lookup) / eval_node(node->right.get(), lookup);
     case Kind::kNeg:
       return -eval_node(node->left.get(), lookup);
     case Kind::kLt:
-      return eval_node(node->left.get(), lookup) <
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) < eval_node(node->right.get(), lookup) ? 1.0 : 0.0;
     case Kind::kGt:
-      return eval_node(node->left.get(), lookup) >
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) > eval_node(node->right.get(), lookup) ? 1.0 : 0.0;
     case Kind::kLe:
-      return eval_node(node->left.get(), lookup) <=
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) <= eval_node(node->right.get(), lookup) ? 1.0
+                                                                                         : 0.0;
     case Kind::kGe:
-      return eval_node(node->left.get(), lookup) >=
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) >= eval_node(node->right.get(), lookup) ? 1.0
+                                                                                         : 0.0;
     case Kind::kEq:
-      return eval_node(node->left.get(), lookup) ==
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) == eval_node(node->right.get(), lookup) ? 1.0
+                                                                                         : 0.0;
     case Kind::kNe:
-      return eval_node(node->left.get(), lookup) !=
-                     eval_node(node->right.get(), lookup)
-                 ? 1.0
-                 : 0.0;
+      return eval_node(node->left.get(), lookup) != eval_node(node->right.get(), lookup) ? 1.0
+                                                                                         : 0.0;
   }
   return 0.0;
 }
@@ -334,20 +315,11 @@ double ExpressionEvaluator::eval_node(
 // ContinuousReplicationModel
 // ---------------------------------------------------------------------------
 
-ContinuousReplicationModel::ContinuousReplicationModel(
-    std::vector<std::uint8_t> v2_bytes, const v2::Node* /*v2_root*/)
+ContinuousReplicationModel::ContinuousReplicationModel(std::vector<std::uint8_t> v2_bytes,
+                                                       const v2::Node* /*v2_root*/)
     : bytes_{std::move(v2_bytes)} {
-  // Re-derive from OUR copy; resolve the equation node (bare {sd, equation}
-  // root or the sole child of a core/model container).
   const v2::Node* root = ir::v2::GetModelFile(bytes_.data())->root();
-  if (root->semantics() != nullptr &&
-      root->semantics()->block() != nullptr &&
-      std::strcmp(root->semantics()->block()->c_str(), "model") == 0 &&
-      root->children() != nullptr && root->children()->size() == 1) {
-    v2_root_ = root->children()->Get(0);
-  } else {
-    v2_root_ = root;
-  }
+  v2_root_ = find_sd_node(root);
   if (v2_root_ != nullptr && v2_root_->params() != nullptr) {
     for (const v2::Var* var : *v2_root_->params()) {
       if (var->name() != nullptr && var->type() == v2::VarType_Float) {
@@ -369,104 +341,119 @@ ContinuousReplicationModel::ContinuousReplicationModel(
   }
 }
 
-ReplicationMetrics ContinuousReplicationModel::run(
-    const ReplicationConfig& config, TraceRecorder* trace) {
-  ReplicationMetrics metrics;
-  metrics.arrivals = 0;
+ReplicationMetrics ContinuousReplicationModel::run(const ReplicationConfig& config,
+                                                   TraceRecorder* trace) {
+  if (!reset(config))
+    return ReplicationMetrics{};
+  while (step()) {
+  }
+  return finish(trace);
+}
 
-  constexpr double kDt = 0.01;
-  std::unordered_map<std::string, double> state;
-  std::vector<ExpressionEvaluator> evaluators;
-  bool valid = !odes_.empty();
+bool ContinuousReplicationModel::reset(const ReplicationConfig& config) {
+  state_.clear();
+  evaluators_.clear();
+  y_.clear();
+  variables_.clear();
+  trajectory_.clear();
+  last_state_.clear();
+  active_ = false;
+  if (odes_.empty())
+    return false;
+
   for (const Ode& ode : odes_) {
-    state[ode.var] = ode.initial;
+    state_[ode.var] = ode.initial;
     ExpressionEvaluator evaluator{ode.rhs_text};
-    if (!evaluator.ok()) {
-      valid = false;
-      break;
-    }
-    evaluators.push_back(std::move(evaluator));
+    if (!evaluator.ok())
+      return false;
+    evaluators_.push_back(std::move(evaluator));
+    variables_.push_back(ode.var);
+    y_.push_back(ode.initial);
+    last_state_[ode.var] = ode.initial;
   }
-  if (!valid) {
-    return metrics;
-  }
+  step_budget_ = config.arrivals;
+  step_index_ = 0;
+  current_t_ = 0.0;
+  trajectory_.reserve(static_cast<std::size_t>(step_budget_));
+  active_ = true;
+  return true;
+}
 
-  const std::uint64_t steps = config.arrivals;
-  double current_t = 0.0;
+bool ContinuousReplicationModel::step() {
+  if (done())
+    return false;
+  constexpr double kDt = 0.01;
   const auto lookup = [&](const std::string& name) -> double {
-    if (name == "t") {
-      return current_t;
-    }
+    if (name == "t")
+      return current_t_;
     const auto param = params_.find(name);
-    if (param != params_.end()) {
+    if (param != params_.end())
       return param->second;
-    }
-    const auto var = state.find(name);
-    return var != state.end() ? var->second : 0.0;
+    const auto var = state_.find(name);
+    return var != state_.end() ? var->second : 0.0;
   };
 
   const std::size_t count = odes_.size();
-  std::vector<double> y(count);
+  current_t_ = static_cast<double>(step_index_) * kDt;
+  std::vector<double> k1(count), k2(count), k3(count), k4(count);
   for (std::size_t i = 0; i < count; ++i) {
-    y[i] = state[odes_[i].var];
-  }
-  variables_.clear();
-  trajectory_.clear();
-  trajectory_.reserve(static_cast<std::size_t>(steps));
-  for (const Ode& ode : odes_) {
-    variables_.push_back(ode.var);
-  }
-  for (std::uint64_t step = 0; step < steps; ++step) {
-    current_t = static_cast<double>(step) * kDt;
-    std::vector<double> k1(count), k2(count), k3(count), k4(count);
-    for (std::size_t i = 0; i < count; ++i) {
-      state[odes_[i].var] = y[i];
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-      k1[i] = evaluators[i].eval(lookup);
-    }
-    current_t = (static_cast<double>(step) + 0.5) * kDt;
-    for (std::size_t i = 0; i < count; ++i) {
-      state[odes_[i].var] = y[i] + 0.5 * kDt * k1[i];
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-      k2[i] = evaluators[i].eval(lookup);
-    }
-    current_t = (static_cast<double>(step) + 0.5) * kDt;
-    for (std::size_t i = 0; i < count; ++i) {
-      state[odes_[i].var] = y[i] + 0.5 * kDt * k2[i];
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-      k3[i] = evaluators[i].eval(lookup);
-    }
-    current_t = (static_cast<double>(step) + 1.0) * kDt;
-    for (std::size_t i = 0; i < count; ++i) {
-      state[odes_[i].var] = y[i] + kDt * k3[i];
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-      k4[i] = evaluators[i].eval(lookup);
-    }
-    for (std::size_t i = 0; i < count; ++i) {
-      y[i] += (kDt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
-    }
-    TrajectoryPoint point;
-    point.t = (static_cast<double>(step) + 1.0) * kDt;
-    point.values.assign(y.begin(), y.end());
-    trajectory_.push_back(std::move(point));
+    state_[odes_[i].var] = y_[i];
   }
   for (std::size_t i = 0; i < count; ++i) {
-    last_state_[odes_[i].var] = y[i];
+    k1[i] = evaluators_[i].eval(lookup);
   }
-  metrics.arrivals = steps;
+  current_t_ = (static_cast<double>(step_index_) + 0.5) * kDt;
+  for (std::size_t i = 0; i < count; ++i) {
+    state_[odes_[i].var] = y_[i] + 0.5 * kDt * k1[i];
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    k2[i] = evaluators_[i].eval(lookup);
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    state_[odes_[i].var] = y_[i] + 0.5 * kDt * k2[i];
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    k3[i] = evaluators_[i].eval(lookup);
+  }
+  current_t_ = (static_cast<double>(step_index_) + 1.0) * kDt;
+  for (std::size_t i = 0; i < count; ++i) {
+    state_[odes_[i].var] = y_[i] + kDt * k3[i];
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    k4[i] = evaluators_[i].eval(lookup);
+  }
+  for (std::size_t i = 0; i < count; ++i) {
+    y_[i] += (kDt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+    state_[odes_[i].var] = y_[i];
+    last_state_[odes_[i].var] = y_[i];
+  }
+  ++step_index_;
+  TrajectoryPoint point;
+  point.t = static_cast<double>(step_index_) * kDt;
+  point.values.assign(y_.begin(), y_.end());
+  trajectory_.push_back(std::move(point));
+  return true;
+}
+
+bool ContinuousReplicationModel::done() const {
+  return !active_ || step_index_ >= step_budget_;
+}
+
+ReplicationMetrics ContinuousReplicationModel::finish(TraceRecorder* trace) {
+  ReplicationMetrics metrics;
+  if (!active_ || odes_.empty())
+    return metrics;
+  constexpr double kDt = 0.01;
+  metrics.arrivals = step_index_;
   const std::int64_t horizon_ns =
-      static_cast<std::int64_t>(static_cast<double>(steps) * kDt * 1e9);
+      static_cast<std::int64_t>(static_cast<double>(step_index_) * kDt * 1e9);
   metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
   metrics.final_value = last_state_[odes_.front().var];
   if (trace != nullptr) {
     trace->absorb(static_cast<std::uint64_t>(horizon_ns));
-    trace->absorb(static_cast<std::uint64_t>(
-        last_state_[odes_.front().var] * 1e9));
+    trace->absorb(static_cast<std::uint64_t>(last_state_[odes_.front().var] * 1e9));
   }
+  active_ = false;
   return metrics;
 }
 

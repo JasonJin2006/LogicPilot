@@ -1,15 +1,18 @@
 // IR AgentModel execution tests (milestone 1c): DSL agent blocks -> v2 IR ->
 // AgentReplicationModel tick loop (built-in behaviors) + determinism.
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <memory>
 #include <string>
 
-#include <catch2/catch_test_macros.hpp>
-
-#include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
+#include "logicpilot/runtime/simulation_kernel.h"
+
+#include "ir_v2_generated.h"
+#include "register.h"
 
 using namespace logicpilot;
 namespace v2 = logicpilot::ir::v2;
@@ -21,16 +24,14 @@ constexpr const char* kAgents = LOGICPILOT_EXAMPLES_DIR "/agents.lp";
 IrLoadResult load_agents() {
   const dsl::CompileResult compiled = dsl::compile_file(kAgents);
   REQUIRE(compiled.ok);
-  IrLoadResult loaded =
-      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
 
 }  // namespace
 
-TEST_CASE("agent DSL lowers to a v2 agent node with count/state/behaviors",
-          "[agent][ir]") {
+TEST_CASE("agent DSL lowers to a v2 agent node with count/state/behaviors", "[agent][ir]") {
   const IrLoadResult loaded = load_agents();
   REQUIRE(loaded.file.v2_root != nullptr);
   const v2::Node* root = loaded.file.v2_root->root();
@@ -45,17 +46,14 @@ TEST_CASE("agent DSL lowers to a v2 agent node with count/state/behaviors",
   REQUIRE(agent->behaviors() != nullptr);
   REQUIRE(agent->behaviors()->size() == 2);
   REQUIRE(agent->behaviors()->Get(0)->handler_ref()->str() == "flip");
-  REQUIRE(agent->behaviors()->Get(0)->params()->Get(0)->name()->str() ==
-          "active");
+  REQUIRE(agent->behaviors()->Get(0)->params()->Get(0)->name()->str() == "active");
   REQUIRE(agent->behaviors()->Get(1)->handler_ref()->str() == "bounce");
 }
 
-TEST_CASE("AgentReplicationModel runs the tick loop with built-in behaviors",
-          "[agent][ir]") {
+TEST_CASE("AgentReplicationModel runs the tick loop with built-in behaviors", "[agent][ir]") {
   const IrLoadResult loaded = load_agents();
   std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
   REQUIRE(model != nullptr);
 
   ReplicationConfig config;
@@ -80,12 +78,63 @@ TEST_CASE("AgentReplicationModel runs the tick loop with built-in behaviors",
   }
 }
 
-TEST_CASE("AgentReplicationModel is deterministic (positions + metrics)",
-          "[agent][determinism]") {
+TEST_CASE(
+    "SimulationKernel executes one shared-queue agent runtime with the "
+    "requested replication config",
+    "[agent][runtime][kernel]") {
+  register_all_methods();
+  const IrLoadResult loaded = load_agents();
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(loaded.file, &error));
+
+  ReplicationConfig config;
+  config.seed = 9;
+  config.arrivals = 7;
+  const std::vector<ReplicationMetrics> metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  REQUIRE(metrics.front().arrivals == 7);
+  REQUIRE(metrics.front().horizon_seconds == 7.0);
+}
+
+TEST_CASE("SimulationKernel composes agent and system dynamics on one queue",
+          "[agent][continuous][runtime][kernel]") {
+  register_all_methods();
+  const dsl::CompileResult compiled = dsl::compile_source(
+      "model Hybrid {\n"
+      "  agent People { count = 2 on_tick { noop } }\n"
+      "  continuous Field {\n"
+      "    param k = 0.5\n"
+      "    state y = 1.0\n"
+      "    d y/dt = -k*y\n"
+      "  }\n"
+      "}\n",
+      "hybrid.lp");
+  REQUIRE(compiled.ok);
+  const IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(loaded.file, &error));
+  ReplicationConfig config;
+  config.arrivals = 5;
+  const auto metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 2);
+  REQUIRE(metrics[0].arrivals == 5);
+  REQUIRE(metrics[0].horizon_seconds == 5.0);
+  REQUIRE(metrics[1].arrivals == 5);
+  REQUIRE(metrics[1].horizon_seconds == Catch::Approx(0.05));
+  REQUIRE(kernel.variables().has("sd::y"));
+  REQUIRE(std::get<double>(*kernel.variables().get("sd::y")) < 1.0);
+}
+
+TEST_CASE("AgentReplicationModel is deterministic (positions + metrics)", "[agent][determinism]") {
   const IrLoadResult loaded = load_agents();
   std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
   REQUIRE(model != nullptr);
   const auto* agent = dynamic_cast<const AgentReplicationModel*>(model.get());
   REQUIRE(agent != nullptr);
@@ -107,9 +156,10 @@ TEST_CASE("AgentReplicationModel is deterministic (positions + metrics)",
   }
 }
 
-TEST_CASE("AgentReplicationModel parallel tick is bit-exact deterministic "
-          "(100k agents)",
-          "[agent][determinism][parallel]") {
+TEST_CASE(
+    "AgentReplicationModel parallel tick is bit-exact deterministic "
+    "(100k agents)",
+    "[agent][determinism][parallel]") {
   // Population >= 65536 with multiple cores routes flip/bounce through the
   // parallel_for_entities partition; the same run must reproduce identical
   // positions and state regardless of thread interleaving.
@@ -123,16 +173,13 @@ model Swarm {
   }
 }
 )lp";
-  const dsl::CompileResult compiled =
-      dsl::compile_source(kLargeSwarm, "large_swarm.lp");
+  const dsl::CompileResult compiled = dsl::compile_source(kLargeSwarm, "large_swarm.lp");
   REQUIRE(compiled.ok);
-  IrLoadResult loaded =
-      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
 
   std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
   REQUIRE(model != nullptr);
   const auto* agent = dynamic_cast<const AgentReplicationModel*>(model.get());
   REQUIRE(agent != nullptr);
@@ -161,6 +208,5 @@ model Swarm {
   }
   // Five flips from active=true -> false, checked on the parallel path.
   REQUIRE(std::get<bool>(agent->agent_state(0).values.at("active")) == false);
-  REQUIRE(std::get<bool>(agent->agent_state(99999).values.at("active")) ==
-          false);
+  REQUIRE(std::get<bool>(agent->agent_state(99999).values.at("active")) == false);
 }

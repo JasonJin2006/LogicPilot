@@ -16,8 +16,15 @@ namespace logicpilot::cli {
 struct RunOptions {
   std::string model{"built-in:mm1"};  // built-in:<name> or (with --model-file)
   std::string model_file;             // .lpir IR file; overrides --model
+  std::string experiment;             // declared simulation experiment name
   std::uint64_t seed{42};
+  bool random_seed{false};
   std::uint64_t reps{30};
+  bool precision_reps{false};
+  std::uint64_t min_reps{5};
+  std::uint64_t max_reps{100};
+  double error_percent{5.0};
+  std::string precision_metric{"Wq"};
   std::size_t threads{1};  // parallel replication workers (ADR-0009 Phase A)
   std::uint64_t arrivals{20000};
   std::uint64_t warmup{2000};

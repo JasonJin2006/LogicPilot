@@ -24,9 +24,8 @@ struct Endpoint {
 
 struct EndpointHash {
   std::size_t operator()(const Endpoint& e) const {
-    const std::uint64_t packed =
-        (std::uint64_t{static_cast<std::uint32_t>(e.kind)} << 48) |
-        (std::uint64_t{e.node} << 24) | e.port;
+    const std::uint64_t packed = (std::uint64_t{static_cast<std::uint32_t>(e.kind)} << 48) |
+                                 (std::uint64_t{e.node} << 24) | e.port;
     return std::hash<std::uint64_t>{}(packed);
   }
 };
@@ -40,9 +39,14 @@ struct FlatState {
 }  // namespace
 
 DevsExecutor::DevsExecutor(IEventScheduler& scheduler, SimulationClock& clock)
-    : scheduler_{scheduler}, clock_{clock} {
-  dispatch_handler_ = handlers_.add(
-      [this](const Event& event) { this->on_event(event); });
+    : scheduler_{scheduler}, clock_{clock}, handlers_{owned_handlers_} {
+  dispatch_handler_ = handlers_.add([this](const Event& event) { this->on_event(event); });
+}
+
+DevsExecutor::DevsExecutor(IEventScheduler& scheduler, SimulationClock& clock,
+                           EventHandlerRegistry& handlers)
+    : scheduler_{scheduler}, clock_{clock}, handlers_{handlers} {
+  dispatch_handler_ = handlers_.add([this](const Event& event) { this->on_event(event); });
 }
 
 PortId DevsExecutor::intern_port(const std::string& name) {
@@ -70,14 +74,12 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
   std::uint32_t next_scope = 0;
 
   // Recursive flattening: registers atoms, creates endpoint edges per scope.
-  const auto flatten_scope = [&](const CoupledModel& model, auto& self,
-                                 std::uint32_t scope, bool is_root,
-                                 std::size_t depth) -> void {
+  const auto flatten_scope = [&](const CoupledModel& model, auto& self, std::uint32_t scope,
+                                 bool is_root, std::size_t depth) -> void {
     // Recursion guard: absurdly deep coupled-model trees must fail cleanly
     // instead of overflowing the call stack.
     if (depth > 256) {
-      throw std::overflow_error(
-          "DevsExecutor: coupled-model nesting exceeds 256 levels");
+      throw std::overflow_error("DevsExecutor: coupled-model nesting exceeds 256 levels");
     }
     // Child name -> (atom index | child scope, is_atomic).
     struct ChildRef {
@@ -99,8 +101,7 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
       }
     }
 
-    const auto endpoint_for = [&](const std::string& model_name,
-                                  const std::string& port_name,
+    const auto endpoint_for = [&](const std::string& model_name, const std::string& port_name,
                                   bool as_source) -> Endpoint {
       if (model_name == ".") {
         return Endpoint{as_source ? EpKind::kCplIn : EpKind::kCplOut, scope,
@@ -108,20 +109,18 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
       }
       const auto it = children.find(model_name);
       if (it == children.end()) {
-        throw std::logic_error("DevsExecutor: coupling references unknown "
-                               "child '" + model_name + "' in '" +
-                               model.name() + "'");
+        throw std::logic_error(
+            "DevsExecutor: coupling references unknown "
+            "child '" +
+            model_name + "' in '" + model.name() + "'");
       }
       if (it->second.is_atomic) {
         // Atom ports are model-local: resolve through the atom's own table.
-        const PortId port =
-            atoms_[it->second.index]->resolve_port(port_name);
-        return Endpoint{as_source ? EpKind::kAtomOut : EpKind::kAtomIn,
-                        it->second.index, port};
+        const PortId port = atoms_[it->second.index]->resolve_port(port_name);
+        return Endpoint{as_source ? EpKind::kAtomOut : EpKind::kAtomIn, it->second.index, port};
       }
       const PortId port = intern_port(port_name);
-      return Endpoint{as_source ? EpKind::kCplOut : EpKind::kCplIn,
-                      it->second.index, port};
+      return Endpoint{as_source ? EpKind::kCplOut : EpKind::kCplIn, it->second.index, port};
     };
 
     for (const CouplingSpec& c : model.couplings()) {
@@ -134,8 +133,7 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
       // Root-level input ports become injectable sources.
       for (const CouplingSpec& c : model.couplings()) {
         if (c.from_model == ".") {
-          flat.sources.push_back(
-              Endpoint{EpKind::kCplIn, scope, intern_port(c.from_port)});
+          flat.sources.push_back(Endpoint{EpKind::kCplIn, scope, intern_port(c.from_port)});
         }
       }
     }
@@ -190,8 +188,7 @@ std::size_t DevsExecutor::load(CoupledModel& root) {
   return atoms_.size();
 }
 
-bool DevsExecutor::inject(const std::string& root_port,
-                          std::uint64_t payload) {
+bool DevsExecutor::inject(const std::string& root_port, std::uint64_t payload) {
   const auto it = cpl_port_ids_.find(root_port);
   if (it == cpl_port_ids_.end()) {
     return false;
@@ -208,9 +205,7 @@ bool DevsExecutor::inject(const std::string& root_port,
 
 std::size_t DevsExecutor::run(SimTime horizon) {
   const std::size_t n = run_until(scheduler_, clock_, horizon,
-                                  [this](const Event& event) {
-                                    handlers_.dispatch(event);
-                                  });
+                                  [this](const Event& event) { handlers_.dispatch(event); });
   dispatched_ += n;
   return n;
 }
@@ -251,8 +246,7 @@ void DevsExecutor::deliver_internal(std::uint32_t atom) {
   }
 }
 
-void DevsExecutor::deliver_external(std::uint32_t atom,
-                                    const PortEvent& input) {
+void DevsExecutor::deliver_external(std::uint32_t atom, const PortEvent& input) {
   AtomicModel& model = *atoms_[atom];
   const SimTime now = clock_.now();
   // External input preempts the pending internal transition (DEVS-lite: the
@@ -271,8 +265,7 @@ void DevsExecutor::reschedule(std::uint32_t atom) {
     return;  // passive model
   }
   const SimTime at = clock_.now() + ta;
-  pending_[atom] = scheduler_.schedule(at, kInternalEvent, dispatch_handler_,
-                                       atom);
+  pending_[atom] = scheduler_.schedule(at, kInternalEvent, dispatch_handler_, atom);
 }
 
 }  // namespace logicpilot

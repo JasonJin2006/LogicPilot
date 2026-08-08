@@ -34,8 +34,9 @@
 namespace logicpilot {
 
 class DevsExecutor {
- public:
+public:
   explicit DevsExecutor(IEventScheduler& scheduler, SimulationClock& clock);
+  DevsExecutor(IEventScheduler& scheduler, SimulationClock& clock, EventHandlerRegistry& handlers);
 
   DevsExecutor(const DevsExecutor&) = delete;
   DevsExecutor& operator=(const DevsExecutor&) = delete;
@@ -59,12 +60,10 @@ class DevsExecutor {
   // firings the executor stops re-arming atoms, so perpetual emitters
   // terminate deterministically (0 = unlimited, the default).
   void set_internal_budget(std::size_t budget) { internal_budget_ = budget; }
-  [[nodiscard]] std::size_t internal_transitions() const {
-    return internal_transitions_;
-  }
+  [[nodiscard]] std::size_t internal_transitions() const { return internal_transitions_; }
   [[nodiscard]] SimulationClock& clock() { return clock_; }
 
- private:
+private:
   struct RouteTarget {
     std::uint32_t atom;
     PortId port;
@@ -86,10 +85,11 @@ class DevsExecutor {
 
   IEventScheduler& scheduler_;
   SimulationClock& clock_;
-  EventHandlerRegistry handlers_;
+  EventHandlerRegistry owned_handlers_;
+  EventHandlerRegistry& handlers_;
   HandlerId dispatch_handler_{0};
 
-  std::vector<AtomicModel*> atoms_;                        // borrowed
+  std::vector<AtomicModel*> atoms_;  // borrowed
   // Coupled-scope (pass-through / root-inject) port names; atom ports are
   // resolved through each AtomicModel's own declare_port table.
   std::unordered_map<std::string, PortId> cpl_port_ids_;

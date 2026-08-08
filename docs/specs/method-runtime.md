@@ -1,256 +1,138 @@
-# Method Runtime Layer（多方法仿真平台架构）
+# 方法运行时架构
 
-状态：Phase 1–4 + SimulationKernel 驱动已落地（2026-08-06）· 维护者：
-`/root` · 参考：`docs/roadmap.md`
+状态：核心契约与动态宿主已落地；Process、Statechart、DEVS、Agent、系统动力学以及插件运行时均可接入共享事件队列。
 
-## 1. 为什么需要这一层
+## 1. 设计目标
 
-早期架构把 Process Flow 直接建在 kernel 内：
+LogicPilot 的核心不是某一种仿真算法，而是一个“建模方法操作系统”：内核只负责仿真时间、事件排序、生命周期、状态交换和诊断；Process、Agent、系统动力学、Statechart、Petri 网以及未来的 FEM/PDE/FMU 都是可注册的方法运行时。
 
-```
-IR
- |
-Kernel
- |
-Process Flow
-```
-
-导致 kernel 被某一种建模方法绑架：`process_flow.cpp`、Queue/Service 语义、IR
-中 process 库的解析逻辑全部散落在 kernel 内部，Agent / System Dynamics /
-Statechart 无法作为同级插件接入。
-
-目标架构是 **Modeling Method Operating System**：kernel 是仿真世界（只负责
-时间、事件、调度、生命周期），每种建模方法是一个可插拔的 runtime：
-
-```
-                 Model IR
-                    |
-             Runtime Framework
-                    |
-        +-----------+-----------+
-        |           |           |
-    Process      Agent       SystemDynamics
-    Runtime     Runtime        Runtime
-        |           |           |
-        +-----------+-----------+
-                    |
-              Simulation Kernel
+```text
+DSL / library packages
+        |
+        v
+IR v2: Node + SemanticsRef + ExtensionPayload
+        |
+        v
+MethodRegistry ---- method plugin manifest
+        |
+        v
+RuntimeManager ---- shared clock / scheduler / variables / messages
+        |
+        +-- ProcessRuntime
+        +-- StatechartRuntime
+        +-- third-party runtime
 ```
 
-## 2. 目标目录
+核心依赖方向只能是“方法依赖内核”。内核不得包含 Queue、Service、Stock、Agent 等方法专属概念，也不得按方法名称写 `switch`。
 
-```
-LogicPilot
-├── kernel/
-│   ├── include/logicpilot/runtime/   # SimulationMethod / RuntimeContext /
-│   │                                 # RuntimeManager / MethodRegistry
-│   ├── include/logicpilot/state/     # VariableStore（跨方法共享状态）
-│   ├── core/  time/scheduler/event   # kernel 只保留这些
-│   └── src/devs/                     # 既有引擎（Phase 3 迁往 methods/）
-├── methods/
-│   ├── process/                      # ProcessRuntime（第一个方法插件）
-│   ├── agent/                        # （后续）
-│   ├── system_dynamics/              # （后续）
-│   └── statechart/                   # StatechartRuntime（Phase 4 已落地）
-├── compiler/
-├── ir/
-├── libraries/
-└── web/
+## 2. IR 与方法身份
+
+每个可执行节点通过以下三元组声明语义：
+
+```text
+SemanticsRef { library, block, version }
 ```
 
-## 3. 已落地（Phase 1：抽象隔离，不改变功能）
+- `library` 是运行时注册键，例如 `process`、`statechart`、`petri`。
+- `block` 是库内组件，例如 `service`、`place`。
+- `version` 是该组件采用的语义契约版本，不是 LogicPilot 内核版本。
 
-### 3.1 `kernel/runtime` — 方法运行层契约
+DSL 注册表必须把 `.lplib` 的库名和版本原样传到 IR。不同库可以声明相同短块名；此时模型必须写成 `library::block`。未限定且有歧义时编译器返回 `LP2013`，同一库内重复声明仍以 `LP2012` 拒绝。
 
-`SimulationMethod`（`kernel/include/logicpilot/runtime/simulation_method.h`）
-是每种建模方法的插件接口：
+通用结构使用 `Node` 的 state、params、ports、children 与 couplings。方法专属的大型或异构数据使用 `ExtensionPayload {type_uri, schema_version, encoding, data}`。因此新增一种方法通常只需新 DSL 库、新运行时和新扩展 schema，无需修改核心 IR。
+
+## 3. 运行时契约
+
+所有方法实现 `SimulationMethod`：
 
 ```cpp
 class SimulationMethod {
  public:
-  virtual std::string_view method_name() const = 0;          // "process" / "agent" / ...
-  virtual bool initialize(RuntimeContext&, const IrModelFile&, std::string* error) = 0;
+  virtual std::string_view method_name() const = 0;
+  virtual MethodCapabilities capabilities() const;
+  virtual bool initialize(RuntimeContext&, const IrModelFile&, std::string*) = 0;
   virtual void advance(SimTime until) = 0;
   virtual void shutdown() = 0;
-  virtual std::unique_ptr<ReplicationModel> to_replication_model(
-      const IrModelFile&, std::string* error) = 0;           // 批量兼容适配
 };
 ```
 
-kernel 只通过这个接口驱动方法，完全不认识 Queue / Service / Stock / State。
+`MethodCapabilities.execution_mode` 明确区分：
 
-- `RuntimeContext`：kernel 提供给方法运行时的设施（clock、scheduler、
-  VariableStore）。方法运行时通过它读写共享状态；**Phase 1–4 的既有引擎
-  仍在内部自建 scheduler/clock**（自包含、逐位确定），把引擎改为消费
-  RuntimeContext 的外部调度器/时钟（kernel 统一调度、跨方法共享同一事件
-  队列）是下一里程碑（SimulationKernel 驱动），见 §7。
-- `RuntimeManager`：一次 replication 内持有多个方法 runtime，统一驱动
-  initialize → advance* → shutdown。
-- `MethodRegistry`：`method name -> factory` 的插件注册表。第三方法可直接
-  `register_method("traffic", ...)` 接入，kernel 不改一行。
+- `kSharedEventQueue`：方法把工作调度到内核队列，可与其他同类方法组合运行。
+- `kDriverAdvanced`：旧引擎仍拥有私有执行循环，只能作为单一方法运行。
 
-### 3.2 `kernel/state` — 跨方法共享状态
+内核不会把第二种情况伪装成混合仿真。多方法模型中只要存在批处理运行时，执行会以 `KR1007` 失败。当前 Process、Statechart、DEVS、Agent 与 SD 均实现共享队列生命周期；旧批处理入口只作为单方法兼容适配器保留。
 
-`VariableStore`（`kernel/include/logicpilot/state/variable_store.h`）提供跨方法
-共享变量（bool / int64 / double / string），多方法模型的连接点：
+## 4. 方法发现与版本兼容
 
-```cpp
-ProcessRuntime: inventory += produced;
-AgentRuntime:   inventory -= consumed;
-SDRuntime:      dInventory/dt = input - output;
-```
+运行时发现递归遍历 IR 中所有非 `core` 的 `SemanticsRef.library`，不维护内置方法白名单。`process/resource` 是当前唯一明确声明的辅助节点，不单独形成运行时。
 
-### 3.3 `methods/process` — 第一个方法插件
-
-`ProcessRuntime`（`methods/process/process_runtime.cpp`）把原
-`kernel/src/devs/ir_loader.cpp::build_process_model` 的 lowering 逻辑原样搬出
-（M/M/1 快路径 → `QueueingFlowSim`，通用拓扑 → `ProcessFlowSim`），并在
-`register_process_method()` / `register_all_methods()` 中注册。驱动入口
-（lpcli / lp-server）启动时调用 `register_all_methods()`。
-
-Phase 1 生命周期语义（文档化约定）：`initialize()` 完成 lowering 与校验，
-第一次 `advance()` 以驱动默认 `ReplicationConfig` 跑完整个 replication，
-`shutdown()` 释放。**增量 advance（按仿真时间步进）随 Phase 3 的模块化
-block runtime 落地。**
-
-### 3.4 IR 解耦（Phase 2 的注册表驱动部分）
-
-IR v2 的 `SemanticsRef{library, block}` 本身就表达 **method + component**：
-
-```json
-{ "method": "process", "component": "service", "parameters": { "time": "normal(10,2)" } }
-```
-
-`build_replication_model()`（`kernel/src/devs/ir_loader.cpp`）现在只做三件事：
-按根节点语义解析 method 名 → 向 `MethodRegistry` 要 runtime → 委托
-`to_replication_model()` 降级。kernel 不再包含 process 专属的解析/降级代码；
-agent / devs / sd 以 kernel 原生方法注册（`kernel/src/runtime/builtin_methods.cpp`）。
-
-## 4. 后续阶段
-
-### Phase 3：Process 模块化 ✅ 已完成（2026-08-06）
-
-`ProcessFlowSim` 的 742 行单体 Engine 已拆成方法内的模块化组件，并把引擎本体
-从 `kernel/src/devs/process_flow.cpp` 迁入 `methods/process/`：
-
-```
-methods/process/
-├── process_runtime.h/.cpp   # ProcessRuntime：生命周期 + 降级 + 注册
-├── process_flow.h/.cpp      # 通用引擎（路由/调度/统计，增量 reset/advance/metrics）
-├── process_block.h          # Entity / BlockContext / ProcessBlock 抽象
-└── process_blocks.h         # SourceBlock / QueueBlock / DelayBlock /
-                             # ServiceBlock / SinkBlock / GenericBlock
-```
-
-每个块通过 `ProcessBlock` 契约表达自己的行为（`can_accept` / `receive` /
-`update` / `complete` / `retry_outgoing`），引擎只负责端口路由、调度与统计，
-并通过 `BlockContext` 向块提供 `emit` / `schedule_depart` / RNG / 统计钩子。
-
-两个引擎都改为增量执行：`reset(config)` 准备一次 replication，
-`advance(until)` 只派发时间戳 <= until 的事件，`metrics()` 汇总当前统计；
-`run()` = reset + advance(infinity) + metrics，与旧批量调用逐位一致
-（184 ctest 全绿，含新增的增量/批量对等性测试）。因此
-`SimulationMethod::advance(until)` 现在是**真正的按仿真时间步进**：
-`ProcessRuntime::advance(until)` 直接驱动引擎切片推进。
-
-lp-server 的流式驱动（SimRunner）与 QueueingFlowSim 的双实现合并列为后续
-优化项：现在两个执行器均可增量推进，合并后 lp-server 可复用同一执行器。
-
-### Phase 4：第二种方法接入 ✅ 已完成（2026-08-06）
-
-不继续优化 process，直接接入第二种方法 **Statechart** 验证架构，kernel 零改动：
-
-```
-methods/statechart/
-├── statechart_replication.h/.cpp  # StatechartReplicationModel
-└── statechart_runtime.h/.cpp      # StatechartRuntime + register_statechart_method()
-```
-
-IR 侧：独立状态图模型 = 根节点 `SemanticsRef{library: "statechart",
-block: "statechart"}` + `behavior` Statechart 表（states / transitions /
-initial）；`resolve_method_name()` 把该根块映射到 "statechart" 方法。
-`StatechartReplicationModel` 把表降级到 kernel 已有的表驱动
-`StateMachineDefinition` 引擎上，按仿真时间运行：Timeout 转移调度内部事件
-（timeout_value 或采样 timeout_distribution），触发后推进状态并调度下一跳；
-Message 转移按 message_port 注册事件 id（为后续跨机耦合预留）；循环状态图
-由 `ReplicationConfig.arrivals` 限步，保证确定性终止；`metrics.final_value`
-报告最终状态 id。新增 3 个测试（注册/降级/运行、生命周期与批量一致、非法表
-报错），187 ctest 全绿。
-
-后续：DSL 状态图语法（`statechart { ... }`）、Message 驱动的跨状态机耦合、
-agent / system dynamics 拆成独立方法库；多方法模型通过 `VariableStore` +
-同一 `RuntimeManager` 组合运行。
-
-## 5. 验收与约定
-
-- 变更不破坏 191 ctest 与前端测试。
-- kernel 层禁止 include `methods/`（方向只能由方法库指向 kernel）。
-- 新方法 = 新目录 `methods/<name>/` + 一个 `SimulationMethod` 子类 +
-  `register_<name>_method()`；驱动通过 `register_all_methods()` 汇总注册。
-- IR 契约冻结（F1），method/component 的语义映射用现有 `SemanticsRef`
-  表达，不改 `schemas/ir_v2.fbs`。
-
-## 6. 构建说明
-
-本机的 MSVC+Ninja 配置（CMake 4.4）生成的编译规则**不追踪头文件依赖**
-（`unscanned` 规则，无 depfile），因此改头文件后需要全量重建
-（`cmake --build build/windows-msvc-dev -j 8` 前先清掉受影响对象，或直接
-`cmake --build ... --target clean`）；否则会残留旧头文件编译的对象，导致
-类布局 ABI 不一致（曾因此出现仅在测试二进制中复现的崩溃）。CI 全新检出，
-不受此影响。
-
-## 7. SimulationKernel 驱动 ✅ 已完成（2026-08-06）
-
-四阶段迁移（抽象隔离 → IR 解耦 → Process 模块化 → 第二种方法接入）已完成，
-架构骨架（MethodRegistry / RuntimeManager / SimulationMethod /
-VariableStore / methods/process + methods/statechart）可运行、187 ctest 全绿。
-方案 §八「执行流程」的深度接线已落地：
-
-1. **统一调度**：ProcessFlowSim / QueueingFlowSim / StatechartReplicationModel
-   支持「外部设施模式」——`attach(RuntimeContext&)` 后不再自建
-   scheduler/clock，而是把事件排进 kernel 的 `RuntimeContext` 设施
-   （`RuntimeContext` 新增 kernel 级 `handlers()` 与 replication `config()`）；
-   批量路径（`to_replication_model`）保持自包含，逐位不变。
-2. **SimulationKernel 驱动**（`kernel/runtime/simulation_kernel.h/.cpp`）：
-   kernel 拥有 clock / 一个共享 BinaryHeapScheduler / kernel 级 handler
-   注册表 / VariableStore；`load(model)` 存模型，`run(config)` 解析方法
-   （`resolve_method_names`）→ 经 MethodRegistry 装配运行时 → initialize
-   → **一条共享事件队列按时间戳分发（Scheduler 事件 → 对应 runtime 处理）**
-   → shutdown 结算各方法 `replication_metrics()`。
-3. **多方法模型组合**：同一模型根下混合 process + statechart 子块在**一次
-   kernel 运行**中共用同一时钟与调度器（测试验证 process 全量离港 + statechart
-   到达终态，二者 horizon 一致）；`RuntimeManager::initialize` 定义
-   「一次 replication = 一个全新世界」（复位 clock、清空 handler 注册表与
-   共享变量）。
-4. **对等性验证**：单方法（process / statechart）经 kernel 驱动的指标与
-   事件序列与批量路径逐位一致；同种子复现相同 trace。191 ctest 全绿。
-
-### 执行生命周期契约
-
-一次 replication 的官方生命周期（驱动方必须遵守的顺序）：
+`MethodRegistry` 保存工厂与描述符：
 
 ```text
-load(model)                 // 拷贝模型字节（校验延后）
-  -> run(config):
-       resolve_method_names // 按 IR 解析方法集合
-       attach runtimes      // MethodRegistry 装配
-       initialize           // 复位 clock/handlers/variables，注册事件
-       advance*             // SimulationKernel 派发共享事件队列直到排空
-       shutdown             // 各 runtime 结算 metrics
-       collect replication_metrics()
+method -> factory + runtimeVersion + supported semanticsVersions
 ```
 
-错误约定：kernel 侧失败输出**结构化诊断**（`RuntimeDiagnostic`，KR1xxx：
-KR1001 无模型 / KR1002 校验失败 / KR1003 无方法 / KR1004 未注册 /
-KR1005 装配失败 / KR1006 初始化失败），同时保持 `std::string* error`
-人类可读文本；`DebugRecorder` 记录逐事件流，`SimulationProfile` 给出事件
-类型直方图与墙钟耗时，供调试与性能剖析使用。
+模型初始化前，内核会检查每个 IR 语义版本是否受已注册运行时支持；不兼容时返回 `KR1008`，避免“能加载但语义解释不同”的隐性错误。
 
-## 8. 剩余工作
+## 5. 可安装插件清单
 
-- agent / system_dynamics 拆成独立方法库（目前仍是 kernel 原生方法，已走
-  同一注册表；kernel 驱动的 `replication_metrics()` 尚未为其接通）。
-- DSL 状态图语法（`statechart { ... }`）与 Message 驱动的跨状态机耦合。
-- 多方法模型经 VariableStore 的显式共享变量写入（接口已就绪，尚无运行时
-  写入）。
-- lp-server 流式驱动（SimRunner）合并到同一执行器。
+`schemas/method_plugin.schema.json` 定义版本化 JSON 清单，包含：
+
+- 包名、方法名、运行时版本；
+- 支持的语义版本；
+- DSL 库文件；
+- 运行时种类与入口点。
+
+运行时种类支持 `linked`、`c-abi` 与 `wasm`。清单解析完成后，宿主装载 artifact、校验方法身份与 ABI，再把持有模块生命周期的 factory 注册到统一 `MethodRegistry`。清单只描述发现信息，不把 C++ 对象布局冒充稳定 ABI。
+
+### 5.1 原生 C ABI v1
+
+`method_plugin_abi.h` 是纯 C、追加式的版本化函数表。边界只传递固定宽度标量、FlatBuffer IR 字节和宿主回调，不传 STL、异常、RTTI 或 C++ 对象布局。插件可通过宿主表读取仿真时钟、调度/取消事件、读写 double 共享变量，并发布带类型 URI 的消息。插件必须导出清单 `entrypoint` 指定的 `lp_method_plugin_entrypoint_v1` 函数。
+
+### 5.2 WASM ABI v1
+
+设置 CMake 的 `LOGICPILOT_WASMTIME_ROOT` 指向 Wasmtime C API 发行包后启用 WASM 宿主。宿主不授予 WASI，限制 WASM 栈并按 replication 预算 fuel；每个方法实例拥有独立 Store。v1 模块必须导出：
+
+```text
+lp_abi_version() -> i32
+lp_initialize(seed:i64, arrivals:i64, warmup:i64) -> i32
+lp_event_count() -> i64
+lp_event_time_ns(index:i64) -> i64
+lp_event_type(index:i64) -> i32
+lp_event_payload(index:i64) -> i64
+lp_on_event(type:i32, payload:i64) -> f64
+lp_shutdown_arrivals() -> i64
+lp_shutdown_departures() -> i64
+lp_final_value() -> f64
+```
+
+WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，宿主将其放入共享队列，并把事件逐个回送 `lp_on_event`。后续版本可追加受能力控制的动态调度 import，不破坏 v1 模块。
+
+## 6. 跨方法通信
+
+有两条互补通道：
+
+- `VariableStore`：低频、可观察的共享标量状态（bool/int64/double/string）。
+- `MessageStore`：类型化消息体，包含 `type_uri`、schema 版本、编码、来源方法和字节数据。
+
+调度器的 `Event.payload` 继续保持 64 位，以保证热路径紧凑。复杂载荷时它保存 `MessageId`，指向一次 replication 内的 `MessageStore`；方法可用类型 URI 和版本校验后再解码。初始化或回滚时，变量与消息都会清空，不跨 replication 泄漏。
+
+端口层的 `Port.event_type` 描述静态消息类型，`MessageEnvelope.type_uri` 描述运行时实际载荷。后续应增加端口连接的编译期类型兼容检查。
+
+## 7. 新方法接入检查表
+
+1. 提供 `.lplib`，声明唯一库名、版本和块形状。
+2. lowering 生成正确的 `SemanticsRef`；专属数据放入版本化扩展载荷。
+3. 实现 `SimulationMethod`，准确声明能力，不虚报共享调度或 checkpoint。
+4. 提供方法插件清单并通过宿主适配器注册 factory。
+5. 为支持的每个语义版本提供兼容测试。
+6. 添加单方法执行、确定性、错误诊断测试；若声明共享队列，再添加多方法组合测试。
+
+## 8. 仍需完成的边界
+
+- 为插件包增加发布者签名、信任策略与细粒度能力授权；当前 C ABI 插件与宿主同进程，只有 WASM 插件具备内存隔离和计算配额。
+- 为 `VariableStore` 增加声明式单位、所有权与写入权限；为端口增加类型兼容检查。
+- 定义连续时间方法的误差控制、零交叉与离散事件回滚协议。
+
+这些是超越 AnyLogic 扩展性的关键工程，不应靠 Java 式任意继承来替代明确、可版本化、可诊断的契约。

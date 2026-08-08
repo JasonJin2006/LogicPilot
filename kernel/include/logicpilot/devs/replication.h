@@ -12,6 +12,8 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "logicpilot/core/scheduler/event.h"
@@ -23,6 +25,21 @@ struct ReplicationConfig {
   std::uint64_t seed{42};
   std::uint64_t arrivals{20000};      // total arrivals per replication
   std::uint64_t warmup_arrivals{2000};  // excluded from per-customer stats
+};
+
+// Per-block DES statistics shared by the CLI, IDE, and AI tools. A negative
+// capacity means unbounded or not applicable.
+struct BlockMetrics {
+  std::string name;
+  std::string kind;
+  std::uint64_t arrived{0};
+  std::uint64_t departed{0};
+  std::uint64_t timed_out{0};
+  std::uint64_t preempted{0};
+  std::int64_t capacity{-1};
+  double mean_occupancy{0.0};
+  double utilization{0.0};
+  double availability{1.0};
 };
 
 struct ReplicationMetrics {
@@ -43,6 +60,8 @@ struct ReplicationMetrics {
   double availability{0.0};      // 1 - down servers / servers, time-averaged
   // Milestone Phase D: continuous-model final state (first equation).
   double final_value{0.0};
+  // Empty for methods without block-level statistics.
+  std::vector<BlockMetrics> blocks;
 };
 
 // Deterministic FNV-1a (64-bit) streaming hash over the event trace.
@@ -106,6 +125,28 @@ struct ReplicationSummary {
   MetricSummary availability;
   MetricSummary final_value;
 };
+
+enum class ReplicationMetric {
+  kThroughput,
+  kL,
+  kLq,
+  kW,
+  kWq,
+  kMeasure,
+  kUtilization,
+  kAvailability,
+  kFinalValue,
+};
+
+bool parse_replication_metric(std::string_view name, ReplicationMetric& out);
+const MetricSummary& replication_metric_summary(
+    const ReplicationSummary& summary, ReplicationMetric metric);
+double relative_ci_error_percent(const MetricSummary& summary);
+bool replication_precision_reached(const ReplicationSummary& summary,
+                                   ReplicationMetric metric,
+                                   std::size_t min_reps,
+                                   double error_percent);
+std::uint64_t random_run_seed();
 
 // Two-sided Student-t critical value for `confidence` at `df` degrees of
 // freedom (table + normal fallback; more than enough for replication CIs).

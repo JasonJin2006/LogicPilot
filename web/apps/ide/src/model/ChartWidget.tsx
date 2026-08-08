@@ -32,15 +32,7 @@ function niceMax(value: number): number {
 }
 
 /** Scrollable line chart (Time Plot / Plot). */
-function LineChart({
-  samples,
-  title,
-  color,
-}: {
-  samples: number[];
-  title: string;
-  color: string;
-}) {
+function LineChart({ samples, title, color }: { samples: number[]; title: string; color: string }) {
   const width = 200;
   const height = 110;
   const pad = { left: 34, right: 8, top: 8, bottom: 18 };
@@ -49,17 +41,45 @@ function LineChart({
     .map((value, index) => {
       const x =
         pad.left +
-        (samples.length === 1 ? 0 : (index / (samples.length - 1)) * (width - pad.left - pad.right));
-      const y = height - pad.bottom - (Math.min(value, max) / max) * (height - pad.top - pad.bottom);
+        (samples.length === 1
+          ? 0
+          : (index / (samples.length - 1)) * (width - pad.left - pad.right));
+      const y =
+        height - pad.bottom - (Math.min(value, max) / max) * (height - pad.top - pad.bottom);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
   const last = samples[samples.length - 1] ?? 0;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" aria-label={title}>
-      <line x1={pad.left} y1={height - pad.bottom} x2={width - pad.right} y2={height - pad.bottom} stroke="currentColor" strokeWidth={1} opacity={0.4} />
-      <line x1={pad.left} y1={pad.top} x2={pad.left} y2={height - pad.bottom} stroke="currentColor" strokeWidth={1} opacity={0.4} />
-      <line x1={pad.left} y1={pad.top} x2={width - pad.right} y2={pad.top} stroke="currentColor" strokeWidth={0.5} strokeDasharray="3 3" opacity={0.25} />
+      <line
+        x1={pad.left}
+        y1={height - pad.bottom}
+        x2={width - pad.right}
+        y2={height - pad.bottom}
+        stroke="currentColor"
+        strokeWidth={1}
+        opacity={0.4}
+      />
+      <line
+        x1={pad.left}
+        y1={pad.top}
+        x2={pad.left}
+        y2={height - pad.bottom}
+        stroke="currentColor"
+        strokeWidth={1}
+        opacity={0.4}
+      />
+      <line
+        x1={pad.left}
+        y1={pad.top}
+        x2={width - pad.right}
+        y2={pad.top}
+        stroke="currentColor"
+        strokeWidth={0.5}
+        strokeDasharray="3 3"
+        opacity={0.25}
+      />
       <text x={pad.left} y={pad.top - 3} fontSize={8} fill="currentColor" opacity={0.6}>
         {max.toFixed(0)}
       </text>
@@ -73,7 +93,14 @@ function LineChart({
           strokeLinecap="round"
         />
       )}
-      <text x={width / 2} y={height - 4} fontSize={8} textAnchor="middle" fill="currentColor" opacity={0.6}>
+      <text
+        x={width / 2}
+        y={height - 4}
+        fontSize={8}
+        textAnchor="middle"
+        fill="currentColor"
+        opacity={0.6}
+      >
         {last.toFixed(1)}
       </text>
     </svg>
@@ -89,14 +116,39 @@ function BarChart({ samples, title, color }: { samples: number[]; title: string;
     const barWidth = Math.max(2, (width - 12) / WINDOW - 1);
     const x = 8 + index * ((width - 12) / WINDOW);
     const barHeight = (Math.min(value, max) / max) * (height - 22);
-    return <rect key={index} x={x} y={height - 18 - barHeight} width={barWidth} height={barHeight} fill={color} opacity={0.85} />;
+    return (
+      <rect
+        key={index}
+        x={x}
+        y={height - 18 - barHeight}
+        width={barWidth}
+        height={barHeight}
+        fill={color}
+        opacity={0.85}
+      />
+    );
   });
   const last = samples[samples.length - 1] ?? 0;
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" aria-label={title}>
-      <line x1={4} y1={height - 18} x2={width - 4} y2={height - 18} stroke="currentColor" strokeWidth={1} opacity={0.4} />
+      <line
+        x1={4}
+        y1={height - 18}
+        x2={width - 4}
+        y2={height - 18}
+        stroke="currentColor"
+        strokeWidth={1}
+        opacity={0.4}
+      />
       {bars}
-      <text x={width / 2} y={height - 4} fontSize={8} textAnchor="middle" fill="currentColor" opacity={0.6}>
+      <text
+        x={width / 2}
+        y={height - 4}
+        fontSize={8}
+        textAnchor="middle"
+        fill="currentColor"
+        opacity={0.6}
+      >
         {last.toFixed(1)}
       </text>
     </svg>
@@ -113,7 +165,15 @@ function PieChart({ samples, title, color }: { samples: number[]; title: string;
   return (
     <div className="chart-donut">
       <svg viewBox="0 0 64 64" className="chart-svg" aria-label={title}>
-        <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="8" opacity={0.15} />
+        <circle
+          cx="32"
+          cy="32"
+          r="26"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="8"
+          opacity={0.15}
+        />
         <circle
           cx="32"
           cy="32"

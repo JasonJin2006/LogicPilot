@@ -20,9 +20,16 @@ export interface SimClientEvents {
 
 export interface StartOptions {
   seed?: number;
+  seedMode?: 'fixed' | 'random';
   reps?: number;
+  replicationMode?: 'fixed' | 'precision';
+  minReps?: number;
+  maxReps?: number;
+  errorPercent?: number;
+  precisionMetric?: string;
   arrivals?: number;
   warmup?: number;
+  confidence?: number;
   speed?: number;
   // Per-run model parameter overrides (canvas model -> M/M/1 driver).
   lambda?: number;
@@ -94,9 +101,16 @@ export class SimClient {
     const cmd: Record<string, unknown> = { cmd: 'start' };
     for (const key of [
       'seed',
+      'seedMode',
       'reps',
+      'replicationMode',
+      'minReps',
+      'maxReps',
+      'errorPercent',
+      'precisionMetric',
       'arrivals',
       'warmup',
+      'confidence',
       'speed',
       'lambda',
       'mu',
@@ -105,7 +119,7 @@ export class SimClient {
       'repairRate',
     ] as const) {
       const value = options[key];
-      if (value !== undefined && Number.isFinite(value)) {
+      if (typeof value === 'string' || (value !== undefined && Number.isFinite(value))) {
         cmd[key === 'failureRate' ? 'failure_rate' : key] = value;
       }
     }

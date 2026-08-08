@@ -15,6 +15,8 @@
 // a generic IR query (shared by lp-server), not method execution.
 #include "logicpilot/devs/ir_loader.h"
 
+#include <flatbuffers/flatbuffers.h>
+
 #include <cstring>
 #include <fstream>
 #include <optional>
@@ -24,24 +26,30 @@
 #include <utility>
 #include <vector>
 
-#include <flatbuffers/flatbuffers.h>
-
-#include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_v2_util.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/simulation_method.h"
+
+#include "ir_v2_generated.h"
 
 namespace logicpilot {
 
 const char* to_string(IrStatus status) {
   switch (status) {
-    case IrStatus::kOk: return "ok";
-    case IrStatus::kIoError: return "io error";
-    case IrStatus::kCorruptBuffer: return "corrupt buffer";
-    case IrStatus::kBadSchemaVersion: return "unsupported schema version";
-    case IrStatus::kMissingRoot: return "missing root model";
-    case IrStatus::kUnsupportedKind: return "unsupported model kind";
-    case IrStatus::kInvalidStructure: return "invalid model structure";
+    case IrStatus::kOk:
+      return "ok";
+    case IrStatus::kIoError:
+      return "io error";
+    case IrStatus::kCorruptBuffer:
+      return "corrupt buffer";
+    case IrStatus::kBadSchemaVersion:
+      return "unsupported schema version";
+    case IrStatus::kMissingRoot:
+      return "missing root model";
+    case IrStatus::kUnsupportedKind:
+      return "unsupported model kind";
+    case IrStatus::kInvalidStructure:
+      return "invalid model structure";
   }
   return "unknown";
 }
@@ -68,8 +76,8 @@ IrLoadResult load_model_buffer(const std::uint8_t* data, std::size_t size) {
   }
   if (result.file.v2_root->schema_version() != 2) {
     result.status = IrStatus::kBadSchemaVersion;
-    result.message = "unexpected schema_version=" +
-                     std::to_string(result.file.v2_root->schema_version());
+    result.message =
+        "unexpected schema_version=" + std::to_string(result.file.v2_root->schema_version());
     return result;
   }
   if (result.file.v2_root->root() == nullptr) {
@@ -91,8 +99,7 @@ IrLoadResult load_model_file(const std::string& path) {
   std::ostringstream buffer;
   buffer << in.rdbuf();
   const std::string bytes = buffer.str();
-  return load_model_buffer(reinterpret_cast<const std::uint8_t*>(bytes.data()),
-                           bytes.size());
+  return load_model_buffer(reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size());
 }
 
 namespace {
@@ -107,82 +114,57 @@ using logicpilot::ir_v2_util::node_library;
 using logicpilot::ir_v2_util::node_name;
 using logicpilot::ir_v2_util::node_string_param;
 
-// Resolve the model's method name from the root node's semantics, mirroring
-// the legacy exclusive-kind lowering:
-//   * root block "atomic"    -> "devs"
-//   * root block "agent"     -> "agent"
-//   * root block "equation"  -> "sd"
-//   * root block "model"     -> scan children by library (process / devs /
-//                               agent / sd); process wins when an agent body
-//                               holds process-library blocks.
-// Returns an empty string when no executable method is present (mixed
-// multi-method models are a later-phase capability).
-std::string resolve_method_name(const Node* root) {
-  const std::string root_block = node_block(root);
-  if (root_block == "atomic") {
-    return "devs";
+void add_method_requirement(std::vector<MethodRequirement>& requirements, const std::string& method,
+                            const std::string& version) {
+  if (method.empty())
+    return;
+  for (MethodRequirement& existing : requirements) {
+    if (existing.method != method)
+      continue;
+    for (const std::string& known : existing.semantics_versions) {
+      if (known == version)
+        return;
+    }
+    existing.semantics_versions.push_back(version);
+    return;
   }
-  if (root_block == "statechart") {
-    return "statechart";
-  }
-  if (root_block == "agent") {
-    return "agent";
-  }
-  if (root_block == "equation") {
-    return "sd";
-  }
-  if (root_block != "model" || root->children() == nullptr) {
-    return "";
-  }
+  requirements.push_back(MethodRequirement{method, {version}});
+}
 
-  bool has_process = false;
-  bool has_atomic = false;
-  bool has_agent = false;
-  bool has_equation = false;
-  bool has_statechart = false;
-  for (const Node* child : *root->children()) {
-    const std::string library = node_library(child);
-    const std::string block = node_block(child);
-    if (library == "process" && block != "resource") {
-      // Agent-centric process-library blocks declared directly under the
-      // model root.
-      has_process = true;
-    } else if (library == "devs") {
-      has_atomic = true;
-    } else if (library == "agent") {
-      has_agent = true;
-      // An agent whose body holds process-library blocks is a flow scope
-      // (agent-centric: agent Main { source ...; couple ... }).
-      if (child->children() != nullptr) {
-        for (const Node* member : *child->children()) {
-          if (std::strcmp(node_library(member), "process") == 0 &&
-              std::strcmp(node_block(member), "resource") != 0) {
-            has_process = true;
-          }
-        }
-      }
-    } else if (library == "sd") {
-      has_equation = true;
-    } else if (library == "statechart" && block == "statechart") {
-      has_statechart = true;
+// Method identity is data: every non-core SemanticsRef.library denotes the
+// runtime that owns the node. The sole auxiliary exception in IR v2 is a
+// process resource, which is consumed by a process flow but is not runnable
+// by itself. Future plugin manifests will make this capability explicit.
+void collect_method_requirements(const Node* node, std::vector<MethodRequirement>& requirements) {
+  if (node == nullptr)
+    return;
+  const std::string library = node_library(node);
+  const std::string block = node_block(node);
+  if (!library.empty() && library != "core" && !(library == "process" && block == "resource")) {
+    const auto* semantics = node->semantics();
+    const std::string version = semantics != nullptr && semantics->version() != nullptr
+                                    ? semantics->version()->str()
+                                    : std::string{};
+    add_method_requirement(requirements, library, version);
+  }
+  if (node->children() != nullptr) {
+    for (const Node* child : *node->children()) {
+      collect_method_requirements(child, requirements);
     }
   }
-  if (has_process) {
-    return "process";
+}
+
+// The legacy ReplicationModel adapter can represent one runtime only.
+// Preserve the agent-centric process preference while making every other
+// single-method library discoverable without changing this loader.
+std::string resolve_method_name(const Node* root) {
+  std::vector<MethodRequirement> requirements;
+  collect_method_requirements(root, requirements);
+  for (const MethodRequirement& requirement : requirements) {
+    if (requirement.method == "process")
+      return requirement.method;
   }
-  if (has_statechart) {
-    return "statechart";
-  }
-  if (has_agent && !has_atomic && !has_equation) {
-    return "agent";
-  }
-  if (has_atomic && !has_agent && !has_equation) {
-    return "devs";
-  }
-  if (has_equation && !has_atomic && !has_agent) {
-    return "sd";
-  }
-  return "";
+  return requirements.size() == 1 ? requirements.front().method : std::string{};
 }
 
 }  // namespace
@@ -206,62 +188,23 @@ std::string inspect_model(const IrModelFile& file) {
 
 std::vector<std::string> resolve_method_names(const IrModelFile& file) {
   std::vector<std::string> out;
-  if (file.v2_root == nullptr || file.v2_root->root() == nullptr) {
-    return out;
-  }
-  const Node* root = file.v2_root->root();
-  const std::string root_block = node_block(root);
-  if (root_block == "atomic") {
-    return {"devs"};
-  }
-  if (root_block == "statechart") {
-    return {"statechart"};
-  }
-  if (root_block == "agent") {
-    return {"agent"};
-  }
-  if (root_block == "equation") {
-    return {"sd"};
-  }
-  if (root_block != "model" || root->children() == nullptr) {
-    return out;
-  }
-  const auto add = [&](const std::string& method) {
-    for (const std::string& existing : out) {
-      if (existing == method) {
-        return;
-      }
-    }
-    out.push_back(method);
-  };
-  for (const Node* child : *root->children()) {
-    const std::string library = node_library(child);
-    const std::string block = node_block(child);
-    if (library == "process" && block != "resource") {
-      add("process");
-    } else if (library == "devs") {
-      add("devs");
-    } else if (library == "agent") {
-      add("agent");
-      if (child->children() != nullptr) {
-        for (const Node* member : *child->children()) {
-          if (std::strcmp(node_library(member), "process") == 0 &&
-              std::strcmp(node_block(member), "resource") != 0) {
-            add("process");
-          }
-        }
-      }
-    } else if (library == "sd") {
-      add("sd");
-    } else if (library == "statechart" && block == "statechart") {
-      add("statechart");
-    }
+  for (const MethodRequirement& requirement : resolve_method_requirements(file)) {
+    out.push_back(requirement.method);
   }
   return out;
 }
 
-std::unique_ptr<ReplicationModel> build_replication_model(
-    const IrModelFile& file, std::string* error) {
+std::vector<MethodRequirement> resolve_method_requirements(const IrModelFile& file) {
+  std::vector<MethodRequirement> out;
+  if (file.v2_root == nullptr || file.v2_root->root() == nullptr) {
+    return out;
+  }
+  collect_method_requirements(file.v2_root->root(), out);
+  return out;
+}
+
+std::unique_ptr<ReplicationModel> build_replication_model(const IrModelFile& file,
+                                                          std::string* error) {
   const auto fail = [&](const std::string& msg) {
     if (error != nullptr) {
       *error = msg;
@@ -276,8 +219,7 @@ std::unique_ptr<ReplicationModel> build_replication_model(
   // libraries such as methods/process register themselves at driver startup.
   register_builtin_methods();
 
-  const std::string method =
-      resolve_method_name(file.v2_root->root());
+  const std::string method = resolve_method_name(file.v2_root->root());
   if (method.empty()) {
     return fail("no executable model under the core/model root");
   }
@@ -286,16 +228,25 @@ std::unique_ptr<ReplicationModel> build_replication_model(
     return fail("no registered method runtime for '" + method +
                 "' (link the method library and register it)");
   }
+  const std::vector<MethodRequirement> requirements = resolve_method_requirements(file);
+  for (const MethodRequirement& requirement : requirements) {
+    if (requirement.method != method)
+      continue;
+    for (const std::string& version : requirement.semantics_versions) {
+      if (!registry.supports_semantics_version(method, version)) {
+        return fail("method runtime '" + method + "' does not support semantics version '" +
+                    version + "'");
+      }
+    }
+  }
   auto runtime = registry.create(method);
   if (runtime == nullptr) {
-    return fail("method registry returned a null runtime for '" + method +
-                "'");
+    return fail("method registry returned a null runtime for '" + method + "'");
   }
   return runtime->to_replication_model(file, error);
 }
 
-bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
-                         std::string* error) {
+bool extract_flow_params(const IrModelFile& file, FlowRunParams& out, std::string* error) {
   const auto fail = [&](const std::string& msg) {
     if (error != nullptr) {
       *error = msg;
@@ -306,8 +257,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     return fail("no root model");
   }
   const Node* root = file.v2_root->root();
-  if (std::strcmp(node_block(root), "model") != 0 ||
-      root->children() == nullptr) {
+  if (std::strcmp(node_block(root), "model") != 0 || root->children() == nullptr) {
     return fail("no process model to stream");
   }
 
@@ -328,8 +278,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
   // inside a root-level agent body (agent Main { source ...; couple ... }).
   if (flow_stages.empty()) {
     for (const Node* child : *root->children()) {
-      if (std::strcmp(node_library(child), "agent") != 0 ||
-          child->children() == nullptr) {
+      if (std::strcmp(node_library(child), "agent") != 0 || child->children() == nullptr) {
         continue;
       }
       for (const Node* member : *child->children()) {
@@ -377,8 +326,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out,
     return fail("streaming driver requires exponential service times, got " +
                 std::to_string(service_time->kind()));
   }
-  const auto first_param = [](const Distribution* dist,
-                              std::optional<double>& value) {
+  const auto first_param = [](const Distribution* dist, std::optional<double>& value) {
     if (dist->params() != nullptr && dist->params()->size() > 0) {
       value = dist->params()->Get(0);
     }

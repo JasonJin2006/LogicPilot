@@ -26,6 +26,7 @@ Node（容器契约，故意薄）
   ├─ couplings（结构化端口引用）
   ├─ behavior: Statechart（可选，可执行行为数据）
   ├─ continuous: [Equation]（可选，结构化方程，非字符串袋）
+  ├─ extensions: [ExtensionPayload]（方法自有、版本化的二进制载荷）
   └─ semantics: SemanticsRef { library, block, version, params }
 
 引擎注册表（按 semantics 分发，各方法各一个引擎）：
@@ -39,7 +40,9 @@ Node（容器契约，故意薄）
   cluster → 分布式/GPU 内核（未来）
 ```
 
-加一种新方法 = 注册一个新引擎 + 新库，schema 不动（FMI 思路）。
+加一种新方法 = 注册一个新引擎 + 新库；方法专属网格、张量、GIS、FMU 等数据放入
+`ExtensionPayload {type_uri, schema_version, encoding, data}`，核心 schema 不再为每种
+范式增加硬编码表（FMI 思路）。
 
 ## 3. v1 → v2 差异（每条都有落点）
 
@@ -49,8 +52,9 @@ Node（容器契约，故意薄）
 | `TransitionSpec` = description/handler_ref/effects 魔法袋 | `Statechart` 数据（状态 + 类型化触发器转移 + 动作） | `ir_v2.fbs`、`ir_atomic.cpp`、`ir_agent.cpp` |
 | `resource` 靠字符串名匹配 | `Resource` 级 `SemanticsRef`（块参数） | `ir_v2.fbs`、`lowering.cpp` |
 | 端口无类型 | `Port.event_type` 类型化（复用 F2 类型名） | `ir_v2.fbs` |
-| 实验散在 CLI/脚本（`--reps/--arrivals`、prompt 解析） | `Experiment` 进模型（simulation/optimization/MC） | `ir_v2.fbs`、DSL `experiment` 块、`ai-optimize.mjs` |
+| 实验散在 CLI/脚本（`--reps/--arrivals`、prompt 解析） | `Experiment` 进模型；`VariationAxis` 类型化保存多轴参数扫描 | `ir_v2.fbs`、DSL `experiment`/`axis` 块、实验执行器 |
 | `EquationModel` 字符串袋 | 结构化 `[Equation]` + RK4 ODE 引擎 | `ir_v2.fbs`、`continuous.cpp` |
+| 新范式只能挤进 params 或修改核心 schema | 版本化 `ExtensionPayload` 承载方法自有数据 | `ir_v2.fbs`、插件自有 schema |
 
 ## 4. 分阶段实施
 

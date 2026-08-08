@@ -26,10 +26,33 @@ cargo build --manifest-path desktop/src-tauri/Cargo.toml
 desktop/src-tauri/target/debug/logicpilot-desktop.exe
 ```
 
-Environment overrides:
-- `LOGICPILOT_ROOT` — repo root (auto-detected by walking up from the exe).
-- `LOGICPILOT_NODE` — node binary (default `node`).
-- `LP_SERVER` — lp-server binary path (auto-detected from `build/`).
+## Self-contained bundle runtime
+
+The distributable does not use a machine-wide Node installation or repository
+build directory. Stage its version-matched resources first:
+
+```text
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release --target lpcli lp-server
+pnpm desktop:stage
+pnpm desktop:test-staged
+```
+
+`build/desktop-runtime` contains the Node executable, Release native
+sidecars/DLLs, frontend and AI service modules plus `runtime-manifest.json`
+with the byte size and SHA-256 of every bundled file. Tauri maps that directory
+to the installer resource root. The staged smoke test restricts PATH to the
+staged runtime and Windows system directories before exercising a real AI DES
+compile/run; it also verifies every manifest size/hash. Build the NSIS installer
+with `pnpm desktop:bundle` after the Release sidecars exist.
+
+Environment overrides (development/debugging only):
+- `LOGICPILOT_ROOT` — resource/repository root (auto-detected beside an
+  installed executable or by walking upward in a development build).
+- `LOGICPILOT_NODE` — Node binary (defaults to bundled Node, then system Node
+  only in a development layout).
+- `LP_SERVER` / `LPCLI` — native binary paths (default to bundled Release
+  sidecars in an installed app).
 
 The app server prints `LOGICPILOT_PORT <http>` / `LOGICPILOT_WS_PORT <ws>` on
 stdout; it shuts its gateway down when the desktop process exits.

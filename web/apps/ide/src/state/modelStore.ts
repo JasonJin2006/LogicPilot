@@ -18,11 +18,14 @@ import {
   renameParam,
   setParam,
   booleanShapes,
+  applyModelPatch,
   type BooleanOp,
   type AddNodeInput,
   defaultGraphicStyle,
   type GraphicNode,
   type ModelDocument,
+  type ModelPatch,
+  type ModelPatchResult,
   type ModelNode,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
@@ -118,6 +121,8 @@ interface ModelState {
    *  with a single path node (undoable). Returns the new node id. */
   applyBooleanShapes: (ids: string[], op: BooleanOp) => string | null;
   loadDocument: (document: ModelDocument) => void;
+  /** Atomically apply one AI/editor ModelPatch as a single undo step. */
+  applyPatch: (patch: ModelPatch) => ModelPatchResult;
   undo: () => void;
   redo: () => void;
   reset: () => void;
@@ -136,7 +141,7 @@ function commit(state: ModelState, next: ModelDocument): Partial<ModelState> {
   };
 }
 
-export const useModelStore = create<ModelState>()((set) => ({
+export const useModelStore = create<ModelState>()((set, get) => ({
   document: createDocument('Model'),
   selectedId: null,
   past: [],
@@ -220,6 +225,14 @@ export const useModelStore = create<ModelState>()((set) => ({
   renameBlock: (id, name) => set((state) => commit(state, renameNode(state.document, id, name))),
   setBlockParam: (id, key, value) =>
     set((state) => commit(state, setParam(state.document, id, key, value))),
+  applyPatch: (patch) => {
+    const state = get();
+    const result = applyModelPatch(state.document, patch);
+    if (result.ok) {
+      set({ ...commit(state, result.document), selectedId: null });
+    }
+    return result;
+  },
   removeBlockParam: (id, key) =>
     set((state) => commit(state, removeParam(state.document, id, key))),
   renameBlockParam: (id, oldKey, newKey) =>

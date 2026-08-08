@@ -65,26 +65,19 @@ export const useUiStore = create<UiState>((set) => ({
   closeNewProject: () => set({ newProjectOpen: false }),
   openFile: (path) =>
     set((state) => ({
-      openFiles: state.openFiles.includes(path)
-        ? state.openFiles
-        : [...state.openFiles, path],
+      openFiles: state.openFiles.includes(path) ? state.openFiles : [...state.openFiles, path],
       activeFile: path,
     })),
   closeFile: (path) =>
     set((state) => {
       const openFiles = state.openFiles.filter((entry) => entry !== path);
-      const activeFile =
-        state.activeFile === path
-          ? (openFiles[0] ?? null)
-          : state.activeFile;
+      const activeFile = state.activeFile === path ? (openFiles[0] ?? null) : state.activeFile;
       return { openFiles, activeFile };
     }),
   openDiskFile: (path, content) =>
     set((state) => ({
       diskFiles: { ...state.diskFiles, [path]: content },
-      openFiles: state.openFiles.includes(path)
-        ? state.openFiles
-        : [...state.openFiles, path],
+      openFiles: state.openFiles.includes(path) ? state.openFiles : [...state.openFiles, path],
       activeFile: path,
     })),
   updateDiskFile: (path, content) =>

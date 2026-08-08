@@ -27,7 +27,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
 | 并行执行                     | ✅   | ADR-0009 阶段 A（reps 级线程池）与阶段 B（agent ECS 批量 tick，≥65536 agent 多核自动并行，10 万 agent 逐位确定）已落地；阶段 C（事件级保守并行）延后 |
 | 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
-| 测试基线                     | ✅   | 212 ctest、corpus 48/48、renderer2d 5 vitest、editor 53 vitest、IDE 80 vitest、interop 58 checks、浏览器 E2E                                                                                                                                                                    |
+| 测试基线                     | ✅   | 294 ctest、corpus 48/48、renderer2d 5 vitest、editor 57 vitest、IDE 71 vitest、interop 58 checks、浏览器 E2E                                                                                                                                                                    |
 
 ## 3. 契约与工程纪律状态
 

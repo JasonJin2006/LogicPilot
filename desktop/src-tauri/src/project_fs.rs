@@ -68,9 +68,7 @@ pub fn write_project_files_impl(
 // logicpilot.json manifest plus every file under the project except the
 // derived build/ and results/ folders. Paths are `/`-separated relative to
 // the project root.
-pub fn read_project_dir(
-    dir: &str,
-) -> Result<(String, HashMap<String, String>), String> {
+pub fn read_project_dir(dir: &str) -> Result<(String, HashMap<String, String>), String> {
     let root = Path::new(dir);
     if !root.is_absolute() {
         return Err("the project directory must be an absolute path".to_string());
@@ -105,16 +103,11 @@ pub fn collect_project_tree(root: &Path) -> Result<Vec<String>, String> {
     Ok(paths)
 }
 
-fn collect_tree_paths(
-    root: &Path,
-    dir: &Path,
-    paths: &mut Vec<String>,
-) -> Result<(), String> {
+fn collect_tree_paths(root: &Path, dir: &Path, paths: &mut Vec<String>) -> Result<(), String> {
     let entries = std::fs::read_dir(dir)
         .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
     for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+        let entry = entry.map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
@@ -168,11 +161,7 @@ pub fn create_project_dir_impl(root: &Path, rel: &str) -> Result<(), String> {
 
 // Rename or move a file/folder inside the project (both paths validated so
 // the move can never leave the project root).
-pub fn rename_project_entry_impl(
-    root: &Path,
-    old_rel: &str,
-    new_rel: &str,
-) -> Result<(), String> {
+pub fn rename_project_entry_impl(root: &Path, old_rel: &str, new_rel: &str) -> Result<(), String> {
     let from = root.join(validate_relative_path(old_rel)?);
     let to = root.join(validate_relative_path(new_rel)?);
     if !from.exists() {
@@ -232,8 +221,7 @@ fn collect_hashes_in(
     let entries = std::fs::read_dir(dir)
         .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
     for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+        let entry = entry.map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
@@ -263,8 +251,7 @@ fn collect_project_files(
     let entries = std::fs::read_dir(dir)
         .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
     for entry in entries {
-        let entry = entry
-            .map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
+        let entry = entry.map_err(|error| format!("cannot read '{}': {}", dir.display(), error))?;
         let path = entry.path();
         if path.is_dir() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -295,10 +282,19 @@ mod tests {
 
     #[test]
     fn rejects_dangerous_project_names() {
-        for bad in ["", ".", "..", "a/b", "a\\b", "a:b", "a*b", "a<b", "a|b", "a?b", "a\"b"] {
-            assert!(sanitize_project_name(bad).is_err(), "name '{}' should be rejected", bad);
+        for bad in [
+            "", ".", "..", "a/b", "a\\b", "a:b", "a*b", "a<b", "a|b", "a?b", "a\"b",
+        ] {
+            assert!(
+                sanitize_project_name(bad).is_err(),
+                "name '{}' should be rejected",
+                bad
+            );
         }
-        assert_eq!(sanitize_project_name("  My Factory  ").unwrap(), "My Factory");
+        assert_eq!(
+            sanitize_project_name("  My Factory  ").unwrap(),
+            "My Factory"
+        );
     }
 
     #[test]
@@ -326,7 +322,10 @@ mod tests {
             std::fs::read_to_string(dir.join("model/main.lp")).unwrap(),
             "model Test {}"
         );
-        assert_eq!(std::fs::read_to_string(dir.join("nested/deep/x.txt")).unwrap(), "hi");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("nested/deep/x.txt")).unwrap(),
+            "hi"
+        );
 
         let mut escaping = HashMap::new();
         escaping.insert("../escape.txt".to_string(), "x".to_string());
@@ -338,10 +337,7 @@ mod tests {
 
     #[test]
     fn reads_a_project_directory_back() {
-        let dir = std::env::temp_dir().join(format!(
-            "lp_project_dir_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("lp_project_dir_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("model")).unwrap();
         std::fs::create_dir_all(dir.join("build")).unwrap();
@@ -358,8 +354,9 @@ mod tests {
         .unwrap();
         std::fs::write(dir.join("build/main.lpir"), "binary").unwrap();
 
-        let (manifest, files) = read_project_dir(&dir.to_string_lossy())
-            .unwrap_or_else(|error| panic!("read_project_dir failed: {} ({})", error, dir.display()));
+        let (manifest, files) = read_project_dir(&dir.to_string_lossy()).unwrap_or_else(|error| {
+            panic!("read_project_dir failed: {} ({})", error, dir.display())
+        });
         assert!(manifest.contains("logicpilot.project"));
         assert!(files.contains_key("model/main.lp"));
         assert!(files.contains_key("model/resources.lp"));
@@ -371,10 +368,7 @@ mod tests {
 
     #[test]
     fn tree_lists_every_file_including_derived_folders() {
-        let dir = std::env::temp_dir().join(format!(
-            "lp_tree_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("lp_tree_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("model")).unwrap();
         std::fs::create_dir_all(dir.join("build")).unwrap();
@@ -405,10 +399,7 @@ mod tests {
 
     #[test]
     fn read_file_loads_text_and_rejects_escaping_paths() {
-        let dir = std::env::temp_dir().join(format!(
-            "lp_read_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("lp_read_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("build")).unwrap();
         std::fs::write(dir.join("build/main.lpir"), "ir-bytes").unwrap();
@@ -426,10 +417,7 @@ mod tests {
 
     #[test]
     fn write_rename_delete_roundtrip() {
-        let dir = std::env::temp_dir().join(format!(
-            "lp_mutate_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("lp_mutate_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -464,10 +452,7 @@ mod tests {
 
     #[test]
     fn hashes_change_when_a_file_is_edited() {
-        let dir = std::env::temp_dir().join(format!(
-            "lp_hashes_test_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("lp_hashes_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("model")).unwrap();
         std::fs::write(dir.join("model/main.lp"), "model M {\n}\n").unwrap();

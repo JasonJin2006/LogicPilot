@@ -17,10 +17,7 @@ export interface CanvasView {
  *  shows the model root: only model-level elements (nodes not owned by a
  *  container - resources, container Nodes, canvas annotations). Stages of a
  *  process container never leak onto the root canvas. */
-export function documentForView(
-  document: ModelDocument,
-  view: CanvasView | null,
-): ModelDocument {
+export function documentForView(document: ModelDocument, view: CanvasView | null): ModelDocument {
   if (!view) {
     const nodes = document.nodes.filter((node) => !node.container);
     const ids = new Set(nodes.map((node) => node.id));
@@ -71,9 +68,7 @@ export const useCanvasView = create<CanvasViewState>((set) => ({
   setView: (view) =>
     set((state) => {
       if (view === null) {
-        return state.rootOpen && state.view === null
-          ? {}
-          : { rootOpen: true, view: null };
+        return state.rootOpen && state.view === null ? {} : { rootOpen: true, view: null };
       }
       if (sameView(state.view, view)) {
         return {};
@@ -96,8 +91,7 @@ export const useCanvasView = create<CanvasViewState>((set) => ({
       if (!sameView(state.view, view)) {
         return { views };
       }
-      const fallback =
-        views.length > 0 ? views[views.length - 1]! : null;
+      const fallback = views.length > 0 ? views[views.length - 1]! : null;
       return { views, view: fallback };
     }),
   resetCanvasViews: () => set({ views: [], rootOpen: false, view: null }),

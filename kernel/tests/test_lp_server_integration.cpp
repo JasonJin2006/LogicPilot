@@ -9,6 +9,7 @@
 // and bit-exact parity between the streaming driver and the kernel's
 // QueueingFlowSim.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -425,7 +426,7 @@ TEST_CASE("lp-server streams a full mm1 run over WebSocket",
   const RunCapture capture = capture_run(
       client,
       R"({"cmd":"start","seed":42,"reps":3,"arrivals":4000,"warmup":400,)"
-      R"("speed":100000})");
+      R"("confidence":0.9,"speed":100000})");
 
   REQUIRE(capture.ok);
   REQUIRE(capture.completed);
@@ -451,6 +452,7 @@ TEST_CASE("lp-server streams a full mm1 run over WebSocket",
   REQUIRE(capture.stats.count("Wq.ci_low") == 1);
   REQUIRE(capture.stats.count("Wq.ci_high") == 1);
   REQUIRE(capture.stats.count("throughput.mean") == 1);
+  REQUIRE(capture.stats.at("confidence") == Catch::Approx(0.9));
   const double wq_mean = capture.stats.at("Wq.mean");
   const double wq_low = capture.stats.at("Wq.ci_low");
   const double wq_high = capture.stats.at("Wq.ci_high");
@@ -665,9 +667,9 @@ TEST_CASE("lp-server rejects unknown and invalid control messages",
   REQUIRE(!client.was_binary());
   REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
   REQUIRE(client.payload().find("unknown command") != std::string::npos);
-  // `a\` is extracted as the cmd value; the backslash must appear doubled
-  // (raw `\\` bytes) in the reply, never emitted bare.
-  REQUIRE(client.payload().find("a\\\\") != std::string::npos);
+  // A standards-compliant parser preserves the complete decoded value; the
+  // reply then escapes its quote and backslash again as valid JSON.
+  REQUIRE(client.payload().find("a\\\"b\\\\c") != std::string::npos);
 
   client.send_text("{\"cmd\":\"line1\nline2\"}");  // raw LF inside the value
   REQUIRE(client.read_one());
@@ -686,6 +688,18 @@ TEST_CASE("lp-server rejects unknown and invalid control messages",
   client.send_text(R"({"cmd":"pause"})");
   REQUIRE(client.read_one());
   REQUIRE(client.payload().find("\"ok\":false") != std::string::npos);
+
+  client.send_text(R"({"cmd":"start","confidence":1})");
+  REQUIRE(client.read_one());
+  REQUIRE(!client.was_binary());
+  REQUIRE(client.payload().find("confidence must be between 0 and 1") !=
+          std::string::npos);
+
+  client.send_text(R"({"cmd":"start","seedMode":"surprise"})");
+  REQUIRE(read_next_text(client).find("seedMode must be") != std::string::npos);
+  client.send_text(R"({"cmd":"start","replicationMode":"forever"})");
+  REQUIRE(read_next_text(client).find("replicationMode must be") !=
+          std::string::npos);
 
   client.abort_from_other_thread();
   server.stop();
@@ -757,6 +771,28 @@ TEST_CASE("lp-server start honors per-run model parameter overrides",
   REQUIRE(capture.completed);
   // The overridden resource capacity must reach the streaming driver.
   REQUIRE(capture.last_counters.at("servers") == 2.0);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server stops precision replications after the confidence target",
+          "[server][integration][precision]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const RunCapture capture = capture_run(
+      client,
+      R"({"cmd":"start","replicationMode":"precision","minReps":2,"maxReps":8,"errorPercent":1000000,"precisionMetric":"Wq","arrivals":100,"warmup":0,"speed":100000})");
+  REQUIRE(capture.ok);
+  REQUIRE(capture.completed);
+  REQUIRE(capture.stats.at("reps") == 2.0);
+  REQUIRE(capture.stats.at("precision.target_percent") == 1000000.0);
+  REQUIRE(capture.stats.count("precision.actual_percent") == 1);
 
   client.abort_from_other_thread();
   server.stop();

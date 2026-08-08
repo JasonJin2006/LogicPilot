@@ -83,7 +83,6 @@ const KIND_ICONS: Record<string, ComponentType<{ size?: number }>> = {
   param: SlidersHorizontal,
 };
 
-
 function kindRank(kind: string): number {
   switch (kind) {
     case 'resource':
@@ -437,8 +436,8 @@ export function ModelInfoPanel() {
       <div className="side-panel-body">
         {projectPath !== null && (
           <p className="side-kv">
-            This folder is not a LogicPilot project. Edit files in the
-            Explorer, then Save to initialize it.
+            This folder is not a LogicPilot project. Edit files in the Explorer, then Save to
+            initialize it.
           </p>
         )}
       </div>

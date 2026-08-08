@@ -23,30 +23,26 @@ struct Node;
 }
 
 class StatechartRuntime final : public SimulationMethod {
- public:
+public:
   StatechartRuntime() = default;
 
-  [[nodiscard]] std::string_view method_name() const override {
-    return "statechart";
+  [[nodiscard]] std::string_view method_name() const override { return "statechart"; }
+  [[nodiscard]] MethodCapabilities capabilities() const override {
+    return MethodCapabilities{MethodExecutionMode::kSharedEventQueue, true, false};
   }
 
-  bool initialize(RuntimeContext& context, const IrModelFile& model,
-                  std::string* error) override;
+  bool initialize(RuntimeContext& context, const IrModelFile& model, std::string* error) override;
   void advance(SimTime until) override;
   void shutdown() override;
 
-  [[nodiscard]] std::unique_ptr<ReplicationModel> to_replication_model(
-      const IrModelFile& model, std::string* error) override;
+  [[nodiscard]] std::unique_ptr<ReplicationModel> to_replication_model(const IrModelFile& model,
+                                                                       std::string* error) override;
 
   // Metrics of the replication driven by the lifecycle API.
-  [[nodiscard]] const ReplicationMetrics& last_metrics() const {
-    return last_metrics_;
-  }
-  [[nodiscard]] ReplicationMetrics replication_metrics() const override {
-    return last_metrics_;
-  }
+  [[nodiscard]] const ReplicationMetrics& last_metrics() const { return last_metrics_; }
+  [[nodiscard]] ReplicationMetrics replication_metrics() const override { return last_metrics_; }
 
- private:
+private:
   RuntimeContext* context_{nullptr};
   std::unique_ptr<ReplicationModel> replication_;
   ReplicationMetrics last_metrics_;

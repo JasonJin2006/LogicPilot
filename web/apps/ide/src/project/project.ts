@@ -14,15 +14,6 @@ import {
 import type { GraphicNode, ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
 import { insertMember, parseProjectMembers, parseProjectSource, replaceSpan } from './projectTree';
 
-/** Container kinds reload with a nested structure (one scene file each). */
-const CONTAINER_KINDS: ReadonlySet<string> = new Set([
-  'process',
-  'agent',
-  'atomic',
-  'continuous',
-  'experiment',
-]);
-
 export const PROJECT_SCHEMA = 'logicpilot.project';
 export const PROJECT_VERSION = 1;
 export const DEFAULT_MODEL_PATH = 'model/main.lp';

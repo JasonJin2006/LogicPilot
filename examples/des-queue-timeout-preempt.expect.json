@@ -1,0 +1,45 @@
+{
+  "model": "des-queue-timeout-preempt",
+  "description": "A high-priority newcomer ejects the established waiter; a later weak newcomer is accepted and ejects itself; the survivor times out.",
+  "blocks": [
+    {
+      "name": "Buffer",
+      "kind": "queue",
+      "metrics": {
+        "arrived_mean": { "value": 3, "abs_tol": 0 },
+        "departed_mean": { "value": 3, "abs_tol": 0 },
+        "timed_out_mean": { "value": 1, "abs_tol": 0 },
+        "preempted_mean": { "value": 2, "abs_tol": 0 },
+        "mean_occupancy": { "value": 1, "abs_tol": 1e-9 }
+      }
+    },
+    {
+      "name": "Done",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 0, "abs_tol": 0 }
+      }
+    },
+    {
+      "name": "EstablishedPreempted",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 }
+      }
+    },
+    {
+      "name": "NewcomerPreempted",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 }
+      }
+    },
+    {
+      "name": "Late",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 }
+      }
+    }
+  ]
+}

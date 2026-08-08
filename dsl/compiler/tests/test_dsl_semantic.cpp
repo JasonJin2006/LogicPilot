@@ -1,5 +1,6 @@
 // Semantic analysis tests: structured checks + golden diagnostic snapshots
 // (dsl/compiler/tests/golden/diag_*.txt).
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
@@ -77,6 +78,79 @@ TEST_CASE("semantic: empty process blocks pass with registry defaults",
       "  }\n"
       "}\n",
       "input.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
+}
+
+TEST_CASE("semantic: comparison queue requires a valid pair expression",
+          "[dsl][semantic][queue]") {
+  const auto missing = compile_source(
+      "model M { use process source S { arrival = rate(1) state size: int = 1 } "
+      "queue Q { capacity = 1 queuing = queuing_comparison } "
+      "sink K { } couple S.out -> Q.in couple Q.out -> K.in }",
+      "comparison-missing.lp");
+  CHECK_FALSE(missing.ok);
+  CHECK(std::any_of(missing.diagnostics.begin(), missing.diagnostics.end(),
+                    [](const Diagnostic& diagnostic) {
+                      return diagnostic.code == "LP2001" &&
+                             diagnostic.message.find(
+                                 "agent1IsPreferredToAgent2") != std::string::npos;
+                    }));
+
+  const auto unknown_attribute = compile_source(
+      "model M { use process source S { arrival = rate(1) state size: int = 1 } "
+      "queue Q { capacity = 1 queuing = queuing_comparison "
+      "agent1IsPreferredToAgent2 = agent1.missing > agent2.missing } "
+      "sink K { } couple S.out -> Q.in couple Q.out -> K.in }",
+      "comparison-unknown.lp");
+  CHECK_FALSE(unknown_attribute.ok);
+  CHECK(std::any_of(
+      unknown_attribute.diagnostics.begin(), unknown_attribute.diagnostics.end(),
+      [](const Diagnostic& diagnostic) { return diagnostic.code == "LP5006"; }));
+
+  const auto unknown_mode = compile_source(
+      "model M { use process source S { arrival = rate(1) } "
+      "queue Q { capacity = 1 queuing = fastest_first } "
+      "sink K { } couple S.out -> Q.in couple Q.out -> K.in }",
+      "queue-mode-unknown.lp");
+  CHECK_FALSE(unknown_mode.ok);
+  CHECK(std::any_of(unknown_mode.diagnostics.begin(),
+                    unknown_mode.diagnostics.end(),
+                    [](const Diagnostic& diagnostic) {
+                      return diagnostic.code == "LP3001" &&
+                             diagnostic.message.find("queuing must be") !=
+                                 std::string::npos;
+                    }));
+}
+
+TEST_CASE("semantic: DES cardinalities and timeouts reject silent clamping",
+          "[dsl][semantic][process]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  resource R { capacity = 2 repair_rate = 0 }\n"
+      "  source A { arrival = rate(1); agentsPerArrival = 0; "
+      "maxArrivals = -1; firstArrivalTime = -2 }\n"
+      "  service S { resource = R; numberOfUnits = 0; queueCapacity = -1; "
+      "timeout = 0; time = constant(1) }\n"
+      "}\n",
+      "bad.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.size() == 7);
+  for (const Diagnostic& diagnostic : diagnostics) {
+    CHECK(diagnostic.code == "LP3001");
+  }
+}
+
+TEST_CASE("semantic: failure_rate is a nonnegative exponential rate",
+          "[dsl][semantic][process]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  resource R { capacity = 1 failure_rate = 2.5 repair_rate = 3 }\n"
+      "  source A { arrival = rate(1) }\n"
+      "  service S { resource = R; time = constant(1) }\n"
+      "}\n",
+      "ok.lp");
   REQUIRE(parsed.ok());
   REQUIRE(analyze_model(*parsed.model).empty());
 }
@@ -295,6 +369,101 @@ TEST_CASE("semantic: experiment variable references a declared model param",
       "ok.lp");
   REQUIRE(parsed.ok());
   REQUIRE(analyze_model(*parsed.model).empty());
+}
+
+TEST_CASE("semantic: simulation experiment accepts reproducible replications",
+          "[dsl][semantic][experiment]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  experiment Baseline {\n"
+      "    type = simulation\n"
+      "    replications = 12\n"
+      "    seed = 42\n"
+      "  }\n"
+      "}\n",
+      "simulation.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(analyze_model(*parsed.model).empty());
+  REQUIRE(parsed.model->experiments.size() == 1);
+  CHECK(parsed.model->experiments[0].kind == "simulation");
+  CHECK(parsed.model->experiments[0].replications == 12);
+  CHECK(parsed.model->experiments[0].seed == 42);
+}
+
+TEST_CASE("semantic: simulation experiment rejects invalid statistics",
+          "[dsl][semantic][experiment]") {
+  const ParseOutput parsed = parse_source(
+      "model M { experiment Bad { type = simulation replications = 0 seed = -1 } }",
+      "simulation_bad.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.size() == 2);
+  CHECK(diagnostics[0].code == "LP3001");
+  CHECK(diagnostics[1].code == "LP2006");
+}
+
+TEST_CASE("semantic: simulation experiment rejects unknown fields",
+          "[dsl][semantic][experiment]") {
+  const ParseOutput parsed = parse_source(
+      "model M { experiment Bad { type = simulation repetitions = 5 } }",
+      "simulation_unknown.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.size() == 1);
+  CHECK(diagnostics[0].code == "LP2005");
+  CHECK(diagnostics[0].message.find("repetitions") != std::string::npos);
+}
+
+TEST_CASE("semantic: precision simulation experiment validates confidence settings",
+          "[dsl][semantic][experiment]") {
+  const auto valid = compile_source(
+      "model M { experiment Adaptive { type = simulation seed_mode = random "
+      "replication_mode = precision min_replications = 5 max_replications = 40 "
+      "confidence = 0.9 error_percent = 3.5 metric = Wq } }",
+      "adaptive.lp");
+  REQUIRE(valid.ok);
+
+  const auto invalid = compile_source(
+      "model M { experiment Bad { type = simulation replication_mode = precision "
+      "min_replications = 1 max_replications = 0 confidence = 1 "
+      "error_percent = 0 } }",
+      "adaptive-bad.lp");
+  CHECK_FALSE(invalid.ok);
+  CHECK(invalid.diagnostics.size() >= 5);
+}
+
+TEST_CASE("semantic: parameter variation validates axes and top-level params",
+          "[dsl][semantic][experiment][variation]") {
+  const auto valid = compile_source(
+      "model M { param rate: float = 0.5 param count: int = 1 "
+      "experiment Sweep { type = parameter_variation metric = Wq replications = 3 "
+      "axis Rate { variable = rate range = 0.5..1.0 step = 0.25 } "
+      "axis Count { variable = count range = 1..3 step = 1 } } }",
+      "variation.lp");
+  REQUIRE(valid.ok);
+
+  const auto invalid = compile_source(
+      "model M { param rate: float = 0.5 experiment Bad { "
+      "type = parameter_variation metric = Wq "
+      "axis A { variable = missing range = 1..0 step = 0 } "
+      "axis B { variable = rate range = 0..1 step = 1 } "
+      "axis C { variable = rate range = 0..1 step = 1 } } }",
+      "variation-bad.lp");
+  CHECK_FALSE(invalid.ok);
+  CHECK(invalid.diagnostics.size() >= 3);
+
+  const auto non_integer_axis = compile_source(
+      "model M { param count: int = 1 experiment Bad { "
+      "type = parameter_variation metric = Wq "
+      "axis Count { variable = count range = 1..2 step = 0.5 } } }",
+      "variation-int-bad.lp");
+  CHECK_FALSE(non_integer_axis.ok);
+  CHECK(std::any_of(non_integer_axis.diagnostics.begin(),
+                    non_integer_axis.diagnostics.end(),
+                    [](const Diagnostic& diagnostic) {
+                      return diagnostic.code == "LP3001" &&
+                             diagnostic.message.find("integer range") != std::string::npos;
+                    }));
 }
 
 TEST_CASE("semantic snapshot: experiment variable must be a declared param",

@@ -328,9 +328,16 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
         const options = useRunStore.getState().runOptions;
         client?.start({
           seed: options.seed,
+          seedMode: options.seedMode,
           reps: options.reps,
+          replicationMode: options.replicationMode,
+          minReps: options.minReps,
+          maxReps: options.maxReps,
+          errorPercent: options.errorPercent,
+          precisionMetric: options.precisionMetric,
           arrivals: options.arrivals,
           warmup: options.warmup,
+          confidence: options.confidence,
           speed: options.speed,
           lambda: params.lambda,
           mu: params.mu,

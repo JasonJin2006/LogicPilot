@@ -21,14 +21,20 @@ mkdirSync(OUT, { recursive: true });
 
 const log = (...args) => console.log('[browser]', ...args);
 
-// Drive the system Edge (no bundled browser download needed).
+// Drive a system browser (no bundled Playwright download needed). CI can
+// provide an explicit executable through PLAYWRIGHT_CHROMIUM_EXECUTABLE.
 const EDGE_CANDIDATES = [
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-];
-const executablePath = EDGE_CANDIDATES.find((p) => existsSync(p));
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+].filter(Boolean);
+const executablePath = EDGE_CANDIDATES.find((candidate) => existsSync(candidate));
 if (!executablePath) {
-  console.error('[browser] msedge.exe not found');
+  console.error('[browser] no Chrome/Chromium/Edge executable found');
   process.exit(1);
 }
 
@@ -51,7 +57,7 @@ try {
   // tab, reached via Help > Welcome).
   await page.waitForSelector('.area-center', { timeout: 20_000 });
   await page.waitForTimeout(500);
-  if (await page.locator('.center-empty').count() !== 0) {
+  if ((await page.locator('.center-empty').count()) !== 0) {
     throw new Error('welcome page should not be pinned on startup');
   }
   log('page loaded: blank center (no pinned tabs)');
@@ -82,11 +88,9 @@ try {
   // dialog shows Disconnect once connected. Fall back to a manual Connect
   // if the auto attempt already gave up.
   await page
-    .waitForFunction(
-      () => document.querySelector('.conn-connected') !== null,
-      undefined,
-      { timeout: 15_000 },
-    )
+    .waitForFunction(() => document.querySelector('.conn-connected') !== null, undefined, {
+      timeout: 15_000,
+    })
     .catch(async () => {
       await page.getByRole('button', { name: 'Connect' }).click();
       await page.waitForSelector('.conn-connected', { timeout: 10_000 });
@@ -162,10 +166,7 @@ try {
   await page.getByRole('button', { name: 'File', exact: true }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 5_000 }).catch(() => null),
-    page
-      .locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Save' })
-      .first()
-      .click(),
+    page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Save' }).first().click(),
   ]);
   if (download) {
     await download.cancel().catch(() => {});
@@ -178,9 +179,7 @@ try {
     throw new Error('DSL file editor did not show the flat main.lp');
   }
   log('canvas model saved; main.lp opened as a file tab');
-  await page
-    .locator('.dsl-textarea')
-    .fill(dslText + '\nbogusBlock Mystery { }\n');
+  await page.locator('.dsl-textarea').fill(dslText + '\nbogusBlock Mystery { }\n');
   await page.getByRole('button', { name: 'Compile' }).click();
   await page.waitForFunction(
     () => document.querySelector('.console-log')?.textContent?.includes('compile failed'),
@@ -201,8 +200,8 @@ try {
   await page.locator('.area-center .tab-file .tab-x').first().click();
   await page.waitForFunction(
     () => {
-      const modelTab = [...document.querySelectorAll('.area-center .tab')].find(
-        (tab) => tab.textContent?.includes('Model'),
+      const modelTab = [...document.querySelectorAll('.area-center .tab')].find((tab) =>
+        tab.textContent?.includes('Model'),
       );
       return modelTab?.classList.contains('active') ?? false;
     },
@@ -256,10 +255,7 @@ try {
   await wire('queue', 'service');
   await wire('service', 'sink');
   const serviceBox = await page.locator('.model-block.kind-service').boundingBox();
-  await page.mouse.click(
-    serviceBox.x + serviceBox.width / 2,
-    serviceBox.y + serviceBox.height / 2,
-  );
+  await page.mouse.click(serviceBox.x + serviceBox.width / 2, serviceBox.y + serviceBox.height / 2);
   await page.waitForTimeout(120);
   await page
     .locator('.props-field')
@@ -312,8 +308,10 @@ try {
   const rootKinds = await page.evaluate(() =>
     [...document.querySelectorAll('.model-canvas .model-block')].map((el) => el.className),
   );
-  if (!rootKinds.some((cls) => cls.includes('kind-source')) ||
-      !rootKinds.some((cls) => cls.includes('kind-resource'))) {
+  if (
+    !rootKinds.some((cls) => cls.includes('kind-source')) ||
+    !rootKinds.some((cls) => cls.includes('kind-resource'))
+  ) {
     throw new Error('root canvas missing the flat flow members');
   }
   if (rootKinds.some((cls) => cls.includes('kind-process'))) {
@@ -394,9 +392,7 @@ try {
     { timeout: 5_000 },
   );
   const rightTabs = await page.evaluate(() =>
-    [...document.querySelectorAll('.area-right .tab .tab-label')].map(
-      (label) => label.textContent,
-    ),
+    [...document.querySelectorAll('.area-right .tab .tab-label')].map((label) => label.textContent),
   );
   if (!rightTabs.includes('Properties')) {
     throw new Error('removing AI should keep the Properties tab');

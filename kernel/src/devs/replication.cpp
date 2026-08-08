@@ -3,9 +3,12 @@
 
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <random>
+#include <chrono>
 
 #include "logicpilot/core/random/streams.h"
 
@@ -148,6 +151,75 @@ ReplicationSummary summarize_replications(
     return m.final_value;
   });
   return out;
+}
+
+bool parse_replication_metric(std::string_view name, ReplicationMetric& out) {
+  if (name == "throughput") out = ReplicationMetric::kThroughput;
+  else if (name == "L") out = ReplicationMetric::kL;
+  else if (name == "Lq") out = ReplicationMetric::kLq;
+  else if (name == "W") out = ReplicationMetric::kW;
+  else if (name == "Wq") out = ReplicationMetric::kWq;
+  else if (name == "measure") out = ReplicationMetric::kMeasure;
+  else if (name == "utilization") out = ReplicationMetric::kUtilization;
+  else if (name == "availability") out = ReplicationMetric::kAvailability;
+  else if (name == "final_value") out = ReplicationMetric::kFinalValue;
+  else return false;
+  return true;
+}
+
+const MetricSummary& replication_metric_summary(
+    const ReplicationSummary& summary, ReplicationMetric metric) {
+  switch (metric) {
+    case ReplicationMetric::kThroughput: return summary.throughput;
+    case ReplicationMetric::kL: return summary.mean_in_system;
+    case ReplicationMetric::kLq: return summary.mean_in_queue;
+    case ReplicationMetric::kW: return summary.mean_sojourn;
+    case ReplicationMetric::kWq: return summary.mean_wait;
+    case ReplicationMetric::kMeasure: return summary.mean_measure;
+    case ReplicationMetric::kUtilization: return summary.utilization;
+    case ReplicationMetric::kAvailability: return summary.availability;
+    case ReplicationMetric::kFinalValue: return summary.final_value;
+  }
+  return summary.mean_wait;
+}
+
+double relative_ci_error_percent(const MetricSummary& summary) {
+  const double half_width = std::abs(summary.ci_high - summary.ci_low) / 2.0;
+  const double scale = std::abs(summary.mean);
+  if (scale <= std::numeric_limits<double>::epsilon()) {
+    return half_width <= std::numeric_limits<double>::epsilon()
+               ? 0.0
+               : std::numeric_limits<double>::infinity();
+  }
+  return half_width / scale * 100.0;
+}
+
+bool replication_precision_reached(const ReplicationSummary& summary,
+                                   ReplicationMetric metric,
+                                   std::size_t min_reps,
+                                   double error_percent) {
+  if (summary.reps < min_reps || min_reps < 2 ||
+      !(error_percent > 0.0) || !std::isfinite(error_percent)) {
+    return false;
+  }
+  return relative_ci_error_percent(
+             replication_metric_summary(summary, metric)) <= error_percent;
+}
+
+std::uint64_t random_run_seed() {
+  std::random_device device;
+  const std::uint64_t entropy =
+      (static_cast<std::uint64_t>(device()) << 32U) ^
+      static_cast<std::uint64_t>(device()) ^
+      static_cast<std::uint64_t>(
+          std::chrono::high_resolution_clock::now().time_since_epoch().count());
+  // Run seeds cross the JSON/TypeScript boundary. Keep the resolved root seed
+  // inside JavaScript's exact integer range; derived per-replication uint64
+  // seeds are serialized as decimal strings by result writers.
+  constexpr std::uint64_t kJavascriptSafeMask = (1ULL << 53U) - 1ULL;
+  const std::uint64_t seed = SeedStreams{entropy}.derive_state(0)[0] &
+                             kJavascriptSafeMask;
+  return seed == 0 ? 1 : seed;
 }
 
 std::vector<ReplicationMetrics> run_replications_parallel(

@@ -19,6 +19,7 @@
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/replication.h"
+#include "ir_v2_generated.h"
 #ifdef LOGICPILOT_HAS_DSL
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/diagnostics.h"
@@ -50,6 +51,7 @@ void print_usage() {
       "usage: lpcli run [options]\n"
       "  --model <built-in:NAME>    built-in model (default built-in:mm1)\n"
       "  --model-file <path.lpir>   load model from FlatBuffers IR instead\n"
+      "  --experiment <name>        use a declared simulation experiment\n"
 #ifdef LOGICPILOT_HAS_DSL
       "  --project <path.lpproj>    compile the bundled DSL and run it\n"
       "  --output-ir <path>         write the compiled IR (with --project)\n"
@@ -57,7 +59,13 @@ void print_usage() {
       "                             (default <project stem>.results/)\n"
 #endif
       "  --seed <n>                 run seed (default 42)\n"
+      "  --random-seed              generate and report a unique run seed\n"
       "  --reps <n>                 replications (default 30)\n"
+      "  --precision-reps           stop when a relative CI error is reached\n"
+      "  --min-reps <n>             minimum precision replications (default 5)\n"
+      "  --max-reps <n>             maximum precision replications (default 100)\n"
+      "  --error-percent <x>        target CI half-width / |mean| (default 5)\n"
+      "  --precision-metric <name>  throughput/L/Lq/W/Wq/... (default Wq)\n"
       "  --threads <n>              parallel replication workers (default 1)\n"
       "  --arrivals <n>             arrivals per replication (default 20000)\n"
       "  --warmup <n>               warmup arrivals excluded from stats\n"
@@ -84,6 +92,18 @@ void write_metric(std::ofstream& out, const char* name,
       << ",\"stddev\":" << json_double(summary.stddev)
       << ",\"ci_low\":" << json_double(summary.ci_low)
       << ",\"ci_high\":" << json_double(summary.ci_high) << "}";
+}
+
+void write_block(std::ofstream& out, const BlockMetrics& block) {
+  out << "{\"name\":\"" << json_escape(block.name) << "\",\"kind\":\""
+      << json_escape(block.kind) << "\",\"arrived\":" << block.arrived
+      << ",\"departed\":" << block.departed
+      << ",\"timed_out\":" << block.timed_out
+      << ",\"preempted\":" << block.preempted
+      << ",\"capacity\":" << block.capacity
+      << ",\"mean_occupancy\":" << json_double(block.mean_occupancy)
+      << ",\"utilization\":" << json_double(block.utilization)
+      << ",\"availability\":" << json_double(block.availability) << "}";
 }
 
 // Write run.json (config + provenance) and metrics.json (summary + per-rep
@@ -120,7 +140,14 @@ int write_results(const std::string& dir, const RunOptions& options,
     out << "{\n"
         << "  \"input\": \"" << json_escape(input_label) << "\",\n"
         << "  \"seed\": " << options.seed << ",\n"
+        << "  \"seedMode\": \"" << (options.random_seed ? "random" : "fixed") << "\",\n"
         << "  \"reps\": " << options.reps << ",\n"
+        << "  \"actualReps\": " << summary.reps << ",\n"
+        << "  \"replicationMode\": \"" << (options.precision_reps ? "precision" : "fixed") << "\",\n"
+        << "  \"minReps\": " << options.min_reps << ",\n"
+        << "  \"maxReps\": " << options.max_reps << ",\n"
+        << "  \"errorPercent\": " << json_double(options.error_percent) << ",\n"
+        << "  \"precisionMetric\": \"" << json_escape(options.precision_metric) << "\",\n"
         << "  \"arrivals\": " << options.arrivals << ",\n"
         << "  \"warmup\": " << options.warmup << ",\n"
         << "  \"confidence\": " << json_double(options.confidence) << ",\n"
@@ -156,11 +183,57 @@ int write_results(const std::string& dir, const RunOptions& options,
     write_metric(out, "utilization", summary.utilization, false);
     write_metric(out, "availability", summary.availability, false);
     write_metric(out, "final_value", summary.final_value, false);
-    out << "\n  },\n  \"replications\": [";
+    out << "\n  },\n  \"blocks\": [";
+    if (!results.empty()) {
+      for (std::size_t block_index = 0;
+           block_index < results.front().blocks.size(); ++block_index) {
+        const BlockMetrics& identity = results.front().blocks[block_index];
+        double arrived = 0.0;
+        double departed = 0.0;
+        double timed_out = 0.0;
+        double preempted = 0.0;
+        double occupancy = 0.0;
+        double utilization = 0.0;
+        double availability = 0.0;
+        std::size_t samples = 0;
+        for (const ReplicationMetrics& replication : results) {
+          const auto match = std::find_if(
+              replication.blocks.begin(), replication.blocks.end(),
+              [&](const BlockMetrics& candidate) {
+                return candidate.name == identity.name &&
+                       candidate.kind == identity.kind;
+              });
+          if (match == replication.blocks.end()) {
+            continue;
+          }
+          arrived += static_cast<double>(match->arrived);
+          departed += static_cast<double>(match->departed);
+          timed_out += static_cast<double>(match->timed_out);
+          preempted += static_cast<double>(match->preempted);
+          occupancy += match->mean_occupancy;
+          utilization += match->utilization;
+          availability += match->availability;
+          ++samples;
+        }
+        const double divisor = samples > 0 ? static_cast<double>(samples) : 1.0;
+        out << (block_index > 0 ? "," : "") << "\n    {\"name\":\""
+            << json_escape(identity.name) << "\",\"kind\":\""
+            << json_escape(identity.kind) << "\",\"capacity\":"
+            << identity.capacity << ",\"arrived_mean\":"
+            << json_double(arrived / divisor) << ",\"departed_mean\":"
+            << json_double(departed / divisor) << ",\"timed_out_mean\":"
+            << json_double(timed_out / divisor) << ",\"preempted_mean\":"
+            << json_double(preempted / divisor) << ",\"mean_occupancy\":"
+            << json_double(occupancy / divisor) << ",\"utilization\":"
+            << json_double(utilization / divisor) << ",\"availability\":"
+            << json_double(availability / divisor) << "}";
+      }
+    }
+    out << "\n  ],\n  \"replications\": [";
     for (std::size_t i = 0; i < results.size(); ++i) {
       const ReplicationMetrics& m = results[i];
       out << (i > 0 ? "," : "") << "\n    {\"rep\":" << (i + 1)
-          << ",\"seed\":" << replication_seed(options.seed, i)
+          << ",\"seed\":\"" << replication_seed(options.seed, i) << "\""
           << ",\"arrivals\":" << m.arrivals
           << ",\"departures\":" << m.departures
           << ",\"throughput\":" << json_double(m.throughput)
@@ -171,7 +244,14 @@ int write_results(const std::string& dir, const RunOptions& options,
           << ",\"measure\":" << json_double(m.mean_measure)
           << ",\"utilization\":" << json_double(m.utilization)
           << ",\"availability\":" << json_double(m.availability)
-          << ",\"final_value\":" << json_double(m.final_value) << "}";
+          << ",\"final_value\":" << json_double(m.final_value)
+          << ",\"blocks\":[";
+      for (std::size_t block_index = 0; block_index < m.blocks.size();
+           ++block_index) {
+        out << (block_index > 0 ? "," : "");
+        write_block(out, m.blocks[block_index]);
+      }
+      out << "]}";
     }
     out << "\n  ]\n}\n";
     out.close();
@@ -184,12 +264,65 @@ int write_results(const std::string& dir, const RunOptions& options,
   return 0;
 }
 
+bool apply_declared_experiment(const IrModelFile& file, RunOptions& options,
+                               bool explicit_seed, bool explicit_reps,
+                               std::string& error) {
+  if (options.experiment.empty()) {
+    return true;
+  }
+  const auto* experiments = file.v2_root->experiments();
+  if (experiments == nullptr) {
+    error = "model declares no experiments";
+    return false;
+  }
+  for (const ir::v2::Experiment* experiment : *experiments) {
+    if (experiment->name() == nullptr ||
+        experiment->name()->str() != options.experiment) {
+      continue;
+    }
+    if (experiment->kind() != ir::v2::ExperimentKind_Simulation) {
+      error = "experiment '" + options.experiment +
+              "' is not a simulation experiment";
+      return false;
+    }
+    if (!explicit_seed) {
+      options.seed = experiment->seed();
+      options.random_seed =
+          experiment->seed_policy() == ir::v2::SeedPolicy_Random;
+    }
+    if (!explicit_reps) {
+      options.reps = experiment->replications();
+      options.precision_reps =
+          experiment->replication_policy() ==
+          ir::v2::ReplicationPolicy_Precision;
+      options.min_reps = experiment->min_replications();
+      options.max_reps = experiment->max_replications();
+      options.confidence = experiment->confidence();
+      options.error_percent = experiment->error_percent();
+      if (experiment->precision_metric() != nullptr &&
+          !experiment->precision_metric()->str().empty()) {
+        options.precision_metric = experiment->precision_metric()->str();
+      }
+    }
+    if (options.reps == 0) {
+      error = "experiment '" + options.experiment +
+              "' has zero replications";
+      return false;
+    }
+    return true;
+  }
+  error = "simulation experiment '" + options.experiment + "' not found";
+  return false;
+}
+
 }  // namespace
 
 int run_command(std::span<const std::string> args) {
   RunOptions options;
   bool explicit_model_file = false;
   bool explicit_project = false;
+  bool explicit_seed = false;
+  bool explicit_reps = false;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     std::string arg = args[i];
@@ -228,6 +361,12 @@ int run_command(std::span<const std::string> args) {
       }
       options.model_file = value;
       explicit_model_file = true;
+    } else if (arg == "--experiment") {
+      if (!need_value() || value.empty()) {
+        fmt::print(stderr, "error: --experiment needs a value\n");
+        return 2;
+      }
+      options.experiment = value;
 #ifdef LOGICPILOT_HAS_DSL
     } else if (arg == "--project") {
       if (!need_value()) {
@@ -259,12 +398,42 @@ int run_command(std::span<const std::string> args) {
         fmt::print(stderr, "error: invalid --seed\n");
         return 2;
       }
+      explicit_seed = true;
+    } else if (arg == "--random-seed") {
+      options.random_seed = true;
     } else if (arg == "--reps") {
       if (!need_value() || !parse_u64(value, options.reps) ||
           options.reps == 0) {
         fmt::print(stderr, "error: invalid --reps\n");
         return 2;
       }
+      explicit_reps = true;
+    } else if (arg == "--precision-reps") {
+      options.precision_reps = true;
+    } else if (arg == "--min-reps") {
+      if (!need_value() || !parse_u64(value, options.min_reps) ||
+          options.min_reps < 2) {
+        fmt::print(stderr, "error: invalid --min-reps (must be >= 2)\n");
+        return 2;
+      }
+    } else if (arg == "--max-reps") {
+      if (!need_value() || !parse_u64(value, options.max_reps) ||
+          options.max_reps < 2) {
+        fmt::print(stderr, "error: invalid --max-reps (must be >= 2)\n");
+        return 2;
+      }
+    } else if (arg == "--error-percent") {
+      if (!need_value() || !parse_double(value, options.error_percent) ||
+          options.error_percent <= 0.0) {
+        fmt::print(stderr, "error: invalid --error-percent\n");
+        return 2;
+      }
+    } else if (arg == "--precision-metric") {
+      if (!need_value() || value.empty()) {
+        fmt::print(stderr, "error: --precision-metric needs a value\n");
+        return 2;
+      }
+      options.precision_metric = value;
     } else if (arg == "--threads") {
       if (!need_value()) {
         return 2;
@@ -314,6 +483,20 @@ int run_command(std::span<const std::string> args) {
 
   if (options.warmup >= options.arrivals) {
     fmt::print(stderr, "error: --warmup must be < --arrivals\n");
+    return 2;
+  }
+  if (explicit_seed && options.random_seed) {
+    fmt::print(stderr, "error: --seed and --random-seed are mutually exclusive\n");
+    return 2;
+  }
+  ReplicationMetric precision_metric{};
+  if (!parse_replication_metric(options.precision_metric, precision_metric)) {
+    fmt::print(stderr, "error: invalid --precision-metric '{}'\n",
+               options.precision_metric);
+    return 2;
+  }
+  if (options.precision_reps && options.max_reps < options.min_reps) {
+    fmt::print(stderr, "error: --max-reps must be >= --min-reps\n");
     return 2;
   }
   if (explicit_project && explicit_model_file) {
@@ -380,6 +563,13 @@ int run_command(std::span<const std::string> args) {
                  loaded.message, to_string(loaded.status));
       return 1;
     }
+    std::string experiment_error;
+    if (!apply_declared_experiment(loaded.file, options,
+                                   explicit_seed || options.random_seed,
+                                   explicit_reps, experiment_error)) {
+      fmt::print(stderr, "error: {}\n", experiment_error);
+      return 2;
+    }
     const std::vector<std::uint8_t> model_bytes = loaded.file.v2_bytes;
     build_model = [model_bytes]() -> std::unique_ptr<ReplicationModel> {
       const IrLoadResult re = load_model_buffer(model_bytes.data(),
@@ -411,6 +601,13 @@ int run_command(std::span<const std::string> args) {
                  options.model_file, loaded.message, to_string(loaded.status));
       return 1;
     }
+    std::string experiment_error;
+    if (!apply_declared_experiment(loaded.file, options,
+                                   explicit_seed || options.random_seed,
+                                   explicit_reps, experiment_error)) {
+      fmt::print(stderr, "error: {}\n", experiment_error);
+      return 2;
+    }
     const std::vector<std::uint8_t> model_bytes = loaded.file.v2_bytes;
     build_model = [model_bytes]() -> std::unique_ptr<ReplicationModel> {
       const IrLoadResult re = load_model_buffer(model_bytes.data(),
@@ -426,6 +623,11 @@ int run_command(std::span<const std::string> args) {
     model_label = fmt::format("file:{} ({})", options.model_file,
                               inspect_model(loaded.file));
   } else {
+    if (!options.experiment.empty()) {
+      fmt::print(stderr,
+                 "error: --experiment requires --model-file or --project\n");
+      return 2;
+    }
     if (!options.model.starts_with(kBuiltinPrefix)) {
       fmt::print(stderr,
                  "error: --model must be 'built-in:<name>' or use "
@@ -452,10 +654,25 @@ int run_command(std::span<const std::string> args) {
     model_label = options.model;
   }
 
+  if (!parse_replication_metric(options.precision_metric, precision_metric)) {
+    fmt::print(stderr, "error: invalid precision metric '{}'\n",
+               options.precision_metric);
+    return 2;
+  }
+  if (options.precision_reps && options.max_reps < options.min_reps) {
+    fmt::print(stderr, "error: max replications must be >= min replications\n");
+    return 2;
+  }
+  if (options.random_seed) {
+    options.seed = random_run_seed();
+  }
+
   fmt::print(
-      "lpcli run: model={} seed={} reps={} arrivals={} warmup={} "
+      "lpcli run: model={} seed={} seed_mode={} reps={} replication_mode={} arrivals={} warmup={} "
       "confidence={:.2f}\n",
-      model_label, options.seed, options.reps, options.arrivals,
+      model_label, options.seed, options.random_seed ? "random" : "fixed",
+      options.precision_reps ? options.max_reps : options.reps,
+      options.precision_reps ? "precision" : "fixed", options.arrivals,
       options.warmup, options.confidence);
 
   if (explicit_project) {
@@ -487,13 +704,15 @@ int run_command(std::span<const std::string> args) {
       "{:>4}  {:>20}  {:>10}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}\n", "rep",
       "seed", "departures", "throughput", "L", "Lq", "W", "Wq");
   std::vector<ReplicationMetrics> results;
-  results.reserve(options.reps);
+  const std::uint64_t run_limit =
+      options.precision_reps ? options.max_reps : options.reps;
+  results.reserve(run_limit);
   const bool sequential =
-      options.threads <= 1 || !options.trajectory.empty();
+      options.threads <= 1 || !options.trajectory.empty() || options.precision_reps;
   if (sequential) {
     // Sequential path reuses the primary `model` so per-run state (e.g. the
     // continuous-model trajectory) stays visible after the loop.
-    for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
+    for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
       ReplicationConfig config;
       config.seed = replication_seed(options.seed, rep);
       config.arrivals = options.arrivals;
@@ -506,6 +725,13 @@ int run_command(std::span<const std::string> args) {
           metrics.mean_in_system, metrics.mean_in_queue, metrics.mean_sojourn,
           metrics.mean_wait);
       results.push_back(metrics);
+      if (options.precision_reps &&
+          replication_precision_reached(
+              summarize_replications(results, options.confidence),
+              precision_metric, static_cast<std::size_t>(options.min_reps),
+              options.error_percent)) {
+        break;
+      }
     }
   } else {
     // Parallel workers each own an isolated model instance (ADR-0009
@@ -515,8 +741,8 @@ int run_command(std::span<const std::string> args) {
     base_config.arrivals = options.arrivals;
     base_config.warmup_arrivals = options.warmup;
     results = run_replications_parallel(build_model, base_config,
-                                        options.reps, options.threads);
-    for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
+                                        run_limit, options.threads);
+    for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
       const ReplicationMetrics& metrics = results[rep];
       fmt::print(
           "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
@@ -544,6 +770,13 @@ int run_command(std::span<const std::string> args) {
   };
   fmt::print("summary: {} replications, {:.0f}% CI\n", summary.reps,
              options.confidence * 100.0);
+  if (options.precision_reps) {
+    const double achieved = relative_ci_error_percent(
+        replication_metric_summary(summary, precision_metric));
+    fmt::print("precision: metric={} error={:.4f}% target={:.4f}% stop={}\n",
+               options.precision_metric, achieved, options.error_percent,
+               achieved <= options.error_percent ? "target-reached" : "max-reps");
+  }
   print_row("throughput", summary.throughput, theory.throughput,
             is_builtin_mm1);
   print_row("L", summary.mean_in_system, theory.l, is_builtin_mm1);

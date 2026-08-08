@@ -26,10 +26,7 @@ struct AppEndpoints {
 
 #[tauri::command]
 fn app_config() -> AppEndpoints {
-    APP_ENDPOINTS
-        .get()
-        .cloned()
-        .expect("app endpoints not set")
+    APP_ENDPOINTS.get().cloned().expect("app endpoints not set")
 }
 
 #[derive(Serialize)]
@@ -126,7 +123,11 @@ fn create_directory(project_dir: String, rel: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn rename_project_entry(project_dir: String, old_rel: String, new_rel: String) -> Result<(), String> {
+fn rename_project_entry(
+    project_dir: String,
+    old_rel: String,
+    new_rel: String,
+) -> Result<(), String> {
     project_fs::rename_project_entry_impl(&PathBuf::from(&project_dir), &old_rel, &new_rel)
 }
 
@@ -161,14 +162,59 @@ fn repo_root() -> PathBuf {
     dir
 }
 
+fn bundled_executable(root: &std::path::Path, relative: &[&str]) -> Option<PathBuf> {
+    let mut path = root.to_path_buf();
+    for component in relative {
+        path.push(component);
+    }
+    path.is_file().then_some(path)
+}
+
+fn prepend_runtime_path(command: &mut Command, root: &std::path::Path) {
+    let runtime_bin = root.join("runtime").join("bin");
+    if !runtime_bin.is_dir() {
+        return;
+    }
+    let mut paths = vec![runtime_bin];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    if let Ok(joined) = std::env::join_paths(paths) {
+        command.env("PATH", joined);
+    }
+}
+
 fn main() {
     let root = repo_root();
-    let node = std::env::var("LOGICPILOT_NODE").unwrap_or_else(|_| "node".to_string());
+    let bundled_node = if cfg!(windows) {
+        bundled_executable(&root, &["runtime", "node", "node.exe"])
+    } else {
+        bundled_executable(&root, &["runtime", "node", "node"])
+    };
+    let node = std::env::var_os("LOGICPILOT_NODE")
+        .map(PathBuf::from)
+        .or(bundled_node)
+        .unwrap_or_else(|| PathBuf::from("node"));
     let script = root.join("app").join("server.mjs");
 
-    let mut app_server = Command::new(&node)
-        .arg(&script)
-        .env("LOGICPILOT_ROOT", &root)
+    let mut command = Command::new(&node);
+    command.arg(&script).env("LOGICPILOT_ROOT", &root);
+    if let Some(lpcli) = if cfg!(windows) {
+        bundled_executable(&root, &["runtime", "bin", "lpcli.exe"])
+    } else {
+        bundled_executable(&root, &["runtime", "bin", "lpcli"])
+    } {
+        command.env("LPCLI", lpcli);
+    }
+    if let Some(lp_server) = if cfg!(windows) {
+        bundled_executable(&root, &["runtime", "bin", "lp-server.exe"])
+    } else {
+        bundled_executable(&root, &["runtime", "bin", "lp-server"])
+    } {
+        command.env("LP_SERVER", lp_server);
+    }
+    prepend_runtime_path(&mut command, &root);
+    let mut app_server = command
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
@@ -242,20 +288,16 @@ fn main() {
             read_project_hashes
         ])
         .setup(move |app| {
-            WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::App("index.html".into()),
-            )
-            .title("LogicPilot")
-            .inner_size(1440.0, 900.0)
-            .min_inner_size(1024.0, 700.0)
-            .decorations(false)
-            // White pre-paint frame: the webview paints the resolved theme
-            // (usually light) as soon as the HTML loads. A dark background
-            // here flashed a dark-blue window for light-theme users.
-            .background_color(tauri::window::Color(255, 255, 255, 255))
-            .build()?;
+            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("LogicPilot")
+                .inner_size(1440.0, 900.0)
+                .min_inner_size(1024.0, 700.0)
+                .decorations(false)
+                // White pre-paint frame: the webview paints the resolved theme
+                // (usually light) as soon as the HTML loads. A dark background
+                // here flashed a dark-blue window for light-theme users.
+                .background_color(tauri::window::Color(255, 255, 255, 255))
+                .build()?;
             Ok(())
         })
         .build(tauri::generate_context!())

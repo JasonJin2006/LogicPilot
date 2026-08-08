@@ -37,8 +37,20 @@ describe('project sync engine', () => {
 
   it('saveProject round-trips without dropping members', () => {
     let document = createDocument('MM1');
-    document = addNode(document, { kind: 'resource', name: 'Server', x: 0, y: 0, params: { capacity: 1 } });
-    document = addNode(document, { kind: 'agent', name: 'Worker', x: 0, y: 100, params: { count: 1 } });
+    document = addNode(document, {
+      kind: 'resource',
+      name: 'Server',
+      x: 0,
+      y: 0,
+      params: { capacity: 1 },
+    });
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 0,
+      y: 100,
+      params: { count: 1 },
+    });
     document = addNode(document, {
       kind: 'queue',
       name: 'Q',
@@ -63,7 +75,13 @@ describe('project sync engine', () => {
 
   it('save then load round-trips the member set', () => {
     let document = createDocument('M');
-    document = addNode(document, { kind: 'resource', name: 'R', x: 0, y: 0, params: { capacity: 2 } });
+    document = addNode(document, {
+      kind: 'resource',
+      name: 'R',
+      x: 0,
+      y: 0,
+      params: { capacity: 2 },
+    });
     document = addNode(document, { kind: 'agent', name: 'P', x: 0, y: 100, params: { count: 1 } });
     document = addNode(document, {
       kind: 'sink',
@@ -83,9 +101,46 @@ describe('project sync engine', () => {
     expect(keys(loaded.document!.nodes)).toEqual(keys(document.nodes));
   });
 
+  it('blocks ambiguous duplicate names instead of saving a lossy hierarchy', () => {
+    let document = createDocument('M');
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 0,
+      y: 0,
+      params: { count: 1 },
+    });
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 200,
+      y: 0,
+      params: { count: 2 },
+    });
+    document = addNode(document, {
+      kind: 'queue',
+      name: 'Q',
+      x: 100,
+      y: 100,
+      params: {},
+      container: 'Worker',
+    });
+
+    const saved = saveProject(document, null);
+    expect(saved.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'LP4002', severity: 'error' }),
+    );
+  });
+
   it('saveProject stamps scene files with a stable uid and records containerIds', () => {
     let document = createDocument('M');
-    document = addNode(document, { kind: 'agent', name: 'Worker', x: 0, y: 100, params: { count: 1 } });
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 0,
+      y: 100,
+      params: { count: 1 },
+    });
     document = addNode(document, {
       kind: 'queue',
       name: 'Q',
@@ -104,11 +159,11 @@ describe('project sync engine', () => {
 
   it('loadProject repairs a scene renamed outside the IDE via its uid', () => {
     const bundle = createProject('M');
-    bundle.files['model/main.lp'] =
-      'model M {\n  instance Worker = "model/scenes/Worker.lp"\n}\n';
+    bundle.files['model/main.lp'] = 'model M {\n  instance Worker = "model/scenes/Worker.lp"\n}\n';
     const oldPath = 'model/scenes/Worker.lp';
     const uid = sceneUid(oldPath);
-    bundle.files['model/scenes/Renamed.lp'] = `// @uid ${uid}\n  agent Worker {\n    count = 1\n    queue Q {\n      capacity = 1\n    }\n  }\n`;
+    bundle.files['model/scenes/Renamed.lp'] =
+      `// @uid ${uid}\n  agent Worker {\n    count = 1\n    queue Q {\n      capacity = 1\n    }\n  }\n`;
     const loaded = loadProject(bundle);
     expect(loaded.ok).toBe(true);
     expect(loaded.document!.nodes.find((node) => node.kind === 'agent')).toBeDefined();
@@ -123,7 +178,7 @@ describe('project sync engine', () => {
       '  param seed: int = 7\n' +
       '  agent Drone {\n    count = 3\n    on_tick {\n      flip active\n    }\n  }\n' +
       '  continuous Dynamics {\n    state y: float = 1.0\n    d y/dt = -k*y\n  }\n' +
-      '  experiment Tune {\n    budget = 20\n  }\n' +
+      '  experiment Tune {\n    type = simulation\n    replications = 10\n    seed = 42\n  }\n' +
       '}\n';
     const loaded = loadProject(bundle);
     expect(loaded.ok).toBe(true);

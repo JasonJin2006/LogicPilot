@@ -9,6 +9,7 @@
     "boost-beast",
     "fmt",
     "spdlog",
+    "nlohmann-json",
     {
       "name": "catch2",
       "version>=": "3.5.0"

@@ -812,8 +812,24 @@ export function BlockIcon({ kind }: { kind: string }) {
           <path d="M8 30h24" />
           <path d="M8 8v22" />
           <rect x="8" y="22" width="7" height="8" fill="currentColor" stroke="none" opacity="0.9" />
-          <rect x="15" y="16" width="6" height="14" fill="currentColor" stroke="none" opacity="0.6" />
-          <rect x="21" y="24" width="9" height="6" fill="currentColor" stroke="none" opacity="0.35" />
+          <rect
+            x="15"
+            y="16"
+            width="6"
+            height="14"
+            fill="currentColor"
+            stroke="none"
+            opacity="0.6"
+          />
+          <rect
+            x="21"
+            y="24"
+            width="9"
+            height="6"
+            fill="currentColor"
+            stroke="none"
+            opacity="0.35"
+          />
         </Glyph>
       );
     case 'histogram':

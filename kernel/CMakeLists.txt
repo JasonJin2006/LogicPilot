@@ -11,8 +11,30 @@
 #   add_subdirectory(apps/lpcli)
 #   add_subdirectory(apps/lp-server)  (Phase 2c, task #7)
 
+find_package(nlohmann_json CONFIG REQUIRED)
+
+set(LOGICPILOT_WASMTIME_ROOT "" CACHE PATH
+  "Root of a Wasmtime C API distribution (include/ and lib/)"
+)
+if(LOGICPILOT_WASMTIME_ROOT)
+  find_path(LOGICPILOT_WASMTIME_INCLUDE_DIR wasmtime.hh
+    PATHS "${LOGICPILOT_WASMTIME_ROOT}/include" NO_DEFAULT_PATH
+  )
+  if(WIN32 AND EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll.lib")
+    set(LOGICPILOT_WASMTIME_LIBRARY
+      "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll.lib")
+  else()
+    find_library(LOGICPILOT_WASMTIME_LIBRARY NAMES wasmtime
+      PATHS "${LOGICPILOT_WASMTIME_ROOT}/lib" NO_DEFAULT_PATH
+    )
+  endif()
+endif()
+
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
+  src/runtime/method_plugin_manifest.cpp
+  src/runtime/dynamic_method_plugin.cpp
+  src/runtime/wasm_method_plugin.cpp
   src/runtime/method_registry.cpp
   src/runtime/runtime_manager.cpp
   src/runtime/simulation_kernel.cpp
@@ -21,6 +43,20 @@ target_include_directories(logicpilot_kernel PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_compile_features(logicpilot_kernel PUBLIC cxx_std_20)
+target_link_libraries(logicpilot_kernel PUBLIC nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+if(LOGICPILOT_WASMTIME_INCLUDE_DIR AND LOGICPILOT_WASMTIME_LIBRARY)
+  target_compile_definitions(logicpilot_kernel PRIVATE LOGICPILOT_HAS_WASMTIME=1)
+  target_include_directories(logicpilot_kernel SYSTEM PRIVATE ${LOGICPILOT_WASMTIME_INCLUDE_DIR})
+  target_link_libraries(logicpilot_kernel PRIVATE ${LOGICPILOT_WASMTIME_LIBRARY})
+  set(LOGICPILOT_HAS_WASMTIME TRUE)
+  if(WIN32 AND EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll")
+    configure_file("${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll"
+      "${CMAKE_CURRENT_BINARY_DIR}/wasmtime.dll" COPYONLY)
+  endif()
+  message(STATUS "Wasmtime method host: ${LOGICPILOT_WASMTIME_LIBRARY}")
+else()
+  message(STATUS "Wasmtime method host: disabled (set LOGICPILOT_WASMTIME_ROOT)")
+endif()
 
 # Minimal smoke-test binary: proves the C++20 toolchain + vcpkg wiring works.
 add_executable(hello_kernel src/hello_kernel.cpp)
@@ -71,8 +107,21 @@ target_link_libraries(logicpilot_phase1b PUBLIC
 
 # lpcli (Phase 1b ships the `run` subcommand; compile lands in Phase 2).
 add_subdirectory(apps/lpcli)
+if(LOGICPILOT_HAS_WASMTIME AND WIN32 AND
+   EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll")
+  configure_file("${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll"
+    "${CMAKE_CURRENT_BINARY_DIR}/apps/lpcli/wasmtime.dll" COPYONLY)
+endif()
 
 if(LOGICPILOT_BUILD_TESTS)
+  add_library(logicpilot_test_cabi_plugin SHARED
+    tests/plugins/test_cabi_plugin.cpp
+  )
+  target_include_directories(logicpilot_test_cabi_plugin PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+  target_compile_features(logicpilot_test_cabi_plugin PRIVATE cxx_std_20)
+
   add_executable(logicpilot_phase1b_tests
     tests/test_agent_runtime.cpp
     tests/test_state_machine.cpp
@@ -81,6 +130,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_process_flow.cpp
     tests/test_replication_parallel.cpp
     tests/test_method_registry.cpp
+    tests/test_dynamic_method_plugin.cpp
     tests/test_statechart_runtime.cpp
     tests/test_simulation_kernel.cpp
     tests/test_mm1_acceptance.cpp
@@ -96,7 +146,22 @@ if(LOGICPILOT_BUILD_TESTS)
   )
   target_compile_definitions(logicpilot_phase1b_tests PRIVATE
     LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
+    TEST_CABI_PLUGIN_PATH="$<TARGET_FILE:logicpilot_test_cabi_plugin>"
   )
+  add_dependencies(logicpilot_phase1b_tests logicpilot_test_cabi_plugin)
+  if(LOGICPILOT_HAS_WASMTIME)
+    target_sources(logicpilot_phase1b_tests PRIVATE tests/test_wasm_method_plugin.cpp)
+    target_compile_definitions(logicpilot_phase1b_tests PRIVATE
+      TEST_WASM_PLUGIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/test_wasm_method.wat"
+    )
+    if(WIN32 AND EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll")
+      add_custom_command(TARGET logicpilot_phase1b_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll"
+          "$<TARGET_FILE_DIR:logicpilot_phase1b_tests>"
+      )
+    endif()
+  endif()
   catch_discover_tests(logicpilot_phase1b_tests)
 endif()
 
@@ -119,7 +184,6 @@ endif()
 # vcpkg's boost umbrella ships BoostConfig.cmake; CONFIG mode avoids the
 # removed FindBoost module (CMP0167).
 find_package(Boost CONFIG REQUIRED)
-
 add_library(lp_server_core STATIC
   apps/lp-server/wire_frames.cpp
   apps/lp-server/sim_runner.cpp
@@ -133,6 +197,7 @@ target_link_libraries(lp_server_core PUBLIC
   logicpilot_methods
   Boost::headers
   fmt::fmt
+  nlohmann_json::nlohmann_json
 )
 if(LOGICPILOT_BUILD_DSL)
   # The `compile` control command compiles client DSL in-process; the IDE

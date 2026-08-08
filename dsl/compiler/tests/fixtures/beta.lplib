@@ -1,0 +1,6 @@
+library beta {
+  version = 2
+  block shared {
+    value: int
+  }
+}

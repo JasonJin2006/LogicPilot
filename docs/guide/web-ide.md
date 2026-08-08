@@ -54,7 +54,9 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 
 画布左上角 **Run** 打开运行对话框：seed / reps / arrivals / warmup / speed
 参数 + Start / Pause / Resume / Step / Stop。空画布运行网关内置模型；有画布
-模型时先编译再带模型参数运行，运行中画布块显示实时队列长度与忙/闲状态点。
+模型时先编译再带模型参数运行。M/M/c 指数流程在运行中显示实时队列长度与忙/闲
+状态点；其他 process 拓扑、Agent、Atomic 和 Continuous 模型目前完成批量复制后
+返回统计摘要，不提供 Pause/Step 粒度的 Tick 流。
 
 ## AI 面板（右侧）
 

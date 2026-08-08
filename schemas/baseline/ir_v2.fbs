@@ -15,6 +15,9 @@ enum ExperimentKind : byte {
   ParameterVariation = 3
 }
 
+enum SeedPolicy : byte { Fixed = 0, Random = 1 }
+enum ReplicationPolicy : byte { Fixed = 0, Precision = 1 }
+
 table SourceSpan {
   line: uint32;
   column: uint32;
@@ -114,6 +117,17 @@ table Equation {
   initial_value: double;
 }
 
+// Opaque, versioned data owned by a modeling-method plugin. The core IR keeps
+// topology, lifecycle, and typed ports stable while specialized paradigms can
+// attach meshes, tensors, GIS layers, FMU metadata, solver hints, and future
+// structures without adding a hard-coded table for every method.
+table ExtensionPayload {
+  type_uri: string;       // globally stable owner/type identifier
+  schema_version: uint32;
+  encoding: string;       // e.g. "flatbuffers", "json", "cbor", "fmu"
+  data: [ubyte];
+}
+
 // The one container: children + couplings + behavior + continuous, with the
 // executable semantics delegated to a registered engine via `semantics`.
 table Node {
@@ -127,10 +141,19 @@ table Node {
   behavior: Statechart;
   behaviors: [BehaviorBinding];
   continuous: [Equation];
+  extensions: [ExtensionPayload];
 }
 
 // Experiments are part of the model (v1 keeps them as a compile sidecar
 // until Phase B; v2 carries them natively).
+table VariationAxis {
+  name: string;
+  variable: string;
+  range_min: double;
+  range_max: double;
+  step: double = 1.0;
+}
+
 table Experiment {
   kind: ExperimentKind;
   name: string;
@@ -142,6 +165,14 @@ table Experiment {
   budget: uint32;
   replications: uint32;
   seed: uint64;
+  seed_policy: SeedPolicy = Fixed;
+  replication_policy: ReplicationPolicy = Fixed;
+  min_replications: uint32 = 5;
+  max_replications: uint32 = 100;
+  confidence: double = 0.95;
+  error_percent: double = 5.0;
+  precision_metric: string;
+  axes: [VariationAxis];
 }
 
 table ModelFile {

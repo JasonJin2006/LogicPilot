@@ -330,8 +330,7 @@ function PanelArea({ area }: { area: AreaId }) {
   const filesOpen = useUiStore((s) => s.openFiles.length > 0);
   const welcomeOpen = area === 'center' && centerPanels.includes('welcome');
   // Blank until a tab is opened: the welcome page is a closable tab too.
-  const centerEmpty =
-    area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen;
+  const centerEmpty = area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen;
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
       {!state.collapsed &&

@@ -14,6 +14,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <charconv>
 
 #include <fmt/format.h>
 
@@ -32,6 +33,7 @@ void print_usage() {
       "                        [--project <path.lpproj>]\n"
       "                        [--diagnostics-json <path>]\n"
       "                        [--experiments-json <path>]\n"
+      "                        [--param <name>=<number>]...\n"
       "  compiles a LogicPilot DSL source to FlatBuffers IR (LP2R)\n"
       "  -o, --output <path>  output file (default <input>.ir.bin)\n"
       "  --project <path.lpproj>  compile the bundled DSL instead of <input>\n"
@@ -58,6 +60,7 @@ int compile_command(std::span<const std::string> args) {
   std::string experiments_json;
   std::string project_path;
   std::vector<std::string> library_dirs;
+  dsl::ParameterOverrides parameter_overrides;
 
   for (std::size_t i = 0; i < args.size(); ++i) {
     const std::string arg = args[i];
@@ -94,6 +97,30 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       library_dirs.push_back(args[++i]);
+    } else if (arg == "--param") {
+      if (i + 1 >= args.size()) {
+        fmt::print(stderr, "error: --param needs name=value\n");
+        return 2;
+      }
+      const std::string assignment = args[++i];
+      const auto equal = assignment.find('=');
+      if (equal == std::string::npos || equal == 0 ||
+          equal + 1 >= assignment.size()) {
+        fmt::print(stderr, "error: --param needs name=value\n");
+        return 2;
+      }
+      const std::string name = assignment.substr(0, equal);
+      try {
+        std::size_t consumed = 0;
+        const double value = std::stod(assignment.substr(equal + 1), &consumed);
+        if (consumed != assignment.size() - equal - 1 ||
+            !parameter_overrides.emplace(name, value).second) {
+          throw std::invalid_argument("duplicate or malformed");
+        }
+      } catch (...) {
+        fmt::print(stderr, "error: invalid --param '{}'\n", assignment);
+        return 2;
+      }
     } else if (arg.starts_with("-")) {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -143,14 +170,14 @@ int compile_command(std::span<const std::string> args) {
     }
     compiled =
         dsl::compile_source(bundle.model_source, bundle.model_path,
-                            library_dirs);
+                            library_dirs, parameter_overrides);
     display_path = bundle.model_path;
     if (output.empty()) {
       std::filesystem::path project{project_path};
       output = project.replace_extension(".lpir").string();
     }
   } else {
-    compiled = dsl::compile_file(input, library_dirs);
+    compiled = dsl::compile_file(input, library_dirs, parameter_overrides);
   }
   if (output.empty()) {
     output = default_output_path(input);

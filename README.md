@@ -2,8 +2,9 @@
 
 AI 原生 · Web 化 · 高性能的**多方法建模仿真平台**（Simulation OS）。
 
-用一套薄 DSL 描述模型，C++ 内核高速执行，浏览器/Tauri 桌面端拖拽建模与实时
-可视化，AI 生成 → 编译修复 → 运行校验闭环开箱即用。技术路线上与
+用一套薄 DSL 描述模型，C++ 内核高速执行，浏览器/Tauri 桌面端拖拽建模，并为
+M/M/c 指数流程提供实时流式可视化（其他模型返回批量运行摘要）。AI 生成 → 编译
+修复 → 运行校验闭环开箱即用。技术路线上与
 AnyLogic / Simio 对齐，但采用更现代的 **DSL → IR → C++ Runtime → Web/Tauri
 IDE** 分层，而不是 Java/生成代码。
 
@@ -51,7 +52,7 @@ flowchart LR
 ```powershell
 cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
 cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 200+ 测试
+ctest --preset windows-msvc-dev      # 294 项测试
 ```
 
 ### 第一条仿真
@@ -74,7 +75,8 @@ pnpm --filter @logicpilot/ide dev          # http://localhost:5173
 ```
 
 在 IDE 里可以：拖拽建模（39 个 process 块 + presentation/statechart/action
-库）、DSL 编译诊断、实时运行可视化、AI 面板生成/优化/归因。桌面客户端见
+库）、DSL 编译诊断、M/M/c 流式运行可视化、通用模型批量运行摘要、AI 面板
+生成/优化/归因。桌面客户端见
 [desktop/README.md](desktop/README.md)。
 
 ### 离散事件（process）块语义
@@ -106,7 +108,7 @@ seize 持有期故障）、`seize/release`（资源持有与归还）、`batch/u
 
 ## 文档
 
-- 在线手册（VitePress）：`docs/manual`（快速开始 / CLI / DSL / Web IDE /
+- 在线手册（VitePress）：`docs/guide`（快速开始 / CLI / DSL / Web IDE /
   AI / 确定性 / FAQ），构建：`pnpm docs:build`
 - 总计划与现状：[docs/roadmap.md](docs/roadmap.md)
 - 工程化路线（P0–P3 执行状态）：[docs/dev-plan.md](docs/dev-plan.md)
@@ -114,7 +116,7 @@ seize 持有期故障）、`seize/release`（资源持有与归还）、`batch/u
 
 ## 测试与门禁
 
-- **kernel/DSL**：206 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
+- **kernel/DSL**：294 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
 - **前端**：editor / renderer2d / protocol vitest + 浏览器 E2E
 - **契约**：F1/F2 schema conform + 基线 SHA256 双门禁；C++↔TS 互操作逐字段校验
 - **性能**：bench 门禁（≥ 1M events/s，`bench/`）

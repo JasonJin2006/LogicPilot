@@ -32,29 +32,34 @@ struct ModelAgentState {
 };
 
 class AgentReplicationModel final : public ReplicationModel {
- public:
-  AgentReplicationModel(std::vector<std::uint8_t> v2_bytes,
-                        const ir::v2::Node* v2_root);
+public:
+  AgentReplicationModel(std::vector<std::uint8_t> v2_bytes, const ir::v2::Node* v2_root);
+  ~AgentReplicationModel() override;
 
-  ReplicationMetrics run(const ReplicationConfig& config,
-                         TraceRecorder* trace) override;
+  ReplicationMetrics run(const ReplicationConfig& config, TraceRecorder* trace) override;
+
+  // Incremental lifecycle used by the shared SimulationKernel scheduler.
+  // reset() creates the population, step() advances exactly one simulation
+  // tick and returns false once the configured budget is exhausted.
+  bool reset(const ReplicationConfig& config);
+  bool step();
+  [[nodiscard]] bool done() const;
+  ReplicationMetrics finish(TraceRecorder* trace = nullptr);
 
   // Final positions / state after the last run (test inspection).
-  [[nodiscard]] std::size_t agent_count() const {
-    return last_positions_.size();
-  }
-  [[nodiscard]] const std::vector<Position>& last_positions() const {
-    return last_positions_;
-  }
+  [[nodiscard]] std::size_t agent_count() const { return last_positions_.size(); }
+  [[nodiscard]] const std::vector<Position>& last_positions() const { return last_positions_; }
   [[nodiscard]] const ModelAgentState& agent_state(std::size_t index) const {
     return last_agents_state_.at(index);
   }
 
- private:
+private:
+  struct Session;
   std::vector<std::uint8_t> bytes_;
   const ir::v2::Node* v2_root_{nullptr};
   std::vector<Position> last_positions_;
   std::vector<ModelAgentState> last_agents_state_;
+  std::unique_ptr<Session> session_;
 };
 
 }  // namespace logicpilot

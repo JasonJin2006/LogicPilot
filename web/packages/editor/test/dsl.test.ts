@@ -30,7 +30,12 @@ describe('DSL v2 generation', () => {
       name: 'Handle',
       x: 200,
       y: 40,
-      params: { resource: 'Server', time: 'exponential(1.0)' },
+      params: {
+        resource: 'Server',
+        numberOfUnits: 1,
+        queueCapacity: 100,
+        time: 'exponential(1.0)',
+      },
     });
     doc = addNode(doc, { kind: 'sink', name: 'Done', x: 300, y: 40 });
     const nodes = doc.nodes;
@@ -49,11 +54,13 @@ describe('DSL v2 generation', () => {
     expect(source).toContain('capacity = 1000000');
     expect(source).toContain('service Handle {');
     expect(source).toContain('resource = Server');
+    expect(source).toContain('numberOfUnits = 1');
+    expect(source).toContain('queueCapacity = 100');
     expect(source).toContain('time = exponential(1.0)');
     expect(source).toContain('sink Done { }');
-    expect(source).toContain("couple Arrivals.out -> WaitLine.in");
-    expect(source).toContain("couple WaitLine.out -> Handle.in");
-    expect(source).toContain("couple Handle.out -> Done.in");
+    expect(source).toContain('couple Arrivals.out -> WaitLine.in');
+    expect(source).toContain('couple WaitLine.out -> Handle.in');
+    expect(source).toContain('couple Handle.out -> Done.in');
     expect(source).toContain('}');
   });
 
@@ -100,9 +107,9 @@ describe('DSL v2 generation', () => {
     doc = connect(doc, doc.nodes[1]!.id, doc.nodes[3]!.id, 'outF', 'in').document;
 
     const source = generateDsl(doc);
-    expect(source).toContain("couple In.out -> Route.in");
-    expect(source).toContain("couple Route.outT -> Yes.in");
-    expect(source).toContain("couple Route.outF -> No.in");
+    expect(source).toContain('couple In.out -> Route.in');
+    expect(source).toContain('couple Route.outT -> Yes.in');
+    expect(source).toContain('couple Route.outF -> No.in');
   });
 
   it('orders process stages by coupling edges (topological, x fallback)', () => {
@@ -319,12 +326,9 @@ describe('DSL v2 generation', () => {
     const parsed = parseDsl(source);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const members = new Set(
-      parsed.document.nodes.map((node) => `${node.kind}:${node.name}`),
-    );
+    const members = new Set(parsed.document.nodes.map((node) => `${node.kind}:${node.name}`));
     for (const node of doc.nodes) {
       expect(members.has(`${node.kind}:${node.name}`)).toBe(true);
     }
   });
-
 });

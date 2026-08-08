@@ -4,7 +4,7 @@ layout: home
 hero:
   name: LogicPilot
   text: AI 原生 · Web 化 · 高性能仿真平台
-  tagline: 用 DSL 描述模型、C++ 高速执行、浏览器实时可视化、AI 自动建模与优化
+  tagline: 用 DSL 描述模型、C++ 高速执行、浏览器流式/批量可视化、AI 自动建模与优化
   actions:
     - theme: brand
       text: 快速开始
@@ -20,8 +20,8 @@ features:
     details: 固定种子逐位可复现，xoshiro256++ + int64 纳秒定点时间 + FIFO tie-break，理论验收与 bit-exact 对拍贯穿 CI。
   - title: AI 建模闭环
     details: 自然语言 → DSL → 结构化诊断 → 自动修复 → 运行，规则 provider 离线可用，LLM provider 可选；自动优化与瓶颈归因开箱即用。
-  - title: Web 实时可视化
-    details: WebSocket + FlatBuffers 推流，拖拽建模画布、DSL 编译、实时运行徽标、AI 生成/优化。
+  - title: Web 运行可视化
+    details: M/M/c 经 WebSocket + FlatBuffers 实时推流；其他模型返回批量摘要，并共享拖拽画布、DSL 编译和 AI 工具。
   - title: 契约冻结
     details: F1（IR）/F2（wire）schema 双门禁冻结，C++ ↔ TS 运行时互操作由 CI 逐字段校验（v1 契约已全量退役）。
 ---

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "logicpilot/core/random/distributions.h"
@@ -46,15 +47,13 @@ const char* v2_node_name(const v2::Node* node) {
 }
 
 bool v2_node_is(const v2::Node* node, const char* block) {
-  return node != nullptr && node->semantics() != nullptr &&
-         node->semantics()->block() != nullptr &&
+  return node != nullptr && node->semantics() != nullptr && node->semantics()->block() != nullptr &&
          std::strcmp(node->semantics()->block()->c_str(), block) == 0;
 }
 
 }  // namespace
 
-IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec,
-                                 Xoshiro256PlusPlus& engine) {
+IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec, Xoshiro256PlusPlus& engine) {
   if (spec.ports() != nullptr) {
     for (const v2::Port* port : *spec.ports()) {
       if (port->name() != nullptr) {
@@ -71,8 +70,7 @@ IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec,
       }
     }
   }
-  if (spec.behavior() != nullptr &&
-      spec.behavior()->transitions() != nullptr) {
+  if (spec.behavior() != nullptr && spec.behavior()->transitions() != nullptr) {
     for (const v2::Transition* transition : *spec.behavior()->transitions()) {
       if (transition->trigger() == v2::TriggerKind_Message &&
           transition->message_port() != nullptr) {
@@ -81,8 +79,7 @@ IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec,
         if (transition->actions() != nullptr) {
           for (const v2::Action* action : *transition->actions()) {
             if (const auto value = v2_var_value(action->set_value())) {
-              ext_effects_.emplace_back(action->set_value()->name()->str(),
-                                        *value);
+              ext_effects_.emplace_back(action->set_value()->name()->str(), *value);
             }
           }
         }
@@ -94,8 +91,7 @@ IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec,
               emit_ = true;
               out_port_ = resolve_port(action->emit_port()->str());
             } else if (const auto value = v2_var_value(action->set_value())) {
-              int_effects_.emplace_back(action->set_value()->name()->str(),
-                                        *value);
+              int_effects_.emplace_back(action->set_value()->name()->str(), *value);
             }
           }
         }
@@ -113,10 +109,11 @@ IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec,
   }
 }
 
-SimTime IrAtomicModelV2::time_advance() const { return ta_; }
+SimTime IrAtomicModelV2::time_advance() const {
+  return ta_;
+}
 
-void IrAtomicModelV2::external_transition(SimTime, PortId port,
-                                          std::uint64_t) {
+void IrAtomicModelV2::external_transition(SimTime, PortId port, std::uint64_t) {
   if (has_ext_ && port == ext_port_) {
     for (const auto& [name, value] : ext_effects_) {
       state_[name] = value;
@@ -143,8 +140,8 @@ std::optional<IrValue> IrAtomicModelV2::state(const std::string& name) const {
   return it->second;
 }
 
-std::unique_ptr<CoupledModel> build_atomic_tree_v2(
-    const v2::Node& root, Xoshiro256PlusPlus& engine) {
+std::unique_ptr<CoupledModel> build_atomic_tree_v2(const v2::Node& root,
+                                                   Xoshiro256PlusPlus& engine) {
   auto tree = std::make_unique<CoupledModel>();
   const auto add_atom = [&](const v2::Node* node) {
     auto atom = std::make_unique<IrAtomicModelV2>(*node, engine);
@@ -158,24 +155,31 @@ std::unique_ptr<CoupledModel> build_atomic_tree_v2(
     if (root.children() == nullptr) {
       return nullptr;
     }
+    std::unordered_set<std::string> atom_names;
     for (const v2::Node* child : *root.children()) {
-      if (!v2_node_is(child, "atomic")) {
-        return nullptr;  // mixed children are not v2-native yet
+      if (!v2_node_is(child, "atomic") || child->semantics() == nullptr ||
+          child->semantics()->library() == nullptr ||
+          child->semantics()->library()->str() != "devs") {
+        continue;  // another method owns this child
       }
       add_atom(child);
+      atom_names.insert(v2_node_name(child));
+    }
+    if (atom_names.empty()) {
+      return nullptr;
     }
     if (root.couplings() != nullptr) {
       for (const v2::Coupling* coupling : *root.couplings()) {
-        if (coupling->from_model() == nullptr ||
-            coupling->from_port() == nullptr ||
-            coupling->to_model() == nullptr ||
-            coupling->to_port() == nullptr) {
+        if (coupling->from_model() == nullptr || coupling->from_port() == nullptr ||
+            coupling->to_model() == nullptr || coupling->to_port() == nullptr) {
           continue;
         }
-        tree->couple(coupling->from_model()->str(),
-                     coupling->from_port()->str(),
-                     coupling->to_model()->str(),
-                     coupling->to_port()->str());
+        if (atom_names.count(coupling->from_model()->str()) == 0 ||
+            atom_names.count(coupling->to_model()->str()) == 0) {
+          continue;  // cross-method routing goes through the kernel bus
+        }
+        tree->couple(coupling->from_model()->str(), coupling->from_port()->str(),
+                     coupling->to_model()->str(), coupling->to_port()->str());
       }
     }
   } else {

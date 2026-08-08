@@ -14,9 +14,7 @@ export function DslEditor() {
   const document = useModelStore((state) => state.document);
   const activeFile = useUiStore((state) => state.activeFile);
   const updateDiskFile = useUiStore((state) => state.updateDiskFile);
-  const diskContent = useUiStore((state) =>
-    activeFile ? state.diskFiles[activeFile] : undefined,
-  );
+  const diskContent = useUiStore((state) => (activeFile ? state.diskFiles[activeFile] : undefined));
   const bundle = useProjectStore((state) => state.bundle);
   const updateFiles = useProjectStore((state) => state.updateFiles);
 

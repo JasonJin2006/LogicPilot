@@ -167,9 +167,17 @@ struct SimServer::Impl {
   // --- run control (worker <-> control router) ---
   struct RunParams {
     std::uint64_t seed{42};
+    bool random_seed{false};
     std::uint64_t reps{1};
+    bool precision_reps{false};
+    std::uint64_t min_reps{5};
+    std::uint64_t max_reps{100};
+    double error_percent{5.0};
+    ReplicationMetric precision_metric{ReplicationMetric::kWq};
+    std::string precision_metric_name{"Wq"};
     std::uint64_t arrivals{4000};
     std::uint64_t warmup{400};
+    double confidence{0.95};
     // Per-run model parameter overrides; 0 / -1 = use the served config.
     double lambda{0.0};
     double mu{0.0};
@@ -264,9 +272,17 @@ struct SimServer::Impl {
       params.reps = config.reps;
       params.arrivals = config.arrivals;
       params.warmup = config.warmup;
+      params.confidence = config.confidence;
       double value = 0.0;
       if (json_number_field(message, "seed", value) && value >= 0.0) {
         params.seed = static_cast<std::uint64_t>(value);
+      }
+      std::string mode;
+      if (json_string_field(message, "seedMode", mode)) {
+        if (mode != "fixed" && mode != "random") {
+          return json_error("seedMode must be 'fixed' or 'random'");
+        }
+        params.random_seed = mode == "random";
       }
       if (json_number_field(message, "reps", value) && value >= 1.0) {
         params.reps = static_cast<std::uint64_t>(value);
@@ -276,6 +292,39 @@ struct SimServer::Impl {
       }
       if (json_number_field(message, "warmup", value) && value >= 0.0) {
         params.warmup = static_cast<std::uint64_t>(value);
+      }
+      if (json_number_field(message, "confidence", value)) {
+        if (value <= 0.0 || value >= 1.0) {
+          return json_error("confidence must be between 0 and 1");
+        }
+        params.confidence = value;
+      }
+      if (json_string_field(message, "replicationMode", mode)) {
+        if (mode != "fixed" && mode != "precision") {
+          return json_error("replicationMode must be 'fixed' or 'precision'");
+        }
+        params.precision_reps = mode == "precision";
+      }
+      if (json_number_field(message, "minReps", value) && value >= 2.0) {
+        params.min_reps = static_cast<std::uint64_t>(value);
+      }
+      if (json_number_field(message, "maxReps", value) && value >= 2.0) {
+        params.max_reps = static_cast<std::uint64_t>(value);
+      }
+      if (json_number_field(message, "errorPercent", value) && value > 0.0) {
+        params.error_percent = value;
+      }
+      if (json_string_field(message, "precisionMetric", mode)) {
+        if (!parse_replication_metric(mode, params.precision_metric)) {
+          return json_error("invalid precisionMetric");
+        }
+        params.precision_metric_name = mode;
+      }
+      if (params.precision_reps && params.max_reps < params.min_reps) {
+        return json_error("maxReps must be >= minReps");
+      }
+      if (params.random_seed) {
+        params.seed = random_run_seed();
       }
       if (json_number_field(message, "lambda", value) && value > 0.0) {
         params.lambda = value;
@@ -424,6 +473,14 @@ struct SimServer::Impl {
     const SeedStreams streams{params.seed};
     std::vector<ReplicationMetrics> results;
     bool cancelled = false;
+    const std::uint64_t run_limit =
+        params.precision_reps ? params.max_reps : params.reps;
+    const auto precision_reached = [&]() {
+      return params.precision_reps && replication_precision_reached(
+          summarize_replications(results, params.confidence),
+          params.precision_metric, static_cast<std::size_t>(params.min_reps),
+          params.error_percent);
+    };
 
     // Generic-model batch path: models that are not the M/M/1 exponential
     // family (delay/split/selectOutput flows, agent/atomic/continuous)
@@ -452,12 +509,15 @@ struct SimServer::Impl {
         emit(build_run_finished_frame(failed), trace_run_finished(failed));
         return;
       }
-      for (std::uint64_t rep = 0; rep < params.reps; ++rep) {
+      for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
         ReplicationConfig rep_config;
         rep_config.seed = streams.derive_state(rep)[0];
         rep_config.arrivals = params.arrivals;
         rep_config.warmup_arrivals = params.warmup;
         results.push_back(model->run(rep_config, nullptr));
+        if (precision_reached()) {
+          break;
+        }
         {
           std::lock_guard lock{run_mutex_};
           if (stop_request_) {
@@ -475,10 +535,16 @@ struct SimServer::Impl {
       } else {
         finished.status = 0;  // Completed
         const ReplicationSummary summary =
-            summarize_replications(results, 0.95);
+            summarize_replications(results, params.confidence);
         auto& stats = finished.stats;
         stats.push_back({"reps", static_cast<double>(summary.reps)});
         stats.push_back({"confidence", summary.confidence});
+        if (params.precision_reps) {
+          stats.push_back({"precision.target_percent", params.error_percent});
+          stats.push_back({"precision.actual_percent",
+                           relative_ci_error_percent(replication_metric_summary(
+                               summary, params.precision_metric))});
+        }
         const auto add_metric = [&](const char* name,
                                     const MetricSummary& m) {
           stats.push_back({fmt::format("{}.mean", name), m.mean});
@@ -496,7 +562,7 @@ struct SimServer::Impl {
       return;
     }
 
-    for (std::uint64_t rep = 0; rep < params.reps; ++rep) {
+    for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
       StreamRunConfig run_config;
       run_config.seed = streams.derive_state(rep)[0];
       run_config.arrivals = params.arrivals;
@@ -514,6 +580,9 @@ struct SimServer::Impl {
         break;
       }
       results.push_back(runner_.metrics());
+      if (precision_reached()) {
+        break;
+      }
       run_sim_offset_ns_ += runner_.now_ns();  // keep run sim time monotonic
       {
         std::lock_guard lock{run_mutex_};
@@ -532,10 +601,17 @@ struct SimServer::Impl {
       finished.status = 2;  // Cancelled
     } else {
       finished.status = 0;  // Completed
-      const ReplicationSummary summary = summarize_replications(results, 0.95);
+      const ReplicationSummary summary =
+          summarize_replications(results, params.confidence);
       auto& stats = finished.stats;
       stats.push_back({"reps", static_cast<double>(summary.reps)});
       stats.push_back({"confidence", summary.confidence});
+      if (params.precision_reps) {
+        stats.push_back({"precision.target_percent", params.error_percent});
+        stats.push_back({"precision.actual_percent",
+                         relative_ci_error_percent(replication_metric_summary(
+                             summary, params.precision_metric))});
+      }
       const auto add_metric = [&](const char* name, const MetricSummary& m) {
         stats.push_back({fmt::format("{}.mean", name), m.mean});
         stats.push_back({fmt::format("{}.std", name), m.stddev});
@@ -628,7 +704,8 @@ struct SimServer::Impl {
     CountersFrame counters;
     counters.seq = ++seq_;
     counters.sim_time_ns = run_sim_offset_ns_ + runner_.now_ns();
-    runner_.fill_counters(counters.values, rep + 1, params.reps);
+    runner_.fill_counters(counters.values, rep + 1,
+                          params.precision_reps ? params.max_reps : params.reps);
     last_frame_sim_ns_ = counters.sim_time_ns;
     emit(build_counters_frame(counters), trace_counters(counters));
   }

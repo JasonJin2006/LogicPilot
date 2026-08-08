@@ -5,8 +5,8 @@
 // Usage: node scripts/test-ai-build.mjs [--lpcli <path>]
 import assert from 'node:assert/strict';
 
-import { buildModel } from './ai-build.mjs';
-import { ruleBasedProvider } from './ai-provider.mjs';
+import { buildModel, runModelDsl } from './ai-build.mjs';
+import { ruleBasedProvider, updateExistingDsl } from './ai-provider.mjs';
 
 const lpcli = (() => {
   const flag = process.argv.indexOf('--lpcli');
@@ -53,6 +53,10 @@ const base = { lpcli: lpcli || undefined };
   assert.match(dsl, /rate\(1\.5\)/);
   assert.match(dsl, /exponential\(2\.0\)/);
   assert.match(dsl, /capacity = 50/);
+
+  const frequentFailures = ruleBasedProvider(
+      'a server with failure rate 2.5 and service rate 3.0');
+  assert.match(frequentFailures, /failure_rate = 2\.5/);
 }
 
 // 4. Diagnostic repair keeps the spec well-formed.
@@ -128,6 +132,69 @@ const base = { lpcli: lpcli || undefined };
     maxIterations: 2,
   });
   assert.equal(result.ok, true, 'priority template must compile');
+}
+
+// 9. Editing an existing DES model is incremental: unrelated blocks,
+// couplings, names and parameters survive, while the requested fields change.
+{
+  const contextDsl = `model ExistingLine {
+  use process
+  resource Staff { capacity = 1 }
+  source Orders { arrival = rate(0.5) }
+  queue Backlog { capacity = 20 }
+  service Pack { resource = Staff time = exponential(1) }
+  delay Audit { delayTime = constant(0.25) capacity = 4 }
+  sink Done { }
+  couple Orders.out -> Backlog.in
+  couple Backlog.out -> Pack.in
+  couple Pack.out -> Audit.in
+  couple Audit.out -> Done.in
+}
+`;
+  const updated = updateExistingDsl(
+      '将服务器数量改为 3，队列容量改为 7，到达率改为 0.8，服务率改为 1.5',
+      contextDsl);
+  assert.ok(updated);
+  assert.match(updated, /resource Staff \{ capacity = 3 \}/);
+  assert.match(updated, /source Orders \{ arrival = rate\(0\.8\) \}/);
+  assert.match(updated, /queue Backlog \{ capacity = 7 \}/);
+  assert.match(updated, /service Pack \{ resource = Staff time = exponential\(1\.5\) \}/);
+  assert.match(updated, /delay Audit \{ delayTime = constant\(0\.25\) capacity = 4 \}/);
+  assert.match(updated, /couple Audit\.out -> Done\.in/);
+
+  const result = await buildModel({
+    ...base,
+    prompt: 'set server capacity to 2 and queue capacity to 9',
+    contextDsl,
+    maxIterations: 2,
+  });
+  assert.equal(result.ok, true, 'incrementally edited model must compile');
+  assert.match(result.dsl, /resource Staff \{ capacity = 2 \}/);
+  assert.match(result.dsl, /queue Backlog \{ capacity = 9 \}/);
+  assert.match(result.dsl, /delay Audit/);
+}
+
+// Random/adaptive experiments return a frozen effective experiment so an AI
+// before/after comparison reuses the exact seed and replication count.
+{
+  const dsl = ruleBasedProvider(
+    'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  const baseline = runModelDsl({
+    dsl,
+    ...base,
+    runParams: {
+      seedMode: 'random', replicationMode: 'precision',
+      minReps: 2, maxReps: 6, errorPercent: 1000000,
+      precisionMetric: 'Wq', arrivals: 100, warmup: 0,
+    },
+  });
+  assert.equal(baseline.ok, true);
+  assert.equal(baseline.experiment.seedMode, 'fixed');
+  assert.equal(baseline.experiment.replicationMode, 'fixed');
+  assert.equal(baseline.experiment.reps, 2);
+  assert.notEqual(baseline.experiment.seed, 42);
+  const replay = runModelDsl({ dsl, ...base, runParams: baseline.experiment });
+  assert.deepEqual(replay.metrics.replications, baseline.metrics.replications);
 }
 
 console.log('AI-BUILD TEST: PASS');

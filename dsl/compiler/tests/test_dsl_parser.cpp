@@ -1,11 +1,11 @@
 // Parser front-end tests: clean parse of the canonical example, generic
 // Node extraction, and syntax-error diagnostics.
-#include <string>
-
 #include <catch2/catch_test_macros.hpp>
+#include <string>
 
 #include "logicpilot/dsl/ast.h"
 #include "logicpilot/dsl/parser.h"
+
 #include "expect_json.h"  // read_text_file (shared test utility)
 
 using namespace logicpilot::dsl;
@@ -31,6 +31,7 @@ model MM1 {
     time = exponential(1.0)
   }
 }
+
 )";
 
 const Node* member_of(const ModelAst& model, const char* kind) {
@@ -53,8 +54,7 @@ const Field* field_of(const Node& node, const char* name) {
 
 }  // namespace
 
-TEST_CASE("parser: mm1 example parses into a generic node tree",
-          "[dsl][parser]") {
+TEST_CASE("parser: mm1 example parses into a generic node tree", "[dsl][parser]") {
   const ParseOutput parsed = parse_source(kMm1Source, "mm1.lp");
   REQUIRE(parsed.diagnostics.empty());
   REQUIRE(parsed.model.has_value());
@@ -78,8 +78,7 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
   REQUIRE(arrivals.kind == "source");
   REQUIRE(arrivals.name == "Arrivals");
   Distribution arrival;
-  REQUIRE(distribution_from_value(field_of(arrivals, "arrival")->value,
-                                  arrival));
+  REQUIRE(distribution_from_value(field_of(arrivals, "arrival")->value, arrival));
   REQUIRE(arrival.kind == DistKind::kPoisson);
   REQUIRE(arrival.params.size() == 1);
   REQUIRE(arrival.params[0] == 0.8);
@@ -94,14 +93,12 @@ TEST_CASE("parser: mm1 example parses into a generic node tree",
   REQUIRE(field_of(service, "resource")->value.kind == ValueKind::kIdentifier);
   REQUIRE(field_of(service, "resource")->value.string_value == "Server");
   Distribution service_time;
-  REQUIRE(distribution_from_value(field_of(service, "time")->value,
-                                  service_time));
+  REQUIRE(distribution_from_value(field_of(service, "time")->value, service_time));
   REQUIRE(service_time.kind == DistKind::kExponential);
   REQUIRE(service_time.params[0] == 1.0);
 }
 
-TEST_CASE("parser: mm1.lp on disk matches the in-memory parse",
-          "[dsl][parser]") {
+TEST_CASE("parser: mm1.lp on disk matches the in-memory parse", "[dsl][parser]") {
   const std::string source = logicpilot::testing::read_text_file(kMm1Path);
   REQUIRE(!source.empty());
   const ParseOutput parsed = parse_source(source, kMm1Path);
@@ -109,8 +106,7 @@ TEST_CASE("parser: mm1.lp on disk matches the in-memory parse",
   REQUIRE(parsed.model->name == "MM1");
 }
 
-TEST_CASE("parser: comments, use and model-level param are extracted",
-          "[dsl][parser]") {
+TEST_CASE("parser: comments, use and model-level param are extracted", "[dsl][parser]") {
   const ParseOutput parsed = parse_source(
       "// leading comment\nmodel M { /* block */ use process\n"
       "param arrival_rate: float = 0.8\n"
@@ -125,6 +121,16 @@ TEST_CASE("parser: comments, use and model-level param are extracted",
   REQUIRE(parsed.model->params[0].type == "float");
   REQUIRE(parsed.model->params[0].value.float_value == 0.8);
   REQUIRE(member_of(*parsed.model, "resource")->children.empty());
+}
+
+TEST_CASE("parser: qualified library block keeps namespace and short kind", "[dsl][parser]") {
+  const ParseOutput parsed =
+      parse_source("model M { use petri petri::place Buffer { tokens = 1 } }", "qualified.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(parsed.model->members.size() == 1);
+  REQUIRE(parsed.model->members[0].kind_library == "petri");
+  REQUIRE(parsed.model->members[0].kind == "place");
+  REQUIRE(parsed.model->members[0].registry_key() == "petri::place");
 }
 
 TEST_CASE("parser: all service-time distributions extract", "[dsl][parser]") {
@@ -155,14 +161,12 @@ TEST_CASE("parser: all service-time distributions extract", "[dsl][parser]") {
   REQUIRE(constant.ok());
   const Node& fixed_service = *member_of(*constant.model, "service");
   Distribution fixed;
-  REQUIRE(distribution_from_value(field_of(fixed_service, "time")->value,
-                                  fixed));
+  REQUIRE(distribution_from_value(field_of(fixed_service, "time")->value, fixed));
   REQUIRE(fixed.kind == DistKind::kConstant);
   REQUIRE(fixed.params[0] == 3.25);
 }
 
-TEST_CASE("parser: v2 behaviors extract trigger, port and effects",
-          "[dsl][parser]") {
+TEST_CASE("parser: v2 behaviors extract trigger, port and effects", "[dsl][parser]") {
   const ParseOutput parsed = parse_source(
       "model M {\n"
       "  atomic Cell {\n"
@@ -233,8 +237,7 @@ TEST_CASE("parser: expressions extract as expression trees", "[dsl][parser]") {
   REQUIRE(arrival.call_args[0].operands[1].int_value == 2);
 
   // capacity = 100 + 1: kAdd with two int operands.
-  const Value& capacity =
-      field_of(*member_of(*parsed.model, "queue"), "capacity")->value;
+  const Value& capacity = field_of(*member_of(*parsed.model, "queue"), "capacity")->value;
   REQUIRE(capacity.kind == ValueKind::kAdd);
   REQUIRE(capacity.operands.size() == 2);
   REQUIRE(capacity.operands[0].int_value == 100);
@@ -281,16 +284,14 @@ TEST_CASE("parser: library declarations extract block shapes", "[dsl][parser]") 
 
 TEST_CASE("parser: syntax errors become LP0001 diagnostics", "[dsl][parser]") {
   SECTION("missing closing brace") {
-    const ParseOutput parsed =
-        parse_source("model M { resource R { capacity = 1 }", "bad.lp");
+    const ParseOutput parsed = parse_source("model M { resource R { capacity = 1 }", "bad.lp");
     REQUIRE(!parsed.ok());
     REQUIRE(!parsed.diagnostics.empty());
     REQUIRE(parsed.diagnostics.front().code == "LP0001");
     REQUIRE(parsed.diagnostics.front().span.line >= 1);
   }
   SECTION("garbage token") {
-    const ParseOutput parsed =
-        parse_source("model M { resource @ }", "bad.lp");
+    const ParseOutput parsed = parse_source("model M { resource @ }", "bad.lp");
     REQUIRE(!parsed.ok());
     REQUIRE(parsed.diagnostics.front().code == "LP0001");
   }
@@ -300,15 +301,15 @@ TEST_CASE("parser: syntax errors become LP0001 diagnostics", "[dsl][parser]") {
     REQUIRE(!parsed.diagnostics.empty());
   }
   SECTION("no model declaration") {
-    const ParseOutput parsed =
-        parse_source("resource R { capacity = 1 }", "bad.lp");
+    const ParseOutput parsed = parse_source("resource R { capacity = 1 }", "bad.lp");
     REQUIRE(!parsed.ok());
   }
 }
 
-TEST_CASE("parser: adversarial nesting fails gracefully instead of "
-          "overflowing the stack",
-          "[dsl][parser][robustness]") {
+TEST_CASE(
+    "parser: adversarial nesting fails gracefully instead of "
+    "overflowing the stack",
+    "[dsl][parser][robustness]") {
   // tree-sitter is iterative, but the AST walker recurses per expression
   // level; thousands of nested parentheses must yield a diagnostic, not a
   // stack overflow.
@@ -333,4 +334,23 @@ TEST_CASE("parser: adversarial nesting fails gracefully instead of "
   const ParseOutput ok = parse_source(sane, "ok.lp");
   REQUIRE(ok.ok());
   REQUIRE(ok.diagnostics.empty());
+}
+
+TEST_CASE("parser: parameter variation keeps multiple floating-point axes",
+          "[dsl][parser][experiment][variation]") {
+  const auto parsed = parse_source(
+      "model M { param rate: float = 0.5 param count: int = 1 "
+      "experiment Sweep { type = parameter_variation metric = Wq "
+      "axis Rate { variable = rate range = 0.5..1.0 step = 0.25 } "
+      "axis Count { variable = count range = 1..3 step = 1 } } }",
+      "variation.lp");
+  REQUIRE(parsed.ok());
+  REQUIRE(parsed.model->experiments.size() == 1);
+  const auto& experiment = parsed.model->experiments.front();
+  REQUIRE(experiment.axes.size() == 2);
+  CHECK(experiment.axes[0].variable == "rate");
+  CHECK(experiment.axes[0].range_min == 0.5);
+  CHECK(experiment.axes[0].range_max == 1.0);
+  CHECK(experiment.axes[0].step == 0.25);
+  CHECK(experiment.axes[1].variable == "count");
 }

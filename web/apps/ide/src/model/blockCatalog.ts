@@ -914,7 +914,7 @@ export const BLOCK_CATALOG: CatalogBlock[] = [
         type: "bool",
         default: false,
         validValues: null,
-        visibleWhen: "arrivalType == \"rate, interarrival time, arrival table in database, or rate schedule\"",
+        visibleWhen: null,
         section: "basic",
         required: false,
         runtimeSettable: true,

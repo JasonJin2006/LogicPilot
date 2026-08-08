@@ -13,7 +13,6 @@ import { useProjectStore } from '../state/projectStore';
 import { logConsoleEvent } from '../state/connectionStore';
 import { saveProject } from '../project/syncEngine';
 import {
-  DEFAULT_MODEL_PATH,
   bundleToJson,
   initializeProject,
   parseProjectBundle,
@@ -193,8 +192,7 @@ export function AppMenu() {
           mainContent = read.content;
         }
       }
-      const folderName =
-        projectPath.split(/[\\/]/).filter(Boolean).pop() ?? 'Model';
+      const folderName = projectPath.split(/[\\/]/).filter(Boolean).pop() ?? 'Model';
       const initialized = initializeProject(mainContent, folderName);
       model = initialized.document;
       const base = initialized.bundle;
@@ -212,7 +210,7 @@ export function AppMenu() {
     if (saved.diagnostics.some((diagnostic) => diagnostic.severity === 'error')) {
       openInfo(
         'Save blocked',
-        'saving would drop model members or emit unparseable DSL; fix the model first',
+        'saving would create ambiguous references, alter model structure, or emit unparseable DSL; fix the model first',
       );
       return;
     }

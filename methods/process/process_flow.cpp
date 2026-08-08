@@ -38,10 +38,10 @@ namespace {
 
 using ir::v2::Node;
 using logicpilot::ir_v2_util::make_sampler;
+using logicpilot::ir_v2_util::node_bool_param;
 using logicpilot::ir_v2_util::node_dist_param;
 using logicpilot::ir_v2_util::node_float_param;
 using logicpilot::ir_v2_util::node_int_param;
-using logicpilot::ir_v2_util::node_bool_param;
 using logicpilot::ir_v2_util::node_string_param;
 using logicpilot::ir_v2_util::node_var;
 
@@ -90,8 +90,7 @@ std::unordered_map<std::string, double> block_numeric_params(
       continue;
     }
     if (var->type() == ir::v2::VarType_Int) {
-      params[var->name()->str()] =
-          static_cast<double>(var->int_value());
+      params[var->name()->str()] = static_cast<double>(var->int_value());
     } else if (var->type() == ir::v2::VarType_Float) {
       params[var->name()->str()] = var->float_value();
     }
@@ -134,16 +133,27 @@ std::string block_expression_param(const Node* stage, const char* name,
 std::unique_ptr<ProcessBlock> make_block(
     const Node* stage, const std::string& kind, const std::string& name,
     const std::unordered_map<std::string, PoolSpec>& pools,
-    const SpatialGraph& spatial,
-    std::string* error) {
+    const SpatialGraph& spatial, std::string* error) {
   const auto pool_servers = [&](const char* resource_name) -> std::int64_t {
-    const std::string pool =
-        resource_name != nullptr ? resource_name : name;
+    const std::string pool = resource_name != nullptr ? resource_name : name;
     const auto it = pools.find(pool);
     return it != pools.end() ? it->second.capacity : 1;
   };
   if (kind == "source") {
-    TimeSampler sampler = make_sampler(node_dist_param(stage, "arrival"), error);
+    const std::string arrival_type = block_string_param(stage, "arrivalType");
+    const bool manual = arrival_type == "manual";
+    const bool interarrival = arrival_type == "interarrival_time";
+    if (!arrival_type.empty() && arrival_type != "rate" && !interarrival &&
+        !manual) {
+      fail(error, "source '" + name + "' arrivalType '" + arrival_type +
+                      "' is not executable yet; use rate, "
+                      "interarrival_time, or manual");
+      return nullptr;
+    }
+    const char* distribution_field =
+        interarrival ? "interarrivalTime" : "arrival";
+    TimeSampler sampler =
+        make_sampler(node_dist_param(stage, distribution_field), error);
     if (!sampler) {
       return nullptr;
     }
@@ -170,8 +180,21 @@ std::unique_ptr<ProcessBlock> make_block(
         }
       }
     }
-    return std::make_unique<SourceBlock>(name, std::move(sampler),
-                                         std::move(attributes));
+    const bool multiple =
+        node_bool_param(stage, "multipleEntitiesPerArrival", false);
+    const std::int64_t agents_per_arrival =
+        multiple ? std::max<std::int64_t>(
+                       node_int_param(stage, "agentsPerArrival", 1), 1)
+                 : 1;
+    const std::int64_t max_arrival_events =
+        node_bool_param(stage, "limitArrivals", false)
+            ? std::max<std::int64_t>(node_int_param(stage, "maxArrivals", 0), 0)
+            : -1;
+    return std::make_unique<SourceBlock>(
+        name, std::move(sampler), std::move(attributes),
+        block_string_param(stage, "firstArrivalMode"),
+        node_float_param(stage, "firstArrivalTime", 0.0), agents_per_arrival,
+        max_arrival_events, manual);
   }
   if (kind == "delay") {
     TimeSampler sampler =
@@ -208,13 +231,35 @@ std::unique_ptr<ProcessBlock> make_block(
         return dist(engine);
       };
     }
+    // Missing means legacy IR produced before Service exposed its internal
+    // queue; preserve its zero-buffer behavior. The DSL registry lowers the
+    // current catalog default explicitly as queueCapacity=100.
+    std::int64_t queue_capacity = node_int_param(stage, "queueCapacity", 0);
+    if (node_bool_param(stage, "maximumCapacity", false)) {
+      queue_capacity = -1;
+    }
+    const std::int64_t units_per_task =
+        std::max<std::int64_t>(node_int_param(stage, "numberOfUnits", 1), 1);
+    const std::int64_t pool_capacity =
+        pool_servers(node_string_param(stage, "resource"));
+    // AnyLogic Service is Seize -> Delay -> Release: one task must acquire
+    // all requested units before it can start. For the single-pool mode this
+    // makes the number of concurrent tasks floor(pool capacity / units).
+    const std::int64_t concurrent_tasks = pool_capacity / units_per_task;
+    // Every declared ResourcePool is a single shared allocator. Failure
+    // handling must not turn each Service reference into a private copy of
+    // the pool, otherwise capacity and waiting semantics are violated.
+    const bool shared_pool = it != pools.end();
     return std::make_unique<ServiceBlock>(
-        name, pool_servers(node_string_param(stage, "resource")),
+        name, concurrent_tasks,
         std::move(sampler), false, std::move(failure), std::move(repair),
         node_bool_param(stage, "enablePreemption", false),
         node_bool_param(stage, "taskMayPreempt", true),
         block_string_param(stage, "taskPreemptionPolicy"),
-        node_float_param(stage, "taskPriority", 0.0));
+        node_float_param(stage, "taskPriority", 0.0), queue_capacity,
+        to_ns(node_float_param(stage, "timeout", 100.0)),
+        node_bool_param(stage, "enableTimeout", false), pool,
+        units_per_task, pool_capacity, shared_pool);
   }
   if (kind == "seize") {
     const char* resource = node_string_param(stage, "resource");
@@ -234,9 +279,8 @@ std::unique_ptr<ProcessBlock> make_block(
   }
   if (kind == "queue") {
     std::int64_t capacity = node_int_param(stage, "capacity", 100);
-    if (capacity == 0 ||
-        node_bool_param(stage, "maximumCapacity", false)) {
-      capacity = -1;  // 0 = unbounded in the kernel paths
+    if (node_bool_param(stage, "maximumCapacity", false)) {
+      capacity = -1;
     }
     const std::string queuing = block_string_param(stage, "queuing");
     return std::make_unique<WaitBlock>(
@@ -250,7 +294,7 @@ std::unique_ptr<ProcessBlock> make_block(
   }
   if (kind == "wait") {
     std::int64_t capacity = node_int_param(stage, "capacity", 100);
-    if (node_bool_param(stage, "maximumCapacity", false) || capacity == 0) {
+    if (node_bool_param(stage, "maximumCapacity", false)) {
       capacity = -1;
     }
     const std::string queuing = block_string_param(stage, "queuing");
@@ -293,15 +337,13 @@ std::unique_ptr<ProcessBlock> make_block(
         target_x = pos->second.x;
         target_y = pos->second.y;
         use_2d = true;
-        const auto target =
-            std::find(spatial.node_names.begin(), spatial.node_names.end(),
-                      node_ref);
+        const auto target = std::find(spatial.node_names.begin(),
+                                      spatial.node_names.end(), node_ref);
         if (target != spatial.node_names.end()) {
           const std::size_t target_index =
               static_cast<std::size_t>(target - spatial.node_names.begin());
           for (std::size_t i = 0; i < spatial.node_names.size(); ++i) {
-            node_coords.push_back(
-                spatial.positions.at(spatial.node_names[i]));
+            node_coords.push_back(spatial.positions.at(spatial.node_names[i]));
             const double d = spatial.distances[i][target_index];
             dist_to_target.push_back(d >= 1e18 ? -1.0 : d);
           }
@@ -325,8 +367,8 @@ std::unique_ptr<ProcessBlock> make_block(
   }
   if (kind == "selectOutput5") {
     std::vector<std::string> conditions;
-    for (const char* field : {"condition1", "condition2", "condition3",
-                              "condition4"}) {
+    for (const char* field :
+         {"condition1", "condition2", "condition3", "condition4"}) {
       conditions.push_back(block_expression_param(stage, field, ""));
     }
     std::vector<double> probabilities;
@@ -408,11 +450,10 @@ class Engine final : public BlockContext {
                 0 &&
             std::strcmp(child->semantics()->block()->c_str(), "resource") ==
                 0) {
-          const std::string name =
-              child->metadata() != nullptr &&
-                      child->metadata()->name() != nullptr
-                  ? child->metadata()->name()->str()
-                  : "";
+          const std::string name = child->metadata() != nullptr &&
+                                           child->metadata()->name() != nullptr
+                                       ? child->metadata()->name()->str()
+                                       : "";
           resource_pools_[name] =
               PoolSpec{node_int_param(child, "capacity", 1),
                        node_float_param(child, "failure_rate", 0.0),
@@ -421,8 +462,7 @@ class Engine final : public BlockContext {
         if (child != nullptr && child->semantics() != nullptr &&
             child->semantics()->library() != nullptr &&
             child->semantics()->block() != nullptr &&
-            std::strcmp(child->semantics()->library()->c_str(), "core") ==
-                0 &&
+            std::strcmp(child->semantics()->library()->c_str(), "core") == 0 &&
             std::strcmp(child->semantics()->block()->c_str(), "node") == 0) {
           const std::string node_name =
               child->metadata() != nullptr &&
@@ -436,8 +476,7 @@ class Engine final : public BlockContext {
         if (child != nullptr && child->semantics() != nullptr &&
             child->semantics()->library() != nullptr &&
             child->semantics()->block() != nullptr &&
-            std::strcmp(child->semantics()->library()->c_str(), "core") ==
-                0 &&
+            std::strcmp(child->semantics()->library()->c_str(), "core") == 0 &&
             std::strcmp(child->semantics()->block()->c_str(), "path") == 0) {
           const char* node1 = node_string_param(child, "node1");
           const char* node2 = node_string_param(child, "node2");
@@ -457,17 +496,24 @@ class Engine final : public BlockContext {
       }
       const std::string name = stage->metadata()->name()->str();
       const std::string kind = stage->semantics()->block()->str();
-      auto block = make_block(stage, kind, name, resource_pools_, spatial_,
-                              error);
+      auto block =
+          make_block(stage, kind, name, resource_pools_, spatial_, error);
       if (block == nullptr) {
         return;
+      }
+      const std::string pool_resource = block->pool_resource();
+      if (kind == "service" && !pool_resource.empty()) {
+        const auto pool = resource_pools_.find(pool_resource);
+        if (pool != resource_pools_.end() && pool->second.failure_rate > 0.0) {
+          service_failure_pools_.insert(pool_resource);
+        }
       }
       index_[name] = blocks_.size();
       if (kind == "source") {
         sources_.push_back(blocks_.size());
       }
-      if (kind == "seize" || kind == "assembler") {
-        resource_seizers_.push_back(blocks_.size());
+      if (!block->pool_resource().empty()) {
+        resource_waiters_.push_back(blocks_.size());
       }
       blocks_.push_back(std::move(block));
     }
@@ -494,10 +540,9 @@ class Engine final : public BlockContext {
           fail(error, "coupling references an unknown stage");
           return;
         }
-        const std::string from_port =
-            coupling->from_port() != nullptr
-                ? coupling->from_port()->str()
-                : "out";
+        const std::string from_port = coupling->from_port() != nullptr
+                                          ? coupling->from_port()->str()
+                                          : "out";
         const std::string to_port =
             coupling->to_port() != nullptr ? coupling->to_port()->str() : "in";
         out_edges_[from_it->second].push_back(
@@ -605,6 +650,8 @@ class Engine final : public BlockContext {
       owned_handlers_ = EventHandlerRegistry{};
     }
     emitted_ = 0;
+    arrival_events_ = 0;
+    source_arrival_events_.assign(blocks_.size(), 0);
     departures_ = 0;
     in_system_ = 0;
     last_ns_ = 0;
@@ -621,23 +668,23 @@ class Engine final : public BlockContext {
     pool_down_.clear();
     pool_gen_.clear();
     pool_down_area_.clear();
+    pool_busy_area_.clear();
     pool_order_.clear();
     pool_index_.clear();
+    std::unordered_set<std::string> shared_pools;
     for (auto& block : blocks_) {
       block->clear_buffers();
       block->reset_stats();
-      servers_total_ += block->pool_capacity();
-    }
-    // Seized resource pools count toward the utilization/availability
-    // denominators (SeizeBlock exposes no pool capacity of its own).
-    std::unordered_set<std::string> seized_pools;
-    for (const std::size_t seizer : resource_seizers_) {
-      const std::string resource = blocks_[seizer]->pool_resource();
-      if (!resource.empty()) {
-        seized_pools.insert(resource);
+      const std::string resource = block->pool_resource();
+      if (resource.empty()) {
+        servers_total_ += block->pool_capacity();
+      } else {
+        shared_pools.insert(resource);
       }
     }
-    for (const std::string& resource : seized_pools) {
+    // A shared ResourcePool contributes once even when several Service,
+    // Seize, or Assembler blocks reference it.
+    for (const std::string& resource : shared_pools) {
       const auto it = resource_pools_.find(resource);
       if (it != resource_pools_.end()) {
         servers_total_ += it->second.capacity;
@@ -663,11 +710,16 @@ class Engine final : public BlockContext {
     arrive_handler_ =
         handlers().add([this](const Event& event) { on_arrive(event); });
     for (const std::size_t source : sources_) {
-      scheduler().schedule(
-          clock().now() +
-              SimTime::from_ns(
-                  to_ns(blocks_[source]->sample_gap(engine_))),
-          kArriveEvent, arrive_handler_, source);
+      if (blocks_[source]->source_is_manual() ||
+          blocks_[source]->max_arrival_events() == 0 ||
+          arrival_events_ >= config_.arrivals) {
+        continue;
+      }
+      const double gap = blocks_[source]->sample_first_gap(engine_);
+      if (std::isfinite(gap) && gap >= 0.0) {
+        scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
+                             kArriveEvent, arrive_handler_, source);
+      }
     }
   }
 
@@ -682,24 +734,28 @@ class Engine final : public BlockContext {
 
   ReplicationMetrics metrics() const {
     ReplicationMetrics metrics;
-    metrics.arrivals = config_.arrivals;
+    metrics.arrivals = emitted_;
     metrics.departures = departures_;
     const std::int64_t horizon_ns = clock().now().as_ns();
     metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
-    metrics.throughput =
-        horizon_ns > 0
-            ? static_cast<double>(departures_) / metrics.horizon_seconds
-            : 0.0;
-    metrics.mean_in_system =
-        horizon_ns > 0
-            ? static_cast<double>(area_system_ns_) /
-                  static_cast<double>(horizon_ns)
-            : 0.0;
+    metrics.throughput = horizon_ns > 0 ? static_cast<double>(departures_) /
+                                              metrics.horizon_seconds
+                                        : 0.0;
+    metrics.mean_in_system = horizon_ns > 0
+                                 ? static_cast<double>(area_system_ns_) /
+                                       static_cast<double>(horizon_ns)
+                                 : 0.0;
     double queue_area = 0.0;
     double busy_area = 0.0;
     for (const auto& block : blocks_) {
       queue_area += block->area_occupancy();
-      busy_area += block->area_busy();
+      if (block->pool_resource().empty()) {
+        busy_area += block->area_busy();
+      }
+    }
+    for (const auto& [resource, area] : pool_busy_area_) {
+      (void)resource;
+      busy_area += area;
     }
     metrics.mean_in_queue =
         horizon_ns > 0 ? queue_area / static_cast<double>(horizon_ns) : 0.0;
@@ -707,27 +763,69 @@ class Engine final : public BlockContext {
         sojourn_count_ == 0
             ? 0.0
             : sojourn_sum_ / static_cast<double>(sojourn_count_);
-    metrics.mean_wait = wait_count_ == 0
-                            ? 0.0
-                            : wait_sum_ / static_cast<double>(wait_count_);
-    metrics.mean_measure = measure_count_ == 0
-                               ? 0.0
-                               : measure_sum_ / static_cast<double>(measure_count_);
+    metrics.mean_wait =
+        wait_count_ == 0 ? 0.0 : wait_sum_ / static_cast<double>(wait_count_);
+    metrics.mean_measure =
+        measure_count_ == 0
+            ? 0.0
+            : measure_sum_ / static_cast<double>(measure_count_);
     metrics.measure_count = measure_count_;
     if (horizon_ns > 0 && servers_total_ > 0) {
-      metrics.utilization =
-          busy_area / static_cast<double>(horizon_ns) /
-          static_cast<double>(servers_total_);
+      metrics.utilization = busy_area / static_cast<double>(horizon_ns) /
+                            static_cast<double>(servers_total_);
       double down_area = 0.0;
       for (const auto& block : blocks_) {
-        down_area += block->area_down();
+        // Seize-style shared pools contribute downtime once below. A pool
+        // whose busy-time failures are owned by Service blocks instead uses
+        // their per-unit interruption areas.
+        if (block->pool_resource().empty() ||
+            service_failure_pools_.contains(block->pool_resource())) {
+          down_area += block->area_down();
+        }
       }
       for (const auto& [resource, area] : pool_down_area_) {
         down_area += area;
       }
-      metrics.availability =
-          1.0 - down_area / static_cast<double>(horizon_ns) /
-                static_cast<double>(servers_total_);
+      metrics.availability = 1.0 - down_area / static_cast<double>(horizon_ns) /
+                                       static_cast<double>(servers_total_);
+    }
+    metrics.blocks.reserve(blocks_.size());
+    for (std::size_t block_index = 0; block_index < blocks_.size();
+         ++block_index) {
+      const auto& block = blocks_[block_index];
+      BlockMetrics item;
+      item.name = std::string(block->name());
+      item.kind = std::string(block->kind());
+      const std::uint64_t source_count =
+          item.kind == "source"
+              ? source_arrival_events_[block_index] *
+                    static_cast<std::uint64_t>(block->agents_per_arrival())
+              : 0;
+      item.arrived = item.kind == "source" ? source_count : block->arrived();
+      item.departed =
+          item.kind == "source" ? source_count : block->departed();
+      item.timed_out = block->timed_out();
+      item.preempted = block->preempted();
+      item.capacity = block->buffer_capacity();
+      if (horizon_ns > 0) {
+        const double horizon = static_cast<double>(horizon_ns);
+        item.mean_occupancy =
+            (item.kind == "delay" ? block->area_busy()
+                                  : block->area_occupancy()) /
+            horizon;
+        std::int64_t utilization_capacity = block->pool_capacity();
+        if (item.kind == "delay") {
+          utilization_capacity = block->buffer_capacity();
+        }
+        if (utilization_capacity > 0) {
+          item.utilization = block->area_busy() / horizon /
+                             static_cast<double>(utilization_capacity);
+          item.availability =
+              1.0 - block->area_down() / horizon /
+                        static_cast<double>(utilization_capacity);
+        }
+      }
+      metrics.blocks.push_back(std::move(item));
     }
     return metrics;
   }
@@ -766,8 +864,7 @@ class Engine final : public BlockContext {
     return push_downstream(it->second, entity, "out");
   }
 
-  void schedule_depart(std::int64_t hold_ns,
-                       std::uint64_t entity_id) override {
+  void schedule_depart(std::int64_t hold_ns, std::uint64_t entity_id) override {
     scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
                          kDepartEvent, depart_handler_,
                          self_payload(current_, entity_id));
@@ -780,8 +877,7 @@ class Engine final : public BlockContext {
                          self_payload(current_, entity_id));
   }
 
-  void schedule_repair(std::int64_t hold_ns,
-                       std::uint64_t entity_id) override {
+  void schedule_repair(std::int64_t hold_ns, std::uint64_t entity_id) override {
     scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
                          kRepairEvent, repair_handler_,
                          self_payload(current_, entity_id));
@@ -799,23 +895,21 @@ class Engine final : public BlockContext {
     --in_system_;
     if (entity.id >= warmup_) {
       sojourn_sum_ +=
-          static_cast<double>(clock().now().as_ns() - entity.created_ns) *
-          1e-9;
+          static_cast<double>(clock().now().as_ns() - entity.created_ns) * 1e-9;
       ++sojourn_count_;
     }
   }
 
   void record_service_wait(const Entity& entity) override {
     if (entity.id >= warmup_) {
-      wait_sum_ += static_cast<double>(entity.service_start_ns -
-                                       entity.created_ns) *
-                   1e-9;
+      wait_sum_ +=
+          static_cast<double>(entity.service_start_ns - entity.created_ns) *
+          1e-9;
       ++wait_count_;
     }
   }
 
-  bool try_seize(const std::string& resource,
-                 std::int64_t quantity) override {
+  bool try_seize(const std::string& resource, std::int64_t quantity) override {
     if (pool_down_[resource]) {
       return false;  // the pool is down for repair
     }
@@ -844,10 +938,9 @@ class Engine final : public BlockContext {
     available_[resource] += quantity;
     const std::int64_t busy = pool_busy_[resource] - quantity;
     pool_busy_[resource] = busy > 0 ? busy : 0;
-    // A freed unit may unblock waiting Seize blocks; re-process them in this
-    // pump pass (blocked updates simply return false).
-    for (const std::size_t seizer : resource_seizers_) {
-      work_.push_back(seizer);
+    // A freed unit may unblock any Service/Seize/Assembler sharing the pool.
+    for (const std::size_t waiter : resource_waiters_) {
+      work_.push_back(waiter);
     }
   }
 
@@ -874,7 +967,7 @@ class Engine final : public BlockContext {
     }
   }
 
-  private:
+ private:
   struct Edge {
     std::size_t to;
     std::string from_port;
@@ -891,6 +984,8 @@ class Engine final : public BlockContext {
       block->accumulate_areas(dt);
     }
     for (const auto& [resource, spec] : resource_pools_) {
+      pool_busy_area_[resource] +=
+          static_cast<double>(dt) * static_cast<double>(pool_busy_[resource]);
       if (spec.failure_rate > 0.0 && pool_down_[resource]) {
         pool_down_area_[resource] += static_cast<double>(dt);
       }
@@ -901,23 +996,35 @@ class Engine final : public BlockContext {
   void on_arrive(const Event& event) {
     const std::size_t source = static_cast<std::size_t>(event.payload);
     accumulate_areas(clock().now().as_ns());
-    if (emitted_ < config_.arrivals) {
-      Entity entity;
-      entity.id = emitted_;
-      entity.created_ns = clock().now().as_ns();
-      entity.service_start_ns = entity.created_ns;
-      entity.attributes = blocks_[source]->attribute_defaults();
-      ++emitted_;
-      ++in_system_;
-      if (!push_downstream(source, entity, "out")) {
-        blocks_[source]->receive(entity);
+    const std::int64_t source_limit = blocks_[source]->max_arrival_events();
+    if (arrival_events_ < config_.arrivals &&
+        (source_limit < 0 || source_arrival_events_[source] <
+                                 static_cast<std::uint64_t>(source_limit))) {
+      ++arrival_events_;
+      ++source_arrival_events_[source];
+      const std::int64_t batch = blocks_[source]->agents_per_arrival();
+      for (std::int64_t i = 0; i < batch; ++i) {
+        Entity entity;
+        entity.id = emitted_;
+        entity.created_ns = clock().now().as_ns();
+        entity.service_start_ns = entity.created_ns;
+        entity.attributes = blocks_[source]->attribute_defaults();
+        ++emitted_;
+        ++in_system_;
+        if (!push_downstream(source, entity, "out")) {
+          blocks_[source]->receive(entity);
+        }
+        pump(source);
       }
-      pump(source);
-      scheduler().schedule(
-          clock().now() +
-              SimTime::from_ns(
-                  to_ns(blocks_[source]->sample_gap(engine_))),
-          kArriveEvent, arrive_handler_, source);
+      if (arrival_events_ < config_.arrivals &&
+          (source_limit < 0 || source_arrival_events_[source] <
+                                   static_cast<std::uint64_t>(source_limit))) {
+        const double gap = blocks_[source]->sample_gap(engine_);
+        if (std::isfinite(gap) && gap > 0.0) {
+          scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
+                               kArriveEvent, arrive_handler_, source);
+        }
+      }
     }
   }
 
@@ -963,6 +1070,12 @@ class Engine final : public BlockContext {
   // downtime is reflected in availability. Held agents are not interrupted
   // (documented simplification).
   double pool_failure_rate(const std::string& resource) const {
+    // Service blocks already implement the pool's busy-time interruption and
+    // repair law. Starting the separate Seize-style pool clock as well would
+    // draw two independent failures for the same physical capacity.
+    if (service_failure_pools_.contains(resource)) {
+      return 0.0;
+    }
     const auto it = resource_pools_.find(resource);
     return it != resource_pools_.end() ? it->second.failure_rate : 0.0;
   }
@@ -1014,8 +1127,8 @@ class Engine final : public BlockContext {
     if (pool_busy_[resource] > 0 && pool_failure_rate(resource) > 0.0) {
       schedule_pool_failure(resource);
     }
-    for (const std::size_t seizer : resource_seizers_) {
-      pump(seizer);  // handler wake-up: the worklist needs a pump run
+    for (const std::size_t waiter : resource_waiters_) {
+      pump(waiter);  // handler wake-up: the worklist needs a pump run
     }
   }
 
@@ -1052,8 +1165,7 @@ class Engine final : public BlockContext {
   // Accept an entity into block `to`, respecting its buffering rules.
   // Returns false when the block cannot take it right now (the caller keeps
   // it, so upstream capacity propagates backwards).
-  bool push(std::size_t to, const Entity& entity,
-            const std::string& port) {
+  bool push(std::size_t to, const Entity& entity, const std::string& port) {
     ProcessBlock& block = *blocks_[to];
     if (!block.can_accept(entity)) {
       return false;
@@ -1120,6 +1232,7 @@ class Engine final : public BlockContext {
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   std::unordered_map<std::string, PoolSpec> resource_pools_;
+  std::unordered_set<std::string> service_failure_pools_;
   std::vector<std::pair<std::string, std::string>> path_edges_;
   SpatialGraph spatial_;
   std::unordered_map<std::string, std::int64_t> available_;
@@ -1127,9 +1240,10 @@ class Engine final : public BlockContext {
   std::unordered_map<std::string, bool> pool_down_;
   std::unordered_map<std::string, std::int64_t> pool_gen_;
   std::unordered_map<std::string, double> pool_down_area_;
+  std::unordered_map<std::string, double> pool_busy_area_;
   std::vector<std::string> pool_order_;
   std::unordered_map<std::string, std::size_t> pool_index_;
-  std::vector<std::size_t> resource_seizers_;
+  std::vector<std::size_t> resource_waiters_;
   Xoshiro256PlusPlus engine_{0};
   HandlerId arrive_handler_{0};
   HandlerId depart_handler_{0};
@@ -1140,6 +1254,8 @@ class Engine final : public BlockContext {
   HandlerId pool_repair_handler_{0};
   std::vector<std::size_t> work_;
   std::uint64_t emitted_{0};
+  std::uint64_t arrival_events_{0};
+  std::vector<std::uint64_t> source_arrival_events_;
   std::uint64_t departures_{0};
   std::int64_t in_system_{0};
   std::int64_t last_ns_{0};
@@ -1172,8 +1288,7 @@ struct ProcessFlowSim::Impl {
 ProcessFlowSim::ProcessFlowSim(
     const std::vector<const ir::v2::Node*>& stages,
     const std::vector<const ir::v2::Coupling*>& couplings,
-    const ir::v2::Node* root,
-    std::string* error)
+    const ir::v2::Node* root, std::string* error)
     : impl_(std::make_unique<Impl>(stages, couplings, root, error)) {
   if (error != nullptr && !error->empty()) {
     impl_.reset();

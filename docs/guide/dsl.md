@@ -16,7 +16,7 @@ model <Name> {
   atomic ...       // DEVS 原子 + couple 布线
   agent ...        // Agent 群体（tick 行为）
   continuous ...   // 连续 ODE 系统
-  experiment ...   // 模型声明的实验（优化搜索规格）
+  experiment ...   // 模型声明的仿真/优化实验
 }
 ```
 
@@ -118,12 +118,15 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - **优先级排队与抢占**：`queue`/`wait` 的 `queuing` 支持
   `queuing_fifo`（默认）/ `queuing_lifo` / `queuing_priority`；优先级取
   实体属性 `priority`（无则回退块字段 `agentPriority`，越大越靠前）。
-  `enablePreemption = true` 时：`queue` 满队且新 agent 优先级更高 → 踢出
-  最弱等待者到 `outPreempted`；`wait`/`seize` 在每次到达时抢占最弱等待者。
+  `enablePreemption = true` 时，满 `queue` 仍接收新人，再把最弱实体送到
+  `outPreempted`：新人更强则淘汰旧等待者，新人不更强则新人自己离开，不能把
+  它反压在上游。`wait`/`seize` 在每次到达时抢占最弱等待者。
   也支持 **`queuing_comparison`**：`queue` 用
   `agent1IsPreferredToAgent2 = <表达式>`（wait 用 `agent1MayPreemptAgent2`）
   按双 agent 表达式排序/准入（`agent1` 为新到达者，`agent2` 为队列中的
   agent）。
+  比较模式缺少表达式、引用未知实体属性，或填写未知 `queuing` 模式时会在编译期
+  报错，不会静默退化为 FIFO。
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
@@ -230,17 +233,64 @@ model Decay {
 
 ```logicpilot
 experiment Optimization {
+  type = optimization
   objective = minimize
   metric = Wq
   variable = arrival_rate   // 引用已声明模型参数（'servers' 保留 v0.1 兼容）
   range = 1..8
   budget = 20
 }
+
+experiment Baseline {
+  type = simulation
+  replications = 30
+  seed = 42
+}
+
+experiment Adaptive {
+  type = simulation
+  seed_mode = random
+  replication_mode = precision
+  min_replications = 5
+  max_replications = 100
+  confidence = 0.95
+  error_percent = 5
+  metric = Wq
+}
+
+experiment CapacityStudy {
+  type = parameter_variation
+  metric = Wq
+  seed_mode = fixed
+  seed = 42
+  replications = 10
+
+  axis ArrivalRate {
+    variable = arrival_rate
+    range = 0.6..1.0
+    step = 0.2
+  }
+  axis Servers {
+    variable = server_count
+    range = 1..4
+    step = 1
+  }
+}
 ```
 
 实验作为模型的一部分进入 v2 IR（`ModelFile.experiments`），`lpcli compile
 --experiments-json` 可导出，AI 优化脚本据此做 grid/GA 搜索。`variable` 必须
-引用已声明的模型参数（`LP7001` 校验）。
+引用已声明的模型参数（`LP7001` 校验）。Simulation 实验可由
+`lpcli run --experiment Baseline` 选择；显式 `--seed`/`--reps` 覆盖声明值。
+精度模式至少运行 `min_replications` 次；当所选指标的 Student-t 置信区间
+半宽相对均值达到 `error_percent`，或达到 `max_replications` 时停止。随机模式
+会记录解析后的实际种子，因此单次运行仍可回放。
+
+`parameter_variation` 使用一个或多个 `axis` 构造参数笛卡尔积。轴必须引用顶层
+数值 `param`；浮点参数可使用浮点范围，整数参数的范围端点和步长必须为整数。
+IDE 的 AI 面板可直接执行项目中声明的参数扫描，以表格显示每个组合的均值、
+Student-t 置信区间和实际重复次数。固定种子模式会让各组合使用相同的重复种子，
+便于采用共同随机数降低比较噪声；组合数上限为 100,000。
 
 ## 自定义库与行业库
 

@@ -1,18 +1,21 @@
 // IR lowering tests: DSL -> v2 ModelFile buffer -> ir_loader acceptance,
 // plus structural-dump goldens (FlatBuffers bytes are order-sensitive, so
 // the golden compares the deterministic text rendering).
+#include <algorithm>
+#include <cmath>
+#include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include <catch2/catch_test_macros.hpp>
+#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/dsl/compile.h"
+#include "logicpilot/dsl/ir_dump.h"
+#include "logicpilot/runtime/method_registry.h"
 
 #include "expect_json.h"  // read_text_file
 #include "golden.h"
 #include "ir_v2_generated.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/dsl/compile.h"
-#include "logicpilot/dsl/ir_dump.h"
 #include "process_runtime.h"
 
 using namespace logicpilot;
@@ -32,14 +35,78 @@ constexpr const char* kMm1Path = LOGICPILOT_EXAMPLES_DIR "/mm1.lp";
 
 // Note: return the whole IrLoadResult - IrModelFile.v2_root is a zero-copy
 // pointer into IrModelFile.v2_bytes, so moving the struct alone would dangle.
-IrLoadResult compile_and_load(const std::string& source,
-                              const std::string& path) {
+IrLoadResult compile_and_load(const std::string& source, const std::string& path) {
   const CompileResult result = compile_source(source, path);
+  INFO(format_diagnostics(path, result.diagnostics));
   REQUIRE(result.ok);
-  IrLoadResult loaded =
-      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
+}
+
+TEST_CASE("lowering: simulation experiment carries kind seed and replications",
+          "[dsl][lowering][experiment]") {
+  IrLoadResult loaded = compile_and_load(
+      "model M { experiment Baseline { type = simulation replications = 12 seed = 7 } }",
+      "simulation.lp");
+  REQUIRE(loaded.file.v2_root->experiments() != nullptr);
+  REQUIRE(loaded.file.v2_root->experiments()->size() == 1);
+  const v2::Experiment* experiment =
+      loaded.file.v2_root->experiments()->Get(0);
+  CHECK(experiment->kind() == v2::ExperimentKind_Simulation);
+  CHECK(experiment->name()->str() == "Baseline");
+  CHECK(experiment->replications() == 12);
+  CHECK(experiment->seed() == 7);
+}
+
+TEST_CASE("lowering: adaptive experiment carries seed and replication policies",
+          "[dsl][lowering][experiment]") {
+  const auto compiled = compile_source(
+      "model M { experiment Adaptive { type = simulation seed_mode = random "
+      "replication_mode = precision min_replications = 4 max_replications = 25 "
+      "confidence = 0.9 error_percent = 2.5 metric = Wq } }",
+      "adaptive.lp");
+  REQUIRE(compiled.ok);
+  const auto* file = logicpilot::ir::v2::GetModelFile(compiled.v2_bytes.data());
+  REQUIRE(file->experiments() != nullptr);
+  REQUIRE(file->experiments()->size() == 1);
+  const auto* experiment = file->experiments()->Get(0);
+  CHECK(experiment->seed_policy() == logicpilot::ir::v2::SeedPolicy_Random);
+  CHECK(experiment->replication_policy() ==
+        logicpilot::ir::v2::ReplicationPolicy_Precision);
+  CHECK(experiment->min_replications() == 4);
+  CHECK(experiment->max_replications() == 25);
+  CHECK(std::abs(experiment->confidence() - 0.9) < 1e-12);
+  CHECK(std::abs(experiment->error_percent() - 2.5) < 1e-12);
+  REQUIRE(experiment->precision_metric() != nullptr);
+  CHECK(experiment->precision_metric()->str() == "Wq");
+}
+
+TEST_CASE("lowering: parameter variation carries multiple axes",
+          "[dsl][lowering][experiment][variation]") {
+  const std::string source =
+      "model M { param rate: float = 0.5 param count: int = 1 "
+      "experiment Sweep { type = parameter_variation metric = Wq "
+      "axis Rate { variable = rate range = 0.5..1.0 step = 0.25 } "
+      "axis Count { variable = count range = 1..3 step = 1 } } }";
+  const auto compiled = compile_source(source, "variation.lp");
+  REQUIRE(compiled.ok);
+  const auto* file = logicpilot::ir::v2::GetModelFile(compiled.v2_bytes.data());
+  const auto* experiment = file->experiments()->Get(0);
+  CHECK(experiment->kind() ==
+        logicpilot::ir::v2::ExperimentKind_ParameterVariation);
+  REQUIRE(experiment->axes() != nullptr);
+  REQUIRE(experiment->axes()->size() == 2);
+  CHECK(experiment->axes()->Get(0)->variable()->str() == "rate");
+  CHECK(experiment->axes()->Get(0)->range_min() == 0.5);
+  CHECK(experiment->axes()->Get(0)->step() == 0.25);
+
+  const auto overridden = compile_source(
+      source, "variation.lp", {}, {{"rate", 0.75}, {"count", 2.0}});
+  REQUIRE(overridden.ok);
+  CHECK(overridden.v2_bytes != compiled.v2_bytes);
+  CHECK_FALSE(compile_source(source, "variation.lp", {}, {{"count", 1.5}}).ok);
+  CHECK_FALSE(compile_source(source, "variation.lp", {}, {{"missing", 1.0}}).ok);
 }
 
 }  // namespace
@@ -52,8 +119,7 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
   REQUIRE(result.ok);
   REQUIRE(result.model_name == "MM1");
 
-  IrLoadResult loaded =
-      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
   REQUIRE(loaded.file.v2_root != nullptr);
   REQUIRE(loaded.file.v2_root->schema_version() == 2);
@@ -64,8 +130,7 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
   // connected by the root's own couplings (no `process Flow` container).
   REQUIRE(root->children() != nullptr);
   REQUIRE(root->children()->size() == 5);
-  REQUIRE(root->children()->Get(0)->semantics()->block()->str() ==
-          "resource");
+  REQUIRE(root->children()->Get(0)->semantics()->block()->str() == "resource");
   REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "source");
   REQUIRE(root->children()->Get(2)->semantics()->block()->str() == "queue");
   REQUIRE(root->children()->Get(3)->semantics()->block()->str() == "service");
@@ -74,12 +139,10 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
   REQUIRE(root->couplings()->size() == 3);
 
   // Structural dump golden.
-  REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/mm1_ir_dump.txt",
-                         dump_ir(loaded.file));
+  REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/mm1_ir_dump.txt", dump_ir(loaded.file));
 }
 
-TEST_CASE("lowering: flat process blocks keep declaration order and couples",
-          "[dsl][lowering]") {
+TEST_CASE("lowering: flat process blocks keep declaration order and couples", "[dsl][lowering]") {
   const IrLoadResult loaded = compile_and_load(
       "model Demo {\n"
       "  resource Server { capacity = 2 failure_rate = 0.25 }\n"
@@ -99,8 +162,7 @@ TEST_CASE("lowering: flat process blocks keep declaration order and couples",
   REQUIRE(root->children()->Get(3)->metadata()->name()->str() == "Handle");
   REQUIRE(root->children()->Get(1)->semantics()->block()->str() == "source");
   REQUIRE(root->children()->Get(2)->semantics()->block()->str() == "queue");
-  REQUIRE(root->children()->Get(3)->semantics()->block()->str() ==
-          "service");
+  REQUIRE(root->children()->Get(3)->semantics()->block()->str() == "service");
 
   // Source arrival distribution (Poisson = kind 4).
   const v2::Var* arrival = root->children()->Get(1)->params()->Get(0);
@@ -138,8 +200,7 @@ TEST_CASE("lowering: flat process blocks keep declaration order and couples",
   REQUIRE(resource->params()->size() == 2);
 }
 
-TEST_CASE("lowering: constant service time maps to Constant distribution",
-          "[dsl][lowering]") {
+TEST_CASE("lowering: constant service time maps to Constant distribution", "[dsl][lowering]") {
   const IrLoadResult loaded = compile_and_load(
       "model C {\n"
       "  resource R { capacity = 1 }\n"
@@ -147,12 +208,13 @@ TEST_CASE("lowering: constant service time maps to Constant distribution",
       "  service S { resource = R; time = constant(1.25) }\n"
       "}\n",
       "const.lp");
-  REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/const_ir_dump.txt",
-                         dump_ir(loaded.file));
+  REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/const_ir_dump.txt", dump_ir(loaded.file));
 }
 
-TEST_CASE("lowering: explicit resource reference decouples the service "
-          "name from the resource", "[dsl][lowering]") {
+TEST_CASE(
+    "lowering: explicit resource reference decouples the service "
+    "name from the resource",
+    "[dsl][lowering]") {
   const IrLoadResult loaded = compile_and_load(
       "model Demo {\n"
       "  resource Server { capacity = 3 failure_rate = 0.1 }\n"
@@ -177,8 +239,10 @@ TEST_CASE("lowering: explicit resource reference decouples the service "
   REQUIRE(root->couplings()->Get(0)->to_model()->str() == "Handle");
 }
 
-TEST_CASE("lowering: expressions and parameter references fold before the "
-          "IR", "[dsl][lowering]") {
+TEST_CASE(
+    "lowering: expressions and parameter references fold before the "
+    "IR",
+    "[dsl][lowering]") {
   const IrLoadResult loaded = compile_and_load(
       "model M {\n"
       "  param arrival_rate: float = 0.4\n"
@@ -205,18 +269,43 @@ TEST_CASE("lowering: expressions and parameter references fold before the "
           std::string::npos);  // exponential(service_rate)
 }
 
-TEST_CASE("lowering: ir_loader consumes the DSL output end to end",
-          "[dsl][lowering]") {
+TEST_CASE("lowering: integer literals use the declared float field type",
+          "[dsl][lowering][types]") {
+  const IrLoadResult loaded = compile_and_load(
+      "model TypedFields {\n"
+      "  use process\n"
+      "  source In { arrival = constant(1) }\n"
+      "  queue Buffer { capacity = 2 timeout = 1 }\n"
+      "  sink Out { }\n"
+      "  couple In.out -> Buffer.in\n"
+      "  couple Buffer.out -> Out.in\n"
+      "}\n",
+      "typed_fields.lp");
+
+  const v2::Node* queue = loaded.file.v2_root->root()->children()->Get(1);
+  REQUIRE(queue->params() != nullptr);
+
+  const v2::Var* timeout = nullptr;
+  for (const v2::Var* param : *queue->params()) {
+    if (param->name() != nullptr && param->name()->str() == "timeout") {
+      timeout = param;
+      break;
+    }
+  }
+  REQUIRE(timeout != nullptr);
+  REQUIRE(timeout->type() == v2::VarType_Float);
+  REQUIRE(timeout->float_value() == 1.0);
+}
+
+TEST_CASE("lowering: ir_loader consumes the DSL output end to end", "[dsl][lowering]") {
   const std::string source = logicpilot::testing::read_text_file(kMm1Path);
   const CompileResult result = compile_source(source, "examples/mm1.lp");
   REQUIRE(result.ok);
-  IrLoadResult loaded =
-      load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
   REQUIRE(loaded.ok());
 
   std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
   REQUIRE(model != nullptr);
 
   ReplicationConfig config;
@@ -227,4 +316,64 @@ TEST_CASE("lowering: ir_loader consumes the DSL output end to end",
   REQUIRE(metrics.departures > 1200);
   REQUIRE(metrics.mean_wait > 0.5);
   REQUIRE(metrics.mean_sojourn > metrics.mean_wait);
+}
+
+TEST_CASE("lowering: standalone library semantics and version survive into IR",
+          "[dsl][lowering][extension]") {
+  const std::vector<std::string> library_dirs = {LOGICPILOT_DSL_FIXTURE_DIR};
+  const CompileResult result = compile_source(
+      "model Net {\n"
+      "  use petri\n"
+      "  place Buffer { tokens = 4 }\n"
+      "}\n",
+      "petri_model.lp", library_dirs);
+  INFO(format_diagnostics("petri_model.lp", result.diagnostics));
+  REQUIRE(result.ok);
+
+  IrLoadResult loaded = load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  const v2::Node* place = loaded.file.v2_root->root()->children()->Get(0);
+  REQUIRE(place->semantics()->library()->str() == "petri");
+  REQUIRE(place->semantics()->block()->str() == "place");
+  REQUIRE(place->semantics()->version()->str() == "3");
+
+  const std::vector<std::string> methods = resolve_method_names(loaded.file);
+  REQUIRE(methods == std::vector<std::string>{"petri"});
+
+  MethodRegistry::instance().register_method(
+      "petri", [] { return std::unique_ptr<SimulationMethod>{}; },
+      MethodRegistry::Descriptor{"0.1.0", {"2"}});
+  std::string error;
+  REQUIRE(build_replication_model(loaded.file, &error) == nullptr);
+  REQUIRE(error.find("does not support semantics version '3'") != std::string::npos);
+}
+
+TEST_CASE("lowering: qualified blocks disambiguate equal names across libraries",
+          "[dsl][lowering][extension]") {
+  const std::vector<std::string> library_dirs = {LOGICPILOT_DSL_FIXTURE_DIR};
+  const CompileResult result = compile_source(
+      "model Qualified {\n"
+      "  use alpha\n"
+      "  use beta\n"
+      "  alpha::shared A { value = 1 }\n"
+      "  beta::shared B { value = 2 }\n"
+      "}\n",
+      "qualified.lp", library_dirs);
+  INFO(format_diagnostics("qualified.lp", result.diagnostics));
+  REQUIRE(result.ok);
+
+  IrLoadResult loaded = load_model_buffer(result.v2_bytes.data(), result.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  const auto* children = loaded.file.v2_root->root()->children();
+  REQUIRE(children->Get(0)->semantics()->library()->str() == "alpha");
+  REQUIRE(children->Get(0)->semantics()->block()->str() == "shared");
+  REQUIRE(children->Get(1)->semantics()->library()->str() == "beta");
+  REQUIRE(children->Get(1)->semantics()->block()->str() == "shared");
+
+  const CompileResult ambiguous =
+      compile_source("model Ambiguous { use alpha use beta shared X { value = 1 } }",
+                     "ambiguous.lp", library_dirs);
+  REQUIRE_FALSE(ambiguous.ok);
+  REQUIRE(std::any_of(ambiguous.diagnostics.begin(), ambiguous.diagnostics.end(),
+                      [](const Diagnostic& d) { return d.code == "LP2013"; }));
 }

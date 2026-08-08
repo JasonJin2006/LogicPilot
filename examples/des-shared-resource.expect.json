@@ -1,0 +1,37 @@
+{
+  "model": "des-shared-resource",
+  "description": "Two Service blocks sharing one unit must serialize their one-second tasks.",
+  "blocks": [
+    {
+      "name": "WorkA",
+      "kind": "service",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 },
+        "utilization": { "value": 0.5, "abs_tol": 1e-9 }
+      }
+    },
+    {
+      "name": "WorkB",
+      "kind": "service",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 },
+        "mean_occupancy": { "value": 0.5, "abs_tol": 1e-9 },
+        "utilization": { "value": 0.5, "abs_tol": 1e-9 }
+      }
+    },
+    {
+      "name": "DoneA",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 }
+      }
+    },
+    {
+      "name": "DoneB",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 1, "abs_tol": 0 }
+      }
+    }
+  ]
+}

@@ -7,14 +7,14 @@
 // kinds against the core kinds + library registry.
 #include "logicpilot/dsl/parser.h"
 
+#include <tree_sitter/api.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
-
-#include <tree_sitter/api.h>
 
 extern "C" {
 // Entry point of the checked-in grammar (dsl/tree-sitter-logicpilot,
@@ -32,7 +32,7 @@ namespace {
 Span span_of(const TSNode& node) {
   Span span;
   const TSPoint start = ts_node_start_point(node);
-  span.line = start.row + 1;        // tree-sitter is 0-based
+  span.line = start.row + 1;  // tree-sitter is 0-based
   span.column = start.column + 1;
   span.byte_offset = ts_node_start_byte(node);
   span.byte_length = ts_node_end_byte(node) - ts_node_start_byte(node);
@@ -44,8 +44,7 @@ bool node_is(const TSNode& node, const char* type) {
 }
 
 TSNode field(const TSNode& node, const char* name) {
-  return ts_node_child_by_field_name(
-      node, name, static_cast<uint32_t>(std::strlen(name)));
+  return ts_node_child_by_field_name(node, name, static_cast<uint32_t>(std::strlen(name)));
 }
 
 // Cursor-based iteration over the direct named children of `node` (comments
@@ -83,14 +82,11 @@ void collect_syntax_errors(const TSNode& node, const std::string& source,
       diagnostic.code = "LP0001";
       diagnostic.span = span_of(current);
       if (ts_node_is_missing(current)) {
-        diagnostic.message =
-            std::string("syntax error: missing '") + ts_node_type(current) +
-            "'";
+        diagnostic.message = std::string("syntax error: missing '") + ts_node_type(current) + "'";
       } else {
         const uint32_t start = ts_node_start_byte(current);
         const uint32_t end = ts_node_end_byte(current);
-        std::string snippet =
-            source.substr(start, std::min(end - start, 24u));
+        std::string snippet = source.substr(start, std::min(end - start, 24u));
         if (snippet.empty()) {
           snippet = ts_node_type(current);
         }
@@ -119,7 +115,7 @@ void collect_syntax_errors(const TSNode& node, const std::string& source,
 // ---------------------------------------------------------------------------
 
 class Extractor {
- public:
+public:
   Extractor(const std::string& source, std::vector<Diagnostic>& diagnostics)
       : source_(source), diagnostics_(diagnostics) {}
 
@@ -178,8 +174,7 @@ class Extractor {
         }
       });
     }
-    if (ts_node_is_null(library) ||
-        !node_is(library, "library_declaration")) {
+    if (ts_node_is_null(library) || !node_is(library, "library_declaration")) {
       error(root, "LP0001", "syntax error: expected a library declaration");
       return false;
     }
@@ -199,7 +194,7 @@ class Extractor {
     return true;
   }
 
- private:
+private:
   std::string text_of(const TSNode& node) const {
     const uint32_t start = ts_node_start_byte(node);
     const uint32_t end = ts_node_end_byte(node);
@@ -221,8 +216,7 @@ class Extractor {
     char* end = nullptr;
     const long long value = std::strtoll(text.c_str(), &end, 10);
     if (errno == ERANGE || end != text.c_str() + text.size()) {
-      error(node, "LP3001",
-            "integer literal '" + text + "' is out of range");
+      error(node, "LP3001", "integer literal '" + text + "' is out of range");
       return false;
     }
     out = value;
@@ -235,8 +229,7 @@ class Extractor {
     char* end = nullptr;
     const double value = std::strtod(text.c_str(), &end);
     if (errno == ERANGE || end != text.c_str() + text.size()) {
-      error(node, "LP3001",
-            "numeric literal '" + text + "' is out of range");
+      error(node, "LP3001", "numeric literal '" + text + "' is out of range");
       return false;
     }
     out = value;
@@ -249,8 +242,7 @@ class Extractor {
     const std::string text = text_of(node);
     std::size_t end = 0;
     while (end < text.size() &&
-           (std::isalnum(static_cast<unsigned char>(text[end])) ||
-            text[end] == '_')) {
+           (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) {
       ++end;
     }
     return text.substr(0, end);
@@ -271,9 +263,9 @@ class Extractor {
       // itself is iterative and survives; the AST walker fails gracefully
       // with LP0001 instead of crashing.
       too_deep_ = true;
-      error(node, "LP0001",
-            "expression nesting exceeds the " +
-                std::to_string(kMaxExpressionDepth) + "-level limit");
+      error(
+          node, "LP0001",
+          "expression nesting exceeds the " + std::to_string(kMaxExpressionDepth) + "-level limit");
       return value;
     }
     ++expr_depth_;
@@ -309,16 +301,16 @@ class Extractor {
       });
     } else if (node_is(child, "binary_expression")) {
       const std::string op = text_of(field(child, "op"));
-      value.kind = op == "+" ? ValueKind::kAdd
-                  : op == "-" ? ValueKind::kSub
-                  : op == "*" ? ValueKind::kMul
-                  : op == "/" ? ValueKind::kDiv
-                  : op == "<" ? ValueKind::kLt
-                  : op == ">" ? ValueKind::kGt
-                  : op == "<=" ? ValueKind::kLe
-                  : op == ">=" ? ValueKind::kGe
-                  : op == "==" ? ValueKind::kEq
-                               : ValueKind::kNe;
+      value.kind = op == "+"    ? ValueKind::kAdd
+                   : op == "-"  ? ValueKind::kSub
+                   : op == "*"  ? ValueKind::kMul
+                   : op == "/"  ? ValueKind::kDiv
+                   : op == "<"  ? ValueKind::kLt
+                   : op == ">"  ? ValueKind::kGt
+                   : op == "<=" ? ValueKind::kLe
+                   : op == ">=" ? ValueKind::kGe
+                   : op == "==" ? ValueKind::kEq
+                                : ValueKind::kNe;
       value.operands.push_back(extract_value(field(child, "left")));
       value.operands.push_back(extract_value(field(child, "right")));
     } else if (node_is(child, "unary_expression")) {
@@ -354,13 +346,16 @@ class Extractor {
   RangeField extract_range(const TSNode& node) {
     RangeField range;
     range.span = span_of(node);
-    std::int64_t value = 0;
-    if (integer_of(field(node, "min"), value)) {
-      range.min = value;
-    }
-    if (integer_of(field(node, "max"), value)) {
-      range.max = value;
-    }
+    const auto number = [&](const TSNode& value, double& out) {
+      if (node_is(value, "integer")) {
+        std::int64_t integer = 0;
+        if (integer_of(value, integer)) out = static_cast<double>(integer);
+      } else if (node_is(value, "float")) {
+        double_of(value, out);
+      }
+    };
+    number(field(node, "min"), range.min);
+    number(field(node, "max"), range.max);
     return range;
   }
 
@@ -449,9 +444,7 @@ class Extractor {
     std::string rhs_text = text_of(field(node, "rhs"));
     // Trim the surrounding whitespace captured by the raw token.
     const auto trim = [](std::string& text) {
-      const auto not_space = [](unsigned char c) {
-        return !std::isspace(c);
-      };
+      const auto not_space = [](unsigned char c) { return !std::isspace(c); };
       const auto first = std::find_if(text.begin(), text.end(), not_space);
       if (first == text.end()) {
         text.clear();
@@ -514,6 +507,10 @@ class Extractor {
     Node node;
     node.span = span_of(decl);
     node.kind = text_of(field(decl, "kind"));
+    if (const std::size_t separator = node.kind.find("::"); separator != std::string::npos) {
+      node.kind_library = node.kind.substr(0, separator);
+      node.kind = node.kind.substr(separator + 2);
+    }
     node.name = text_of(field(decl, "name"));
     node.name_span = span_of(field(decl, "name"));
     const TSNode body = field(decl, "body");
@@ -523,8 +520,8 @@ class Extractor {
       // overflow the C++ stack.
       too_deep_ = true;
       error(decl, "LP0001",
-            "declaration nesting exceeds the " +
-                std::to_string(kMaxDeclarationDepth) + "-level limit");
+            "declaration nesting exceeds the " + std::to_string(kMaxDeclarationDepth) +
+                "-level limit");
       return node;
     }
     each_named_child(body, [&](const TSNode& member) {
@@ -564,7 +561,14 @@ class Extractor {
     experiment.name = node.name;
     experiment.name_span = node.name_span;
     for (const Field& field : node.fields) {
-      if (field.name == "objective") {
+      if (field.name == "type" || field.name == "kind") {
+        experiment.kind_count += 1;
+        experiment.kind_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_kind = true;
+          experiment.kind = field.value.string_value;
+        }
+      } else if (field.name == "objective") {
         experiment.objective_count += 1;
         experiment.objective_span = field.value.span;
         if (field.value.kind == ValueKind::kIdentifier) {
@@ -592,6 +596,70 @@ class Extractor {
           experiment.has_budget = true;
           experiment.budget = field.value.int_value;
         }
+      } else if (field.name == "replications") {
+        experiment.replications_count += 1;
+        experiment.replications_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt) {
+          experiment.has_replications = true;
+          experiment.replications = field.value.int_value;
+        }
+      } else if (field.name == "seed") {
+        experiment.seed_count += 1;
+        experiment.seed_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt) {
+          experiment.has_seed = true;
+          experiment.seed = field.value.int_value;
+        }
+      } else if (field.name == "seed_mode") {
+        experiment.seed_mode_count += 1;
+        experiment.seed_mode_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_seed_mode = true;
+          experiment.seed_mode = field.value.string_value;
+        }
+      } else if (field.name == "replication_mode") {
+        experiment.replication_mode_count += 1;
+        experiment.replication_mode_span = field.value.span;
+        if (field.value.kind == ValueKind::kIdentifier) {
+          experiment.has_replication_mode = true;
+          experiment.replication_mode = field.value.string_value;
+        }
+      } else if (field.name == "min_replications") {
+        experiment.min_replications_count += 1;
+        experiment.min_replications_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt) {
+          experiment.has_min_replications = true;
+          experiment.min_replications = field.value.int_value;
+        }
+      } else if (field.name == "max_replications") {
+        experiment.max_replications_count += 1;
+        experiment.max_replications_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt) {
+          experiment.has_max_replications = true;
+          experiment.max_replications = field.value.int_value;
+        }
+      } else if (field.name == "confidence") {
+        experiment.confidence_count += 1;
+        experiment.confidence_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt ||
+            field.value.kind == ValueKind::kFloat) {
+          experiment.has_confidence = true;
+          experiment.confidence = field.value.kind == ValueKind::kInt
+                                      ? static_cast<double>(field.value.int_value)
+                                      : field.value.float_value;
+        }
+      } else if (field.name == "error_percent") {
+        experiment.error_percent_count += 1;
+        experiment.error_percent_span = field.value.span;
+        if (field.value.kind == ValueKind::kInt ||
+            field.value.kind == ValueKind::kFloat) {
+          experiment.has_error_percent = true;
+          experiment.error_percent = field.value.kind == ValueKind::kInt
+                                         ? static_cast<double>(field.value.int_value)
+                                         : field.value.float_value;
+        }
+      } else {
+        experiment.unknown_fields.push_back(field);
       }
     }
     for (const RangeField& range : node.ranges) {
@@ -600,6 +668,45 @@ class Extractor {
       experiment.has_range = true;
       experiment.range_min = range.min;
       experiment.range_max = range.max;
+    }
+    for (const Node& child : node.children) {
+      if (child.kind != "axis") {
+        continue;
+      }
+      VariationAxis axis;
+      axis.name = child.name;
+      axis.name_span = child.name_span;
+      axis.span = child.span;
+      for (const Field& field : child.fields) {
+        if (field.name == "variable") {
+          axis.variable_count += 1;
+          axis.variable_span = field.value.span;
+          if (field.value.kind == ValueKind::kIdentifier) {
+            axis.has_variable = true;
+            axis.variable = field.value.string_value;
+          }
+        } else if (field.name == "step") {
+          axis.step_count += 1;
+          axis.step_span = field.value.span;
+          if (field.value.kind == ValueKind::kInt ||
+              field.value.kind == ValueKind::kFloat) {
+            axis.has_step = true;
+            axis.step = field.value.kind == ValueKind::kInt
+                            ? static_cast<double>(field.value.int_value)
+                            : field.value.float_value;
+          }
+        } else {
+          axis.unknown_fields.push_back(field);
+        }
+      }
+      for (const RangeField& range : child.ranges) {
+        axis.range_count += 1;
+        axis.range_span = range.span;
+        axis.has_range = true;
+        axis.range_min = range.min;
+        axis.range_max = range.max;
+      }
+      experiment.axes.push_back(std::move(axis));
     }
     return experiment;
   }
@@ -616,10 +723,14 @@ class Extractor {
 
 const char* to_string(DistKind kind) {
   switch (kind) {
-    case DistKind::kPoisson: return "poisson";
-    case DistKind::kExponential: return "exponential";
-    case DistKind::kNormal: return "normal";
-    case DistKind::kConstant: return "constant";
+    case DistKind::kPoisson:
+      return "poisson";
+    case DistKind::kExponential:
+      return "exponential";
+    case DistKind::kNormal:
+      return "normal";
+    case DistKind::kConstant:
+      return "constant";
   }
   return "unknown";
 }
@@ -633,8 +744,7 @@ const Field* find_field(const Node& node, const char* name) {
   return nullptr;
 }
 
-const VarDecl* find_var(const Node& node, const char* keyword,
-                        const std::string& name) {
+const VarDecl* find_var(const Node& node, const char* keyword, const std::string& name) {
   for (const VarDecl& var : node.vars) {
     if (var.keyword == keyword && var.name == name) {
       return &var;
@@ -663,28 +773,32 @@ bool distribution_from_value(const Value& value, Distribution& out) {
   };
   if (value.call_name == "poisson" || value.call_name == "rate") {
     const std::vector<double> args = args_as_doubles(value.call_args);
-    if (args.size() != 1) return false;
+    if (args.size() != 1)
+      return false;
     out.kind = DistKind::kPoisson;
     out.params = args;
     return true;
   }
   if (value.call_name == "exponential") {
     const std::vector<double> args = args_as_doubles(value.call_args);
-    if (args.size() != 1) return false;
+    if (args.size() != 1)
+      return false;
     out.kind = DistKind::kExponential;
     out.params = args;
     return true;
   }
   if (value.call_name == "normal") {
     const std::vector<double> args = args_as_doubles(value.call_args);
-    if (args.size() != 2) return false;
+    if (args.size() != 2)
+      return false;
     out.kind = DistKind::kNormal;
     out.params = args;
     return true;
   }
   if (value.call_name == "constant") {
     const std::vector<double> args = args_as_doubles(value.call_args);
-    if (args.size() != 1) return false;
+    if (args.size() != 1)
+      return false;
     out.kind = DistKind::kConstant;
     out.params = args;
     return true;
@@ -730,8 +844,7 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
       return true;
     }
     case ValueKind::kParen:
-      return fold_value(value.operands.empty() ? value : value.operands[0],
-                        scope, out);
+      return fold_value(value.operands.empty() ? value : value.operands[0], scope, out);
     case ValueKind::kNegate: {
       if (value.operands.empty()) {
         return false;
@@ -767,20 +880,16 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
           !fold_value(value.operands[1], scope, right)) {
         return false;
       }
-      const bool both_int =
-          left.kind == ValueKind::kInt && right.kind == ValueKind::kInt;
-      const bool numeric =
-          (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
-          (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
+      const bool both_int = left.kind == ValueKind::kInt && right.kind == ValueKind::kInt;
+      const bool numeric = (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
+                           (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
       if (!numeric) {
         return false;
       }
       const double l =
-          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value)
-                                       : left.float_value;
+          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value) : left.float_value;
       const double r =
-          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value)
-                                        : right.float_value;
+          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value) : right.float_value;
       out = Value{};
       out.span = value.span;
       if (value.kind == ValueKind::kDiv) {
@@ -794,19 +903,33 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
       if (both_int) {
         out.kind = ValueKind::kInt;
         switch (value.kind) {
-          case ValueKind::kAdd: out.int_value = left.int_value + right.int_value; break;
-          case ValueKind::kSub: out.int_value = left.int_value - right.int_value; break;
-          case ValueKind::kMul: out.int_value = left.int_value * right.int_value; break;
-          default: break;
+          case ValueKind::kAdd:
+            out.int_value = left.int_value + right.int_value;
+            break;
+          case ValueKind::kSub:
+            out.int_value = left.int_value - right.int_value;
+            break;
+          case ValueKind::kMul:
+            out.int_value = left.int_value * right.int_value;
+            break;
+          default:
+            break;
         }
         return true;
       }
       out.kind = ValueKind::kFloat;
       switch (value.kind) {
-        case ValueKind::kAdd: out.float_value = l + r; break;
-        case ValueKind::kSub: out.float_value = l - r; break;
-        case ValueKind::kMul: out.float_value = l * r; break;
-        default: break;
+        case ValueKind::kAdd:
+          out.float_value = l + r;
+          break;
+        case ValueKind::kSub:
+          out.float_value = l - r;
+          break;
+        case ValueKind::kMul:
+          out.float_value = l * r;
+          break;
+        default:
+          break;
       }
       return true;
     }
@@ -825,29 +948,39 @@ bool fold_value(const Value& value, const ParamScope& scope, Value& out) {
           !fold_value(value.operands[1], scope, right)) {
         return false;
       }
-      const bool numeric =
-          (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
-          (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
+      const bool numeric = (left.kind == ValueKind::kInt || left.kind == ValueKind::kFloat) &&
+                           (right.kind == ValueKind::kInt || right.kind == ValueKind::kFloat);
       if (!numeric) {
         return false;
       }
       const double l =
-          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value)
-                                       : left.float_value;
+          left.kind == ValueKind::kInt ? static_cast<double>(left.int_value) : left.float_value;
       const double r =
-          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value)
-                                        : right.float_value;
+          right.kind == ValueKind::kInt ? static_cast<double>(right.int_value) : right.float_value;
       out = Value{};
       out.span = value.span;
       out.kind = ValueKind::kBool;
       switch (value.kind) {
-        case ValueKind::kLt: out.bool_value = l < r; break;
-        case ValueKind::kGt: out.bool_value = l > r; break;
-        case ValueKind::kLe: out.bool_value = l <= r; break;
-        case ValueKind::kGe: out.bool_value = l >= r; break;
-        case ValueKind::kEq: out.bool_value = l == r; break;
-        case ValueKind::kNe: out.bool_value = l != r; break;
-        default: break;
+        case ValueKind::kLt:
+          out.bool_value = l < r;
+          break;
+        case ValueKind::kGt:
+          out.bool_value = l > r;
+          break;
+        case ValueKind::kLe:
+          out.bool_value = l <= r;
+          break;
+        case ValueKind::kGe:
+          out.bool_value = l >= r;
+          break;
+        case ValueKind::kEq:
+          out.bool_value = l == r;
+          break;
+        case ValueKind::kNe:
+          out.bool_value = l != r;
+          break;
+        default:
+          break;
       }
       return true;
     }
@@ -860,8 +993,8 @@ ParseOutput parse_source(const std::string& source, const std::string& path) {
 
   TSParser* parser = ts_parser_new();
   ts_parser_set_language(parser, tree_sitter_logicpilot());
-  TSTree* tree = ts_parser_parse_string(
-      parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
+  TSTree* tree =
+      ts_parser_parse_string(parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
   ts_parser_delete(parser);
 
   if (tree == nullptr) {
@@ -890,14 +1023,13 @@ ParseOutput parse_source(const std::string& source, const std::string& path) {
   return output;
 }
 
-ParseLibraryOutput parse_library_source(const std::string& source,
-                                        const std::string& path) {
+ParseLibraryOutput parse_library_source(const std::string& source, const std::string& path) {
   ParseLibraryOutput output;
 
   TSParser* parser = ts_parser_new();
   ts_parser_set_language(parser, tree_sitter_logicpilot());
-  TSTree* tree = ts_parser_parse_string(
-      parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
+  TSTree* tree =
+      ts_parser_parse_string(parser, nullptr, source.c_str(), static_cast<uint32_t>(source.size()));
   ts_parser_delete(parser);
 
   if (tree == nullptr) {
@@ -918,8 +1050,7 @@ ParseLibraryOutput parse_library_source(const std::string& source,
 
   LibraryAst library;
   Extractor extractor{source, output.diagnostics};
-  if (extractor.extract_library(root, library) &&
-      output.diagnostics.empty()) {
+  if (extractor.extract_library(root, library) && output.diagnostics.empty()) {
     output.library = std::move(library);
   }
   ts_tree_delete(tree);

@@ -14,8 +14,8 @@
 #include <string>
 #include <string_view>
 
-#include "logicpilot/devs/replication.h"
 #include "logicpilot/devs/flow_engine.h"
+#include "logicpilot/devs/replication.h"
 #include "logicpilot/runtime/simulation_method.h"
 
 namespace logicpilot {
@@ -26,36 +26,31 @@ struct Node;
 }
 
 class ProcessRuntime final : public SimulationMethod {
- public:
+public:
   ProcessRuntime() = default;
 
-  [[nodiscard]] std::string_view method_name() const override {
-    return "process";
+  [[nodiscard]] std::string_view method_name() const override { return "process"; }
+  [[nodiscard]] MethodCapabilities capabilities() const override {
+    return MethodCapabilities{MethodExecutionMode::kSharedEventQueue, true, false};
   }
 
-  bool initialize(RuntimeContext& context, const IrModelFile& model,
-                  std::string* error) override;
+  bool initialize(RuntimeContext& context, const IrModelFile& model, std::string* error) override;
   void advance(SimTime until) override;
   void shutdown() override;
 
-  [[nodiscard]] std::unique_ptr<ReplicationModel> to_replication_model(
-      const IrModelFile& model, std::string* error) override;
+  [[nodiscard]] std::unique_ptr<ReplicationModel> to_replication_model(const IrModelFile& model,
+                                                                       std::string* error) override;
 
   // Metrics of the replication driven by the lifecycle API (advance()).
-  [[nodiscard]] const ReplicationMetrics& last_metrics() const {
-    return last_metrics_;
-  }
-  [[nodiscard]] ReplicationMetrics replication_metrics() const override {
-    return last_metrics_;
-  }
+  [[nodiscard]] const ReplicationMetrics& last_metrics() const { return last_metrics_; }
+  [[nodiscard]] ReplicationMetrics replication_metrics() const override { return last_metrics_; }
 
- private:
+private:
   // Lower the model root to a runnable flow engine (M/M/1 fast path or the
   // generic ProcessFlowSim engine). Shared by initialize() and
   // to_replication_model(); nullptr (with `error`) when the root is not a
   // runnable process flow.
-  static std::unique_ptr<FlowEngine> lower(
-      const ir::v2::Node* model_root, std::string* error);
+  static std::unique_ptr<FlowEngine> lower(const ir::v2::Node* model_root, std::string* error);
 
   RuntimeContext* context_{nullptr};
   std::unique_ptr<FlowEngine> replication_;

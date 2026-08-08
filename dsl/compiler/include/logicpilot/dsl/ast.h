@@ -60,8 +60,8 @@ struct Value {
   bool bool_value{false};
   std::int64_t int_value{0};
   double float_value{0.0};
-  std::string string_value;   // kString / kIdentifier
-  std::string call_name;      // kCall: distribution constructor, ...
+  std::string string_value;      // kString / kIdentifier
+  std::string call_name;         // kCall: distribution constructor, ...
   std::vector<Value> call_args;  // kCall expression arguments
   std::vector<Value> operands;   // kNegate/kParen: 1; kAdd/kSub/kMul/kDiv: 2
   Span span;
@@ -80,10 +80,8 @@ struct FoldedValue {
 // Parameter scope for compile-time expression resolution: model-level
 // `param` declarations plus container-local `param`s.
 class ParamScope {
- public:
-  void declare(const std::string& name, const FoldedValue& value) {
-    values_[name] = value;
-  }
+public:
+  void declare(const std::string& name, const FoldedValue& value) { values_[name] = value; }
   bool lookup(const std::string& name, FoldedValue& out) const {
     const auto it = values_.find(name);
     if (it == values_.end()) {
@@ -93,7 +91,7 @@ class ParamScope {
     return true;
   }
 
- private:
+private:
   std::unordered_map<std::string, FoldedValue> values_;
 };
 
@@ -112,7 +110,7 @@ struct VarDecl {
   std::string keyword;  // "state" | "param"
   std::string name;
   Span name_span;
-  std::string type;     // "" unless annotated
+  std::string type;  // "" unless annotated
   Value value;
   Span span;
 };
@@ -134,10 +132,10 @@ struct Effect {
   enum class Kind { kAssign, kEmit, kCall };
 
   Kind kind{Kind::kAssign};
-  std::string name;   // kAssign: state variable; kEmit: port; kCall: handler
+  std::string name;  // kAssign: state variable; kEmit: port; kCall: handler
   Span name_span;
-  Value value;        // kAssign value
-  std::string arg;    // kCall optional argument ("" if none)
+  Value value;      // kAssign value
+  std::string arg;  // kCall optional argument ("" if none)
   Span arg_span;
 };
 
@@ -145,7 +143,7 @@ struct Effect {
 struct Behavior {
   std::string trigger;  // "timeout" | "tick" | "input" | ...
   Span span;
-  std::string port;     // message-trigger channel (on_input <port>)
+  std::string port;  // message-trigger channel (on_input <port>)
   Span port_span;
   std::vector<Effect> effects;
 };
@@ -168,14 +166,18 @@ struct CoupleDecl {
 
 // `range = <min>..<max>` (experiment blocks).
 struct RangeField {
-  std::int64_t min{1};
-  std::int64_t max{1};
+  double min{1};
+  double max{1};
   Span span;
 };
 
 // One declaration: `kind name { ... }`. `kind` is resolved by the semantic
 // analyzer (core kinds or a registered library block).
 struct Node {
+  // Optional explicit semantic namespace from `library::block`. `kind`
+  // remains the short block name so existing method-specific validation can
+  // operate without treating the qualifier as part of the block identity.
+  std::string kind_library;
   std::string kind;
   std::string name;
   Span name_span;
@@ -188,14 +190,42 @@ struct Node {
   std::vector<RangeField> ranges;
   std::vector<CoupleDecl> couplings;
   std::vector<Node> children;
+
+  [[nodiscard]] std::string registry_key() const {
+    return kind_library.empty() ? kind : kind_library + "::" + kind;
+  }
 };
 
 // `experiment` block (core config kind; kept typed for lowering and the
 // sidecar serializer).
+struct VariationAxis {
+  std::string name;
+  Span name_span;
+  Span span;
+  bool has_variable{false};
+  int variable_count{0};
+  std::string variable;
+  Span variable_span;
+  bool has_range{false};
+  int range_count{0};
+  double range_min{0.0};
+  double range_max{0.0};
+  Span range_span;
+  bool has_step{false};
+  int step_count{0};
+  double step{1.0};
+  Span step_span;
+  std::vector<Field> unknown_fields;
+};
+
 struct ExperimentDecl {
   std::string name;
   Span name_span;
   Span span;
+  bool has_kind{false};
+  int kind_count{0};
+  std::string kind;  // "simulation" | "optimization"
+  Span kind_span;
   bool has_objective{false};
   int objective_count{0};
   std::string objective;  // "maximize" | "minimize"
@@ -210,13 +240,47 @@ struct ExperimentDecl {
   Span variable_span;
   bool has_range{false};
   int range_count{0};
-  std::int64_t range_min{1};
-  std::int64_t range_max{1};
+  double range_min{1};
+  double range_max{1};
   Span range_span;
   bool has_budget{false};
   int budget_count{0};
   std::int64_t budget{20};
   Span budget_span;
+  bool has_replications{false};
+  int replications_count{0};
+  std::int64_t replications{1};
+  Span replications_span;
+  bool has_seed{false};
+  int seed_count{0};
+  std::int64_t seed{42};
+  Span seed_span;
+  bool has_seed_mode{false};
+  int seed_mode_count{0};
+  std::string seed_mode{"fixed"};
+  Span seed_mode_span;
+  bool has_replication_mode{false};
+  int replication_mode_count{0};
+  std::string replication_mode{"fixed"};
+  Span replication_mode_span;
+  bool has_min_replications{false};
+  int min_replications_count{0};
+  std::int64_t min_replications{5};
+  Span min_replications_span;
+  bool has_max_replications{false};
+  int max_replications_count{0};
+  std::int64_t max_replications{100};
+  Span max_replications_span;
+  bool has_confidence{false};
+  int confidence_count{0};
+  double confidence{0.95};
+  Span confidence_span;
+  bool has_error_percent{false};
+  int error_percent_count{0};
+  double error_percent{5.0};
+  Span error_percent_span;
+  std::vector<VariationAxis> axes;
+  std::vector<Field> unknown_fields;
 };
 
 // ---------------------------------------------------------------------------
@@ -279,14 +343,12 @@ struct ModelAst {
 // exponential, normal, constant); arguments must already be folded
 // literals. Returns false when the value is not a recognized distribution
 // call.
-[[nodiscard]] bool distribution_from_value(const Value& value,
-                                           Distribution& out);
+[[nodiscard]] bool distribution_from_value(const Value& value, Distribution& out);
 
 // Constant-fold an expression to a literal-only Value (kCall keeps its
 // folded arguments; identifiers resolve against `scope`). Returns false when
 // an identifier cannot be resolved, arithmetic operands are non-numeric, or
 // division by zero occurs.
-[[nodiscard]] bool fold_value(const Value& value, const ParamScope& scope,
-                              Value& out);
+[[nodiscard]] bool fold_value(const Value& value, const ParamScope& scope, Value& out);
 
 }  // namespace logicpilot::dsl

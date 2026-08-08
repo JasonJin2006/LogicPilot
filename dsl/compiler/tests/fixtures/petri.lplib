@@ -1,0 +1,7 @@
+library petri {
+  version = 3
+
+  block place {
+    tokens: int = 0
+  }
+}

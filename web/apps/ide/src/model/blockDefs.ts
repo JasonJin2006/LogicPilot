@@ -7,13 +7,7 @@
 import { BLOCK_CATALOG } from './blockCatalog';
 
 export type LibraryId =
-  | 'process'
-  | 'presentation'
-  | 'statechart'
-  | 'action'
-  | 'agent'
-  | 'analysis'
-  | 'controls';
+  'process' | 'presentation' | 'statechart' | 'action' | 'agent' | 'analysis' | 'controls';
 
 /** Container kinds whose subgraph opens as its own canvas (drill-in), like
  *  AnyLogic agent canvases. `process` is the builtin flow container;
@@ -442,10 +436,7 @@ const AGENT_DEFS: BlockDef[] = [
       { name: 'in', direction: 'in', conditionalOn: null, description: '' },
       { name: 'out', direction: 'out', conditionalOn: null, description: '' },
     ],
-    properties: commonProps([
-      stringProp('from', 'From', ''),
-      stringProp('to', 'To', ''),
-    ]),
+    properties: commonProps([stringProp('from', 'From', ''), stringProp('to', 'To', '')]),
   },
   {
     kind: 'linkToAgents',
@@ -701,10 +692,7 @@ const ANALYSIS_DEFS: BlockDef[] = [
     name: 'Stack Chart',
     hint: 'stacked bars',
     ports: [],
-    properties: commonProps([
-      stringProp('title', 'Title', ''),
-      stringProp('value', 'Value', ''),
-    ]),
+    properties: commonProps([stringProp('title', 'Title', ''), stringProp('value', 'Value', '')]),
   },
   {
     kind: 'pieChart',
@@ -712,10 +700,7 @@ const ANALYSIS_DEFS: BlockDef[] = [
     name: 'Pie Chart',
     hint: 'values as pie slices',
     ports: [],
-    properties: commonProps([
-      stringProp('title', 'Title', ''),
-      stringProp('value', 'Value', ''),
-    ]),
+    properties: commonProps([stringProp('title', 'Title', ''), stringProp('value', 'Value', '')]),
   },
   {
     kind: 'plot',
@@ -751,10 +736,7 @@ const ANALYSIS_DEFS: BlockDef[] = [
     name: 'Time Stack Chart',
     hint: 'stacked areas over time',
     ports: [],
-    properties: commonProps([
-      stringProp('title', 'Title', ''),
-      stringProp('value', 'Value', ''),
-    ]),
+    properties: commonProps([stringProp('title', 'Title', ''), stringProp('value', 'Value', '')]),
   },
   {
     kind: 'timeColorChart',
@@ -762,10 +744,7 @@ const ANALYSIS_DEFS: BlockDef[] = [
     name: 'Time Color Chart',
     hint: 'color-coded value over time',
     ports: [],
-    properties: commonProps([
-      stringProp('title', 'Title', ''),
-      stringProp('value', 'Value', ''),
-    ]),
+    properties: commonProps([stringProp('title', 'Title', ''), stringProp('value', 'Value', '')]),
   },
   {
     kind: 'histogram',

@@ -9,8 +9,14 @@ import { defineConfig, type Plugin } from 'vite';
 
 import {
   handleAiBuild,
+  handleAiCompareMetrics,
   handleAiExplain,
   handleAiOptimize,
+  handleAiPatch,
+  handleParameterVariation,
+  handleAiQueryMetrics,
+  handleAiRun,
+  handleAiValidate,
   handleConfig,
 } from './scripts/ai-endpoint.mjs';
 
@@ -24,6 +30,24 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/ai-optimize', (req, res) => {
       void handleAiOptimize(req, res);
+    });
+    server.middlewares.use('/api/ai-run', (req, res) => {
+      void handleAiRun(req, res);
+    });
+    server.middlewares.use('/api/parameter-variation', (req, res) => {
+      void handleParameterVariation(req, res);
+    });
+    server.middlewares.use('/api/ai-validate', (req, res) => {
+      void handleAiValidate(req, res);
+    });
+    server.middlewares.use('/api/ai-patch', (req, res) => {
+      void handleAiPatch(req, res);
+    });
+    server.middlewares.use('/api/ai-query-metrics', (req, res) => {
+      void handleAiQueryMetrics(req, res);
+    });
+    server.middlewares.use('/api/ai-compare-metrics', (req, res) => {
+      void handleAiCompareMetrics(req, res);
     });
     server.middlewares.use('/api/ai-explain', (req, res) => {
       void handleAiExplain(req, res);

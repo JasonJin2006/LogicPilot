@@ -27,9 +27,22 @@ describe('canvas view', () => {
       y: 200,
       params: {},
     });
-    document = addNode(document, { kind: 'agent', name: 'Worker', x: 120, y: 60, params: { count: 1 } });
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 120,
+      y: 60,
+      params: { count: 1 },
+    });
     // The agent's internal stage is hidden from the root canvas.
-    document = addNode(document, { kind: 'queue', name: 'Q', x: 300, y: 200, params: {}, container: 'Worker' });
+    document = addNode(document, {
+      kind: 'queue',
+      name: 'Q',
+      x: 300,
+      y: 200,
+      params: {},
+      container: 'Worker',
+    });
     const root = documentForView(document, null);
     expect(root.nodes).toHaveLength(3);
     expect(root.nodes.every((node) => node.container === undefined)).toBe(true);
@@ -39,7 +52,13 @@ describe('canvas view', () => {
 
   it('an agent container view filters to its nodes and inner couplings', () => {
     let document = createDocument('M');
-    document = addNode(document, { kind: 'agent', name: 'Worker', x: 120, y: 60, params: { count: 1 } });
+    document = addNode(document, {
+      kind: 'agent',
+      name: 'Worker',
+      x: 120,
+      y: 60,
+      params: { count: 1 },
+    });
     document = addNode(document, {
       kind: 'source',
       name: 'S',
@@ -58,9 +77,7 @@ describe('canvas view', () => {
     });
     document = {
       ...document,
-      edges: [
-        { id: 'e1', from: document.nodes[1]!.id, to: document.nodes[2]!.id },
-      ],
+      edges: [{ id: 'e1', from: document.nodes[1]!.id, to: document.nodes[2]!.id }],
     };
     const worker = documentForView(document, { kind: 'agent', name: 'Worker' });
     expect(worker.nodes).toHaveLength(2);
@@ -91,9 +108,7 @@ describe('canvas view', () => {
 `;
     const parsed = parseDsl(source);
     expect(parsed.ok).toBe(true);
-    const members = parsed.document.nodes.filter(
-      (node) => node.container === 'Worker',
-    );
+    const members = parsed.document.nodes.filter((node) => node.container === 'Worker');
     expect(members).toHaveLength(2);
     expect(members.find((node) => node.name === 'S')?.container).toBe('Worker');
     expect(members.find((node) => node.name === 'Q')?.container).toBe('Worker');
@@ -103,9 +118,7 @@ describe('canvas view', () => {
     expect(regenerated).toContain('couple S.out -> Q.in');
     const reparsed = parseDsl(regenerated);
     expect(reparsed.ok).toBe(true);
-    const reparsedMembers = reparsed.document.nodes.filter(
-      (node) => node.container === 'Worker',
-    );
+    const reparsedMembers = reparsed.document.nodes.filter((node) => node.container === 'Worker');
     expect(reparsedMembers).toHaveLength(2);
     expect(reparsedMembers.find((node) => node.name === 'S')?.container).toBe('Worker');
     expect(reparsedMembers.find((node) => node.name === 'Q')?.container).toBe('Worker');
@@ -119,10 +132,7 @@ describe('canvas view store (parallel tabs)', () => {
     useCanvasView.getState().setView(OTHER);
     useCanvasView.getState().setView(WORKER); // already open: re-activate only
     expect(useCanvasView.getState().rootOpen).toBe(false);
-    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual([
-      'Worker',
-      'Other',
-    ]);
+    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Worker', 'Other']);
     expect(useCanvasView.getState().view).toEqual(WORKER);
   });
 

@@ -268,9 +268,7 @@ export function ExplorerPanel() {
       onSubmit: (name) => {
         const path = dir === '' ? name : `${dir}/${name}`;
         if (isDisk && projectPath) {
-          const content = path.endsWith('.lp')
-            ? `model ${name.replace(/\.lp$/, '')} {\n}\n`
-            : '';
+          const content = path.endsWith('.lp') ? `model ${name.replace(/\.lp$/, '')} {\n}\n` : '';
           void writeProjectFile(projectPath, path, content).then((result) => {
             if (!result.ok) {
               openInfo('Create failed', result.error ?? 'cannot create the file');
@@ -281,9 +279,7 @@ export function ExplorerPanel() {
         }
         updateFiles((files) => ({
           ...files,
-          [path]: path.endsWith('.lp')
-            ? `model ${name.replace(/\.lp$/, '')} {\n}\n`
-            : '',
+          [path]: path.endsWith('.lp') ? `model ${name.replace(/\.lp$/, '')} {\n}\n` : '',
         }));
       },
     });
@@ -408,9 +404,7 @@ export function ExplorerPanel() {
       isFolder(entry) ? [entry.path, ...collectFolders(entry.children)] : [],
     );
   const collapseAll = () => {
-    setCollapsed(
-      Object.fromEntries(collectFolders(sourceFolders).map((path) => [path, true])),
-    );
+    setCollapsed(Object.fromEntries(collectFolders(sourceFolders).map((path) => [path, true])));
   };
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {

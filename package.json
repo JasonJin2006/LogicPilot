@@ -12,12 +12,17 @@
     "test": "pnpm -r run test",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
+    "test:app-server": "node scripts/test-app-server.mjs",
+    "desktop:stage": "pnpm --filter @logicpilot/ide build && node scripts/stage-desktop-runtime.mjs",
+    "desktop:test-staged": "node scripts/test-staged-desktop-runtime.mjs --stage build/desktop-runtime",
+    "desktop:bundle": "pnpm desktop:stage && pnpm desktop:test-staged && pnpm exec tauri build --ci --config desktop/src-tauri/tauri.conf.json",
     "dev": "pnpm --filter @logicpilot/ide run dev",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^8.29.0",
     "eslint": "^8.57.1",

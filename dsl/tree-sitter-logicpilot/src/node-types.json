@@ -292,6 +292,10 @@
             "named": false
           },
           {
+            "type": "qualified_kind",
+            "named": true
+          },
+          {
             "type": "state",
             "named": false
           }
@@ -651,6 +655,21 @@
     }
   },
   {
+    "type": "qualified_kind",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "range_field",
     "named": true,
     "fields": {
@@ -658,6 +677,10 @@
         "multiple": false,
         "required": true,
         "types": [
+          {
+            "type": "float",
+            "named": true
+          },
           {
             "type": "integer",
             "named": true
@@ -668,6 +691,10 @@
         "multiple": false,
         "required": true,
         "types": [
+          {
+            "type": "float",
+            "named": true
+          },
           {
             "type": "integer",
             "named": true
@@ -946,6 +973,10 @@
   },
   {
     "type": ":",
+    "named": false
+  },
+  {
+    "type": "::",
     "named": false
   },
   {

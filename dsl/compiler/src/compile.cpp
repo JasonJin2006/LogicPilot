@@ -12,6 +12,7 @@
 #include "logicpilot/dsl/stdlib_process.h"
 
 #include <filesystem>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 
@@ -68,6 +69,13 @@ CompileResult compile_source(const std::string& source,
 CompileResult compile_source(const std::string& source,
                              const std::string& path,
                              const std::vector<std::string>& library_dirs) {
+  return compile_source(source, path, library_dirs, {});
+}
+
+CompileResult compile_source(const std::string& source,
+                             const std::string& path,
+                             const std::vector<std::string>& library_dirs,
+                             const ParameterOverrides& parameter_overrides) {
   CompileResult result;
 
   if (source.size() > kMaxSourceBytes) {
@@ -87,6 +95,54 @@ CompileResult compile_source(const std::string& source,
     result.diagnostics = std::move(parsed.diagnostics);
     return result;
   }
+
+  std::unordered_map<std::string, bool> override_found;
+  for (const auto& [name, value] : parameter_overrides) {
+    override_found.emplace(name, false);
+    if (!std::isfinite(value)) {
+      Diagnostic diagnostic;
+      diagnostic.severity = Severity::kError;
+      diagnostic.code = "LP3001";
+      diagnostic.message = "parameter override '" + name + "' must be finite";
+      result.diagnostics.push_back(std::move(diagnostic));
+    }
+  }
+  for (VarDecl& param : parsed.model->params) {
+    const auto found = parameter_overrides.find(param.name);
+    if (found == parameter_overrides.end()) continue;
+    override_found[param.name] = true;
+    const double value = found->second;
+    const bool integer_param = param.type == "int" ||
+                               param.value.kind == ValueKind::kInt;
+    if (integer_param && std::floor(value) != value) {
+      Diagnostic diagnostic;
+      diagnostic.severity = Severity::kError;
+      diagnostic.code = "LP3001";
+      diagnostic.message = "integer parameter '" + param.name +
+                           "' cannot be overridden with non-integer value " +
+                           std::to_string(value);
+      diagnostic.span = param.name_span;
+      result.diagnostics.push_back(std::move(diagnostic));
+      continue;
+    }
+    param.value.kind = integer_param ? ValueKind::kInt : ValueKind::kFloat;
+    param.value.int_value = static_cast<std::int64_t>(value);
+    param.value.float_value = value;
+    param.value.operands.clear();
+    param.value.call_args.clear();
+    param.value.string_value.clear();
+  }
+  for (const auto& [name, found] : override_found) {
+    if (!found) {
+      Diagnostic diagnostic;
+      diagnostic.severity = Severity::kError;
+      diagnostic.code = "LP7001";
+      diagnostic.message = "parameter override references unknown top-level param '" +
+                           name + "'";
+      result.diagnostics.push_back(std::move(diagnostic));
+    }
+  }
+  if (!result.diagnostics.empty()) return result;
 
   // Layer `use`d libraries over the built-in process registry.
   LibraryRegistry registry;
@@ -158,6 +214,12 @@ CompileResult compile_file(const std::string& path) {
 
 CompileResult compile_file(const std::string& path,
                            const std::vector<std::string>& library_dirs) {
+  return compile_file(path, library_dirs, {});
+}
+
+CompileResult compile_file(const std::string& path,
+                           const std::vector<std::string>& library_dirs,
+                           const ParameterOverrides& parameter_overrides) {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
     CompileResult result;
@@ -170,7 +232,7 @@ CompileResult compile_file(const std::string& path,
   }
   std::ostringstream buffer;
   buffer << in.rdbuf();
-  return compile_source(buffer.str(), path, library_dirs);
+  return compile_source(buffer.str(), path, library_dirs, parameter_overrides);
 }
 
 }  // namespace logicpilot::dsl

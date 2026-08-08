@@ -7,8 +7,7 @@
 
 namespace logicpilot {
 
-bool RuntimeManager::add(std::unique_ptr<SimulationMethod> method,
-                         std::string* error) {
+bool RuntimeManager::add(std::unique_ptr<SimulationMethod> method, std::string* error) {
   if (method == nullptr) {
     if (error != nullptr) {
       *error = "null method runtime";
@@ -28,8 +27,7 @@ bool RuntimeManager::add(std::unique_ptr<SimulationMethod> method,
   return true;
 }
 
-bool RuntimeManager::initialize(const IrModelFile& model,
-                                std::string* error) {
+bool RuntimeManager::initialize(const IrModelFile& model, std::string* error) {
   // One replication = one fresh world: the clock restarts, the kernel-level
   // handler registry and the shared variable store are cleared. Method
   // runtimes then register their handlers and schedule their initial events
@@ -37,18 +35,20 @@ bool RuntimeManager::initialize(const IrModelFile& model,
   context_.clock().reset();
   context_.handlers().clear();
   context_.variables().clear();
+  context_.messages().clear();
   for (auto& method : methods_) {
     std::string local_error;
     if (!method->initialize(context_, model, &local_error)) {
       if (error != nullptr) {
-        *error = "method '" + std::string(method->method_name()) + "': " +
-                 (local_error.empty() ? "initialize failed" : local_error);
+        *error = "method '" + std::string(method->method_name()) +
+                 "': " + (local_error.empty() ? "initialize failed" : local_error);
       }
       // Roll back: a partially initialized method may have registered
       // handlers and scheduled events. They must not leak into a later run
       // (the kernel clears these at the start of the next initialize()).
       context_.handlers().clear();
       context_.variables().clear();
+      context_.messages().clear();
       return false;
     }
   }

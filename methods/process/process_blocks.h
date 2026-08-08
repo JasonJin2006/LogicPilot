@@ -19,10 +19,10 @@
 #include <utility>
 #include <vector>
 
-#include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
-#include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/core/random/distributions.h"
-#include "logicpilot/devs/mm1.h"  // TimeSampler
+#include "logicpilot/core/random/xoshiro256pp.h"
+#include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
+#include "logicpilot/devs/mm1.h"         // TimeSampler
 #include "process_block.h"
 
 namespace logicpilot::process {
@@ -37,10 +37,19 @@ struct NodePos {
 class SourceBlock final : public BufferedBlock {
  public:
   SourceBlock(std::string name, TimeSampler interarrival,
-              std::unordered_map<std::string, double> attributes)
+              std::unordered_map<std::string, double> attributes,
+              std::string first_arrival_mode = "after_timeout",
+              double first_arrival_time = 0.0,
+              std::int64_t agents_per_arrival = 1,
+              std::int64_t max_arrival_events = -1, bool manual = false)
       : BufferedBlock("source", std::move(name), -1),
         interarrival_(std::move(interarrival)),
-        attributes_(std::move(attributes)) {}
+        attributes_(std::move(attributes)),
+        first_arrival_mode_(std::move(first_arrival_mode)),
+        first_arrival_time_(first_arrival_time),
+        agents_per_arrival_(std::max<std::int64_t>(agents_per_arrival, 1)),
+        max_arrival_events_(max_arrival_events),
+        manual_(manual) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
@@ -59,6 +68,26 @@ class SourceBlock final : public BufferedBlock {
     return interarrival_(rng);
   }
 
+  double sample_first_gap(Xoshiro256PlusPlus& rng) override {
+    if (first_arrival_mode_ == "at_start") {
+      return 0.0;
+    }
+    if (first_arrival_mode_ == "at_time") {
+      return std::max(first_arrival_time_, 0.0);
+    }
+    return sample_gap(rng);
+  }
+
+  [[nodiscard]] std::int64_t agents_per_arrival() const override {
+    return agents_per_arrival_;
+  }
+
+  [[nodiscard]] std::int64_t max_arrival_events() const override {
+    return max_arrival_events_;
+  }
+
+  [[nodiscard]] bool source_is_manual() const override { return manual_; }
+
   [[nodiscard]] const std::unordered_map<std::string, double>&
   attribute_defaults() const override {
     return attributes_;
@@ -67,6 +96,11 @@ class SourceBlock final : public BufferedBlock {
  private:
   TimeSampler interarrival_;
   std::unordered_map<std::string, double> attributes_;
+  std::string first_arrival_mode_;
+  double first_arrival_time_{0.0};
+  std::int64_t agents_per_arrival_{1};
+  std::int64_t max_arrival_events_{-1};
+  bool manual_{false};
 };
 
 // FIFO buffer (queue / wait): forwards immediately when downstream accepts.
@@ -101,8 +135,7 @@ inline double entity_priority(const Entity& entity, double fallback) {
 // referencing the two entities) via the single-scope evaluator after
 // rewriting the scoped identifiers. Returns true when the value is nonzero.
 inline bool evaluate_pair_condition(const std::string& condition_text,
-                                    const Entity& first,
-                                    const Entity& second) {
+                                    const Entity& first, const Entity& second) {
   std::string text = condition_text;
   for (const char* scope : {"agent1.", "agent2."}) {
     std::string needle = scope;
@@ -133,44 +166,38 @@ inline bool evaluate_pair_condition(const std::string& condition_text,
 
 // Queue / Wait: FIFO (or LIFO / priority) buffer with optional exit-on-
 // timeout and priority preemption (AnyLogic Queue/Wait semantics).
-//   - queuing: "queuing_fifo" (default) / "queuing_lifo" / "queuing_priority";
-//     "queuing_comparison" falls back to FIFO (no expression engine yet).
+//   - queuing: "queuing_fifo" (default) / "queuing_lifo" /
+//     "queuing_priority" / "queuing_comparison" (two-agent expression).
 //   - priority: entity attribute "priority", falling back to the block's
 //     agentPriority field; higher value = served first.
 //   - enableTimeout: waiting entities exit through outTimeout after timeout.
-//   - enablePreemption: queue-kind blocks eject their weakest waiter through
-//     outPreempted when a full queue receives a higher-priority agent;
-//     wait-kind blocks preempt on every arrival.
+//   - enablePreemption: full queue-kind blocks always accept the newcomer and
+//     eject the least-preferred entity (possibly that newcomer) through
+//     outPreempted; wait-kind blocks preempt on every arrival.
 class WaitBlock final : public BufferedBlock {
  public:
-    WaitBlock(std::string kind, std::string name, std::int64_t capacity,
-              std::int64_t timeout_ns, bool enable_timeout,
-              std::string queuing, double agent_priority,
-              bool enable_preemption, std::string comparison_text)
-        : BufferedBlock(std::move(kind), std::move(name), capacity),
-          timeout_ns_(timeout_ns),
-          enable_timeout_(enable_timeout),
-          queuing_(std::move(queuing)),
-          agent_priority_(agent_priority),
-          enable_preemption_(enable_preemption),
-          comparison_text_(std::move(comparison_text)) {}
+  WaitBlock(std::string kind, std::string name, std::int64_t capacity,
+            std::int64_t timeout_ns, bool enable_timeout, std::string queuing,
+            double agent_priority, bool enable_preemption,
+            std::string comparison_text)
+      : BufferedBlock(std::move(kind), std::move(name), capacity),
+        timeout_ns_(timeout_ns),
+        enable_timeout_(enable_timeout),
+        queuing_(std::move(queuing)),
+        agent_priority_(agent_priority),
+        enable_preemption_(enable_preemption),
+        comparison_text_(std::move(comparison_text)) {}
 
   bool can_accept(const Entity& entity) override {
-    if (capacity_ < 0 ||
-        static_cast<std::int64_t>(input_.size()) < capacity_) {
+    (void)entity;
+    if (capacity_ < 0 || static_cast<std::int64_t>(input_.size()) < capacity_) {
       return true;
     }
-    // Full preempting queue: admit only a newcomer that outranks the agent
-    // that would be ejected (lowest-priority waiter for priority queuing,
-    // otherwise the most recent one).
-      if (!enable_preemption_ || kind_ != "queue") {
-        return false;
-      }
-      if (queuing_ == "queuing_comparison") {
-        return !input_.empty() &&
-               preferred(entity, input_.back());
-      }
-      return priority_of(entity) > ejection_victim_priority();
+    // AnyLogic Queue preemption is an overflow-routing policy, not upstream
+    // backpressure: a full preempting Queue still accepts the newcomer, then
+    // sends the least-preferred entity (which may be the newcomer itself)
+    // through outPreempted. Wait keeps its ordinary capacity boundary.
+    return enable_preemption_ && kind_ == "queue";
   }
 
   void receive(const Entity& entity) override {
@@ -179,6 +206,36 @@ class WaitBlock final : public BufferedBlock {
   }
 
   bool update(BlockContext& ctx) override {
+    if (enable_preemption_ && kind_ == "wait") {
+      preempt_new_arrivals(ctx);
+    }
+    if (queuing_ == "queuing_priority") {
+      std::stable_sort(input_.begin(), input_.end(),
+                       [this](const Entity& a, const Entity& b) {
+                         return priority_of(a) > priority_of(b);
+                       });
+    } else if (queuing_ == "queuing_comparison" && input_.size() > 1) {
+      // Reposition the most recent arrival by the comparison (AnyLogic
+      // agent-comparison queuing: place the newcomer before the first
+      // waiter it is preferred over).
+      Entity newcomer = input_.back();
+      input_.pop_back();
+      auto it = input_.begin();
+      for (; it != input_.end(); ++it) {
+        if (preferred(newcomer, *it)) {
+          break;
+        }
+      }
+      input_.insert(it, newcomer);
+    }
+    if (kind_ == "queue" && enable_preemption_ && capacity_ >= 0 &&
+        static_cast<std::int64_t>(input_.size()) > capacity_) {
+      eject_overflow(ctx);
+    }
+    // Register timeouts only after overflow/preemption has chosen the actual
+    // waiters. An entity routed immediately through outPreempted never waited
+    // in the Queue and must not leave a stale timeout event that extends the
+    // simulation horizon.
     if (enable_timeout_ && timeout_ns_ > 0) {
       for (const Entity& entity : input_) {
         if (timed_.insert(entity.id).second) {
@@ -186,37 +243,10 @@ class WaitBlock final : public BufferedBlock {
         }
       }
     }
-    if (enable_preemption_ && kind_ == "wait") {
-      preempt_new_arrivals(ctx);
-    }
-      if (queuing_ == "queuing_priority") {
-        std::stable_sort(input_.begin(), input_.end(),
-                         [this](const Entity& a, const Entity& b) {
-                           return priority_of(a) > priority_of(b);
-                         });
-      } else if (queuing_ == "queuing_comparison" && input_.size() > 1) {
-        // Reposition the most recent arrival by the comparison (AnyLogic
-        // agent-comparison queuing: place the newcomer before the first
-        // waiter it is preferred over).
-        Entity newcomer = input_.back();
-        input_.pop_back();
-        auto it = input_.begin();
-        for (; it != input_.end(); ++it) {
-          if (preferred(newcomer, *it)) {
-            break;
-          }
-        }
-        input_.insert(it, newcomer);
-      }
-    if (kind_ == "queue" && enable_preemption_ && capacity_ >= 0 &&
-        static_cast<std::int64_t>(input_.size()) > capacity_) {
-      eject_victim(ctx);  // can_accept admitted the outranking newcomer
-    }
     if (input_.empty()) {
       return false;
     }
-    Entity entity =
-        queuing_ == "queuing_lifo" ? input_.back() : input_.front();
+    Entity entity = queuing_ == "queuing_lifo" ? input_.back() : input_.front();
     if (!ctx.emit(entity, "out")) {
       return false;
     }
@@ -230,11 +260,9 @@ class WaitBlock final : public BufferedBlock {
   }
 
   void on_timeout(BlockContext& ctx, std::uint64_t entity_id) override {
-    const auto it =
-        std::find_if(input_.begin(), input_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        input_.begin(), input_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == input_.end()) {
       return;  // the entity already left before its timeout
     }
@@ -242,6 +270,7 @@ class WaitBlock final : public BufferedBlock {
     input_.erase(it);
     timed_.erase(entity_id);
     ++departed_;
+    ++timed_out_count_;
     if (!ctx.emit(entity, "outTimeout")) {
       alt_outgoing_.push_back({entity, "outTimeout"});
     }
@@ -266,6 +295,20 @@ class WaitBlock final : public BufferedBlock {
     alt_outgoing_.clear();
   }
 
+  void reset_stats() override {
+    BufferedBlock::reset_stats();
+    timed_out_count_ = 0;
+    preempted_count_ = 0;
+  }
+
+  [[nodiscard]] std::uint64_t timed_out() const override {
+    return timed_out_count_;
+  }
+
+  [[nodiscard]] std::uint64_t preempted() const override {
+    return preempted_count_;
+  }
+
  private:
   bool preferred(const Entity& newcomer, const Entity& waiter) const {
     if (comparison_text_.empty()) {
@@ -278,20 +321,6 @@ class WaitBlock final : public BufferedBlock {
     return entity_priority(entity, agent_priority_);
   }
 
-  double ejection_victim_priority() const {
-    if (input_.empty()) {
-      return -std::numeric_limits<double>::infinity();
-    }
-    if (queuing_ == "queuing_priority") {
-      double lowest = priority_of(input_.front());
-      for (const Entity& entity : input_) {
-        lowest = std::min(lowest, priority_of(entity));
-      }
-      return lowest;
-    }
-    return priority_of(input_.back());
-  }
-
   // The agent an arriving newcomer would preempt, per queuing policy
   // (priority: least priority; fifo: most recent; lifo: oldest). Only
   // established waiters (queued_) are candidates.
@@ -299,8 +328,7 @@ class WaitBlock final : public BufferedBlock {
     const Entity* victim = nullptr;
     double lowest = 0.0;
     for (const Entity& entity : input_) {
-      if (entity.id == exclude_id ||
-          queued_.find(entity.id) == queued_.end()) {
+      if (entity.id == exclude_id || queued_.find(entity.id) == queued_.end()) {
         continue;
       }
       if (queuing_ == "queuing_priority") {
@@ -321,11 +349,9 @@ class WaitBlock final : public BufferedBlock {
   }
 
   void eject(BlockContext& ctx, const Entity& entity) {
-    const auto it =
-        std::find_if(input_.begin(), input_.end(),
-                     [&entity](const Entity& entry) {
-                       return entry.id == entity.id;
-                     });
+    const auto it = std::find_if(
+        input_.begin(), input_.end(),
+        [&entity](const Entity& entry) { return entry.id == entity.id; });
     if (it == input_.end()) {
       return;
     }
@@ -334,32 +360,32 @@ class WaitBlock final : public BufferedBlock {
     timed_.erase(ejected.id);
     queued_.erase(ejected.id);
     ++departed_;
+    ++preempted_count_;
     if (!ctx.emit(ejected, "outPreempted")) {
       alt_outgoing_.push_back({ejected, "outPreempted"});
     }
   }
 
-  void eject_victim(BlockContext& ctx) {
-    // Queue-kind waiters are all established (queued_ is only tracked for
-    // wait-kind on-arrival preemption), so select without the filter.
-    const Entity* victim = nullptr;
-    double lowest = 0.0;
-    for (const Entity& entity : input_) {
-      if (entity.id == last_received_id_) {
-        continue;
-      }
-      if (queuing_ == "queuing_priority") {
-        const double priority = priority_of(entity);
-        if (victim == nullptr || priority < lowest) {
-          victim = &entity;
-          lowest = priority;
-        }
-      } else {
-        victim = &entity;  // fifo/lifo: the most recent one wins
-      }
+  void eject_overflow(BlockContext& ctx) {
+    if (input_.empty()) {
+      return;
     }
-    if (victim != nullptr) {
-      eject(ctx, *victim);
+    // update() has already established priority/comparison order, with the
+    // head at the exit. Stable priority sorting deliberately leaves an
+    // equal-priority newcomer behind established equals, so it ejects itself.
+    if (queuing_ == "queuing_priority" ||
+        queuing_ == "queuing_comparison") {
+      eject(ctx, input_.back());
+      return;
+    }
+    // FIFO/LIFO do not define an ordering expression for overflow. Preserve
+    // the established queue and route the just-arrived entity out.
+    const auto newcomer = std::find_if(
+        input_.begin(), input_.end(), [this](const Entity& entity) {
+          return entity.id == last_received_id_;
+        });
+    if (newcomer != input_.end()) {
+      eject(ctx, *newcomer);
     }
   }
 
@@ -395,6 +421,8 @@ class WaitBlock final : public BufferedBlock {
   std::unordered_set<std::uint64_t> queued_;
   std::deque<std::pair<Entity, std::string>> alt_outgoing_;
   std::uint64_t last_received_id_{0};
+  std::uint64_t timed_out_count_{0};
+  std::uint64_t preempted_count_{0};
 };
 
 // Hold-and-forward (delay): occupies a delay slot for the sampled duration.
@@ -431,11 +459,9 @@ class DelayBlock final : public BufferedBlock {
     if (in_service_.empty()) {
       return;
     }
-    const auto it =
-        std::find_if(in_service_.begin(), in_service_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        in_service_.begin(), in_service_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == in_service_.end()) {
       return;
     }
@@ -448,6 +474,16 @@ class DelayBlock final : public BufferedBlock {
   }
 
   bool has_in_service() const override { return !in_service_.empty(); }
+
+  [[nodiscard]] std::int64_t busy_units() const override {
+    return static_cast<std::int64_t>(in_service_.size());
+  }
+
+  void accumulate_areas(std::int64_t dt_ns) override {
+    BufferedBlock::accumulate_areas(dt_ns);
+    area_busy_ += static_cast<double>(dt_ns) *
+                  static_cast<double>(in_service_.size());
+  }
 
   void clear_buffers() override {
     BufferedBlock::clear_buffers();
@@ -463,13 +499,17 @@ class DelayBlock final : public BufferedBlock {
 // (seize holds for zero time and is released downstream).
 class ServiceBlock final : public BufferedBlock {
  public:
-    ServiceBlock(std::string name, std::int64_t servers,
-                 TimeSampler service_time, bool seize,
-                 TimeSampler failure = {}, TimeSampler repair = {},
-                 bool enable_preemption = false, bool task_may_preempt = false,
-                 std::string preemption_policy = "",
-                 double task_priority = 0.0)
-      : BufferedBlock(seize ? "seize" : "service", std::move(name), -1),
+  ServiceBlock(std::string name, std::int64_t servers, TimeSampler service_time,
+               bool seize, TimeSampler failure = {}, TimeSampler repair = {},
+               bool enable_preemption = false, bool task_may_preempt = false,
+               std::string preemption_policy = "", double task_priority = 0.0,
+               std::int64_t queue_capacity = 0, std::int64_t timeout_ns = 0,
+               bool enable_timeout = false, std::string resource = "",
+               std::int64_t units_per_task = 1,
+               std::int64_t resource_capacity = 0,
+               bool shared_pool = false)
+      : BufferedBlock(seize ? "seize" : "service", std::move(name),
+                      queue_capacity),
         servers_(servers),
         service_time_(std::move(service_time)),
         seize_(seize),
@@ -478,21 +518,42 @@ class ServiceBlock final : public BufferedBlock {
         enable_preemption_(enable_preemption),
         task_may_preempt_(task_may_preempt),
         preemption_policy_(std::move(preemption_policy)),
-        task_priority_(task_priority) {}
+        task_priority_(task_priority),
+        timeout_ns_(timeout_ns),
+        enable_timeout_(enable_timeout),
+        resource_(std::move(resource)),
+        units_per_task_(std::max<std::int64_t>(units_per_task, 1)),
+        resource_capacity_(resource_capacity),
+        shared_pool_(shared_pool) {}
 
-    bool can_accept(const Entity&) override {
-      if (units_in_use_ < servers_) {
-        return true;
-      }
-      // Admit a newcomer even when full: task preemption may free a unit for
-      // it (the update pass decides and ejects the weakest running task).
-      return task_may_preempt_ && enable_preemption_ &&
-             preemption_policy_ != "pp_no_preemption";
+  bool can_accept(const Entity&) override {
+    if (capacity_ < 0) {
+      return true;
     }
+    // Input contains jobs for currently free local task slots plus jobs in
+    // the internal queue. Count both when another Service owns the pool.
+    const std::int64_t direct_slots =
+        std::max<std::int64_t>(servers_ - units_in_use_, 0);
+    if (static_cast<std::int64_t>(input_.size()) <
+        direct_slots + capacity_) {
+      return true;
+    }
+    // Admit a newcomer even when full: task preemption may free a unit for
+    // it (the update pass decides and ejects the weakest running task).
+    return task_may_preempt_ && enable_preemption_ &&
+           preemption_policy_ != "pp_no_preemption";
+  }
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
+    }
+    if (enable_timeout_ && timeout_ns_ > 0) {
+      for (const Entity& entity : input_) {
+        if (timed_.insert(entity.id).second) {
+          ctx.schedule_timeout(timeout_ns_, entity.id);
+        }
+      }
     }
     if (units_in_use_ >= servers_) {
       // Task preemption (AnyLogic): a higher-priority newcomer may preempt
@@ -518,11 +579,9 @@ class ServiceBlock final : public BufferedBlock {
       if (victim == nullptr || priority_of(newcomer) <= lowest) {
         return false;
       }
-      const auto victim_it =
-          std::find_if(in_service_.begin(), in_service_.end(),
-                       [victim](const Entity& entry) {
-                         return entry.id == victim->id;
-                       });
+      const auto victim_it = std::find_if(
+          in_service_.begin(), in_service_.end(),
+          [victim](const Entity& entry) { return entry.id == victim->id; });
       if (victim_it == in_service_.end()) {
         return false;
       }
@@ -530,9 +589,16 @@ class ServiceBlock final : public BufferedBlock {
       in_service_.erase(victim_it);
       --units_in_use_;
       --busy_;
+      if (shared_pool_) {
+        ctx.release_resources(resource_, units_per_task_);
+      }
+      ++preempted_count_;
       if (!ctx.emit(preempted, "outPreempted")) {
         alt_outgoing_.push_back({preempted, "outPreempted"});
       }
+    }
+    if (shared_pool_ && !ctx.try_seize(resource_, units_per_task_)) {
+      return false;
     }
     Entity entity = input_.front();
     input_.pop_front();
@@ -549,11 +615,9 @@ class ServiceBlock final : public BufferedBlock {
   }
 
   void complete(BlockContext& ctx, std::uint64_t entity_id) override {
-    const auto it =
-        std::find_if(in_service_.begin(), in_service_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        in_service_.begin(), in_service_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == in_service_.end()) {
       return;
     }
@@ -562,6 +626,9 @@ class ServiceBlock final : public BufferedBlock {
     ++departed_;
     --units_in_use_;
     --busy_;
+    if (shared_pool_) {
+      ctx.release_resources(resource_, units_per_task_);
+    }
     if (!seize_) {
       ctx.record_service_wait(entity);
     }
@@ -602,11 +669,9 @@ class ServiceBlock final : public BufferedBlock {
     // Preemption-aware wait accounting (matches QueueingFlowSim): the
     // measured wait is arrival -> last (final) service start, so refresh the
     // start stamp on every repair-triggered restart.
-    const auto it =
-        std::find_if(in_service_.begin(), in_service_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        in_service_.begin(), in_service_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it != in_service_.end()) {
       it->service_start_ns = ctx.now().as_ns();
     }
@@ -614,14 +679,39 @@ class ServiceBlock final : public BufferedBlock {
     schedule_service(ctx, entity_id);
   }
 
-  [[nodiscard]] std::int64_t busy_units() const override { return busy_; }
+  void on_timeout(BlockContext& ctx, std::uint64_t entity_id) override {
+    const auto it = std::find_if(
+        input_.begin(), input_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
+    if (it == input_.end()) {
+      return;
+    }
+    Entity entity = *it;
+    input_.erase(it);
+    timed_.erase(entity_id);
+    ++departed_;
+    ++timed_out_count_;
+    if (!ctx.emit(entity, "outTimeout")) {
+      alt_outgoing_.push_back({entity, "outTimeout"});
+    }
+  }
+
+  [[nodiscard]] std::int64_t busy_units() const override {
+    return shared_pool_ ? busy_ * units_per_task_ : busy_;
+  }
   [[nodiscard]] std::int64_t pool_capacity() const override {
-    return servers_;
+    return shared_pool_ ? resource_capacity_ : servers_;
+  }
+  [[nodiscard]] std::string pool_resource() const override {
+    return shared_pool_ ? resource_ : "";
   }
 
   void accumulate_areas(std::int64_t dt_ns) override {
     BufferedBlock::accumulate_areas(dt_ns);
-    area_busy_ += static_cast<double>(dt_ns) * static_cast<double>(busy_);
+    const std::int64_t busy_units_now =
+        shared_pool_ ? busy_ * units_per_task_ : busy_;
+    area_busy_ +=
+        static_cast<double>(dt_ns) * static_cast<double>(busy_units_now);
     area_down_ +=
         static_cast<double>(dt_ns) * static_cast<double>(down_.size());
   }
@@ -630,6 +720,8 @@ class ServiceBlock final : public BufferedBlock {
     BufferedBlock::reset_stats();
     busy_ = 0;
     area_down_ = 0.0;
+    timed_out_count_ = 0;
+    preempted_count_ = 0;
   }
 
   void clear_buffers() override {
@@ -638,6 +730,7 @@ class ServiceBlock final : public BufferedBlock {
     units_in_use_ = 0;
     busy_ = 0;
     down_.clear();
+    timed_.clear();
     alt_outgoing_.clear();
   }
 
@@ -651,6 +744,14 @@ class ServiceBlock final : public BufferedBlock {
       return false;
     }
     return BufferedBlock::retry_outgoing(ctx);
+  }
+
+  [[nodiscard]] std::uint64_t timed_out() const override {
+    return timed_out_count_;
+  }
+
+  [[nodiscard]] std::uint64_t preempted() const override {
+    return preempted_count_;
   }
 
  private:
@@ -683,11 +784,20 @@ class ServiceBlock final : public BufferedBlock {
   bool task_may_preempt_{false};
   std::string preemption_policy_;
   double task_priority_{0.0};
+  std::int64_t timeout_ns_{0};
+  bool enable_timeout_{false};
+  std::unordered_set<std::uint64_t> timed_;
   std::deque<Entity> in_service_;
   std::unordered_set<std::uint64_t> down_;
   std::deque<std::pair<Entity, std::string>> alt_outgoing_;
   std::int64_t units_in_use_{0};
   std::int64_t busy_{0};
+  std::uint64_t timed_out_count_{0};
+  std::uint64_t preempted_count_{0};
+  std::string resource_;
+  std::int64_t units_per_task_{1};
+  std::int64_t resource_capacity_{0};
+  bool shared_pool_{false};
 };
 
 // Absorbs entities (records sojourn through BlockContext::leave_system).
@@ -785,11 +895,9 @@ class AssemblerBlock final : public BufferedBlock {
   }
 
   void complete(BlockContext& ctx, std::uint64_t entity_id) override {
-    const auto it =
-        std::find_if(in_service_.begin(), in_service_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        in_service_.begin(), in_service_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == in_service_.end()) {
       return;
     }
@@ -807,6 +915,10 @@ class AssemblerBlock final : public BufferedBlock {
 
   [[nodiscard]] bool has_in_service() const override {
     return !in_service_.empty();
+  }
+
+  [[nodiscard]] std::string pool_resource() const override {
+    return units_ > 0 ? resource_ : "";
   }
 
   void accumulate_areas(std::int64_t dt_ns) override {
@@ -882,19 +994,17 @@ class MoveToBlock final : public BufferedBlock {
           distance = best + dist_to_target_[nearest];
         }
       }
-      hold_ns = static_cast<std::int64_t>(
-          std::llround(distance / speed_ * 1e9));
+      hold_ns =
+          static_cast<std::int64_t>(std::llround(distance / speed_ * 1e9));
     }
     ctx.schedule_depart(hold_ns, entity.id);
     return true;
   }
 
   void complete(BlockContext& ctx, std::uint64_t entity_id) override {
-    const auto it =
-        std::find_if(in_service_.begin(), in_service_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        in_service_.begin(), in_service_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == in_service_.end()) {
       return;
     }
@@ -971,8 +1081,7 @@ class GenericBlock final : public BufferedBlock {
         take_true = evaluator.eval(lookup) != 0.0;
       } else {
         const double roll =
-            static_cast<double>(ctx.rng()()) /
-            static_cast<double>(UINT64_MAX);
+            static_cast<double>(ctx.rng()()) / static_cast<double>(UINT64_MAX);
         take_true = roll < probability_;
       }
       if (!ctx.emit(entity, take_true ? "outT" : "outF")) {
@@ -1154,7 +1263,8 @@ class SelectOutputInBlock final : public BufferedBlock {
       return "";
     }
     if (!probabilistic_ && !choice_.empty()) {
-      const auto lookup = [this, &ctx, &entity](const std::string& id) -> double {
+      const auto lookup = [this, &ctx,
+                           &entity](const std::string& id) -> double {
         if (id == "t" || id == "time") {
           return static_cast<double>(ctx.now().as_ns()) * 1e-9;
         }
@@ -1209,31 +1319,31 @@ class SelectOutputOutBlock final : public BufferedBlock {
 // them. Semantics per AnyLogic Seize (resource pool + queue).
 class SeizeBlock final : public BufferedBlock {
  public:
-    SeizeBlock(std::string name, std::string resource, std::int64_t quantity,
-               std::int64_t capacity, std::int64_t timeout_ns = 0,
-               bool enable_timeout = false, bool enable_preemption = false)
-        : BufferedBlock("seize", std::move(name), capacity),
-          resource_(std::move(resource)),
-          quantity_(quantity > 0 ? quantity : 1),
-          timeout_ns_(timeout_ns),
-          enable_timeout_(enable_timeout),
-          enable_preemption_(enable_preemption) {}
+  SeizeBlock(std::string name, std::string resource, std::int64_t quantity,
+             std::int64_t capacity, std::int64_t timeout_ns = 0,
+             bool enable_timeout = false, bool enable_preemption = false)
+      : BufferedBlock("seize", std::move(name), capacity),
+        resource_(std::move(resource)),
+        quantity_(quantity > 0 ? quantity : 1),
+        timeout_ns_(timeout_ns),
+        enable_timeout_(enable_timeout),
+        enable_preemption_(enable_preemption) {}
 
   bool update(BlockContext& ctx) override {
     if (input_.empty()) {
       return false;
     }
-      if (enable_timeout_ && timeout_ns_ > 0) {
-        for (const Entity& entity : input_) {
-          if (timed_.insert(entity.id).second) {
-            ctx.schedule_timeout(timeout_ns_, entity.id);
-          }
+    if (enable_timeout_ && timeout_ns_ > 0) {
+      for (const Entity& entity : input_) {
+        if (timed_.insert(entity.id).second) {
+          ctx.schedule_timeout(timeout_ns_, entity.id);
         }
       }
-      if (enable_preemption_) {
-        preempt_new_arrivals(ctx);
-      }
-      if (!ctx.try_seize(resource_, quantity_)) {
+    }
+    if (enable_preemption_) {
+      preempt_new_arrivals(ctx);
+    }
+    if (!ctx.try_seize(resource_, quantity_)) {
       return false;  // pool exhausted: the entity stays in the queue
     }
     Entity entity = input_.front();
@@ -1247,11 +1357,9 @@ class SeizeBlock final : public BufferedBlock {
   }
 
   void on_timeout(BlockContext& ctx, std::uint64_t entity_id) override {
-    const auto it =
-        std::find_if(input_.begin(), input_.end(),
-                     [entity_id](const Entity& entry) {
-                       return entry.id == entity_id;
-                     });
+    const auto it = std::find_if(
+        input_.begin(), input_.end(),
+        [entity_id](const Entity& entry) { return entry.id == entity_id; });
     if (it == input_.end()) {
       return;  // already seized before the timeout fired
     }
@@ -1259,101 +1367,96 @@ class SeizeBlock final : public BufferedBlock {
     input_.erase(it);
     timed_.erase(entity_id);
     ++departed_;
-      if (!ctx.emit(entity, "outTimeout")) {
-        alt_outgoing_.push_back({entity, "outTimeout"});
-      }
+    if (!ctx.emit(entity, "outTimeout")) {
+      alt_outgoing_.push_back({entity, "outTimeout"});
     }
+  }
 
-    bool retry_outgoing(BlockContext& ctx) override {
-      if (!alt_outgoing_.empty()) {
-        const auto entry = alt_outgoing_.front();
-        if (ctx.emit(entry.first, entry.second.c_str())) {
-          alt_outgoing_.pop_front();
-          return true;
-        }
-        return false;
+  bool retry_outgoing(BlockContext& ctx) override {
+    if (!alt_outgoing_.empty()) {
+      const auto entry = alt_outgoing_.front();
+      if (ctx.emit(entry.first, entry.second.c_str())) {
+        alt_outgoing_.pop_front();
+        return true;
+      }
+      return false;
     }
     return BufferedBlock::retry_outgoing(ctx);
   }
 
-    void clear_buffers() override {
-      BufferedBlock::clear_buffers();
-      timed_.clear();
-      queued_.clear();
-      alt_outgoing_.clear();
-    }
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    timed_.clear();
+    queued_.clear();
+    alt_outgoing_.clear();
+  }
 
-    [[nodiscard]] std::string pool_resource() const override {
-      return resource_;
-    }
+  [[nodiscard]] std::string pool_resource() const override { return resource_; }
 
-   private:
-    // Preemption on arrival (AnyLogic Seize embedded queue): a newcomer
-    // with higher priority than the weakest established waiter ejects it
-    // through outPreempted and takes its place.
-    void preempt_new_arrivals(BlockContext& ctx) {
-      std::vector<std::uint64_t> newcomers;
-      for (const Entity& entity : input_) {
-        if (queued_.find(entity.id) == queued_.end()) {
-          newcomers.push_back(entity.id);
-        }
-      }
-      for (const std::uint64_t id : newcomers) {
-        const auto it =
-            std::find_if(input_.begin(), input_.end(),
-                         [id](const Entity& entry) { return entry.id == id; });
-        if (it == input_.end()) {
-          continue;
-        }
-        const Entity* victim = nullptr;
-        double lowest = 0.0;
-        for (const Entity& waiter : input_) {
-          if (waiter.id == id ||
-              queued_.find(waiter.id) == queued_.end()) {
-            continue;
-          }
-          const double priority = entity_priority(waiter, 0.0);
-          if (victim == nullptr || priority < lowest) {
-            victim = &waiter;
-            lowest = priority;
-          }
-        }
-        if (victim != nullptr &&
-            entity_priority(*it, 0.0) > entity_priority(*victim, 0.0)) {
-          eject(ctx, *victim);
-        }
-        queued_.insert(id);
+ private:
+  // Preemption on arrival (AnyLogic Seize embedded queue): a newcomer
+  // with higher priority than the weakest established waiter ejects it
+  // through outPreempted and takes its place.
+  void preempt_new_arrivals(BlockContext& ctx) {
+    std::vector<std::uint64_t> newcomers;
+    for (const Entity& entity : input_) {
+      if (queued_.find(entity.id) == queued_.end()) {
+        newcomers.push_back(entity.id);
       }
     }
-
-    void eject(BlockContext& ctx, const Entity& entity) {
+    for (const std::uint64_t id : newcomers) {
       const auto it =
           std::find_if(input_.begin(), input_.end(),
-                       [&entity](const Entity& entry) {
-                         return entry.id == entity.id;
-                       });
+                       [id](const Entity& entry) { return entry.id == id; });
       if (it == input_.end()) {
-        return;
+        continue;
       }
-      Entity ejected = *it;  // copy before erase: the reference dies with it
-      input_.erase(it);
-      timed_.erase(ejected.id);
-      queued_.erase(ejected.id);
-      ++departed_;
-      if (!ctx.emit(ejected, "outPreempted")) {
-        alt_outgoing_.push_back({ejected, "outPreempted"});
+      const Entity* victim = nullptr;
+      double lowest = 0.0;
+      for (const Entity& waiter : input_) {
+        if (waiter.id == id || queued_.find(waiter.id) == queued_.end()) {
+          continue;
+        }
+        const double priority = entity_priority(waiter, 0.0);
+        if (victim == nullptr || priority < lowest) {
+          victim = &waiter;
+          lowest = priority;
+        }
       }
+      if (victim != nullptr &&
+          entity_priority(*it, 0.0) > entity_priority(*victim, 0.0)) {
+        eject(ctx, *victim);
+      }
+      queued_.insert(id);
     }
+  }
 
-    std::string resource_;
-    std::int64_t quantity_{1};
-    std::int64_t timeout_ns_{0};
-    bool enable_timeout_{false};
-    bool enable_preemption_{false};
-    std::unordered_set<std::uint64_t> timed_;
-    std::unordered_set<std::uint64_t> queued_;
-    std::deque<std::pair<Entity, std::string>> alt_outgoing_;
-  };
+  void eject(BlockContext& ctx, const Entity& entity) {
+    const auto it = std::find_if(
+        input_.begin(), input_.end(),
+        [&entity](const Entity& entry) { return entry.id == entity.id; });
+    if (it == input_.end()) {
+      return;
+    }
+    Entity ejected = *it;  // copy before erase: the reference dies with it
+    input_.erase(it);
+    timed_.erase(ejected.id);
+    queued_.erase(ejected.id);
+    ++departed_;
+    if (!ctx.emit(ejected, "outPreempted")) {
+      alt_outgoing_.push_back({ejected, "outPreempted"});
+    }
+  }
+
+  std::string resource_;
+  std::int64_t quantity_{1};
+  std::int64_t timeout_ns_{0};
+  bool enable_timeout_{false};
+  bool enable_preemption_{false};
+  std::unordered_set<std::uint64_t> timed_;
+  std::unordered_set<std::uint64_t> queued_;
+  std::deque<std::pair<Entity, std::string>> alt_outgoing_;
+};
 
 // Release: return every resource unit the entity holds to its pool (zero
 // time). Semantics per AnyLogic Release ("all seized resources must be
@@ -1481,11 +1584,9 @@ class CombineBlock final : public BufferedBlock {
     input2_.pop_front();
     Entity combined;
     const std::string mode =
-        combine_mode_ == "entity1" || combine_mode_ == "agent1"
-            ? "entity1"
-            : combine_mode_ == "entity2" || combine_mode_ == "agent2"
-                  ? "entity2"
-                  : "new";
+        combine_mode_ == "entity1" || combine_mode_ == "agent1"   ? "entity1"
+        : combine_mode_ == "entity2" || combine_mode_ == "agent2" ? "entity2"
+                                                                  : "new";
     if (mode == "entity1") {
       combined = first;
     } else if (mode == "entity2") {
@@ -1504,11 +1605,11 @@ class CombineBlock final : public BufferedBlock {
     return true;
   }
 
-    void accumulate_areas(std::int64_t dt_ns) override {
-      BufferedBlock::accumulate_areas(dt_ns);
-      area_occupancy_ += static_cast<double>(dt_ns) *
-                         static_cast<double>(input1_.size() + input2_.size());
-    }
+  void accumulate_areas(std::int64_t dt_ns) override {
+    BufferedBlock::accumulate_areas(dt_ns);
+    area_occupancy_ += static_cast<double>(dt_ns) *
+                       static_cast<double>(input1_.size() + input2_.size());
+  }
 
   void clear_buffers() override {
     BufferedBlock::clear_buffers();
@@ -1565,11 +1666,11 @@ class MatchBlock final : public BufferedBlock {
     return true;
   }
 
-    // Pairing on entity attributes (AnyLogic matchCondition): a bare
-    // attribute name means equality, while `agent1.X == agent2.Y` (or any
-    // expression over the two agents' attributes) is evaluated pairwise.
-    // The arriving agent is checked against the opposite queue front-to-back,
-    // matching AnyLogic's "checked against all agents in the other queue".
+  // Pairing on entity attributes (AnyLogic matchCondition): a bare
+  // attribute name means equality, while `agent1.X == agent2.Y` (or any
+  // expression over the two agents' attributes) is evaluated pairwise.
+  // The arriving agent is checked against the opposite queue front-to-back,
+  // matching AnyLogic's "checked against all agents in the other queue".
   bool update_conditioned(BlockContext& ctx) {
     if (pending_new_.id == std::numeric_limits<std::uint64_t>::max()) {
       return false;
@@ -1580,18 +1681,16 @@ class MatchBlock final : public BufferedBlock {
 
     auto& own_queue = newcomer_in_1 ? input1_ : input2_;
     auto& other_queue = newcomer_in_1 ? input2_ : input1_;
-    const auto newcomer =
-        std::find_if(own_queue.begin(), own_queue.end(),
-                     [newcomer_id](const Entity& entry) {
-                       return entry.id == newcomer_id;
-                     });
+    const auto newcomer = std::find_if(
+        own_queue.begin(), own_queue.end(),
+        [newcomer_id](const Entity& entry) { return entry.id == newcomer_id; });
     if (newcomer == own_queue.end() || other_queue.empty()) {
       return false;
     }
-      for (auto it = other_queue.begin(); it != other_queue.end(); ++it) {
-        if (!pair_matches(*newcomer, *it)) {
-          continue;
-        }
+    for (auto it = other_queue.begin(); it != other_queue.end(); ++it) {
+      if (!pair_matches(*newcomer, *it)) {
+        continue;
+      }
       if (!ctx.downstream_accepts(*newcomer, "out1") ||
           !ctx.downstream_accepts(*it, "out2")) {
         return false;

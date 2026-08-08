@@ -213,10 +213,18 @@ model MM1 {
   couple Handle.out -> Done.in
 
   experiment TuneArrival {
-    objective = minimize Wq
+    type = optimization
+    objective = minimize
+    metric = Wq
     variable = arrival_rate
     range = 0.5..1.5
     budget = 20
+  }
+
+  experiment Baseline {
+    type = simulation
+    replications = 30
+    seed = 42
   }
 }
 ```

@@ -2,13 +2,14 @@
 // delay / split / selectOutput, an M/M/1 statistical check through the
 // generic path (a `count` block forces the generic engine), and
 // same-seed determinism.
-#include <cstdint>
+#include <algorithm>
 #include <bit>
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include <catch2/catch_test_macros.hpp>
 
 #include "ir_v2_generated.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
@@ -21,6 +22,7 @@ namespace {
 using logicpilot::ReplicationConfig;
 using logicpilot::ReplicationMetrics;
 using logicpilot::ReplicationSummary;
+using logicpilot::BlockMetrics;
 using logicpilot::summarize_replications;
 using namespace logicpilot::ir::v2;
 
@@ -29,12 +31,11 @@ flatbuffers::Offset<Distribution> dist(flatbuffers::FlatBufferBuilder& b,
                                        std::vector<double> params) {
   return CreateDistribution(b, kind, b.CreateVector(params));
 }
-
 flatbuffers::Offset<Var> var_dist(flatbuffers::FlatBufferBuilder& b,
                                   const char* name,
                                   flatbuffers::Offset<Distribution> d) {
-  return CreateVar(b, b.CreateString(name), VarType_Distribution, false, 0,
-                   0.0, 0, d);
+  return CreateVar(b, b.CreateString(name), VarType_Distribution, false, 0, 0.0,
+                   0, d);
 }
 
 flatbuffers::Offset<Var> var_int(flatbuffers::FlatBufferBuilder& b,
@@ -51,8 +52,7 @@ flatbuffers::Offset<Var> var_float(flatbuffers::FlatBufferBuilder& b,
 
 flatbuffers::Offset<Var> var_bool(flatbuffers::FlatBufferBuilder& b,
                                   const char* name, bool value) {
-  return CreateVar(b, b.CreateString(name), VarType_Bool, value, 0, 0.0, 0,
-                   0);
+  return CreateVar(b, b.CreateString(name), VarType_Bool, value, 0, 0.0, 0, 0);
 }
 
 flatbuffers::Offset<Var> var_string(flatbuffers::FlatBufferBuilder& b,
@@ -105,15 +105,13 @@ std::unique_ptr<logicpilot::ProcessFlowSim> build(
   }
   std::vector<const Coupling*> coupling_ptrs;
   for (const auto& offset : couplings) {
-    coupling_ptrs.push_back(
-        flatbuffers::GetTemporaryPointer(builder, offset));
+    coupling_ptrs.push_back(flatbuffers::GetTemporaryPointer(builder, offset));
   }
-  const Node* root =
-      root_offset.IsNull()
-          ? nullptr
-          : flatbuffers::GetTemporaryPointer(builder, root_offset);
-  return std::make_unique<logicpilot::ProcessFlowSim>(
-      stage_ptrs, coupling_ptrs, root, error);
+  const Node* root = root_offset.IsNull() ? nullptr
+                                          : flatbuffers::GetTemporaryPointer(
+                                                builder, root_offset);
+  return std::make_unique<logicpilot::ProcessFlowSim>(stage_ptrs, coupling_ptrs,
+                                                      root, error);
 }
 
 ReplicationMetrics run_once(logicpilot::ProcessFlowSim& model,
@@ -131,21 +129,20 @@ ReplicationMetrics run_once(logicpilot::ProcessFlowSim& model,
 TEST_CASE("process flow: source -> delay -> sink holds tokens for the delay",
           "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {1.0}))}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 0, {0.5})),
-       var_int(builder, "capacity", 1)},
-      {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {1.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5})),
+             var_int(builder, "capacity", 1)},
+            {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, delay, sink},
-      {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 2000, 0);
@@ -160,25 +157,281 @@ TEST_CASE("process flow: source -> delay -> sink holds tokens for the delay",
   REQUIRE(metrics.mean_sojourn < 1.0);
 }
 
+TEST_CASE("process flow: source honors first arrival, batch size, and limit",
+          "[process_flow][source]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_string(builder, "arrivalType", "interarrival_time"),
+             var_dist(builder, "interarrivalTime", dist(builder, 0, {5.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "multipleEntitiesPerArrival", true),
+             var_int(builder, "agentsPerArrival", 3),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 2)},
+            {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, sink},
+                     {couple(builder, "In", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
+  CHECK(metrics.arrivals == 6);
+  CHECK(metrics.departures == 6);
+  CHECK(metrics.horizon_seconds == 5.0);
+  REQUIRE(metrics.blocks.size() == 2);
+  CHECK(metrics.blocks[0].name == "In");
+  CHECK(metrics.blocks[0].kind == "source");
+  CHECK(metrics.blocks[0].arrived == 6);
+  CHECK(metrics.blocks[1].name == "Out");
+  CHECK(metrics.blocks[1].departed == 6);
+}
+
+TEST_CASE(
+    "process flow: source selects interarrivalTime and specified first time",
+    "[process_flow][source]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_string(builder, "arrivalType", "interarrival_time"),
+             var_dist(builder, "arrival", dist(builder, 0, {100.0})),
+             var_dist(builder, "interarrivalTime", dist(builder, 0, {2.0})),
+             var_string(builder, "firstArrivalMode", "at_time"),
+             var_float(builder, "firstArrivalTime", 7.0),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 3)},
+            {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, sink},
+                     {couple(builder, "In", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 11, 100, 0);
+  CHECK(metrics.arrivals == 3);
+  CHECK(metrics.departures == 3);
+  CHECK(metrics.horizon_seconds == 11.0);
+}
+
+TEST_CASE("process flow: unsupported scheduled source fails explicitly",
+          "[process_flow][source]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_string(builder, "arrivalType", "arrival_table"),
+             var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+            {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, sink},
+                     {couple(builder, "In", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  CHECK(error.find("is not executable yet") != std::string::npos);
+}
+
+TEST_CASE("process flow: service internal queue times out waiting agents",
+          "[process_flow][service]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto service =
+      block(builder, "Work", "service",
+            {var_dist(builder, "time", dist(builder, 0, {10.0})),
+             var_int(builder, "queueCapacity", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 1.0)},
+            {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto timed_out = block(builder, "TimedOut", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, service, done, timed_out},
+                     {couple(builder, "In", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Done", "in"),
+                      couple(builder, "Work", "outTimeout", "TimedOut", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 9, 3, 0);
+  CHECK(metrics.arrivals == 3);
+  CHECK(metrics.departures == 3);
+  CHECK(metrics.horizon_seconds == Catch::Approx(10.1));
+  REQUIRE(metrics.blocks.size() == 4);
+  CHECK(metrics.blocks[1].name == "Work");
+  CHECK(metrics.blocks[1].capacity == 1);
+  CHECK(metrics.blocks[1].timed_out == 2);
+  CHECK(metrics.blocks[1].departed == 3);
+  CHECK(metrics.blocks[1].utilization > 0.9);
+}
+
+TEST_CASE("process flow: service seizes numberOfUnits from its resource pool",
+          "[process_flow][service][resource]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 4)},
+            {});
+  const auto resource = block(builder, "Workers", "resource",
+                              {var_int(builder, "capacity", 4)}, {});
+  const auto service =
+      block(builder, "Work", "service",
+            {var_string(builder, "resource", "Workers"),
+             var_int(builder, "numberOfUnits", 2),
+             var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_int(builder, "queueCapacity", 4)},
+            {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Done", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
+  REQUIRE(metrics.departures == 4);
+  // Four units with two units per task permit two concurrent tasks. Arrivals
+  // occur at 0.1, 0.2, 0.3, 0.4; completions are 1.1, 1.2, 2.1, 2.2.
+  CHECK(metrics.horizon_seconds == Catch::Approx(2.2));
+  REQUIRE(metrics.blocks.size() == 3);
+  CHECK(metrics.blocks[1].name == "Work");
+  CHECK(metrics.blocks[1].departed == 4);
+}
+
+TEST_CASE("process flow: zero-capacity queue is not an unbounded queue",
+          "[process_flow][queue]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto queue = block(builder, "NoBuffer", "queue",
+                           {var_int(builder, "capacity", 0)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, queue, sink},
+                     {couple(builder, "In", "out", "NoBuffer", "in"),
+                      couple(builder, "NoBuffer", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
+  CHECK(metrics.arrivals == 1);
+  CHECK(metrics.departures == 0);
+  REQUIRE(metrics.blocks.size() == 3);
+  CHECK(metrics.blocks[1].name == "NoBuffer");
+  CHECK(metrics.blocks[1].capacity == 0);
+  CHECK(metrics.blocks[1].arrived == 0);
+}
+
+TEST_CASE("process flow: service blocks arbitrate one shared resource pool",
+          "[process_flow][service][resource]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source_a =
+      block(builder, "InA", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto source_b =
+      block(builder, "InB", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto resource = block(builder, "Shared", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto service_a =
+      block(builder, "WorkA", "service",
+            {var_string(builder, "resource", "Shared"),
+             var_int(builder, "numberOfUnits", 1),
+             var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_int(builder, "queueCapacity", 1)},
+            {});
+  const auto service_b =
+      block(builder, "WorkB", "service",
+            {var_string(builder, "resource", "Shared"),
+             var_int(builder, "numberOfUnits", 1),
+             var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_int(builder, "queueCapacity", 1)},
+            {});
+  const auto done_a = block(builder, "DoneA", "sink", {}, {});
+  const auto done_b = block(builder, "DoneB", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder,
+      {source_a, source_b, service_a, service_b, done_a, done_b},
+      {couple(builder, "InA", "out", "WorkA", "in"),
+       couple(builder, "InB", "out", "WorkB", "in"),
+       couple(builder, "WorkA", "out", "DoneA", "in"),
+       couple(builder, "WorkB", "out", "DoneB", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
+  REQUIRE(metrics.departures == 2);
+  // Both jobs arrive at t=0. A single shared unit serializes the two
+  // one-second services; independent per-block pools would finish at t=1.
+  CHECK(metrics.horizon_seconds == Catch::Approx(2.0));
+  CHECK(metrics.utilization == Catch::Approx(1.0));
+  REQUIRE(metrics.blocks.size() == 6);
+  CHECK(metrics.blocks[2].utilization == Catch::Approx(0.5));
+  CHECK(metrics.blocks[3].utilization == Catch::Approx(0.5));
+}
+
 TEST_CASE("process flow: delay maximumCapacity=true gives unlimited capacity",
           "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {1.0}))}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 0, {10.0})),
-       var_int(builder, "capacity", 1),
-       var_bool(builder, "maximumCapacity", true)},
-      {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {1.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {10.0})),
+             var_int(builder, "capacity", 1),
+             var_bool(builder, "maximumCapacity", true)},
+            {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, delay, sink},
-      {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 7, 100, 0);
   REQUIRE(metrics.departures == 100);
@@ -190,44 +443,42 @@ TEST_CASE("process flow: delay maximumCapacity=true gives unlimited capacity",
 
 TEST_CASE("process flow: split clones each agent", "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
   const auto split = block(
       builder, "S", "split",
       {var_int(builder, "copies", 3), var_float(builder, "probability", 1.0)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, split, sink},
-      {couple(builder, "In", "out", "S", "in"),
-       couple(builder, "S", "out", "K", "in"),
-       couple(builder, "S", "outCopy", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, split, sink},
+                     {couple(builder, "In", "out", "S", "in"),
+                      couple(builder, "S", "out", "K", "in"),
+                      couple(builder, "S", "outCopy", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 3, 1000, 0);
   // Original + 2 copies per arrival.
   REQUIRE(metrics.departures == 3000);
 }
 
-TEST_CASE("process flow: selectOutput routes by probability", "[process_flow]") {
+TEST_CASE("process flow: selectOutput routes by probability",
+          "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-  const auto route = block(
-      builder, "R", "selectOutput",
-      {var_float(builder, "probability", 0.5)}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+  const auto route = block(builder, "R", "selectOutput",
+                           {var_float(builder, "probability", 0.5)}, {});
   const auto yes = block(builder, "Yes", "sink", {}, {});
   const auto no = block(builder, "No", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, route, yes, no},
-      {couple(builder, "In", "out", "R", "in"),
-       couple(builder, "R", "outT", "Yes", "in"),
-       couple(builder, "R", "outF", "No", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, route, yes, no},
+                     {couple(builder, "In", "out", "R", "in"),
+                      couple(builder, "R", "outT", "Yes", "in"),
+                      couple(builder, "R", "outF", "No", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   // Route 5000 agents; both sinks should receive a healthy share.
   const ReplicationMetrics metrics = run_once(*model, 11, 5000, 0);
@@ -240,21 +491,20 @@ TEST_CASE("process flow: selectOutput routes by probability", "[process_flow]") 
 TEST_CASE("process flow: generic M/M/1 (with count) matches theory loosely",
           "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
-  const auto queue = block(builder, "Q", "queue",
-                           {var_int(builder, "capacity", 1000000)}, {});
-  const auto resource = block(
-      builder, "Server", "resource",
-      {var_int(builder, "capacity", 1),
-       var_float(builder, "failure_rate", 0.0)},
-      {});
-  const auto service = block(
-      builder, "S", "service",
-      {var_dist(builder, "time", dist(builder, 3, {1.0})),
-       var_string(builder, "resource", "Server")},
-      {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
+  const auto queue =
+      block(builder, "Q", "queue", {var_int(builder, "capacity", 1000000)}, {});
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1),
+                               var_float(builder, "failure_rate", 0.0)},
+                              {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 3, {1.0})),
+             var_string(builder, "resource", "Server")},
+            {});
   const auto count = block(builder, "C", "count", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   // Root with the resource pool.
@@ -264,17 +514,15 @@ TEST_CASE("process flow: generic M/M/1 (with count) matches theory loosely",
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
       CreateSemanticsRef(builder, builder.CreateString("core"),
                          builder.CreateString("model"), 0, 0),
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<Node>>{resource}),
-      0, 0, 0, 0);
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}), 0,
+      0, 0, 0);
   std::string error;
-  auto model = build(
-      builder, {source, queue, service, count, sink},
-      {couple(builder, "In", "out", "Q", "in"),
-       couple(builder, "Q", "out", "S", "in"),
-       couple(builder, "S", "out", "C", "in"),
-       couple(builder, "C", "out", "K", "in")},
-      root, &error);
+  auto model = build(builder, {source, queue, service, count, sink},
+                     {couple(builder, "In", "out", "Q", "in"),
+                      couple(builder, "Q", "out", "S", "in"),
+                      couple(builder, "S", "out", "C", "in"),
+                      couple(builder, "C", "out", "K", "in")},
+                     root, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 7, 8000, 800);
   // M/M/1 with rho = 0.8: mean sojourn W = 5.0 (loose band).
@@ -288,21 +536,20 @@ TEST_CASE("process flow: generic M/M/1 (with count) matches theory loosely",
 TEST_CASE("process flow: same seed reproduces the exact trace",
           "[process_flow]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 3, {1.0})),
-       var_int(builder, "capacity", -1)},
-      {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 3, {1.0})),
+             var_int(builder, "capacity", -1)},
+            {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, delay, sink},
-      {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   ReplicationConfig config;
   config.seed = 42;
@@ -320,21 +567,20 @@ TEST_CASE("process flow: same seed reproduces the exact trace",
 TEST_CASE("process flow: incremental advance matches a batch run",
           "[process_flow][incremental]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 3, {1.0})),
-       var_int(builder, "capacity", -1)},
-      {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {0.8}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 3, {1.0})),
+             var_int(builder, "capacity", -1)},
+            {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, delay, sink},
-      {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
 
   ReplicationConfig config;
@@ -372,31 +618,30 @@ TEST_CASE("process flow: incremental advance matches a batch run",
   REQUIRE(sliced_trace.event_count() == batch_trace.event_count());
 }
 
-TEST_CASE("process flow: selectOutput runtime condition routes "
-          "deterministically",
-          "[process_flow][condition]") {
+TEST_CASE(
+    "process flow: selectOutput runtime condition routes "
+    "deterministically",
+    "[process_flow][condition]") {
   const auto run_route = [](const char* condition) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto route = block(
-        builder, "R", "selectOutput",
-        {var_string(builder, "condition", condition)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
-         var_int(builder, "capacity", -1)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput",
+                             {var_string(builder, "condition", condition)}, {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+               var_int(builder, "capacity", -1)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "outT", "Slow", "in"),
-         couple(builder, "R", "outF", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "outT", "Slow", "in"),
+                        couple(builder, "R", "outF", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -411,32 +656,32 @@ TEST_CASE("process flow: selectOutput runtime condition routes "
   REQUIRE(slow.mean_sojourn > 50.0);
 }
 
-TEST_CASE("process flow: selectOutput5 conditions route first-true and "
-          "default to out5",
-          "[process_flow][condition]") {
+TEST_CASE(
+    "process flow: selectOutput5 conditions route first-true and "
+    "default to out5",
+    "[process_flow][condition]") {
   const auto run_route = [](const char* condition) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto route = block(
-        builder, "R", "selectOutput5",
-        {var_string(builder, "type", "conditions"),
-         var_string(builder, "condition1", condition)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
-         var_int(builder, "capacity", -1)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput5",
+                             {var_string(builder, "type", "conditions"),
+                              var_string(builder, "condition1", condition)},
+                             {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+               var_int(builder, "capacity", -1)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "out1", "Slow", "in"),
-         couple(builder, "R", "out5", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "out1", "Slow", "in"),
+                        couple(builder, "R", "out5", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -455,27 +700,26 @@ TEST_CASE("process flow: selectOutput5 exit-number expression picks exit",
           "[process_flow][condition]") {
   const auto run_exit = [](const char* exit_number) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto route = block(
-        builder, "R", "selectOutput5",
-        {var_string(builder, "type", "exit_number"),
-         var_string(builder, "exitNumber", exit_number)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
-         var_int(builder, "capacity", -1)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput5",
+                             {var_string(builder, "type", "exit_number"),
+                              var_string(builder, "exitNumber", exit_number)},
+                             {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+               var_int(builder, "capacity", -1)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "out1", "Slow", "in"),
-         couple(builder, "R", "out5", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "out1", "Slow", "in"),
+                        couple(builder, "R", "out5", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -484,39 +728,38 @@ TEST_CASE("process flow: selectOutput5 exit-number expression picks exit",
   const ReplicationMetrics via_one = run_exit("1");
   REQUIRE(via_five.departures == 2000);
   REQUIRE(via_one.departures == 2000);
-  REQUIRE(via_five.mean_sojourn < 1.0);    // out5 -> sink
-  REQUIRE(via_one.mean_sojourn > 50.0);    // out1 -> 100s delay
+  REQUIRE(via_five.mean_sojourn < 1.0);  // out5 -> sink
+  REQUIRE(via_one.mean_sojourn > 50.0);  // out1 -> 100s delay
 }
 
 TEST_CASE("process flow: selectOutput5 probabilities route with weights",
           "[process_flow]") {
   const auto run_probs = [](double p1, double p5) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto route = block(
-        builder, "R", "selectOutput5",
-        {var_string(builder, "type", "probabilities"),
-         var_float(builder, "probability1", p1),
-         var_float(builder, "probability2", 0.0),
-         var_float(builder, "probability3", 0.0),
-         var_float(builder, "probability4", 0.0),
-         var_float(builder, "probability5", p5)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
-         var_int(builder, "capacity", -1)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput5",
+                             {var_string(builder, "type", "probabilities"),
+                              var_float(builder, "probability1", p1),
+                              var_float(builder, "probability2", 0.0),
+                              var_float(builder, "probability3", 0.0),
+                              var_float(builder, "probability4", 0.0),
+                              var_float(builder, "probability5", p5)},
+                             {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+               var_int(builder, "capacity", -1)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "out1", "Slow", "in"),
-         couple(builder, "R", "out5", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "out1", "Slow", "in"),
+                        couple(builder, "R", "out5", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -529,41 +772,43 @@ TEST_CASE("process flow: selectOutput5 probabilities route with weights",
   REQUIRE(all_slow.mean_sojourn > 50.0);
 }
 
-TEST_CASE("process flow: selectOutputIn/Out quasi-select routes by "
-          "probability and choice",
-          "[process_flow][condition]") {
+TEST_CASE(
+    "process flow: selectOutputIn/Out quasi-select routes by "
+    "probability and choice",
+    "[process_flow][condition]") {
   const auto run_quasi = [](bool probabilistic, const char* choice,
                             double fast_prob) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto route = block(
-        builder, "R", "selectOutputIn",
-        {var_bool(builder, "conditionIsProbabilistic", probabilistic),
-         var_string(builder, "choice", choice)}, {});
-    const auto fast = block(
-        builder, "Fast", "selectOutputOut",
-        {var_string(builder, "selectOutputIn", "R"),
-         var_float(builder, "probability", fast_prob)}, {});
-    const auto slow = block(
-        builder, "Slow", "selectOutputOut",
-        {var_string(builder, "selectOutputIn", "R"),
-         var_float(builder, "probability", 1.0 - fast_prob)}, {});
-    const auto delay = block(
-        builder, "D", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
-         var_int(builder, "capacity", -1)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto route =
+        block(builder, "R", "selectOutputIn",
+              {var_bool(builder, "conditionIsProbabilistic", probabilistic),
+               var_string(builder, "choice", choice)},
+              {});
+    const auto fast = block(builder, "Fast", "selectOutputOut",
+                            {var_string(builder, "selectOutputIn", "R"),
+                             var_float(builder, "probability", fast_prob)},
+                            {});
+    const auto slow =
+        block(builder, "Slow", "selectOutputOut",
+              {var_string(builder, "selectOutputIn", "R"),
+               var_float(builder, "probability", 1.0 - fast_prob)},
+              {});
+    const auto delay =
+        block(builder, "D", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {100.0})),
+               var_int(builder, "capacity", -1)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, fast, slow, delay, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "Fast", "out", "D", "in"),
-         couple(builder, "Slow", "out", "K", "in"),
-         couple(builder, "D", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, fast, slow, delay, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "Fast", "out", "D", "in"),
+                        couple(builder, "Slow", "out", "K", "in"),
+                        couple(builder, "D", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -591,19 +836,18 @@ TEST_CASE("process flow: hold blockingCondition blocks tokens while true",
           "[process_flow][condition]") {
   const auto run_hold = [](const char* condition) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
-    const auto hold = block(
-        builder, "H", "hold",
-        {var_string(builder, "blockingCondition", condition)}, {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto hold =
+        block(builder, "H", "hold",
+              {var_string(builder, "blockingCondition", condition)}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, hold, sink},
-        {couple(builder, "In", "out", "H", "in"),
-         couple(builder, "H", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, hold, sink},
+                       {couple(builder, "In", "out", "H", "in"),
+                        couple(builder, "H", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 1000, 0);
   };
@@ -618,20 +862,19 @@ TEST_CASE("process flow: hold blockingCondition blocks tokens while true",
 TEST_CASE("process flow: batch (permanent) groups batchSize agents into one",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
   const auto batch = block(
       builder, "B", "batch",
       {var_int(builder, "batchSize", 3), var_bool(builder, "permanent", true)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, batch, sink},
-      {couple(builder, "In", "out", "B", "in"),
-       couple(builder, "B", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, batch, sink},
+                     {couple(builder, "In", "out", "B", "in"),
+                      couple(builder, "B", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 9, 0);
@@ -642,23 +885,21 @@ TEST_CASE("process flow: batch (permanent) groups batchSize agents into one",
 TEST_CASE("process flow: batch (temporary) then unbatch restores agents",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
   const auto batch = block(
       builder, "B", "batch",
-      {var_int(builder, "batchSize", 3),
-       var_bool(builder, "permanent", false)},
+      {var_int(builder, "batchSize", 3), var_bool(builder, "permanent", false)},
       {});
   const auto unbatch = block(builder, "U", "unbatch", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, batch, unbatch, sink},
-      {couple(builder, "In", "out", "B", "in"),
-       couple(builder, "B", "out", "U", "in"),
-       couple(builder, "U", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, batch, unbatch, sink},
+                     {couple(builder, "In", "out", "B", "in"),
+                      couple(builder, "B", "out", "U", "in"),
+                      couple(builder, "U", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 9, 0);
@@ -669,21 +910,20 @@ TEST_CASE("process flow: batch (temporary) then unbatch restores agents",
 TEST_CASE("process flow: combine waits for both inputs and emits one",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto in1 = block(
-      builder, "In1", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-  const auto in2 = block(
-      builder, "In2", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in1 =
+      block(builder, "In1", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in2 =
+      block(builder, "In2", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
   const auto combine = block(builder, "C", "combine", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {in1, in2, combine, sink},
-      {couple(builder, "In1", "out", "C", "in1"),
-       couple(builder, "In2", "out", "C", "in2"),
-       couple(builder, "C", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {in1, in2, combine, sink},
+                     {couple(builder, "In1", "out", "C", "in1"),
+                      couple(builder, "In2", "out", "C", "in2"),
+                      couple(builder, "C", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
@@ -694,23 +934,22 @@ TEST_CASE("process flow: combine waits for both inputs and emits one",
 TEST_CASE("process flow: match synchronizes two streams (pure synchronizer)",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto in1 = block(
-      builder, "In1", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-  const auto in2 = block(
-      builder, "In2", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in1 =
+      block(builder, "In1", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto in2 =
+      block(builder, "In2", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
   const auto match = block(builder, "M", "match", {}, {});
   const auto sink1 = block(builder, "K1", "sink", {}, {});
   const auto sink2 = block(builder, "K2", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {in1, in2, match, sink1, sink2},
-      {couple(builder, "In1", "out", "M", "in1"),
-       couple(builder, "In2", "out", "M", "in2"),
-       couple(builder, "M", "out1", "K1", "in"),
-       couple(builder, "M", "out2", "K2", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {in1, in2, match, sink1, sink2},
+                     {couple(builder, "In1", "out", "M", "in1"),
+                      couple(builder, "In2", "out", "M", "in2"),
+                      couple(builder, "M", "out1", "K1", "in"),
+                      couple(builder, "M", "out2", "K2", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 20, 0);
@@ -722,19 +961,18 @@ TEST_CASE("process flow: match synchronizes two streams (pure synchronizer)",
 TEST_CASE("process flow: seize holds pool units until release",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
-  const auto resource = block(
-      builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
-  const auto seize = block(
-      builder, "Grab", "seize",
-      {var_string(builder, "resource", "Server"),
-       var_int(builder, "numberOfUnits", 1)},
-      {});
-  const auto delay = block(
-      builder, "Work", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto seize = block(builder, "Grab", "seize",
+                           {var_string(builder, "resource", "Server"),
+                            var_int(builder, "numberOfUnits", 1)},
+                           {});
+  const auto delay =
+      block(builder, "Work", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
   const auto release = block(builder, "Drop", "release", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   const auto root = CreateNode(
@@ -743,17 +981,15 @@ TEST_CASE("process flow: seize holds pool units until release",
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
       CreateSemanticsRef(builder, builder.CreateString("core"),
                          builder.CreateString("model"), 0, 0),
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<Node>>{resource}),
-      0, 0, 0, 0);
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}), 0,
+      0, 0, 0);
   std::string error;
-  auto model = build(
-      builder, {source, seize, delay, release, sink},
-      {couple(builder, "In", "out", "Grab", "in"),
-       couple(builder, "Grab", "out", "Work", "in"),
-       couple(builder, "Work", "out", "Drop", "in"),
-       couple(builder, "Drop", "out", "K", "in")},
-      root, &error);
+  auto model = build(builder, {source, seize, delay, release, sink},
+                     {couple(builder, "In", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Drop", "in"),
+                      couple(builder, "Drop", "out", "K", "in")},
+                     root, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
@@ -766,23 +1002,22 @@ TEST_CASE("process flow: seize holds pool units until release",
 TEST_CASE("process flow: timeMeasureStart/End measure delay time",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
   const auto start = block(builder, "T0", "timeMeasureStart", {}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
   const auto end = block(builder, "T1", "timeMeasureEnd", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, start, delay, end, sink},
-      {couple(builder, "In", "out", "T0", "in"),
-       couple(builder, "T0", "out", "D", "in"),
-       couple(builder, "D", "out", "T1", "in"),
-       couple(builder, "T1", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, start, delay, end, sink},
+                     {couple(builder, "In", "out", "T0", "in"),
+                      couple(builder, "T0", "out", "D", "in"),
+                      couple(builder, "D", "out", "T1", "in"),
+                      couple(builder, "T1", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 4, 0);
@@ -794,19 +1029,17 @@ TEST_CASE("process flow: timeMeasureStart/End measure delay time",
 TEST_CASE("process flow: hold with initiallyBlocked=true stays blocked",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
-  const auto hold = block(
-      builder, "H", "hold",
-      {var_bool(builder, "initiallyBlocked", true)}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto hold = block(builder, "H", "hold",
+                          {var_bool(builder, "initiallyBlocked", true)}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, hold, sink},
-      {couple(builder, "In", "out", "H", "in"),
-       couple(builder, "H", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, hold, sink},
+                     {couple(builder, "In", "out", "H", "in"),
+                      couple(builder, "H", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   REQUIRE(error.empty());
   const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
@@ -821,21 +1054,19 @@ TEST_CASE("process flow: source entity attributes drive condition routing",
         builder, "In", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
         {var_int(builder, "size", 10)}, {});
-    const auto route = block(
-        builder, "R", "selectOutput",
-        {var_string(builder, "condition", condition)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput",
+                             {var_string(builder, "condition", condition)}, {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "outT", "Slow", "in"),
-         couple(builder, "R", "outF", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "outT", "Slow", "in"),
+                        couple(builder, "R", "outF", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 500, 0);
   };
@@ -852,20 +1083,19 @@ TEST_CASE("process flow: source entity attributes drive condition routing",
   // Hold conditions can reference attributes too: size = 10 is always
   // blocked by `size > 5`, so nothing reaches the sink.
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block_with_state(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
-      {var_int(builder, "size", 10)}, {});
-  const auto hold = block(
-      builder, "H", "hold",
-      {var_string(builder, "blockingCondition", "size > 5")}, {});
+  const auto source =
+      block_with_state(builder, "In", "source",
+                       {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+                       {var_int(builder, "size", 10)}, {});
+  const auto hold =
+      block(builder, "H", "hold",
+            {var_string(builder, "blockingCondition", "size > 5")}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, hold, sink},
-      {couple(builder, "In", "out", "H", "in"),
-       couple(builder, "H", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, hold, sink},
+                     {couple(builder, "In", "out", "H", "in"),
+                      couple(builder, "H", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics blocked = run_once(*model, 7, 10, 0);
   REQUIRE(blocked.departures == 0);
@@ -892,8 +1122,7 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
   const double p = kMu / (kMu + kFailure);
   const double shared = 2.0 / ((kMu + kFailure) * (kMu + kFailure));
   const double failed_branch =
-      shared + 2.0 / (kRepair * kRepair) +
-      2.0 / ((kMu + kFailure) * kRepair) +
+      shared + 2.0 / (kRepair * kRepair) + 2.0 / ((kMu + kFailure) * kRepair) +
       2.0 * service_mean * (1.0 / (kMu + kFailure) + 1.0 / kRepair);
   const double service_second_moment =
       (p * shared + (1.0 - p) * failed_branch) / p;
@@ -902,22 +1131,21 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
       kLambda * service_second_moment / (2.0 * (1.0 - rho_eff));
 
   const auto build_model = [&](flatbuffers::FlatBufferBuilder& builder) {
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
     const auto queue = block(builder, "Q", "queue",
                              {var_int(builder, "capacity", 1000000)}, {});
-    const auto resource = block(
-        builder, "Server", "resource",
-        {var_int(builder, "capacity", 1),
-         var_float(builder, "failure_rate", kFailure),
-         var_float(builder, "repair_rate", kRepair)},
-        {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 3, {kMu})),
-         var_string(builder, "resource", "Server")},
-        {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", 1),
+                                 var_float(builder, "failure_rate", kFailure),
+                                 var_float(builder, "repair_rate", kRepair)},
+                                {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 3, {kMu})),
+               var_string(builder, "resource", "Server")},
+              {});
     const auto count = block(builder, "C", "count", {}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto root = CreateNode(
@@ -926,17 +1154,15 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{resource}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, queue, service, count, sink},
-        {couple(builder, "In", "out", "Q", "in"),
-         couple(builder, "Q", "out", "S", "in"),
-         couple(builder, "S", "out", "C", "in"),
-         couple(builder, "C", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, queue, service, count, sink},
+                       {couple(builder, "In", "out", "Q", "in"),
+                        couple(builder, "Q", "out", "S", "in"),
+                        couple(builder, "S", "out", "C", "in"),
+                        couple(builder, "C", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return model;
   };
@@ -951,20 +1177,17 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
     results.push_back(metrics);
   }
 
-  const ReplicationSummary summary =
-      summarize_replications(results, 0.95);
+  const ReplicationSummary summary = summarize_replications(results, 0.95);
   INFO("Wq mean=" << summary.mean_wait.mean << " theory=" << theory_wq
                   << " CI=[" << summary.mean_wait.ci_low << ", "
                   << summary.mean_wait.ci_high << "]");
   // Same acceptance rule as test_mm1_failure: cross-replication CI covers
   // theory.wq, or the point estimate is within 0.75 of it.
   const bool ci_covers = summary.mean_wait.covers(theory_wq);
-  const bool point_ok =
-      std::abs(summary.mean_wait.mean - theory_wq) <= 0.75;
+  const bool point_ok = std::abs(summary.mean_wait.mean - theory_wq) <= 0.75;
   REQUIRE((ci_covers || point_ok));
   REQUIRE(std::abs(summary.availability.mean - availability) < 0.03);
-  REQUIRE(std::abs(summary.throughput.mean - kLambda) <=
-          0.05 * kLambda);
+  REQUIRE(std::abs(summary.throughput.mean - kLambda) <= 0.05 * kLambda);
   // Preemption-aware wait: sojourn includes failed attempts + repairs.
   REQUIRE(summary.mean_sojourn.mean > summary.mean_wait.mean);  // W > Wq
 
@@ -982,22 +1205,22 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
   // less congested and never goes down (relative check, same engine).
   const auto run_no_failure = [&](double failure_rate) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {kLambda}))}, {});
     const auto queue = block(builder, "Q", "queue",
                              {var_int(builder, "capacity", 1000000)}, {});
-    const auto resource = block(
-        builder, "Server", "resource",
-        {var_int(builder, "capacity", 1),
-         var_float(builder, "failure_rate", failure_rate),
-         var_float(builder, "repair_rate", kRepair)},
-        {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 3, {kMu})),
-         var_string(builder, "resource", "Server")},
-        {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", failure_rate),
+               var_float(builder, "repair_rate", kRepair)},
+              {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 3, {kMu})),
+               var_string(builder, "resource", "Server")},
+              {});
     const auto count = block(builder, "C", "count", {}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto root = CreateNode(
@@ -1006,17 +1229,15 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{resource}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, queue, service, count, sink},
-        {couple(builder, "In", "out", "Q", "in"),
-         couple(builder, "Q", "out", "S", "in"),
-         couple(builder, "S", "out", "C", "in"),
-         couple(builder, "C", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, queue, service, count, sink},
+                       {couple(builder, "In", "out", "Q", "in"),
+                        couple(builder, "Q", "out", "S", "in"),
+                        couple(builder, "S", "out", "C", "in"),
+                        couple(builder, "C", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 42, kArrivals, kWarmup);
   };
@@ -1031,24 +1252,23 @@ TEST_CASE("process flow: wait exit-on-timeout routes through outTimeout",
           "[process_flow][timeout][des_blocks]") {
   const auto build_wait = [&](bool enable_timeout,
                               flatbuffers::FlatBufferBuilder& builder) {
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-    const auto wait = block(
-        builder, "W", "wait",
-        {var_int(builder, "capacity", 100),
-         var_bool(builder, "enableTimeout", enable_timeout),
-         var_float(builder, "timeout", 1.0)},
-        {});
-    const auto resource = block(
-        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto wait = block(builder, "W", "wait",
+                            {var_int(builder, "capacity", 100),
+                             var_bool(builder, "enableTimeout", enable_timeout),
+                             var_float(builder, "timeout", 1.0)},
+                            {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto late = block(builder, "Late", "sink", {}, {});
     const auto root = CreateNode(
@@ -1061,20 +1281,18 @@ TEST_CASE("process flow: wait exit-on-timeout routes through outTimeout",
             std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, wait, service, sink, late},
-        {couple(builder, "In", "out", "W", "in"),
-         couple(builder, "W", "out", "S", "in"),
-         couple(builder, "W", "outTimeout", "Late", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, wait, service, sink, late},
+                       {couple(builder, "In", "out", "W", "in"),
+                        couple(builder, "W", "out", "S", "in"),
+                        couple(builder, "W", "outTimeout", "Late", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 5, 0);
   };
 
   flatbuffers::FlatBufferBuilder with_timeout_builder;
-  const ReplicationMetrics timed =
-      build_wait(true, with_timeout_builder);
+  const ReplicationMetrics timed = build_wait(true, with_timeout_builder);
   // The downstream service has zero capacity (never accepts), so every
   // agent waits in the wait block and exits via outTimeout after 1.0s.
   REQUIRE(timed.departures == 5);
@@ -1097,25 +1315,25 @@ TEST_CASE("process flow: seize exit-on-timeout releases waiting agents",
           "[process_flow][timeout][des_blocks]") {
   const auto build_seize = [&](bool enable_timeout,
                                flatbuffers::FlatBufferBuilder& builder) {
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-    const auto resource = block(
-        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto seize = block(
-        builder, "Grab", "seize",
-        {var_string(builder, "resource", "Server"),
-         var_int(builder, "numberOfUnits", 1),
-         var_bool(builder, "enableTimeout", enable_timeout),
-         var_float(builder, "timeout", 0.5)},
-        {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto seize =
+        block(builder, "Grab", "seize",
+              {var_string(builder, "resource", "Server"),
+               var_int(builder, "numberOfUnits", 1),
+               var_bool(builder, "enableTimeout", enable_timeout),
+               var_float(builder, "timeout", 0.5)},
+              {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto late = block(builder, "Late", "sink", {}, {});
     const auto root = CreateNode(
@@ -1128,20 +1346,18 @@ TEST_CASE("process flow: seize exit-on-timeout releases waiting agents",
             std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, seize, service, sink, late},
-        {couple(builder, "In", "out", "Grab", "in"),
-         couple(builder, "Grab", "out", "S", "in"),
-         couple(builder, "Grab", "outTimeout", "Late", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, seize, service, sink, late},
+                       {couple(builder, "In", "out", "Grab", "in"),
+                        couple(builder, "Grab", "out", "S", "in"),
+                        couple(builder, "Grab", "outTimeout", "Late", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 5, 0);
   };
 
   flatbuffers::FlatBufferBuilder with_timeout_builder;
-  const ReplicationMetrics timed =
-      build_seize(true, with_timeout_builder);
+  const ReplicationMetrics timed = build_seize(true, with_timeout_builder);
   // The first agent seizes the (single) unit but its downstream service has
   // zero capacity, so the other four wait 0.5s at the seize then exit via
   // outTimeout. (The first agent stays blocked in the seize's outgoing.)
@@ -1153,7 +1369,7 @@ TEST_CASE("process flow: seize exit-on-timeout releases waiting agents",
   REQUIRE(stuck.departures == 0);
 }
 
-TEST_CASE("process flow: full priority queue preempts its weakest waiter",
+TEST_CASE("process flow: full preempting queue routes every overflow",
           "[process_flow][preemption][des_blocks]") {
   const auto run_queue = [&](const char* queuing) {
     flatbuffers::FlatBufferBuilder builder;
@@ -1165,19 +1381,18 @@ TEST_CASE("process flow: full priority queue preempts its weakest waiter",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
         {var_int(builder, "priority", 5)}, {});
-    const auto queue = block(
-        builder, "Q", "queue",
-        {var_int(builder, "capacity", 2),
-         var_string(builder, "queuing", queuing),
-         var_bool(builder, "enablePreemption", true)},
-        {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto queue = block(builder, "Q", "queue",
+                             {var_int(builder, "capacity", 2),
+                              var_string(builder, "queuing", queuing),
+                              var_bool(builder, "enablePreemption", true)},
+                             {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto preempted = block(builder, "Out", "sink", {}, {});
     const auto root = CreateNode(
@@ -1186,32 +1401,306 @@ TEST_CASE("process flow: full priority queue preempts its weakest waiter",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {s1, s2, queue, service, sink, preempted},
-        {couple(builder, "S1", "out", "Q", "in"),
-         couple(builder, "S2", "out", "Q", "in"),
-         couple(builder, "Q", "out", "S", "in"),
-         couple(builder, "Q", "outPreempted", "Out", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {s1, s2, queue, service, sink, preempted},
+                       {couple(builder, "S1", "out", "Q", "in"),
+                        couple(builder, "S2", "out", "Q", "in"),
+                        couple(builder, "Q", "out", "S", "in"),
+                        couple(builder, "Q", "outPreempted", "Out", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 7, 0);
   };
 
   const ReplicationMetrics fifo = run_queue("queuing_fifo");
   const ReplicationMetrics priority = run_queue("queuing_priority");
-  // Arrivals: S1 (priority 1) at t=1,2,3,4; S2 (priority 5) at t=2,4,6. With
-  // capacity 2 and the out port blocked, the full queue ejects through
-  // outPreempted. FIFO mode rejects once a high-priority S2 sits at the
-  // back; priority mode keeps ejecting the weakest waiter, so more agents
-  // leave via outPreempted.
-  REQUIRE(fifo.departures == 0);
-  REQUIRE(priority.departures == 1);
-  REQUIRE(priority.departures > fifo.departures);
+  // Seven arrivals, capacity two and a blocked normal output leave five
+  // overflows. Preemption accepts and routes all five instead of propagating
+  // backpressure, independent of which discipline selects the victim.
+  REQUIRE(fifo.departures == 5);
+  REQUIRE(priority.departures == 5);
+}
+
+TEST_CASE("process flow: full priority queue may preempt the newcomer itself",
+          "[process_flow][preemption][queue]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto one_shot_source = [&](const char* name, double first_time,
+                                   std::int64_t priority) {
+    return block_with_state(
+        builder, name, "source",
+        {var_string(builder, "arrivalType", "interarrival_time"),
+         var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "priority", priority)}, {});
+  };
+  const auto established = one_shot_source("Established", 1.0, 1);
+  const auto preferred = one_shot_source("Preferred", 2.0, 5);
+  const auto weak_newcomer = one_shot_source("WeakNewcomer", 3.0, 0);
+  const auto queue =
+      block(builder, "Q", "queue",
+            {var_int(builder, "capacity", 1),
+             var_string(builder, "queuing", "queuing_priority"),
+             var_bool(builder, "enablePreemption", true)},
+            {});
+  const auto blocked = block(builder, "Blocked", "resource",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Blocked")},
+            {});
+  const auto route = block(builder, "WhichWasPreempted", "selectOutput",
+                           {var_string(builder, "condition", "priority == 0")}, {});
+  const auto old_dropped = block(builder, "EstablishedDropped", "sink", {}, {});
+  const auto newcomer_dropped = block(builder, "NewcomerDropped", "sink", {}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder,
+      {established, preferred, weak_newcomer, queue, service, route,
+       old_dropped, newcomer_dropped, done},
+      {couple(builder, "Established", "out", "Q", "in"),
+       couple(builder, "Preferred", "out", "Q", "in"),
+       couple(builder, "WeakNewcomer", "out", "Q", "in"),
+       couple(builder, "Q", "out", "S", "in"),
+       couple(builder, "Q", "outPreempted", "WhichWasPreempted", "in"),
+       couple(builder, "WhichWasPreempted", "outT", "NewcomerDropped", "in"),
+       couple(builder, "WhichWasPreempted", "outF", "EstablishedDropped", "in"),
+       couple(builder, "S", "out", "Done", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
+  const auto block_metric = [&](const char* name) -> const BlockMetrics& {
+    const auto it = std::find_if(
+        metrics.blocks.begin(), metrics.blocks.end(),
+        [name](const BlockMetrics& block) { return block.name == name; });
+    REQUIRE(it != metrics.blocks.end());
+    return *it;
+  };
+  // Preferred ejects the established priority-1 waiter. The later priority-0
+  // newcomer is still accepted, but as the weakest item it ejects itself.
+  CHECK(block_metric("Q").arrived == 3);
+  CHECK(block_metric("Q").preempted == 2);
+  CHECK(block_metric("EstablishedDropped").departed == 1);
+  CHECK(block_metric("NewcomerDropped").departed == 1);
+  CHECK(block_metric("WeakNewcomer").departed == 1);
+}
+
+TEST_CASE("process flow: full preempting priority queue ejects the weakest "
+          "established waiter",
+          "[process_flow][preemption][queue]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto one_shot_source = [&](const char* name, double first_time,
+                                   const char* first_mode,
+                                   std::int64_t priority) {
+    return block_with_state(
+        builder, name, "source",
+        {var_string(builder, "arrivalType", "interarrival_time"),
+         var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", first_mode),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "priority", priority)}, {});
+  };
+  const auto weak = one_shot_source("Weak", 0.0, "at_start", 1);
+  const auto mid = one_shot_source("Mid", 5.0, "at_time", 2);
+  const auto strong = one_shot_source("Strong", 10.0, "at_time", 5);
+  const auto queue =
+      block(builder, "Q", "queue",
+            {var_int(builder, "capacity", 2),
+             var_string(builder, "queuing", "queuing_priority"),
+             var_bool(builder, "enablePreemption", true)},
+            {});
+  const auto blocked = block(builder, "Blocked", "resource",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Blocked")},
+            {});
+  const auto route = block(builder, "Who", "selectOutput",
+                           {var_string(builder, "condition", "priority == 1")},
+                           {});
+  const auto weakest_dropped =
+      block(builder, "WeakestDropped", "sink", {}, {});
+  const auto other_dropped = block(builder, "OtherDropped", "sink", {}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder,
+      {weak, mid, strong, queue, service, route, weakest_dropped,
+       other_dropped, done},
+      {couple(builder, "Weak", "out", "Q", "in"),
+       couple(builder, "Mid", "out", "Q", "in"),
+       couple(builder, "Strong", "out", "Q", "in"),
+       couple(builder, "Q", "out", "S", "in"),
+       couple(builder, "Q", "outPreempted", "Who", "in"),
+       couple(builder, "Who", "outT", "WeakestDropped", "in"),
+       couple(builder, "Who", "outF", "OtherDropped", "in"),
+       couple(builder, "S", "out", "Done", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
+  const auto block_metric = [&](const char* name) -> const BlockMetrics& {
+    const auto it = std::find_if(
+        metrics.blocks.begin(), metrics.blocks.end(),
+        [name](const BlockMetrics& block) { return block.name == name; });
+    REQUIRE(it != metrics.blocks.end());
+    return *it;
+  };
+  // Weak (priority 1, t=0) and Mid (priority 2, t=5) fill the capacity-2
+  // queue; the out port is blocked, so Strong (priority 5, t=10) overflows.
+  // The queue always accepts the newcomer, then routes the lowest-priority
+  // entity -- the established priority-1 waiter, never the newcomer -- out
+  // through outPreempted (AnyLogic queue.txt lines 980-983).
+  CHECK(block_metric("Q").arrived == 3);
+  CHECK(block_metric("Q").preempted == 1);
+  CHECK(block_metric("Q").departed == 1);  // the one preempted exit
+  CHECK(block_metric("WeakestDropped").departed == 1);
+  CHECK(block_metric("OtherDropped").departed == 0);
+  CHECK(block_metric("Done").departed == 0);
+  CHECK(metrics.arrivals == 3);
+  CHECK(metrics.departures == 1);
+  // The ejected priority-1 waiter waited from t=0 until t=10.
+  CHECK(metrics.mean_sojourn == 10.0);
+}
+
+TEST_CASE("process flow: full preempting priority queue ejects a lower-or-equal "
+          "newcomer itself, never backpressuring upstream",
+          "[process_flow][preemption][queue]") {
+  const auto run_case = [&](std::int64_t newcomer_priority) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto established_source = [&](const char* name, double first_time,
+                                        const char* first_mode) {
+      return block_with_state(
+          builder, name, "source",
+          {var_string(builder, "arrivalType", "interarrival_time"),
+           var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+           var_string(builder, "firstArrivalMode", first_mode),
+           var_float(builder, "firstArrivalTime", first_time),
+           var_bool(builder, "limitArrivals", true),
+           var_int(builder, "maxArrivals", 1)},
+          {var_int(builder, "priority", 5), var_int(builder, "tag", 1)}, {});
+    };
+    const auto est_a = established_source("EstablishedA", 0.0, "at_start");
+    const auto est_b = established_source("EstablishedB", 5.0, "at_time");
+    const auto newcomer = block_with_state(
+        builder, "Newcomer", "source",
+        {var_string(builder, "arrivalType", "interarrival_time"),
+         var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", 10.0),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "priority", newcomer_priority),
+         var_int(builder, "tag", 2)},
+        {});
+    const auto queue =
+        block(builder, "Q", "queue",
+              {var_int(builder, "capacity", 2),
+               var_string(builder, "queuing", "queuing_priority"),
+               var_bool(builder, "enablePreemption", true)},
+              {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
+    const auto route = block(builder, "Who", "selectOutput",
+                             {var_string(builder, "condition", "tag == 2")},
+                             {});
+    const auto newcomer_dropped =
+        block(builder, "NewcomerDropped", "sink", {}, {});
+    const auto established_dropped =
+        block(builder, "EstablishedDropped", "sink", {}, {});
+    const auto done = block(builder, "Done", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder,
+        {est_a, est_b, newcomer, queue, service, route, newcomer_dropped,
+         established_dropped, done},
+        {couple(builder, "EstablishedA", "out", "Q", "in"),
+         couple(builder, "EstablishedB", "out", "Q", "in"),
+         couple(builder, "Newcomer", "out", "Q", "in"),
+         couple(builder, "Q", "out", "S", "in"),
+         couple(builder, "Q", "outPreempted", "Who", "in"),
+         couple(builder, "Who", "outT", "NewcomerDropped", "in"),
+         couple(builder, "Who", "outF", "EstablishedDropped", "in"),
+         couple(builder, "S", "out", "Done", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return run_once(*model, 7, 3, 0);
+  };
+  const auto check_case = [&](const ReplicationMetrics& metrics) {
+    const auto block_metric = [&](const char* name) -> const BlockMetrics& {
+      const auto it = std::find_if(
+          metrics.blocks.begin(), metrics.blocks.end(),
+          [name](const BlockMetrics& block) { return block.name == name; });
+      REQUIRE(it != metrics.blocks.end());
+      return *it;
+    };
+    // Two priority-5 waiters (tag 1) fill the capacity-2 queue; the out port
+    // is blocked. The newcomer is still always accepted (Q.arrived == 3) and,
+    // being lower-or-equal priority than the weakest waiter, ejects ITSELF
+    // through outPreempted -- never an established waiter, and never upstream
+    // backpressure (AnyLogic queue.txt lines 980-983).
+    CHECK(block_metric("Q").arrived == 3);
+    CHECK(block_metric("Q").preempted == 1);
+    CHECK(block_metric("Q").departed == 1);  // the one preempted exit
+    CHECK(block_metric("NewcomerDropped").departed == 1);
+    CHECK(block_metric("EstablishedDropped").departed == 0);
+    CHECK(block_metric("Done").departed == 0);
+    CHECK(metrics.arrivals == 3);
+    CHECK(metrics.departures == 1);
+    // The newcomer arrived and left at t=10 (no time spent queued).
+    CHECK(metrics.mean_sojourn == 0.0);
+  };
+
+  // Lower-priority newcomer (1 < weakest 5): accepted, then ejects itself.
+  const ReplicationMetrics lower = run_case(1);
+  check_case(lower);
+  // Equal-priority newcomer (5 == weakest 5): stable priority order leaves
+  // the newcomer behind established equals, so it ejects itself too.
+  const ReplicationMetrics equal = run_case(5);
+  check_case(equal);
 }
 
 TEST_CASE("process flow: wait preempts the weakest waiter on arrival",
@@ -1226,19 +1715,19 @@ TEST_CASE("process flow: wait preempts the weakest waiter on arrival",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
         {var_int(builder, "priority", 5)}, {});
-    const auto wait = block(
-        builder, "W", "wait",
-        {var_int(builder, "capacity", 100),
-         var_string(builder, "queuing", "queuing_priority"),
-         var_bool(builder, "enablePreemption", enable_preemption)},
-        {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto wait =
+        block(builder, "W", "wait",
+              {var_int(builder, "capacity", 100),
+               var_string(builder, "queuing", "queuing_priority"),
+               var_bool(builder, "enablePreemption", enable_preemption)},
+              {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto preempted = block(builder, "Out", "sink", {}, {});
     const auto root = CreateNode(
@@ -1247,18 +1736,16 @@ TEST_CASE("process flow: wait preempts the weakest waiter on arrival",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {s1, s2, wait, service, sink, preempted},
-        {couple(builder, "S1", "out", "W", "in"),
-         couple(builder, "S2", "out", "W", "in"),
-         couple(builder, "W", "out", "S", "in"),
-         couple(builder, "W", "outPreempted", "Out", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {s1, s2, wait, service, sink, preempted},
+                       {couple(builder, "S1", "out", "W", "in"),
+                        couple(builder, "S2", "out", "W", "in"),
+                        couple(builder, "W", "out", "S", "in"),
+                        couple(builder, "W", "outPreempted", "Out", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 7, 0);
   };
@@ -1284,21 +1771,21 @@ TEST_CASE("process flow: seize preempts the weakest waiting agent",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
         {var_int(builder, "priority", 5)}, {});
-    const auto resource = block(
-        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto seize = block(
-        builder, "Grab", "seize",
-        {var_string(builder, "resource", "Server"),
-         var_int(builder, "numberOfUnits", 1),
-         var_bool(builder, "enablePreemption", enable_preemption)},
-        {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", 1)}, {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto seize =
+        block(builder, "Grab", "seize",
+              {var_string(builder, "resource", "Server"),
+               var_int(builder, "numberOfUnits", 1),
+               var_bool(builder, "enablePreemption", enable_preemption)},
+              {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto preempted = block(builder, "Out", "sink", {}, {});
     const auto root = CreateNode(
@@ -1311,14 +1798,13 @@ TEST_CASE("process flow: seize preempts the weakest waiting agent",
             std::vector<flatbuffers::Offset<Node>>{resource, blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {s1, s2, seize, service, sink, preempted},
-        {couple(builder, "S1", "out", "Grab", "in"),
-         couple(builder, "S2", "out", "Grab", "in"),
-         couple(builder, "Grab", "out", "S", "in"),
-         couple(builder, "Grab", "outPreempted", "Out", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {s1, s2, seize, service, sink, preempted},
+                       {couple(builder, "S1", "out", "Grab", "in"),
+                        couple(builder, "S2", "out", "Grab", "in"),
+                        couple(builder, "Grab", "out", "S", "in"),
+                        couple(builder, "Grab", "outPreempted", "Out", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
@@ -1345,19 +1831,18 @@ TEST_CASE("process flow: match pairs agents on an equal attribute",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
         {var_int(builder, "kind", kind2)}, {});
-    const auto match = block(
-        builder, "M", "match",
-        {var_string(builder, "matchCondition", condition)}, {});
+    const auto match =
+        block(builder, "M", "match",
+              {var_string(builder, "matchCondition", condition)}, {});
     const auto sink1 = block(builder, "K1", "sink", {}, {});
     const auto sink2 = block(builder, "K2", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {s1, s2, match, sink1, sink2},
-        {couple(builder, "S1", "out", "M", "in1"),
-         couple(builder, "S2", "out", "M", "in2"),
-         couple(builder, "M", "out1", "K1", "in"),
-         couple(builder, "M", "out2", "K2", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {s1, s2, match, sink1, sink2},
+                       {couple(builder, "S1", "out", "M", "in1"),
+                        couple(builder, "S2", "out", "M", "in2"),
+                        couple(builder, "M", "out1", "K1", "in"),
+                        couple(builder, "M", "out2", "K2", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
@@ -1386,32 +1871,34 @@ TEST_CASE("process flow: match pairs via agent1/agent2 field expressions",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
         {var_int(builder, "kind", kind2)}, {});
-    const auto match = block(
-        builder, "M", "match",
-        {var_string(builder, "matchCondition", condition)}, {});
+    const auto match =
+        block(builder, "M", "match",
+              {var_string(builder, "matchCondition", condition)}, {});
     const auto sink1 = block(builder, "K1", "sink", {}, {});
     const auto sink2 = block(builder, "K2", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {s1, s2, match, sink1, sink2},
-        {couple(builder, "S1", "out", "M", "in1"),
-         couple(builder, "S2", "out", "M", "in2"),
-         couple(builder, "M", "out1", "K1", "in"),
-         couple(builder, "M", "out2", "K2", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {s1, s2, match, sink1, sink2},
+                       {couple(builder, "S1", "out", "M", "in1"),
+                        couple(builder, "S2", "out", "M", "in2"),
+                        couple(builder, "M", "out1", "K1", "in"),
+                        couple(builder, "M", "out2", "K2", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
 
   // The canonical AnyLogic form `agent1.kind == agent2.kind` pairs equal
   // attributes and blocks unequal ones; `!=` pairs unequal ones.
-  const ReplicationMetrics equal = run_match(1, 1, "agent1.kind == agent2.kind");
+  const ReplicationMetrics equal =
+      run_match(1, 1, "agent1.kind == agent2.kind");
   REQUIRE(equal.departures == 6);
 
-  const ReplicationMetrics mismatched = run_match(1, 2, "agent1.kind == agent2.kind");
+  const ReplicationMetrics mismatched =
+      run_match(1, 2, "agent1.kind == agent2.kind");
   REQUIRE(mismatched.departures == 0);
 
-  const ReplicationMetrics not_equal = run_match(1, 2, "agent1.kind != agent2.kind");
+  const ReplicationMetrics not_equal =
+      run_match(1, 2, "agent1.kind != agent2.kind");
   REQUIRE(not_equal.departures == 6);
 }
 
@@ -1427,20 +1914,20 @@ TEST_CASE("process flow: queuing_comparison orders and preempts by expression",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
         {var_int(builder, "size", 5)}, {});
-    const auto queue = block(
-        builder, "Q", "queue",
-        {var_int(builder, "capacity", 1),
-         var_string(builder, "queuing", "queuing_comparison"),
-         var_string(builder, "agent1IsPreferredToAgent2", comparison),
-         var_bool(builder, "enablePreemption", true)},
-        {});
-    const auto blocked = block(
-        builder, "Blocked", "resource", {var_int(builder, "capacity", 0)}, {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1.0})),
-         var_string(builder, "resource", "Blocked")},
-        {});
+    const auto queue =
+        block(builder, "Q", "queue",
+              {var_int(builder, "capacity", 1),
+               var_string(builder, "queuing", "queuing_comparison"),
+               var_string(builder, "agent1IsPreferredToAgent2", comparison),
+               var_bool(builder, "enablePreemption", true)},
+              {});
+    const auto blocked = block(builder, "Blocked", "resource",
+                               {var_int(builder, "capacity", 0)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Blocked")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto preempted = block(builder, "Out", "sink", {}, {});
     const auto root = CreateNode(
@@ -1449,57 +1936,56 @@ TEST_CASE("process flow: queuing_comparison orders and preempts by expression",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{blocked}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {s1, s2, queue, service, sink, preempted},
-        {couple(builder, "S1", "out", "Q", "in"),
-         couple(builder, "S2", "out", "Q", "in"),
-         couple(builder, "Q", "out", "S", "in"),
-         couple(builder, "Q", "outPreempted", "Out", "in"),
-         couple(builder, "S", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {s1, s2, queue, service, sink, preempted},
+                       {couple(builder, "S1", "out", "Q", "in"),
+                        couple(builder, "S2", "out", "Q", "in"),
+                        couple(builder, "Q", "out", "S", "in"),
+                        couple(builder, "Q", "outPreempted", "Out", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
 
-  // Capacity-1 queue: a size-5 newcomer ejects the size-1 waiter when the
-  // comparison says "bigger first"; the reversed comparison never admits it.
+  // Capacity-1 queue: after the first waiter, every subsequent arrival is an
+  // overflow and therefore reaches outPreempted. The comparison decides the
+  // victim identity; the dedicated identity test below proves that boundary.
   const ReplicationMetrics bigger_first =
       run_comparison("agent1.size > agent2.size");
-  REQUIRE(bigger_first.departures == 1);
+  REQUIRE(bigger_first.departures == 5);
 
   const ReplicationMetrics smaller_first =
       run_comparison("agent1.size < agent2.size");
-  REQUIRE(smaller_first.departures == 0);
+  REQUIRE(smaller_first.departures == 5);
 
   // Insertion path: comparison ordering with an accepting downstream keeps
   // every agent (conservation through the repositioning code).
   flatbuffers::FlatBufferBuilder builder;
-  const auto s1 = block_with_state(
-      builder, "S1", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
-      {var_int(builder, "size", 1)}, {});
-  const auto s2 = block_with_state(
-      builder, "S2", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
-      {var_int(builder, "size", 5)}, {});
-  const auto queue = block(
-      builder, "Q", "queue",
-      {var_int(builder, "capacity", 100),
-       var_string(builder, "queuing", "queuing_comparison"),
-       var_string(builder, "agent1IsPreferredToAgent2",
-                  "agent1.size > agent2.size")},
-      {});
-  const auto service = block(
-      builder, "S", "service",
-      {var_dist(builder, "time", dist(builder, 0, {1.0})),
-       var_string(builder, "resource", "Server")},
-      {});
-  const auto resource = block(
-      builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
+  const auto s1 =
+      block_with_state(builder, "S1", "source",
+                       {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+                       {var_int(builder, "size", 1)}, {});
+  const auto s2 =
+      block_with_state(builder, "S2", "source",
+                       {var_dist(builder, "arrival", dist(builder, 0, {2.0}))},
+                       {var_int(builder, "size", 5)}, {});
+  const auto queue =
+      block(builder, "Q", "queue",
+            {var_int(builder, "capacity", 100),
+             var_string(builder, "queuing", "queuing_comparison"),
+             var_string(builder, "agent1IsPreferredToAgent2",
+                        "agent1.size > agent2.size")},
+            {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Server")},
+            {});
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   const auto root = CreateNode(
       builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
@@ -1507,20 +1993,95 @@ TEST_CASE("process flow: queuing_comparison orders and preempts by expression",
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
       CreateSemanticsRef(builder, builder.CreateString("core"),
                          builder.CreateString("model"), 0, 0),
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<Node>>{resource}),
-      0, 0, 0, 0);
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}), 0,
+      0, 0, 0);
   std::string error2;
-  auto model = build(
-      builder, {s1, s2, queue, service, sink},
-      {couple(builder, "S1", "out", "Q", "in"),
-       couple(builder, "S2", "out", "Q", "in"),
-       couple(builder, "Q", "out", "S", "in"),
-       couple(builder, "S", "out", "K", "in")},
-      root, &error2);
+  auto model = build(builder, {s1, s2, queue, service, sink},
+                     {couple(builder, "S1", "out", "Q", "in"),
+                      couple(builder, "S2", "out", "Q", "in"),
+                      couple(builder, "Q", "out", "S", "in"),
+                      couple(builder, "S", "out", "K", "in")},
+                     root, &error2);
   REQUIRE(model != nullptr);
   const ReplicationMetrics conserved = run_once(*model, 7, 6, 0);
   REQUIRE(conserved.departures == 6);
+}
+
+TEST_CASE("process flow: comparison overflow ejects the least preferred entity",
+          "[process_flow][queuing][preemption]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto one_shot_source = [&](const char* name, double first_time,
+                                   std::int64_t size) {
+    return block_with_state(
+        builder, name, "source",
+        {var_string(builder, "arrivalType", "interarrival_time"),
+         var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "size", size)}, {});
+  };
+  const auto established = one_shot_source("Established", 1.0, 3);
+  const auto preferred = one_shot_source("Preferred", 2.0, 5);
+  const auto weak_newcomer = one_shot_source("WeakNewcomer", 3.0, 1);
+  const auto queue =
+      block(builder, "Q", "queue",
+            {var_int(builder, "capacity", 1),
+             var_string(builder, "queuing", "queuing_comparison"),
+             var_string(builder, "agent1IsPreferredToAgent2",
+                        "agent1.size > agent2.size"),
+             var_bool(builder, "enablePreemption", true)},
+            {});
+  const auto blocked = block(builder, "Blocked", "resource",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Blocked")},
+            {});
+  const auto route = block(builder, "WhichWasPreempted", "selectOutput",
+                           {var_string(builder, "condition", "size == 1")}, {});
+  const auto old_dropped = block(builder, "EstablishedDropped", "sink", {}, {});
+  const auto newcomer_dropped = block(builder, "NewcomerDropped", "sink", {}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{blocked}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder,
+      {established, preferred, weak_newcomer, queue, service, route,
+       old_dropped, newcomer_dropped, done},
+      {couple(builder, "Established", "out", "Q", "in"),
+       couple(builder, "Preferred", "out", "Q", "in"),
+       couple(builder, "WeakNewcomer", "out", "Q", "in"),
+       couple(builder, "Q", "out", "S", "in"),
+       couple(builder, "Q", "outPreempted", "WhichWasPreempted", "in"),
+       couple(builder, "WhichWasPreempted", "outT", "NewcomerDropped", "in"),
+       couple(builder, "WhichWasPreempted", "outF", "EstablishedDropped", "in"),
+       couple(builder, "S", "out", "Done", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
+  const auto block_metric = [&](const char* name) -> const BlockMetrics& {
+    const auto it = std::find_if(
+        metrics.blocks.begin(), metrics.blocks.end(),
+        [name](const BlockMetrics& block) { return block.name == name; });
+    REQUIRE(it != metrics.blocks.end());
+    return *it;
+  };
+  CHECK(block_metric("Q").arrived == 3);
+  CHECK(block_metric("Q").preempted == 2);
+  CHECK(block_metric("EstablishedDropped").departed == 1);
+  CHECK(block_metric("NewcomerDropped").departed == 1);
 }
 
 TEST_CASE("process flow: equality comparison drives condition routing",
@@ -1531,21 +2092,19 @@ TEST_CASE("process flow: equality comparison drives condition routing",
         builder, "In", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
         {var_int(builder, "size", 10)}, {});
-    const auto route = block(
-        builder, "R", "selectOutput",
-        {var_string(builder, "condition", condition)}, {});
-    const auto slow = block(
-        builder, "Slow", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
+    const auto route = block(builder, "R", "selectOutput",
+                             {var_string(builder, "condition", condition)}, {});
+    const auto slow =
+        block(builder, "Slow", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, route, slow, sink},
-        {couple(builder, "In", "out", "R", "in"),
-         couple(builder, "R", "outT", "Slow", "in"),
-         couple(builder, "R", "outF", "K", "in"),
-         couple(builder, "Slow", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, route, slow, sink},
+                       {couple(builder, "In", "out", "R", "in"),
+                        couple(builder, "R", "outT", "Slow", "in"),
+                        couple(builder, "R", "outF", "K", "in"),
+                        couple(builder, "Slow", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 500, 0);
   };
@@ -1564,23 +2123,22 @@ TEST_CASE("process flow: seized resource units honor pool failures",
           "[process_flow][failure][des_blocks]") {
   const auto run_seize_pool = [&](double failure_rate) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-    const auto resource = block(
-        builder, "Server", "resource",
-        {var_int(builder, "capacity", 1),
-         var_float(builder, "failure_rate", failure_rate),
-         var_float(builder, "repair_rate", 1.0)},
-        {});
-    const auto seize = block(
-        builder, "Grab", "seize",
-        {var_string(builder, "resource", "Server"),
-         var_int(builder, "numberOfUnits", 1)},
-        {});
-    const auto delay = block(
-        builder, "Work", "delay",
-        {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", failure_rate),
+               var_float(builder, "repair_rate", 1.0)},
+              {});
+    const auto seize = block(builder, "Grab", "seize",
+                             {var_string(builder, "resource", "Server"),
+                              var_int(builder, "numberOfUnits", 1)},
+                             {});
+    const auto delay =
+        block(builder, "Work", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
     const auto release = block(builder, "Drop", "release", {}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto root = CreateNode(
@@ -1589,17 +2147,15 @@ TEST_CASE("process flow: seized resource units honor pool failures",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{resource}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, seize, delay, release, sink},
-        {couple(builder, "In", "out", "Grab", "in"),
-         couple(builder, "Grab", "out", "Work", "in"),
-         couple(builder, "Work", "out", "Drop", "in"),
-         couple(builder, "Drop", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, seize, delay, release, sink},
+                       {couple(builder, "In", "out", "Grab", "in"),
+                        couple(builder, "Grab", "out", "Work", "in"),
+                        couple(builder, "Work", "out", "Drop", "in"),
+                        couple(builder, "Drop", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 2000, 0);
   };
@@ -1627,19 +2183,18 @@ TEST_CASE("process flow: seized resource units honor pool failures",
 TEST_CASE("process flow: exit removes agents from the flow (sojourn kept)",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-  const auto delay = block(
-      builder, "D", "delay",
-      {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
   const auto exit = block(builder, "Out", "exit", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, delay, exit},
-      {couple(builder, "In", "out", "D", "in"),
-       couple(builder, "D", "out", "Out", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, delay, exit},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 7, 5, 0);
   // The exit absorbs every agent: departures == arrivals, sojourn = delay.
@@ -1650,18 +2205,17 @@ TEST_CASE("process flow: exit removes agents from the flow (sojourn kept)",
 TEST_CASE("process flow: enter is an inert entry point without a trigger",
           "[process_flow][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   const auto enter = block(builder, "E", "enter", {}, {});
   const auto sink2 = block(builder, "K2", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, sink, enter, sink2},
-      {couple(builder, "In", "out", "K", "in"),
-       couple(builder, "E", "out", "K2", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, sink, enter, sink2},
+                     {couple(builder, "In", "out", "K", "in"),
+                      couple(builder, "E", "out", "K2", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   const ReplicationMetrics metrics = run_once(*model, 7, 5, 0);
   // Only the source produces agents; enter contributes nothing.
@@ -1673,25 +2227,24 @@ TEST_CASE("process flow: assembler waits for parts, delays, then outputs",
   const auto run_assembler = [&](double parts_rate, std::int64_t parts_needed,
                                  double delay_seconds) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto kits = block(
-        builder, "Kits", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
+    const auto kits =
+        block(builder, "Kits", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
     const auto parts = block(
         builder, "Parts", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {parts_rate}))}, {});
-    const auto assembler = block(
-        builder, "Build", "assembler",
-        {var_int(builder, "quantity125", parts_needed),
-         var_float(builder, "delayTime", delay_seconds)},
-        {});
+    const auto assembler =
+        block(builder, "Build", "assembler",
+              {var_int(builder, "quantity125", parts_needed),
+               var_float(builder, "delayTime", delay_seconds)},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {kits, parts, assembler, sink},
-        {couple(builder, "Kits", "out", "Build", "in"),
-         couple(builder, "Parts", "out", "Build", "p1"),
-         couple(builder, "Build", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {kits, parts, assembler, sink},
+                       {couple(builder, "Kits", "out", "Build", "in"),
+                        couple(builder, "Parts", "out", "Build", "p1"),
+                        couple(builder, "Build", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
@@ -1711,21 +2264,20 @@ TEST_CASE("process flow: assembler gates on assembly resources",
           "[process_flow][assembler][des_blocks]") {
   const auto run_assembler_resource = [&](std::int64_t capacity) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto kits = block(
-        builder, "Kits", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
-    const auto parts = block(
-        builder, "Parts", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-    const auto assembler = block(
-        builder, "Build", "assembler",
-        {var_int(builder, "quantity125", 2),
-         var_float(builder, "delayTime", 2.0),
-         var_string(builder, "resourcePool", "Server"),
-         var_int(builder, "numberOfUnits", 1)},
-        {});
-    const auto resource = block(
-        builder, "Server", "resource", {var_int(builder, "capacity", capacity)}, {});
+    const auto kits =
+        block(builder, "Kits", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
+    const auto parts =
+        block(builder, "Parts", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto assembler = block(builder, "Build", "assembler",
+                                 {var_int(builder, "quantity125", 2),
+                                  var_float(builder, "delayTime", 2.0),
+                                  var_string(builder, "resourcePool", "Server"),
+                                  var_int(builder, "numberOfUnits", 1)},
+                                 {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", capacity)}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto root = CreateNode(
         builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
@@ -1733,16 +2285,14 @@ TEST_CASE("process flow: assembler gates on assembly resources",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{resource}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {kits, parts, assembler, sink},
-        {couple(builder, "Kits", "out", "Build", "in"),
-         couple(builder, "Parts", "out", "Build", "p1"),
-         couple(builder, "Build", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {kits, parts, assembler, sink},
+                       {couple(builder, "Kits", "out", "Build", "in"),
+                        couple(builder, "Parts", "out", "Build", "p1"),
+                        couple(builder, "Build", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
@@ -1765,30 +2315,28 @@ TEST_CASE("process flow: assembler gates on assembly resources",
 TEST_CASE("process flow: composed blocks conserve entities end-to-end",
           "[process_flow][composition][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block_with_state(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
-      {var_int(builder, "priority", 5)}, {});
-  const auto route = block(
-      builder, "R", "selectOutput",
-      {var_string(builder, "condition", "priority > 3")}, {});
+  const auto source =
+      block_with_state(builder, "In", "source",
+                       {var_dist(builder, "arrival", dist(builder, 0, {1.0}))},
+                       {var_int(builder, "priority", 5)}, {});
+  const auto route =
+      block(builder, "R", "selectOutput",
+            {var_string(builder, "condition", "priority > 3")}, {});
   const auto batch = block(
       builder, "B", "batch",
-      {var_int(builder, "batchSize", 2),
-       var_bool(builder, "permanent", false)},
+      {var_int(builder, "batchSize", 2), var_bool(builder, "permanent", false)},
       {});
   const auto unbatch = block(builder, "U", "unbatch", {}, {});
   const auto sink = block(builder, "K", "sink", {}, {});
   const auto late_sink = block(builder, "K2", "sink", {}, {});
   std::string error;
-  auto model = build(
-      builder, {source, route, batch, unbatch, sink, late_sink},
-      {couple(builder, "In", "out", "R", "in"),
-       couple(builder, "R", "outT", "B", "in"),
-       couple(builder, "R", "outF", "K2", "in"),
-       couple(builder, "B", "out", "U", "in"),
-       couple(builder, "U", "out", "K", "in")},
-      flatbuffers::Offset<Node>{}, &error);
+  auto model = build(builder, {source, route, batch, unbatch, sink, late_sink},
+                     {couple(builder, "In", "out", "R", "in"),
+                      couple(builder, "R", "outT", "B", "in"),
+                      couple(builder, "R", "outF", "K2", "in"),
+                      couple(builder, "B", "out", "U", "in"),
+                      couple(builder, "U", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
   REQUIRE(model != nullptr);
   // Every arrival takes outT (priority 5 > 3), is batched in pairs and
   // restored by unbatch: conservation holds through the composition.
@@ -1801,22 +2349,20 @@ TEST_CASE("process flow: moveTo spends tripTime or distance/speed",
           "[process_flow][moveTo][des_blocks]") {
   const auto run_move = [&](double trip_time, double speed, double target_x) {
     flatbuffers::FlatBufferBuilder builder;
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
-    const auto move = block(
-        builder, "M", "moveTo",
-        {var_float(builder, "tripTime", trip_time),
-         var_float(builder, "speed", speed),
-         var_float(builder, "xYZ", target_x)},
-        {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto move = block(builder, "M", "moveTo",
+                            {var_float(builder, "tripTime", trip_time),
+                             var_float(builder, "speed", speed),
+                             var_float(builder, "xYZ", target_x)},
+                            {});
     const auto sink = block(builder, "K", "sink", {}, {});
     std::string error;
-    auto model = build(
-        builder, {source, move, sink},
-        {couple(builder, "In", "out", "M", "in"),
-         couple(builder, "M", "out", "K", "in")},
-        flatbuffers::Offset<Node>{}, &error);
+    auto model = build(builder, {source, move, sink},
+                       {couple(builder, "In", "out", "M", "in"),
+                        couple(builder, "M", "out", "K", "in")},
+                       flatbuffers::Offset<Node>{}, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 3, 0);
   };
@@ -1840,13 +2386,12 @@ TEST_CASE("process flow: moveTo spends tripTime or distance/speed",
 TEST_CASE("process flow: moveTo resolves a node destination",
           "[process_flow][moveTo][des_blocks]") {
   flatbuffers::FlatBufferBuilder builder;
-  const auto source = block(
-      builder, "In", "source",
-      {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
   const auto move = block(
       builder, "M", "moveTo",
-      {var_string(builder, "node", "Depot"),
-       var_float(builder, "speed", 5.0)},
+      {var_string(builder, "node", "Depot"), var_float(builder, "speed", 5.0)},
       {});
   const auto sink = block(builder, "K", "sink", {}, {});
   const auto node = CreateNode(
@@ -1854,8 +2399,9 @@ TEST_CASE("process flow: moveTo resolves a node destination",
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
           var_float(builder, "x", 10.0), var_float(builder, "y", 0.0)}),
-      0, CreateSemanticsRef(builder, builder.CreateString("core"),
-                            builder.CreateString("node"), 0, 0),
+      0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("node"), 0, 0),
       0, 0, 0, 0, 0);
   const auto root = CreateNode(
       builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
@@ -1863,15 +2409,13 @@ TEST_CASE("process flow: moveTo resolves a node destination",
       builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
       CreateSemanticsRef(builder, builder.CreateString("core"),
                          builder.CreateString("model"), 0, 0),
-      builder.CreateVector(
-          std::vector<flatbuffers::Offset<Node>>{node}),
-      0, 0, 0, 0);
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{node}), 0, 0,
+      0, 0);
   std::string error;
-  auto model = build(
-      builder, {source, move, sink},
-      {couple(builder, "In", "out", "M", "in"),
-       couple(builder, "M", "out", "K", "in")},
-      root, &error);
+  auto model = build(builder, {source, move, sink},
+                     {couple(builder, "In", "out", "M", "in"),
+                      couple(builder, "M", "out", "K", "in")},
+                     root, &error);
   REQUIRE(model != nullptr);
   // Depot is 10 units away at speed 5 -> 2.0s travel.
   const ReplicationMetrics metrics = run_once(*model, 7, 3, 0);
@@ -1889,8 +2433,9 @@ TEST_CASE("process flow: moveTo follows the path network's shortest route",
           builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
           builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
               var_float(builder, "x", x), var_float(builder, "y", y)}),
-          0, CreateSemanticsRef(builder, builder.CreateString("core"),
-                                builder.CreateString("node"), 0, 0),
+          0,
+          CreateSemanticsRef(builder, builder.CreateString("core"),
+                             builder.CreateString("node"), 0, 0),
           0, 0, 0, 0, 0);
     };
     const auto build_path = [&](const char* name, const char* a,
@@ -1901,17 +2446,17 @@ TEST_CASE("process flow: moveTo follows the path network's shortest route",
           builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
               var_string(builder, "node1", a),
               var_string(builder, "node2", b)}),
-          0, CreateSemanticsRef(builder, builder.CreateString("core"),
-                                builder.CreateString("path"), 0, 0),
+          0,
+          CreateSemanticsRef(builder, builder.CreateString("core"),
+                             builder.CreateString("path"), 0, 0),
           0, 0, 0, 0, 0);
     };
-    const auto source = block(
-        builder, "In", "source",
-        {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
     const auto move = block(
         builder, "M", "moveTo",
-        {var_string(builder, "node", "C"),
-         var_float(builder, "speed", 10.0)},
+        {var_string(builder, "node", "C"), var_float(builder, "speed", 10.0)},
         {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto nodeA = build_node("A", 0.0, 0.0);
@@ -1930,11 +2475,10 @@ TEST_CASE("process flow: moveTo follows the path network's shortest route",
                            builder.CreateString("model"), 0, 0),
         builder.CreateVector(children), 0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {source, move, sink},
-        {couple(builder, "In", "out", "M", "in"),
-         couple(builder, "M", "out", "K", "in")},
-        root, &error);
+    auto model = build(builder, {source, move, sink},
+                       {couple(builder, "In", "out", "M", "in"),
+                        couple(builder, "M", "out", "K", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 3, 0);
   };
@@ -1960,16 +2504,16 @@ TEST_CASE("process flow: service task preemption interrupts weak tasks",
         builder, "S2", "source",
         {var_dist(builder, "arrival", dist(builder, 0, {3.0}))},
         {var_int(builder, "priority", 5)}, {});
-    const auto resource = block(
-        builder, "Server", "resource", {var_int(builder, "capacity", 1)}, {});
-    const auto service = block(
-        builder, "S", "service",
-        {var_dist(builder, "time", dist(builder, 0, {1000.0})),
-         var_string(builder, "resource", "Server"),
-         var_bool(builder, "enablePreemption", enable_preemption),
-         var_bool(builder, "taskMayPreempt", true),
-         var_string(builder, "taskPreemptionPolicy", "pp_terminate")},
-        {});
+    const auto resource = block(builder, "Server", "resource",
+                                {var_int(builder, "capacity", 1)}, {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1000.0})),
+               var_string(builder, "resource", "Server"),
+               var_bool(builder, "enablePreemption", enable_preemption),
+               var_bool(builder, "taskMayPreempt", true),
+               var_string(builder, "taskPreemptionPolicy", "pp_terminate")},
+              {});
     const auto sink = block(builder, "K", "sink", {}, {});
     const auto preempted = block(builder, "Out", "sink", {}, {});
     const auto root = CreateNode(
@@ -1978,17 +2522,15 @@ TEST_CASE("process flow: service task preemption interrupts weak tasks",
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
         CreateSemanticsRef(builder, builder.CreateString("core"),
                            builder.CreateString("model"), 0, 0),
-        builder.CreateVector(
-            std::vector<flatbuffers::Offset<Node>>{resource}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
         0, 0, 0, 0);
     std::string error;
-    auto model = build(
-        builder, {s1, s2, service, sink, preempted},
-        {couple(builder, "S1", "out", "S", "in"),
-         couple(builder, "S2", "out", "S", "in"),
-         couple(builder, "S", "out", "K", "in"),
-         couple(builder, "S", "outPreempted", "Out", "in")},
-        root, &error);
+    auto model = build(builder, {s1, s2, service, sink, preempted},
+                       {couple(builder, "S1", "out", "S", "in"),
+                        couple(builder, "S2", "out", "S", "in"),
+                        couple(builder, "S", "out", "K", "in"),
+                        couple(builder, "S", "outPreempted", "Out", "in")},
+                       root, &error);
     REQUIRE(model != nullptr);
     return run_once(*model, 7, 6, 0);
   };
@@ -2004,4 +2546,281 @@ TEST_CASE("process flow: service task preemption interrupts weak tasks",
   REQUIRE(plain.departures == 6);
   REQUIRE(plain.mean_sojourn > 3000.0);
   REQUIRE(preempting.mean_sojourn < plain.mean_sojourn);
+}
+
+// ---------------------------------------------------------------------------
+// Pool-level ResourcePool semantics when one pool is shared by two Service
+// consumers (AnyLogic docs: resourcepool.txt, downtime.txt, service.txt).
+//
+// Doc contract (library-reference-guides/process-modeling-library):
+//  * The pool is one shared set of units: "The requests from different Seize
+//    and Service blocks are queued in ResourcePool if they cannot be
+//    satisfied immediately" (resourcepool.txt ~986). A 1-unit pool serves at
+//    most one task at a time no matter how many Service blocks reference it.
+//  * A failure is a downtime task on the busy unit: "May preempt other
+//    tasks ... true means that the resource unit will 'drop its work' when
+//    this task is activated" (downtime.txt ~1227); while the unit is broken
+//    no unit is available to seize (busy() includes failure, resourcepool.txt
+//    ~1410, and "During the off intervals, 0 resources are available",
+//    resourcepool.txt ~1011).
+//  * The interrupted task is suspended, not destroyed: "Wait for original
+//    resource - the task is interrupted and waits for the same resource unit
+//    to finish it" (service.txt ~1095) and the agent is "automatically
+//    resumed at the time there are available resources" (service.txt ~1107).
+//
+// These tests pin pool-level arbitration for failure-enabled resources so a
+// future refactor cannot accidentally give each Service a private pool copy.
+TEST_CASE("process flow: failing pool shared by two services arbitrates the "
+          "single unit",
+          "[process_flow][service][resource][failure][acceptance]") {
+  // Deterministic scenario: one 1-unit pool with a low busy-time failure rate
+  // (nonzero so the engine takes the failing-pool path), two Service
+  // consumers, one job each arriving at t=0, constant 0.5s service. The seed
+  // is fixed so the run is failure-free and fully deterministic: each job
+  // would finish in 0.5s if it owned the unit immediately.
+  constexpr double kService = 0.5;
+  constexpr double kFailureRate = 0.02;  // mean TTF 50s: no failure in ~1s
+  constexpr double kRepairRate = 1.0;
+
+  const auto build_model = [&](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source_a =
+        block(builder, "InA", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+               var_string(builder, "firstArrivalMode", "at_start"),
+               var_bool(builder, "limitArrivals", true),
+               var_int(builder, "maxArrivals", 1)},
+              {});
+    const auto source_b =
+        block(builder, "InB", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+               var_string(builder, "firstArrivalMode", "at_start"),
+               var_bool(builder, "limitArrivals", true),
+               var_int(builder, "maxArrivals", 1)},
+              {});
+    const auto resource = block(builder, "Pool", "resource",
+                                {var_int(builder, "capacity", 1),
+                                 var_float(builder, "failure_rate",
+                                           kFailureRate),
+                                 var_float(builder, "repair_rate",
+                                           kRepairRate)},
+                                {});
+    const auto service_a =
+        block(builder, "WorkA", "service",
+              {var_string(builder, "resource", "Pool"),
+               var_int(builder, "numberOfUnits", 1),
+               var_dist(builder, "time", dist(builder, 0, {kService})),
+               var_int(builder, "queueCapacity", 1)},
+              {});
+    const auto service_b =
+        block(builder, "WorkB", "service",
+              {var_string(builder, "resource", "Pool"),
+               var_int(builder, "numberOfUnits", 1),
+               var_dist(builder, "time", dist(builder, 0, {kService})),
+               var_int(builder, "queueCapacity", 1)},
+              {});
+    const auto done_a = block(builder, "DoneA", "sink", {}, {});
+    const auto done_b = block(builder, "DoneB", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder,
+        {source_a, source_b, service_a, service_b, done_a, done_b},
+        {couple(builder, "InA", "out", "WorkA", "in"),
+         couple(builder, "WorkA", "out", "DoneA", "in"),
+         couple(builder, "InB", "out", "WorkB", "in"),
+         couple(builder, "WorkB", "out", "DoneB", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return model;
+  };
+
+  const auto block_by_name = [](const ReplicationMetrics& metrics,
+                                const std::string& name) {
+    for (const BlockMetrics& item : metrics.blocks) {
+      if (item.name == name) {
+        return item;
+      }
+    }
+    return BlockMetrics{};
+  };
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics metrics = run_once(*model, 7, 2, 0);
+
+  // Both jobs finish exactly once (each service block gets its one job).
+  REQUIRE(metrics.departures == 2);
+  const BlockMetrics work_a = block_by_name(metrics, "WorkA");
+  const BlockMetrics work_b = block_by_name(metrics, "WorkB");
+  REQUIRE(work_a.name == "WorkA");
+  REQUIRE(work_b.name == "WorkB");
+  CHECK(work_a.arrived == 1);
+  CHECK(work_b.arrived == 1);
+  CHECK(work_a.departed == 1);
+  CHECK(work_b.departed == 1);
+  CHECK(work_a.preempted == 0);
+  CHECK(work_b.preempted == 0);
+
+  // Pool-level capacity arbitration: a 1-unit pool can never be more than
+  // 100% utilized, regardless of how many Service blocks reference it. The
+  CHECK(metrics.utilization <= 1.0 + 1e-9);
+  CHECK(work_a.utilization + work_b.utilization <= 1.0 + 1e-9);
+
+  // The second consumer must wait for the shared unit: it stays queued
+  // (queue occupancy > 0) while WorkA holds the only unit.
+  CHECK(work_b.mean_occupancy > 0.0);
+  CHECK(work_a.mean_occupancy == 0.0);  // WorkA seized the unit instantly
+
+  // FIFO pool queue: WorkB starts only after WorkA's 0.5s service, so the
+  // mean wait (waitA = 0, waitB = 0.5) is at least half the service time.
+  CHECK(metrics.mean_wait >= kService / 2.0);
+
+  // Determinism: the same fixed seed reproduces the identical run.
+  flatbuffers::FlatBufferBuilder builder2;
+  auto model2 = build_model(builder2);
+  const ReplicationMetrics again = run_once(*model2, 7, 2, 0);
+  REQUIRE(again.departures == 2);
+  REQUIRE(again.utilization == metrics.utilization);
+  REQUIRE(again.mean_wait == metrics.mean_wait);
+  REQUIRE(block_by_name(again, "WorkB").mean_occupancy ==
+          work_b.mean_occupancy);
+}
+
+TEST_CASE("process flow: pool-level failure interrupts the task sharing the "
+          "single unit and recovers",
+          "[process_flow][service][resource][failure][acceptance]") {
+  // Deterministic scenario: one 1-unit pool, two Service consumers, one job
+  // each arriving at t=0, constant 10s service. Busy-time failure law is
+  // exponential with mean 1s (failure_rate = 1.0) and repair mean 1s; with
+  // the fixed seed the TTF/repair draws are deterministic, so the unit fails
+  // mid-service on every run of this test.
+  constexpr double kService = 10.0;
+  constexpr double kFailureRate = 1.0;
+  constexpr double kRepairRate = 1.0;
+
+  const auto build_model = [&](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source_a =
+        block(builder, "InA", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+               var_string(builder, "firstArrivalMode", "at_start"),
+               var_bool(builder, "limitArrivals", true),
+               var_int(builder, "maxArrivals", 1)},
+              {});
+    const auto source_b =
+        block(builder, "InB", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+               var_string(builder, "firstArrivalMode", "at_start"),
+               var_bool(builder, "limitArrivals", true),
+               var_int(builder, "maxArrivals", 1)},
+              {});
+    const auto resource = block(builder, "Pool", "resource",
+                                {var_int(builder, "capacity", 1),
+                                 var_float(builder, "failure_rate",
+                                           kFailureRate),
+                                 var_float(builder, "repair_rate",
+                                           kRepairRate)},
+                                {});
+    const auto service_a =
+        block(builder, "WorkA", "service",
+              {var_string(builder, "resource", "Pool"),
+               var_int(builder, "numberOfUnits", 1),
+               var_dist(builder, "time", dist(builder, 0, {kService})),
+               var_int(builder, "queueCapacity", 1)},
+              {});
+    const auto service_b =
+        block(builder, "WorkB", "service",
+              {var_string(builder, "resource", "Pool"),
+               var_int(builder, "numberOfUnits", 1),
+               var_dist(builder, "time", dist(builder, 0, {kService})),
+               var_int(builder, "queueCapacity", 1)},
+              {});
+    const auto done_a = block(builder, "DoneA", "sink", {}, {});
+    const auto done_b = block(builder, "DoneB", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder,
+        {source_a, source_b, service_a, service_b, done_a, done_b},
+        {couple(builder, "InA", "out", "WorkA", "in"),
+         couple(builder, "WorkA", "out", "DoneA", "in"),
+         couple(builder, "InB", "out", "WorkB", "in"),
+         couple(builder, "WorkB", "out", "DoneB", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return model;
+  };
+
+  const auto block_by_name = [](const ReplicationMetrics& metrics,
+                                const std::string& name) {
+    for (const BlockMetrics& item : metrics.blocks) {
+      if (item.name == name) {
+        return item;
+      }
+    }
+    return BlockMetrics{};
+  };
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics metrics = run_once(*model, 7, 2, 0);
+
+  // Both consumers get exactly one job and both finish: the failure suspends
+  // (does not destroy) the in-flight task, which resumes after the repair
+  // (service.txt 1095: "waits for the same resource unit to finish it").
+  REQUIRE(metrics.departures == 2);
+  const BlockMetrics work_a = block_by_name(metrics, "WorkA");
+  const BlockMetrics work_b = block_by_name(metrics, "WorkB");
+  REQUIRE(work_a.name == "WorkA");
+  REQUIRE(work_b.name == "WorkB");
+  CHECK(work_a.arrived == 1);
+  CHECK(work_b.arrived == 1);
+  CHECK(work_a.departed == 1);
+  CHECK(work_b.departed == 1);
+  // Suspended-and-resumed, not ejected through outPreempted.
+  CHECK(work_a.preempted == 0);
+  CHECK(work_b.preempted == 0);
+
+  // Pool-level arbitration holds even under failure: a 1-unit pool stays at
+  // or below 100% utilization no matter how many consumers reference it.
+  CHECK(metrics.utilization <= 1.0 + 1e-9);
+  CHECK(work_a.utilization + work_b.utilization <= 1.0 + 1e-9);
+
+  // The failure impact is pool-level, not confined to WorkA: while the single
+  // unit is held (service) or broken (repair), the second consumer must wait
+  // in the queue (occupancy > 0).
+  CHECK(work_b.mean_occupancy > 0.0);
+  CHECK(work_a.mean_occupancy == 0.0);  // WorkA seized the unit instantly
+
+  // The pool actually went down mid-run (busy-time failure) and recovered.
+  CHECK(metrics.availability < 1.0);
+  CHECK(metrics.availability > 0.0);
+  CHECK(work_a.availability < 1.0);
+
+  // Determinism: the same fixed seed reproduces the identical run.
+  flatbuffers::FlatBufferBuilder builder2;
+  auto model2 = build_model(builder2);
+  const ReplicationMetrics again = run_once(*model2, 7, 2, 0);
+  REQUIRE(again.departures == 2);
+  REQUIRE(again.utilization == metrics.utilization);
+  REQUIRE(again.availability == metrics.availability);
+  REQUIRE(block_by_name(again, "WorkB").mean_occupancy ==
+          work_b.mean_occupancy);
 }

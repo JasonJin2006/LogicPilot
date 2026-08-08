@@ -74,6 +74,17 @@ std::string inspect_model(const IrModelFile& file);
 // models compose through a shared kernel scheduler.
 std::vector<std::string> resolve_method_names(const IrModelFile& file);
 
+struct MethodRequirement {
+  std::string method;
+  // Distinct SemanticsRef.version values requested by nodes of this method.
+  // An empty string represents legacy/unversioned semantics.
+  std::vector<std::string> semantics_versions;
+};
+
+// Version-aware form used by SimulationKernel and future plugin loaders.
+std::vector<MethodRequirement> resolve_method_requirements(
+    const IrModelFile& file);
+
 // Lower an executable replication model from the loaded IR. Returns nullptr
 // (with `error` filled) when the kind has no Phase 1b lowering.
 std::unique_ptr<ReplicationModel> build_replication_model(

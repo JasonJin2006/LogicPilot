@@ -31,15 +31,14 @@ bool SimulationKernel::load(const IrModelFile& model, std::string* error) {
   return true;
 }
 
-std::vector<ReplicationMetrics> SimulationKernel::run(
-    const ReplicationConfig& config, TraceRecorder* trace,
-    std::string* error, std::vector<RuntimeDiagnostic>* diagnostics,
-    DebugRecorder* debug, SimulationProfile* profile) {
-  const auto fail = [&](const std::string& code,
-                        const std::string& message) {
+std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& config,
+                                                      TraceRecorder* trace, std::string* error,
+                                                      std::vector<RuntimeDiagnostic>* diagnostics,
+                                                      DebugRecorder* debug,
+                                                      SimulationProfile* profile) {
+  const auto fail = [&](const std::string& code, const std::string& message) {
     if (diagnostics != nullptr) {
-      diagnostics->push_back(
-          RuntimeDiagnostic{RuntimeSeverity::kError, code, message});
+      diagnostics->push_back(RuntimeDiagnostic{RuntimeSeverity::kError, code, message});
     }
     if (error != nullptr) {
       *error = message;
@@ -54,13 +53,11 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
     return fail("KR1001", "SimulationKernel has no loaded model");
   }
   if (verified_.v2_root == nullptr) {
-    return fail("KR1002",
-                "the loaded model failed validation at load()");
+    return fail("KR1002", "the loaded model failed validation at load()");
   }
-  const std::vector<std::string> methods = resolve_method_names(verified_);
-  if (methods.empty()) {
-    return fail("KR1003",
-                "no executable modeling method under the model root");
+  const std::vector<MethodRequirement> requirements = resolve_method_requirements(verified_);
+  if (requirements.empty()) {
+    return fail("KR1003", "no executable modeling method under the model root");
   }
 
   // Fresh per-replication world: one scheduler, empty handler registry and
@@ -72,39 +69,65 @@ std::vector<ReplicationMetrics> SimulationKernel::run(
   clock_.reset();
   RuntimeManager manager{clock_, *scheduler_, handlers_, variables_, config};
 
-  for (const std::string& name : methods) {
-    auto runtime = MethodRegistry::instance().create(name);
+  MethodRegistry& registry = MethodRegistry::instance();
+  for (const MethodRequirement& requirement : requirements) {
+    const std::string& name = requirement.method;
+    auto runtime = registry.create(name);
     if (runtime == nullptr) {
       return fail("KR1004", "no registered method runtime for '" + name +
                                 "' (link the method library and register it)");
     }
+    for (const std::string& version : requirement.semantics_versions) {
+      if (!registry.supports_semantics_version(name, version)) {
+        return fail("KR1008", "method runtime '" + name + "' does not support semantics version '" +
+                                  version + "'");
+      }
+    }
     if (!manager.add(std::move(runtime), error)) {
-      return fail("KR1005",
-                  error != nullptr ? *error : "method attach failed");
+      return fail("KR1005", error != nullptr ? *error : "method attach failed");
     }
   }
   if (!manager.initialize(verified_, error)) {
     return fail("KR1006", error != nullptr ? *error : "initialize failed");
   }
 
-  // One shared event queue: scheduler events dispatch to the runtime that
-  // registered the handler (Scheduler 事件 -> 对应 runtime 处理).
-  run_until(*scheduler_, clock_, SimTime::infinity(),
-            [&](const Event& event) {
-              if (trace != nullptr) {
-                trace->record(event.at, event.type, event.payload);
-              }
-              if (debug != nullptr) {
-                debug->record(event);
-              }
-              if (profile != nullptr) {
-                profiler.record_event(event);
-              }
-              handlers_.dispatch(event);
-            });
+  // Select the coordination path from declared runtime capabilities.
+  bool all_shared_event_queue = true;
+  for (std::size_t i = 0; i < manager.method_count(); ++i) {
+    const SimulationMethod* method = manager.method(i);
+    if (method == nullptr ||
+        method->capabilities().execution_mode != MethodExecutionMode::kSharedEventQueue) {
+      all_shared_event_queue = false;
+    }
+  }
+  if (!all_shared_event_queue && manager.method_count() > 1) {
+    manager.shutdown();
+    return fail("KR1007",
+                "multi-method co-simulation requires every runtime to use the "
+                "shared event queue; at least one attached runtime is batch-only");
+  }
 
-  // Runtimes finalize their metrics during shutdown() (they were driven by
-  // the kernel, not by their own advance()).
+  if (all_shared_event_queue) {
+    run_until(*scheduler_, clock_, SimTime::infinity(), [&](const Event& event) {
+      if (trace != nullptr) {
+        trace->record(event.at, event.type, event.payload);
+      }
+      if (debug != nullptr) {
+        debug->record(event);
+      }
+      if (profile != nullptr) {
+        profiler.record_event(event);
+      }
+      handlers_.dispatch(event);
+    });
+  } else {
+    // Honest compatibility path for one legacy runtime. This makes native
+    // DEVS/Agent/SD executable through SimulationKernel without pretending
+    // that their private clocks already support hybrid composition.
+    manager.advance(SimTime::infinity());
+  }
+
+  // Runtimes finalize their metrics during shutdown().
   manager.shutdown();
   std::vector<ReplicationMetrics> out;
   out.reserve(manager.method_count());

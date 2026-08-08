@@ -19,7 +19,6 @@ import { useProjectStore } from './state/projectStore';
 import { useCanvasView } from './state/canvasView';
 import { useConnectionStore } from './state/connectionStore';
 import { useUiStore } from './state/uiStore';
-import { projectToDocument } from './project/project';
 import { ThemeManager } from './theme/ThemeManager';
 import { useEffect } from 'react';
 

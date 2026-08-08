@@ -7,12 +7,7 @@
 //     native scrolling (hidden via .scroll-hidden) and the thumb tracks it.
 
 import { useEffect, useRef, useState } from 'react';
-import type {
-  CSSProperties,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
-  RefObject,
-} from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
 
 interface ScrollAreaProps {
   children: ReactNode;
@@ -24,13 +19,7 @@ interface ScrollAreaProps {
   scrollRef?: RefObject<HTMLElement | null>;
 }
 
-export function ScrollArea({
-  children,
-  className,
-  style,
-  axis = 'y',
-  scrollRef,
-}: ScrollAreaProps) {
+export function ScrollArea({ children, className, style, axis = 'y', scrollRef }: ScrollAreaProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ size: 0, offset: 0, visible: false });
   const [dragging, setDragging] = useState(false);
@@ -44,9 +33,7 @@ export function ScrollArea({
     const total = vertical ? el.scrollHeight : el.scrollWidth;
     const scroll = vertical ? el.scrollTop : el.scrollLeft;
     if (total <= client + 1) {
-      setThumb((current) =>
-        current.visible ? { size: 0, offset: 0, visible: false } : current,
-      );
+      setThumb((current) => (current.visible ? { size: 0, offset: 0, visible: false } : current));
       return;
     }
     const size = Math.max(22, Math.round((client / total) * client));

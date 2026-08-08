@@ -97,11 +97,9 @@ describe('parseDsl', () => {
     const byName = new Map(doc.nodes.map((node) => [node.name, node.id]));
     const route = doc.nodes.find((node) => node.kind === 'selectOutput')!;
     const yes = doc.nodes.find((node) => node.name === 'Yes')!;
-    const edge = doc.edges.find(
-      (entry) => entry.from === route.id && entry.to === yes.id,
-    );
+    const edge = doc.edges.find((entry) => entry.from === route.id && entry.to === yes.id);
     expect(edge?.fromPort).toBe('outT');
-    expect(edge?.toPort).toBeUndefined();  // default 'in' normalized away
+    expect(edge?.toPort).toBeUndefined(); // default 'in' normalized away
     expect(byName.has('In')).toBe(true);
   });
 
@@ -121,9 +119,17 @@ describe('parseDsl', () => {
     d y/dt = -k*y
   }
   experiment Tune {
-    objective = minimize Wq
+    type = optimization
+    objective = minimize
+    metric = Wq
     variable = arrival_rate
+    range = 1..4
     budget = 20
+  }
+  experiment Baseline {
+    type = simulation
+    replications = 12
+    seed = 42
   }
 }
 `;
@@ -152,6 +158,8 @@ describe('parseDsl', () => {
     expect(regenerated).toContain('agent Drone');
     expect(regenerated).toContain('state active: bool = true');
     expect(regenerated).toContain('experiment Tune');
+    expect(regenerated).toContain('experiment Baseline');
+    expect(regenerated).toContain('replications = 12');
   });
 
   it('parses a process block as a placeholder (container format abandoned)', () => {
@@ -182,8 +190,7 @@ describe('parseDsl', () => {
 describe('full DSL round-trip (parse -> generate -> parse)', () => {
   const memberKey = (node: Pick<ModelNode, 'kind' | 'name' | 'container'>) =>
     `${node.kind}|${node.name}|${node.container ?? ''}`;
-  const memberSet = (document: ModelDocument) =>
-    document.nodes.map(memberKey).sort();
+  const memberSet = (document: ModelDocument) => document.nodes.map(memberKey).sort();
   const paramMap = (document: ModelDocument) => {
     const map = new Map<string, string>();
     for (const node of document.nodes) {
@@ -264,8 +271,11 @@ describe('full DSL round-trip (parse -> generate -> parse)', () => {
     d y/dt = -k*y
   }
   experiment Tune {
+    type = optimization
     objective = minimize
+    metric = Wq
     variable = arrival_rate
+    range = 1..4
     budget = 20
   }
   couple Arrivals.out -> WaitLine.in

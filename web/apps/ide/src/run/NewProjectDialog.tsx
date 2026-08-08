@@ -115,11 +115,7 @@ export function NewProjectDialog() {
             </label>
             <label className="field">
               <span>seed</span>
-              <input
-                type="number"
-                value={seed}
-                onChange={(event) => setSeed(event.target.value)}
-              />
+              <input type="number" value={seed} onChange={(event) => setSeed(event.target.value)} />
             </label>
             {desktop ? (
               <label className="field field-wide">
@@ -139,8 +135,8 @@ export function NewProjectDialog() {
               </label>
             ) : (
               <p className="dialog-hint">
-                Browser mode keeps the project in memory; use the desktop
-                client to create it as a real folder on disk.
+                Browser mode keeps the project in memory; use the desktop client to create it as a
+                real folder on disk.
               </p>
             )}
           </div>

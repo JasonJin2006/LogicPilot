@@ -23,6 +23,7 @@ target_include_directories(logicpilot_dsl_tests PRIVATE
 target_compile_definitions(logicpilot_dsl_tests PRIVATE
   LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
   LOGICPILOT_DSL_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/golden"
+  LOGICPILOT_DSL_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )
 catch_discover_tests(logicpilot_dsl_tests)
 
@@ -40,6 +41,37 @@ add_test(NAME lpcli_run_compiled_mm1
           --seed=42 --reps=2 --arrivals=1000 --warmup=100)
 set_tests_properties(lpcli_run_compiled_mm1 PROPERTIES
   DEPENDS lpcli_compile_mm1
+  PASS_REGULAR_EXPRESSION "summary: 2 replications")
+
+add_test(NAME lpcli_compile_simulation_experiment
+  COMMAND lpcli compile
+          "${CMAKE_SOURCE_DIR}/examples/des-simulation-experiment.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/des-simulation-experiment.lpir")
+set_tests_properties(lpcli_compile_simulation_experiment PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_declared_simulation_experiment
+  COMMAND lpcli run
+          --model-file "${CMAKE_CURRENT_BINARY_DIR}/des-simulation-experiment.lpir"
+          --experiment Baseline --arrivals=300 --warmup=30)
+set_tests_properties(lpcli_run_declared_simulation_experiment PROPERTIES
+  DEPENDS lpcli_compile_simulation_experiment
+  PASS_REGULAR_EXPRESSION "lpcli run: model=.* seed=7 seed_mode=fixed reps=4")
+
+add_test(NAME lpcli_run_experiment_cli_override
+  COMMAND lpcli run
+          --model-file "${CMAKE_CURRENT_BINARY_DIR}/des-simulation-experiment.lpir"
+          --experiment Baseline --seed=9 --reps=2 --arrivals=300 --warmup=30)
+set_tests_properties(lpcli_run_experiment_cli_override PROPERTIES
+  DEPENDS lpcli_compile_simulation_experiment
+  PASS_REGULAR_EXPRESSION "lpcli run: model=.* seed=9 seed_mode=fixed reps=2")
+
+add_test(NAME lpcli_run_adaptive_simulation_experiment
+  COMMAND lpcli run
+          --model-file "${CMAKE_CURRENT_BINARY_DIR}/des-simulation-experiment.lpir"
+          --experiment Adaptive --arrivals=300 --warmup=30)
+set_tests_properties(lpcli_run_adaptive_simulation_experiment PROPERTIES
+  DEPENDS lpcli_compile_simulation_experiment
   PASS_REGULAR_EXPRESSION "summary: 2 replications")
 
 # Agent-centric flat flow: process blocks + couplings directly under the
@@ -221,6 +253,21 @@ add_test(NAME ai_build_smoke
 set_tests_properties(ai_build_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-BUILD TEST: PASS")
 
+add_test(NAME ai_model_patch_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-ai-model-patch.mjs)
+set_tests_properties(ai_model_patch_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "AI-MODEL-PATCH TEST: PASS")
+
+add_test(NAME ai_query_metrics_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-ai-query-metrics.mjs)
+set_tests_properties(ai_query_metrics_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "AI-QUERY-METRICS TEST: PASS")
+
+add_test(NAME ai_compare_metrics_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-ai-compare-metrics.mjs)
+set_tests_properties(ai_compare_metrics_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "AI-COMPARE-METRICS TEST: PASS")
+
 # Runtime verifier (P1): lpcli run -> verify-run.mjs invariant + theory
 # checks; a broken metrics file must fail.
 add_test(NAME verify_run_smoke
@@ -256,6 +303,14 @@ add_test(NAME ai_endpoint_smoke
           --lpcli $<TARGET_FILE:lpcli>)
 set_tests_properties(ai_endpoint_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-ENDPOINT TEST: PASS")
+
+# AnyLogic-style multi-axis parameter variation: floating ranges, Cartesian
+# expansion, typed overrides, common random numbers and real DES runs.
+add_test(NAME parameter_variation_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-parameter-variation.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(parameter_variation_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "PARAMETER-VARIATION TEST: PASS")
 
 # Parameter optimization (grid via lpcli + deterministic GA) and the NL
 # optimization path.
@@ -302,7 +357,7 @@ set_tests_properties(lpcli_compile_rejects_bad_experiment PROPERTIES
 
 # DES block semantics end-to-end: the DSL -> IR -> generic ProcessFlowSim
 # chain for Seize/Release, Batch/Unbatch and Combine+TimeMeasure.
-foreach(example seize_release batch_unbatch combine_time attribute_routing failure_line wait_timeout priority_preempt match_attr seize_failure flow_exit assembler_line des_shop move_route comparison_queue task_preempt)
+foreach(example seize_release batch_unbatch combine_time attribute_routing failure_line wait_timeout priority_preempt match_attr seize_failure flow_exit assembler_line des_shop move_route comparison_queue task_preempt des-core-conformance des-shared-resource des-queue-timeout-preempt des-queue-fifo des-queue-lifo)
   add_test(NAME lpcli_compile_${example}
     COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/${example}.lp"
             -o "${CMAKE_CURRENT_BINARY_DIR}/${example}.ir.bin")

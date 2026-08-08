@@ -123,15 +123,9 @@ class Parser {
     const b = this.tokens[this.pos + 1];
     const c = this.tokens[this.pos + 2];
     return (
-      (a?.type === 'word' &&
-        b?.type === 'word' &&
-        c?.type === 'punct' &&
-        c.text === '{') ||
+      (a?.type === 'word' && b?.type === 'word' && c?.type === 'punct' && c.text === '{') ||
       // behavior blocks: on_<trigger> { ... } carry no name.
-      (a?.type === 'word' &&
-        a.text.startsWith('on_') &&
-        b?.type === 'punct' &&
-        b.text === '{')
+      (a?.type === 'word' && a.text.startsWith('on_') && b?.type === 'punct' && b.text === '{')
     );
   }
 
@@ -354,9 +348,12 @@ export const MODEL_ADD_KINDS: Array<{ kind: string; template: (name: string) => 
     kind: 'atomic',
     template: (n) => `atomic ${n} {\n  state phase: int = 0\n  time_advance = constant(1.0)\n}`,
   },
-  { kind: 'continuous', template: (n) => `continuous ${n} {\n  state y: float = 1.0\n  d y/dt = -y\n}` },
+  {
+    kind: 'continuous',
+    template: (n) => `continuous ${n} {\n  state y: float = 1.0\n  d y/dt = -y\n}`,
+  },
   {
     kind: 'experiment',
-    template: (n) => `experiment ${n} {\n  objective = minimize Wq\n  budget = 20\n}`,
+    template: (n) => `experiment ${n} {\n  type = simulation\n  replications = 10\n  seed = 42\n}`,
   },
 ];

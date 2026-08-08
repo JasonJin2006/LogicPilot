@@ -9,12 +9,12 @@
 // before they reach the IR.
 #include "logicpilot/dsl/lowering.h"
 
-#include "logicpilot/dsl/registry.h"
-
 #include <flatbuffers/flatbuffers.h>
 
 #include <unordered_map>
 #include <vector>
+
+#include "logicpilot/dsl/registry.h"
 
 #include "ir_v2_generated.h"
 
@@ -29,80 +29,83 @@ namespace {
 namespace v2 = logicpilot::ir::v2;
 
 // Forward declaration: generic kind dispatch used for nested members.
-flatbuffers::Offset<v2::Node> v2_node(
-    flatbuffers::FlatBufferBuilder& builder, const Node& node,
-    const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry, const std::string* source_text);
+flatbuffers::Offset<v2::Node> v2_node(flatbuffers::FlatBufferBuilder& builder, const Node& node,
+                                      const std::unordered_map<std::string, const Node*>& resources,
+                                      const ParamScope& scope, const std::string& source_file,
+                                      const LibraryRegistry& registry,
+                                      const std::string* source_text);
 
-flatbuffers::Offset<v2::Metadata> v2_metadata(
-    flatbuffers::FlatBufferBuilder& builder, const std::string& name,
-    const std::string& source_file) {
+flatbuffers::Offset<v2::Metadata> v2_metadata(flatbuffers::FlatBufferBuilder& builder,
+                                              const std::string& name,
+                                              const std::string& source_file) {
   const auto name_offset = builder.CreateString(name);
   const auto file_offset = builder.CreateString(source_file);
   return v2::CreateMetadata(builder, name_offset, 0, file_offset, 0);
 }
 
-flatbuffers::Offset<v2::SemanticsRef> v2_semantics(
-    flatbuffers::FlatBufferBuilder& builder, const char* library,
-    const char* block) {
-  return v2::CreateSemanticsRef(builder, builder.CreateString(library),
-                                builder.CreateString(block), 0, 0);
+flatbuffers::Offset<v2::SemanticsRef> v2_semantics(flatbuffers::FlatBufferBuilder& builder,
+                                                   const char* library, const char* block,
+                                                   const char* version = nullptr) {
+  return v2::CreateSemanticsRef(builder, builder.CreateString(library), builder.CreateString(block),
+                                version != nullptr ? builder.CreateString(version)
+                                                   : flatbuffers::Offset<flatbuffers::String>{},
+                                0);
 }
 
 // v2 Distribution.kind is a raw byte mirroring the v1 DistributionKind
 // values (Constant=0, Uniform=1, Normal=2, Exponential=3, Poisson=4).
-flatbuffers::Offset<v2::Distribution> v2_distribution(
-    flatbuffers::FlatBufferBuilder& builder, const Distribution& dist) {
+flatbuffers::Offset<v2::Distribution> v2_distribution(flatbuffers::FlatBufferBuilder& builder,
+                                                      const Distribution& dist) {
   std::uint8_t kind = 0;
   switch (dist.kind) {
-    case DistKind::kPoisson: kind = 4; break;
-    case DistKind::kExponential: kind = 3; break;
-    case DistKind::kNormal: kind = 2; break;
-    case DistKind::kConstant: kind = 0; break;
+    case DistKind::kPoisson:
+      kind = 4;
+      break;
+    case DistKind::kExponential:
+      kind = 3;
+      break;
+    case DistKind::kNormal:
+      kind = 2;
+      break;
+    case DistKind::kConstant:
+      kind = 0;
+      break;
   }
-  return v2::CreateDistribution(builder, kind,
-                                builder.CreateVector(dist.params));
+  return v2::CreateDistribution(builder, kind, builder.CreateVector(dist.params));
 }
 
-flatbuffers::Offset<v2::Var> v2_var_bool(
-    flatbuffers::FlatBufferBuilder& builder, const char* name, bool value) {
-  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Bool,
-                       value, 0, 0.0, 0, 0);
+flatbuffers::Offset<v2::Var> v2_var_bool(flatbuffers::FlatBufferBuilder& builder, const char* name,
+                                         bool value) {
+  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Bool, value, 0, 0.0, 0, 0);
 }
 
-flatbuffers::Offset<v2::Var> v2_var_int(
-    flatbuffers::FlatBufferBuilder& builder, const char* name,
-    std::int64_t value) {
-  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Int,
-                       false, value, 0.0, 0, 0);
+flatbuffers::Offset<v2::Var> v2_var_int(flatbuffers::FlatBufferBuilder& builder, const char* name,
+                                        std::int64_t value) {
+  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Int, false, value, 0.0, 0,
+                       0);
 }
 
-flatbuffers::Offset<v2::Var> v2_var_float(
-    flatbuffers::FlatBufferBuilder& builder, const char* name, double value) {
-  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Float,
-                       false, 0, value, 0, 0);
+flatbuffers::Offset<v2::Var> v2_var_float(flatbuffers::FlatBufferBuilder& builder, const char* name,
+                                          double value) {
+  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Float, false, 0, value, 0,
+                       0);
 }
 
-flatbuffers::Offset<v2::Var> v2_var_string(
-    flatbuffers::FlatBufferBuilder& builder, const char* name,
-    const std::string& value) {
-  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_String,
-                       false, 0, 0.0, builder.CreateString(value), 0);
+flatbuffers::Offset<v2::Var> v2_var_string(flatbuffers::FlatBufferBuilder& builder,
+                                           const char* name, const std::string& value) {
+  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_String, false, 0, 0.0,
+                       builder.CreateString(value), 0);
 }
 
-flatbuffers::Offset<v2::Var> v2_var_distribution(
-    flatbuffers::FlatBufferBuilder& builder, const char* name,
-    const Distribution& dist) {
-  return v2::CreateVar(builder, builder.CreateString(name),
-                       v2::VarType_Distribution, false, 0, 0.0, 0,
-                       v2_distribution(builder, dist));
+flatbuffers::Offset<v2::Var> v2_var_distribution(flatbuffers::FlatBufferBuilder& builder,
+                                                 const char* name, const Distribution& dist) {
+  return v2::CreateVar(builder, builder.CreateString(name), v2::VarType_Distribution, false, 0, 0.0,
+                       0, v2_distribution(builder, dist));
 }
 
 // Folded scalar -> Var (state initializers, effect assignments).
-flatbuffers::Offset<v2::Var> v2_var_from_value(
-    flatbuffers::FlatBufferBuilder& builder, const std::string& name,
-    const Value& value) {
+flatbuffers::Offset<v2::Var> v2_var_from_value(flatbuffers::FlatBufferBuilder& builder,
+                                               const std::string& name, const Value& value) {
   switch (value.kind) {
     case ValueKind::kBool:
       return v2_var_bool(builder, name.c_str(), value.bool_value);
@@ -139,8 +142,8 @@ Value fold_or_raw(const Value& value, const ParamScope& scope) {
   return fold_value(value, scope, out) ? out : value;
 }
 
-std::int64_t int_field(const Node& node, const char* name,
-                       const ParamScope& scope, std::int64_t fallback) {
+std::int64_t int_field(const Node& node, const char* name, const ParamScope& scope,
+                       std::int64_t fallback) {
   const Field* field = field_of(node, name);
   if (field == nullptr) {
     return fallback;
@@ -155,8 +158,7 @@ std::int64_t int_field(const Node& node, const char* name,
   return fallback;
 }
 
-double float_field(const Node& node, const char* name,
-                   const ParamScope& scope, double fallback) {
+double float_field(const Node& node, const char* name, const ParamScope& scope, double fallback) {
   const Field* field = field_of(node, name);
   if (field == nullptr) {
     return fallback;
@@ -211,30 +213,28 @@ std::string node_field_text(const Node& node, const char* name) {
 // ---------------------------------------------------------------------------
 
 // resource -> process/resource block Node (typed capacity/failure_rate).
-flatbuffers::Offset<v2::Node> v2_resource(
-    flatbuffers::FlatBufferBuilder& builder, const Node& resource,
-    const ParamScope& scope, const std::string& source_file) {
+flatbuffers::Offset<v2::Node> v2_resource(flatbuffers::FlatBufferBuilder& builder,
+                                          const Node& resource, const ParamScope& scope,
+                                          const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  params.push_back(v2_var_int(
-      builder, "capacity", int_field(resource, "capacity", scope, 0)));
-  params.push_back(v2_var_float(
-      builder, "failure_rate",
-      float_field(resource, "failure_rate", scope, 0.0)));
-  return v2::CreateNode(
-      builder, v2_metadata(builder, resource.name, source_file),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(params), 0,
-      v2_semantics(builder, "process", "resource"), 0, 0, 0, 0, 0);
+  params.push_back(v2_var_int(builder, "capacity", int_field(resource, "capacity", scope, 0)));
+  params.push_back(
+      v2_var_float(builder, "failure_rate", float_field(resource, "failure_rate", scope, 0.0)));
+  return v2::CreateNode(builder, v2_metadata(builder, resource.name, source_file),
+                        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+                        builder.CreateVector(params), 0,
+                        v2_semantics(builder, "process", "resource"), 0, 0, 0, 0, 0);
 }
 
 // process stage -> process block Node: typed params from every written
 // field (typed by its value kind) plus the block's registered ports.
 flatbuffers::Offset<v2::Node> v2_process_block(
     flatbuffers::FlatBufferBuilder& builder, const Node& stage,
-    const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry, const std::string* source_text) {
+    const std::unordered_map<std::string, const Node*>& resources, const ParamScope& scope,
+    const std::string& source_file, const LibraryRegistry& registry,
+    const std::string* source_text) {
   std::vector<flatbuffers::Offset<v2::Var>> params;
+  const BlockShape* shape = registry.resolve(stage.registry_key());
   for (const Field& field : stage.fields) {
     const Value folded = fold_or_raw(field.value, scope);
     Distribution dist;
@@ -242,23 +242,31 @@ flatbuffers::Offset<v2::Node> v2_process_block(
       params.push_back(v2_var_distribution(builder, field.name.c_str(), dist));
       continue;
     }
+    const BlockParamSpec* declared =
+        shape != nullptr ? shape->param(field.name) : nullptr;
+    // IR types follow the library contract, not the literal spelling. A
+    // whole-number literal is legal for a float field (`timeout = 1`) and
+    // must not become VarType_Int, which node_float_param would ignore.
+    if (declared != nullptr && declared->type == BlockParamType::kFloat &&
+        folded.kind == ValueKind::kInt) {
+      params.push_back(v2_var_float(
+          builder, field.name.c_str(),
+          static_cast<double>(folded.int_value)));
+      continue;
+    }
     switch (folded.kind) {
       case ValueKind::kBool:
-        params.push_back(
-            v2_var_bool(builder, field.name.c_str(), folded.bool_value));
+        params.push_back(v2_var_bool(builder, field.name.c_str(), folded.bool_value));
         break;
       case ValueKind::kInt:
-        params.push_back(
-            v2_var_int(builder, field.name.c_str(), folded.int_value));
+        params.push_back(v2_var_int(builder, field.name.c_str(), folded.int_value));
         break;
       case ValueKind::kFloat:
-        params.push_back(
-            v2_var_float(builder, field.name.c_str(), folded.float_value));
+        params.push_back(v2_var_float(builder, field.name.c_str(), folded.float_value));
         break;
       case ValueKind::kString:
       case ValueKind::kIdentifier:
-        params.push_back(
-            v2_var_string(builder, field.name.c_str(), folded.string_value));
+        params.push_back(v2_var_string(builder, field.name.c_str(), folded.string_value));
         break;
       default:
         // Non-constant values are rejected by the analyzer except for
@@ -266,25 +274,17 @@ flatbuffers::Offset<v2::Node> v2_process_block(
         // hold.blockingCondition): those lower as raw-text string params
         // evaluated by the kernel at routing time.
         if (source_text != nullptr &&
-            (field.name == "condition" ||
-             field.name == "blockingCondition" ||
-             field.name == "matchCondition" ||
-             field.name == "condition1" ||
-             field.name == "condition2" ||
-             field.name == "condition3" ||
-             field.name == "condition4" ||
-             field.name == "condition5" ||
-             field.name == "choice" ||
-             field.name == "exitNumber" ||
-             field.name == "agent1IsPreferredToAgent2" ||
+            (field.name == "condition" || field.name == "blockingCondition" ||
+             field.name == "matchCondition" || field.name == "condition1" ||
+             field.name == "condition2" || field.name == "condition3" ||
+             field.name == "condition4" || field.name == "condition5" || field.name == "choice" ||
+             field.name == "exitNumber" || field.name == "agent1IsPreferredToAgent2" ||
              field.name == "agent1MayPreemptAgent2") &&
             field.value.span.byte_length > 0 &&
-            field.value.span.byte_offset + field.value.span.byte_length <=
-                source_text->size()) {
+            field.value.span.byte_offset + field.value.span.byte_length <= source_text->size()) {
           params.push_back(v2_var_string(
               builder, field.name.c_str(),
-              source_text->substr(field.value.span.byte_offset,
-                                  field.value.span.byte_length)));
+              source_text->substr(field.value.span.byte_offset, field.value.span.byte_length)));
         }
         break;
     }
@@ -295,8 +295,7 @@ flatbuffers::Offset<v2::Node> v2_process_block(
   if (stage.kind == "source") {
     for (const VarDecl& var : stage.vars) {
       if (var.keyword == "state") {
-        state.push_back(v2_var_from_value(
-            builder, var.name, fold_or_raw(var.value, scope)));
+        state.push_back(v2_var_from_value(builder, var.name, fold_or_raw(var.value, scope)));
       }
     }
   }
@@ -304,27 +303,28 @@ flatbuffers::Offset<v2::Node> v2_process_block(
   // Registered block ports (direction + event type), so the IR carries the
   // full connectable shape of every process stage.
   std::vector<flatbuffers::Offset<v2::Port>> ports;
-  const BlockShape* shape = registry.resolve(stage.kind);
-  const std::string effective_kind =
-      shape != nullptr ? shape->kind : stage.kind;
+  const std::string effective_kind = shape != nullptr ? shape->kind : stage.kind;
   if (shape != nullptr) {
     for (const BlockPortSpec& spec : shape->ports) {
       const auto direction =
           spec.direction == "in"
               ? v2::PortDirection_Input
-              : (spec.direction == "out" ? v2::PortDirection_Output
-                                         : v2::PortDirection_InOut);
-      ports.push_back(v2::CreatePort(
-          builder, builder.CreateString(spec.name), direction,
-          builder.CreateString(spec.type.empty() ? "entity" : spec.type)));
+              : (spec.direction == "out" ? v2::PortDirection_Output : v2::PortDirection_InOut);
+      ports.push_back(
+          v2::CreatePort(builder, builder.CreateString(spec.name), direction,
+                         builder.CreateString(spec.type.empty() ? "entity" : spec.type)));
     }
   }
-  return v2::CreateNode(
-      builder, v2_metadata(builder, stage.name, source_file),
-      builder.CreateVector(state),
-      builder.CreateVector(params), builder.CreateVector(ports),
-      v2_semantics(builder, "process", effective_kind.c_str()),
-      0, 0, 0, 0, 0);
+  const std::string semantic_library =
+      shape != nullptr && !shape->library.empty() ? shape->library : "process";
+  const std::string semantic_version =
+      shape != nullptr ? std::to_string(shape->library_version) : std::string{};
+  return v2::CreateNode(builder, v2_metadata(builder, stage.name, source_file),
+                        builder.CreateVector(state), builder.CreateVector(params),
+                        builder.CreateVector(ports),
+                        v2_semantics(builder, semantic_library.c_str(), effective_kind.c_str(),
+                                     semantic_version.empty() ? nullptr : semantic_version.c_str()),
+                        0, 0, 0, 0, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -332,27 +332,22 @@ flatbuffers::Offset<v2::Node> v2_process_block(
 // ---------------------------------------------------------------------------
 
 // atomic -> devs/atomic Node with a one-state Statechart.
-flatbuffers::Offset<v2::Node> v2_atomic(
-    flatbuffers::FlatBufferBuilder& builder, const Node& atomic,
-    const ParamScope& scope, const std::string& source_file) {
+flatbuffers::Offset<v2::Node> v2_atomic(flatbuffers::FlatBufferBuilder& builder, const Node& atomic,
+                                        const ParamScope& scope, const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : atomic.vars) {
     if (var.keyword == "state") {
-      state.push_back(v2_var_from_value(
-          builder, var.name, fold_or_raw(var.value, scope)));
+      state.push_back(v2_var_from_value(builder, var.name, fold_or_raw(var.value, scope)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Port>> ports;
   for (const PortDecl& port : atomic.ports) {
-    const auto direction = port.direction == "in"
-                               ? v2::PortDirection_Input
-                               : (port.direction == "out"
-                                      ? v2::PortDirection_Output
-                                      : v2::PortDirection_InOut);
+    const auto direction =
+        port.direction == "in"
+            ? v2::PortDirection_Input
+            : (port.direction == "out" ? v2::PortDirection_Output : v2::PortDirection_InOut);
     ports.push_back(v2::CreatePort(
-        builder, builder.CreateString(port.name.empty() ? "entity"
-                                                        : port.name),
-        direction, 0));
+        builder, builder.CreateString(port.name.empty() ? "entity" : port.name), direction, 0));
   }
   const Behavior* on_input = nullptr;
   const Behavior* on_timeout = nullptr;
@@ -364,16 +359,14 @@ flatbuffers::Offset<v2::Node> v2_atomic(
     }
   }
   if (on_input != nullptr) {
-    ports.push_back(v2::CreatePort(
-        builder, builder.CreateString(on_input->port),
-        v2::PortDirection_Input, 0));
+    ports.push_back(
+        v2::CreatePort(builder, builder.CreateString(on_input->port), v2::PortDirection_Input, 0));
   }
   if (on_timeout != nullptr) {
     for (const Effect& effect : on_timeout->effects) {
       if (effect.kind == Effect::Kind::kEmit) {
-        ports.push_back(v2::CreatePort(
-            builder, builder.CreateString(effect.name),
-            v2::PortDirection_Output, 0));
+        ports.push_back(v2::CreatePort(builder, builder.CreateString(effect.name),
+                                       v2::PortDirection_Output, 0));
       }
     }
   }
@@ -382,96 +375,80 @@ flatbuffers::Offset<v2::Node> v2_atomic(
   states.push_back(v2::CreateState(builder, active));
   std::vector<flatbuffers::Offset<v2::Transition>> transitions;
   const auto effects_to_actions =
-      [&](const std::vector<Effect>& effects)
-      -> std::vector<flatbuffers::Offset<v2::Action>> {
+      [&](const std::vector<Effect>& effects) -> std::vector<flatbuffers::Offset<v2::Action>> {
     std::vector<flatbuffers::Offset<v2::Action>> actions;
     for (const Effect& effect : effects) {
       if (effect.kind == Effect::Kind::kAssign) {
         actions.push_back(v2::CreateAction(
-            builder, 0,
-            v2_var_from_value(builder, effect.name,
-                              fold_or_raw(effect.value, scope)),
+            builder, 0, v2_var_from_value(builder, effect.name, fold_or_raw(effect.value, scope)),
             0));
       } else if (effect.kind == Effect::Kind::kEmit) {
-        actions.push_back(
-            v2::CreateAction(builder, 0, 0,
-                             builder.CreateString(effect.name)));
+        actions.push_back(v2::CreateAction(builder, 0, 0, builder.CreateString(effect.name)));
       }
     }
     return actions;
   };
   if (on_input != nullptr) {
-    transitions.push_back(v2::CreateTransition(
-        builder, active, active, v2::TriggerKind_Message, 0.0, 0, 0.0,
-        builder.CreateString(on_input->port), 0,
-        builder.CreateVector(effects_to_actions(on_input->effects))));
+    transitions.push_back(
+        v2::CreateTransition(builder, active, active, v2::TriggerKind_Message, 0.0, 0, 0.0,
+                             builder.CreateString(on_input->port), 0,
+                             builder.CreateVector(effects_to_actions(on_input->effects))));
   }
   if (on_timeout != nullptr) {
-    std::vector<flatbuffers::Offset<v2::Action>> actions =
-        effects_to_actions(on_timeout->effects);
+    std::vector<flatbuffers::Offset<v2::Action>> actions = effects_to_actions(on_timeout->effects);
     double timeout_value = 0.0;
     flatbuffers::Offset<v2::Distribution> timeout_distribution = 0;
     const Field* ta = field_of(atomic, "time_advance");
     if (ta != nullptr) {
       const Value folded = fold_or_raw(ta->value, scope);
-      if (folded.kind == ValueKind::kCall &&
-          folded.call_name == "exponential" && folded.call_args.size() == 1) {
+      if (folded.kind == ValueKind::kCall && folded.call_name == "exponential" &&
+          folded.call_args.size() == 1) {
         const Value& rate = folded.call_args[0];
         if (rate.kind == ValueKind::kInt || rate.kind == ValueKind::kFloat) {
-          const std::vector<double> params{
-              rate.kind == ValueKind::kInt
-                  ? static_cast<double>(rate.int_value)
-                  : rate.float_value};
-          timeout_distribution = v2::CreateDistribution(
-              builder, 3, builder.CreateVector(params));
+          const std::vector<double> params{rate.kind == ValueKind::kInt
+                                               ? static_cast<double>(rate.int_value)
+                                               : rate.float_value};
+          timeout_distribution = v2::CreateDistribution(builder, 3, builder.CreateVector(params));
         }
       } else if (folded.kind == ValueKind::kInt) {
         timeout_value = static_cast<double>(folded.int_value);
       } else if (folded.kind == ValueKind::kFloat) {
         timeout_value = folded.float_value;
-      } else if (folded.kind == ValueKind::kCall &&
-                 folded.call_name == "constant" &&
+      } else if (folded.kind == ValueKind::kCall && folded.call_name == "constant" &&
                  folded.call_args.size() == 1) {
         const Value& value = folded.call_args[0];
-        timeout_value = value.kind == ValueKind::kInt
-                            ? static_cast<double>(value.int_value)
-                            : value.float_value;
+        timeout_value = value.kind == ValueKind::kInt ? static_cast<double>(value.int_value)
+                                                      : value.float_value;
       }
       // identifier `infinite` keeps the default 0.0 (kernel: no timeout).
     }
-    transitions.push_back(v2::CreateTransition(
-        builder, active, active, v2::TriggerKind_Timeout, timeout_value,
-        timeout_distribution, 0.0, 0, 0,
-        builder.CreateVector(actions)));
+    transitions.push_back(v2::CreateTransition(builder, active, active, v2::TriggerKind_Timeout,
+                                               timeout_value, timeout_distribution, 0.0, 0, 0,
+                                               builder.CreateVector(actions)));
   }
-  const auto statechart =
-      v2::CreateStatechart(builder, builder.CreateVector(states),
-                           builder.CreateVector(transitions), active);
+  const auto statechart = v2::CreateStatechart(builder, builder.CreateVector(states),
+                                               builder.CreateVector(transitions), active);
   return v2::CreateNode(
-      builder, v2_metadata(builder, atomic.name, source_file),
-      builder.CreateVector(state),
+      builder, v2_metadata(builder, atomic.name, source_file), builder.CreateVector(state),
       builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(ports), v2_semantics(builder, "devs", "atomic"), 0,
-      0, statechart, 0, 0);
+      builder.CreateVector(ports), v2_semantics(builder, "devs", "atomic"), 0, 0, statechart, 0, 0);
 }
 
 // agent -> agent Node (typed state, count param, behavior bindings, and
 // agent-centric members: process-library blocks + couplings).
 flatbuffers::Offset<v2::Node> v2_agent(
     flatbuffers::FlatBufferBuilder& builder, const Node& agent,
-    const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry, const std::string* source_text) {
+    const std::unordered_map<std::string, const Node*>& resources, const ParamScope& scope,
+    const std::string& source_file, const LibraryRegistry& registry,
+    const std::string* source_text) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   for (const VarDecl& var : agent.vars) {
     if (var.keyword == "state") {
-      state.push_back(v2_var_from_value(
-          builder, var.name, fold_or_raw(var.value, scope)));
+      state.push_back(v2_var_from_value(builder, var.name, fold_or_raw(var.value, scope)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
-  params.push_back(v2_var_int(builder, "count",
-                              int_field(agent, "count", scope, 1)));
+  params.push_back(v2_var_int(builder, "count", int_field(agent, "count", scope, 1)));
   std::vector<flatbuffers::Offset<v2::BehaviorBinding>> behaviors;
   for (const Behavior& behavior : agent.behaviors) {
     if (behavior.trigger != "tick") {
@@ -483,25 +460,22 @@ flatbuffers::Offset<v2::Node> v2_agent(
       }
       std::vector<flatbuffers::Offset<v2::Var>> behavior_params;
       if (!effect.arg.empty()) {
-        behavior_params.push_back(v2_var_bool(builder, effect.arg.c_str(),
-                                              true));
+        behavior_params.push_back(v2_var_bool(builder, effect.arg.c_str(), true));
       }
-      behaviors.push_back(v2::CreateBehaviorBinding(
-          builder, builder.CreateString("on_tick"),
-          builder.CreateString(effect.name),
-          builder.CreateVector(behavior_params)));
+      behaviors.push_back(v2::CreateBehaviorBinding(builder, builder.CreateString("on_tick"),
+                                                    builder.CreateString(effect.name),
+                                                    builder.CreateVector(behavior_params)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Node>> children;
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
   for (const Node& child : agent.children) {
-    if (registry.has_block(child.kind)) {
+    if (registry.has_block(child.registry_key())) {
       children.push_back(
-          v2_process_block(builder, child, resources, scope, source_file,
-                           registry, source_text));
+          v2_process_block(builder, child, resources, scope, source_file, registry, source_text));
     } else {
-      const auto nested = v2_node(builder, child, resources, scope,
-                                  source_file, registry, source_text);
+      const auto nested =
+          v2_node(builder, child, resources, scope, source_file, registry, source_text);
       if (nested.o != 0) {
         children.push_back(nested);
       }
@@ -509,24 +483,20 @@ flatbuffers::Offset<v2::Node> v2_agent(
   }
   for (const CoupleDecl& couple : agent.couplings) {
     couplings.push_back(v2::CreateCoupling(
-        builder, builder.CreateString(couple.from_model),
-        builder.CreateString(couple.from_port),
-        builder.CreateString(couple.to_model),
-        builder.CreateString(couple.to_port)));
+        builder, builder.CreateString(couple.from_model), builder.CreateString(couple.from_port),
+        builder.CreateString(couple.to_model), builder.CreateString(couple.to_port)));
   }
-  return v2::CreateNode(
-      builder, v2_metadata(builder, agent.name, source_file),
-      builder.CreateVector(state), builder.CreateVector(params), 0,
-      v2_semantics(builder, "agent", "agent"),
-      builder.CreateVector(children), builder.CreateVector(couplings), 0,
-      builder.CreateVector(behaviors), 0);
+  return v2::CreateNode(builder, v2_metadata(builder, agent.name, source_file),
+                        builder.CreateVector(state), builder.CreateVector(params), 0,
+                        v2_semantics(builder, "agent", "agent"), builder.CreateVector(children),
+                        builder.CreateVector(couplings), 0, builder.CreateVector(behaviors), 0);
 }
 
 // continuous -> {sd, equation} Node: typed state (initial), params, and
 // structured continuous equations.
-flatbuffers::Offset<v2::Node> v2_continuous(
-    flatbuffers::FlatBufferBuilder& builder, const Node& continuous,
-    const ParamScope& scope, const std::string& source_file) {
+flatbuffers::Offset<v2::Node> v2_continuous(flatbuffers::FlatBufferBuilder& builder,
+                                            const Node& continuous, const ParamScope& scope,
+                                            const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::Var>> state;
   const auto initial_value = [&](const Value& raw) {
     const Value value = fold_or_raw(raw, scope);
@@ -540,15 +510,13 @@ flatbuffers::Offset<v2::Node> v2_continuous(
   };
   for (const VarDecl& var : continuous.vars) {
     if (var.keyword == "state") {
-      state.push_back(v2_var_float(builder, var.name.c_str(),
-                                   initial_value(var.value)));
+      state.push_back(v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Var>> params;
   for (const VarDecl& var : continuous.vars) {
     if (var.keyword == "param") {
-      params.push_back(v2_var_float(builder, var.name.c_str(),
-                                    initial_value(var.value)));
+      params.push_back(v2_var_float(builder, var.name.c_str(), initial_value(var.value)));
     }
   }
   std::vector<flatbuffers::Offset<v2::Equation>> equations;
@@ -561,58 +529,78 @@ flatbuffers::Offset<v2::Node> v2_continuous(
     return 0.0;
   };
   for (const Equation& equation : continuous.equations) {
-    equations.push_back(v2::CreateEquation(
-        builder, builder.CreateString(equation.var),
-        builder.CreateString(equation.rhs_text),
-        state_initial(equation.var)));
+    equations.push_back(v2::CreateEquation(builder, builder.CreateString(equation.var),
+                                           builder.CreateString(equation.rhs_text),
+                                           state_initial(equation.var)));
   }
-  return v2::CreateNode(
-      builder, v2_metadata(builder, continuous.name, source_file),
-      builder.CreateVector(state), builder.CreateVector(params), 0,
-      v2_semantics(builder, "sd", "equation"), 0, 0, 0, 0,
-      builder.CreateVector(equations));
+  return v2::CreateNode(builder, v2_metadata(builder, continuous.name, source_file),
+                        builder.CreateVector(state), builder.CreateVector(params), 0,
+                        v2_semantics(builder, "sd", "equation"), 0, 0, 0, 0,
+                        builder.CreateVector(equations));
 }
 
-flatbuffers::Offset<v2::Experiment> v2_experiment(
-    flatbuffers::FlatBufferBuilder& builder, const ExperimentDecl& experiment) {
+flatbuffers::Offset<v2::Experiment> v2_experiment(flatbuffers::FlatBufferBuilder& builder,
+                                                  const ExperimentDecl& experiment) {
+  std::vector<flatbuffers::Offset<v2::VariationAxis>> axes;
+  axes.reserve(experiment.axes.size());
+  for (const VariationAxis& axis : experiment.axes) {
+    axes.push_back(v2::CreateVariationAxis(
+        builder, builder.CreateString(axis.name),
+        builder.CreateString(axis.variable), axis.range_min, axis.range_max,
+        axis.step));
+  }
+  const bool simulation = experiment.kind == "simulation" ||
+                          (!experiment.has_kind && !experiment.has_objective &&
+                           !experiment.has_variable &&
+                           !experiment.has_range && !experiment.has_budget);
+  const v2::ExperimentKind kind =
+      simulation ? v2::ExperimentKind_Simulation
+                 : (experiment.kind == "parameter_variation"
+                        ? v2::ExperimentKind_ParameterVariation
+                        : v2::ExperimentKind_Optimization);
   return v2::CreateExperiment(
-      builder, v2::ExperimentKind_Optimization,
+      builder,
+      kind,
       builder.CreateString(experiment.name),
-      builder.CreateString(experiment.variable),
-      builder.CreateString(experiment.objective),
-      builder.CreateString(experiment.metric), experiment.range_min,
-      experiment.range_max, static_cast<std::uint32_t>(experiment.budget), 0,
-      0);
+      builder.CreateString(experiment.variable), builder.CreateString(experiment.objective),
+      builder.CreateString(experiment.metric), experiment.range_min, experiment.range_max,
+      static_cast<std::uint32_t>(experiment.budget),
+      static_cast<std::uint32_t>(experiment.replications),
+      static_cast<std::uint64_t>(experiment.seed),
+      experiment.seed_mode == "random" ? v2::SeedPolicy_Random
+                                        : v2::SeedPolicy_Fixed,
+      experiment.replication_mode == "precision"
+          ? v2::ReplicationPolicy_Precision
+          : v2::ReplicationPolicy_Fixed,
+      static_cast<std::uint32_t>(experiment.min_replications),
+      static_cast<std::uint32_t>(experiment.max_replications),
+      experiment.confidence, experiment.error_percent,
+      builder.CreateString(experiment.metric), builder.CreateVector(axes));
 }
 
 // statechart -> {statechart, statechart} Node: states/transitions lower into
 // the IR Statechart behavior table; element markers (final/history/branch,
 // guard/action text) travel as typed semantics params so the kernel runtime
 // can execute them without a schema extension.
-flatbuffers::Offset<v2::Node> v2_statechart(
-    flatbuffers::FlatBufferBuilder& builder, const Node& statechart,
-    const ParamScope& scope, const std::string& source_file) {
+flatbuffers::Offset<v2::Node> v2_statechart(flatbuffers::FlatBufferBuilder& builder,
+                                            const Node& statechart, const ParamScope& scope,
+                                            const std::string& source_file) {
   std::vector<flatbuffers::Offset<v2::State>> states;
   std::vector<flatbuffers::Offset<v2::Transition>> transitions;
   std::vector<flatbuffers::Offset<v2::Var>> params;
   std::string initial;
 
   for (const Node& child : statechart.children) {
-    if (child.kind == "state" || child.kind == "finalState" ||
-        child.kind == "historyState" || child.kind == "branch") {
-      states.push_back(
-          v2::CreateState(builder, builder.CreateString(child.name)));
+    if (child.kind == "state" || child.kind == "finalState" || child.kind == "historyState" ||
+        child.kind == "branch") {
+      states.push_back(v2::CreateState(builder, builder.CreateString(child.name)));
       if (child.kind == "finalState") {
-        params.push_back(
-            v2_var_string(builder, "final", child.name));
+        params.push_back(v2_var_string(builder, "final", child.name));
       } else if (child.kind == "historyState") {
-        params.push_back(
-            v2_var_string(builder, "history", child.name));
-        const std::string history_type =
-            node_field_identifier(child, "historyType");
+        params.push_back(v2_var_string(builder, "history", child.name));
+        const std::string history_type = node_field_identifier(child, "historyType");
         if (!history_type.empty()) {
-          params.push_back(v2_var_string(
-              builder, "history_type", history_type));
+          params.push_back(v2_var_string(builder, "history_type", history_type));
         }
       } else if (child.kind == "branch") {
         params.push_back(v2_var_string(builder, "branch", child.name));
@@ -622,8 +610,7 @@ flatbuffers::Offset<v2::Node> v2_statechart(
     if (child.kind == "transition") {
       const std::string from = node_field_identifier(child, "from");
       const std::string to = node_field_identifier(child, "to");
-      const std::string triggered_by =
-          node_field_identifier(child, "triggeredBy");
+      const std::string triggered_by = node_field_identifier(child, "triggeredBy");
       v2::TriggerKind trigger = v2::TriggerKind_Timeout;
       if (triggered_by == "rate") {
         trigger = v2::TriggerKind_Rate;
@@ -632,29 +619,22 @@ flatbuffers::Offset<v2::Node> v2_statechart(
       } else if (triggered_by == "condition") {
         trigger = v2::TriggerKind_Condition;
       }
-      const double timeout =
-          float_field(child, "timeout", scope, 1.0);
+      const double timeout = float_field(child, "timeout", scope, 1.0);
       const double rate = float_field(child, "rate", scope, 1.0);
-      const std::string message_type =
-          node_field_text(child, "messageType");
-      const std::string condition =
-          node_field_text(child, "condition");
+      const std::string message_type = node_field_text(child, "messageType");
+      const std::string condition = node_field_text(child, "condition");
       const std::string guard = node_field_text(child, "guard");
       if (!guard.empty()) {
-        params.push_back(v2_var_string(
-            builder, ("guard:" + child.name).c_str(), guard));
+        params.push_back(v2_var_string(builder, ("guard:" + child.name).c_str(), guard));
       }
       const std::string action = node_field_text(child, "action");
       if (!action.empty()) {
-        params.push_back(v2_var_string(
-            builder, ("action:" + child.name).c_str(), action));
+        params.push_back(v2_var_string(builder, ("action:" + child.name).c_str(), action));
       }
       transitions.push_back(v2::CreateTransition(
-          builder, builder.CreateString(from),
-          builder.CreateString(to), trigger, timeout, 0, rate,
+          builder, builder.CreateString(from), builder.CreateString(to), trigger, timeout, 0, rate,
           message_type.empty() ? 0 : builder.CreateString(message_type),
-          condition.empty() ? 0 : builder.CreateString(condition),
-          0));
+          condition.empty() ? 0 : builder.CreateString(condition), 0));
       continue;
     }
   }
@@ -663,8 +643,8 @@ flatbuffers::Offset<v2::Node> v2_statechart(
   if (initial.empty()) {
     // Fall back to the first state when no entry point edge was encoded.
     for (const Node& child : statechart.children) {
-      if (child.kind == "state" || child.kind == "finalState" ||
-          child.kind == "historyState" || child.kind == "branch") {
+      if (child.kind == "state" || child.kind == "finalState" || child.kind == "historyState" ||
+          child.kind == "branch") {
         initial = child.name;
         break;
       }
@@ -672,24 +652,22 @@ flatbuffers::Offset<v2::Node> v2_statechart(
   }
   params.push_back(v2_var_string(builder, "initial", initial));
 
-  const auto statechart_table = v2::CreateStatechart(
-      builder, builder.CreateVector(states),
-      builder.CreateVector(transitions),
-      initial.empty() ? 0 : builder.CreateString(initial));
-  return v2::CreateNode(
-      builder, v2_metadata(builder, statechart.name, source_file),
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(params), 0,
-      v2_semantics(builder, "statechart", "statechart"), 0, 0,
-      statechart_table, 0, 0);
+  const auto statechart_table =
+      v2::CreateStatechart(builder, builder.CreateVector(states), builder.CreateVector(transitions),
+                           initial.empty() ? 0 : builder.CreateString(initial));
+  return v2::CreateNode(builder, v2_metadata(builder, statechart.name, source_file),
+                        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+                        builder.CreateVector(params), 0,
+                        v2_semantics(builder, "statechart", "statechart"), 0, 0, statechart_table,
+                        0, 0);
 }
 
 // One generic DSL Node -> IR v2 Node by kind (process blocks / containers).
-flatbuffers::Offset<v2::Node> v2_node(
-    flatbuffers::FlatBufferBuilder& builder, const Node& node,
-    const std::unordered_map<std::string, const Node*>& resources,
-    const ParamScope& scope, const std::string& source_file,
-    const LibraryRegistry& registry, const std::string* source_text) {
+flatbuffers::Offset<v2::Node> v2_node(flatbuffers::FlatBufferBuilder& builder, const Node& node,
+                                      const std::unordered_map<std::string, const Node*>& resources,
+                                      const ParamScope& scope, const std::string& source_file,
+                                      const LibraryRegistry& registry,
+                                      const std::string* source_text) {
   if (node.kind == "statechart") {
     return v2_statechart(builder, node, scope, source_file);
   }
@@ -700,54 +678,44 @@ flatbuffers::Offset<v2::Node> v2_node(
     return v2_atomic(builder, node, scope, source_file);
   }
   if (node.kind == "agent") {
-    return v2_agent(builder, node, resources, scope, source_file, registry,
-                    source_text);
+    return v2_agent(builder, node, resources, scope, source_file, registry, source_text);
   }
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);
   }
   if (node.kind == "node") {
     std::vector<flatbuffers::Offset<v2::Var>> params;
-    params.push_back(v2_var_float(
-        builder, "x", float_field(node, "x", scope, 0.0)));
-    params.push_back(v2_var_float(
-        builder, "y", float_field(node, "y", scope, 0.0)));
-    return v2::CreateNode(
-        builder, v2_metadata(builder, node.name, source_file),
-        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-        builder.CreateVector(params), 0,
-        v2_semantics(builder, "core", "node"), 0, 0, 0, 0, 0);
+    params.push_back(v2_var_float(builder, "x", float_field(node, "x", scope, 0.0)));
+    params.push_back(v2_var_float(builder, "y", float_field(node, "y", scope, 0.0)));
+    return v2::CreateNode(builder, v2_metadata(builder, node.name, source_file),
+                          builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+                          builder.CreateVector(params), 0, v2_semantics(builder, "core", "node"), 0,
+                          0, 0, 0, 0);
   }
   if (node.kind == "path") {
     std::vector<flatbuffers::Offset<v2::Var>> params;
-    const std::string node1 =
-        node_field_identifier(node, "node1");
-    const std::string node2 =
-        node_field_identifier(node, "node2");
+    const std::string node1 = node_field_identifier(node, "node1");
+    const std::string node2 = node_field_identifier(node, "node2");
     params.push_back(v2_var_string(builder, "node1", node1.c_str()));
     params.push_back(v2_var_string(builder, "node2", node2.c_str()));
-    return v2::CreateNode(
-        builder, v2_metadata(builder, node.name, source_file),
-        builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-        builder.CreateVector(params), 0,
-        v2_semantics(builder, "core", "path"), 0, 0, 0, 0, 0);
+    return v2::CreateNode(builder, v2_metadata(builder, node.name, source_file),
+                          builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+                          builder.CreateVector(params), 0, v2_semantics(builder, "core", "path"), 0,
+                          0, 0, 0, 0);
   }
   // Process blocks declared outside a process (e.g. top-level resource
   // instances) lower as standalone {process, <block>} nodes; experiment
   // members are handled via ModelFile.experiments, not the node tree.
-  if (registry.has_block(node.kind)) {
-    return v2_process_block(builder, node, resources, scope, source_file,
-                            registry, source_text);
+  if (registry.has_block(node.registry_key())) {
+    return v2_process_block(builder, node, resources, scope, source_file, registry, source_text);
   }
   return 0;
 }
 
 }  // namespace
 
-LoweredIr lower_to_ir_v2(const ModelAst& model,
-                         const std::string& source_file,
-                         const LibraryRegistry* registry,
-                         const std::string* source_text) {
+LoweredIr lower_to_ir_v2(const ModelAst& model, const std::string& source_file,
+                         const LibraryRegistry* registry, const std::string* source_text) {
   flatbuffers::FlatBufferBuilder builder;
   const LibraryRegistry& registry_ref =
       registry != nullptr ? *registry : builtin_process_registry();
@@ -755,11 +723,9 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
   ParamScope model_scope;
   for (const VarDecl& param : model.params) {
     Value folded;
-    if (param.keyword == "param" && fold_value(param.value, model_scope,
-                                               folded) &&
+    if (param.keyword == "param" && fold_value(param.value, model_scope, folded) &&
         (folded.kind == ValueKind::kInt || folded.kind == ValueKind::kFloat ||
-         folded.kind == ValueKind::kBool ||
-         folded.kind == ValueKind::kString)) {
+         folded.kind == ValueKind::kBool || folded.kind == ValueKind::kString)) {
       FoldedValue constant;
       constant.kind = folded.kind;
       constant.bool_value = folded.bool_value;
@@ -783,50 +749,40 @@ LoweredIr lower_to_ir_v2(const ModelAst& model,
       continue;  // experiments live in ModelFile.experiments
     }
     children.push_back(
-        v2_node(builder, member, resources, model_scope, source_file,
-                registry_ref, source_text));
+        v2_node(builder, member, resources, model_scope, source_file, registry_ref, source_text));
   }
 
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
   for (const CoupleDecl& couple : model.couplings) {
     couplings.push_back(v2::CreateCoupling(
-        builder, builder.CreateString(couple.from_model),
-        builder.CreateString(couple.from_port),
-        builder.CreateString(couple.to_model),
-        builder.CreateString(couple.to_port)));
+        builder, builder.CreateString(couple.from_model), builder.CreateString(couple.from_port),
+        builder.CreateString(couple.to_model), builder.CreateString(couple.to_port)));
   }
 
   std::vector<flatbuffers::Offset<v2::Var>> root_params;
   for (const VarDecl& param : model.params) {
     root_params.push_back(
-        v2_var_from_value(builder, param.name, fold_or_raw(param.value,
-                                                           model_scope)));
+        v2_var_from_value(builder, param.name, fold_or_raw(param.value, model_scope)));
   }
 
-  const auto root_metadata =
-      v2_metadata(builder, model.name, source_file);
+  const auto root_metadata = v2_metadata(builder, model.name, source_file);
   const auto root = v2::CreateNode(
-      builder, root_metadata,
-      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-      builder.CreateVector(root_params), 0,
-      v2_semantics(builder, "core", "model"), builder.CreateVector(children),
-      builder.CreateVector(couplings), 0, 0, 0);
+      builder, root_metadata, builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(root_params), 0, v2_semantics(builder, "core", "model"),
+      builder.CreateVector(children), builder.CreateVector(couplings), 0, 0, 0);
 
   std::vector<flatbuffers::Offset<v2::Experiment>> experiments;
   for (const ExperimentDecl& experiment : model.experiments) {
     experiments.push_back(v2_experiment(builder, experiment));
   }
 
-  const auto file_metadata =
-      v2_metadata(builder, model.name, source_file);
-  const auto file = v2::CreateModelFile(builder, 2, root,
-                                        builder.CreateVector(experiments),
-                                        file_metadata);
+  const auto file_metadata = v2_metadata(builder, model.name, source_file);
+  const auto file =
+      v2::CreateModelFile(builder, 2, root, builder.CreateVector(experiments), file_metadata);
   builder.Finish(file, "LP2R");
 
   LoweredIr lowered;
-  lowered.bytes.assign(builder.GetBufferPointer(),
-                       builder.GetBufferPointer() + builder.GetSize());
+  lowered.bytes.assign(builder.GetBufferPointer(), builder.GetBufferPointer() + builder.GetSize());
   return lowered;
 }
 

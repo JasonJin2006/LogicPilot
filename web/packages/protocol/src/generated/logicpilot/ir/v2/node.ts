@@ -7,6 +7,7 @@ import * as flatbuffers from 'flatbuffers';
 import { BehaviorBinding } from '../../../logicpilot/ir/v2/behavior-binding.js';
 import { Coupling } from '../../../logicpilot/ir/v2/coupling.js';
 import { Equation } from '../../../logicpilot/ir/v2/equation.js';
+import { ExtensionPayload } from '../../../logicpilot/ir/v2/extension-payload.js';
 import { Metadata } from '../../../logicpilot/ir/v2/metadata.js';
 import { Port } from '../../../logicpilot/ir/v2/port.js';
 import { SemanticsRef } from '../../../logicpilot/ir/v2/semantics-ref.js';
@@ -117,8 +118,18 @@ continuousLength():number {
   return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
 }
 
+extensions(index: number, obj?:ExtensionPayload):ExtensionPayload|null {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? (obj || new ExtensionPayload()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
+}
+
+extensionsLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startNode(builder:flatbuffers.Builder) {
-  builder.startObject(10);
+  builder.startObject(11);
 }
 
 static addMetadata(builder:flatbuffers.Builder, metadataOffset:flatbuffers.Offset) {
@@ -242,6 +253,22 @@ static createContinuousVector(builder:flatbuffers.Builder, data:flatbuffers.Offs
 }
 
 static startContinuousVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
+static addExtensions(builder:flatbuffers.Builder, extensionsOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(10, extensionsOffset, 0);
+}
+
+static createExtensionsVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startExtensionsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 

@@ -58,3 +58,12 @@ export type {
 } from './presentation.js';
 export { modelRunParams } from './runParams.js';
 export type { ModelRunParams } from './runParams.js';
+export { applyModelPatch, diffModelDocuments, MODEL_PATCH_VERSION } from './modelPatch.js';
+export type {
+  ModelPatch,
+  ModelPatchDiagnostic,
+  ModelPatchOperation,
+  ModelPatchResult,
+  ModelTarget,
+  ModelValue,
+} from './modelPatch.js';

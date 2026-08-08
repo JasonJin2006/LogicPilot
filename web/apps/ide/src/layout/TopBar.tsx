@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { AppMenu } from './AppMenu';
+import { logConsoleEvent } from '../state/connectionStore';
 
 // Standard Windows title-bar glyphs (Segoe Fluent Icons / Segoe MDL2 Assets).
 const GLYPHS = {
@@ -48,7 +49,7 @@ export function TopBar() {
         await update();
         timer = setInterval(() => void update(), 500);
       } catch (error) {
-        console.error('maximize state tracking failed', error);
+        logConsoleEvent('error', `maximize state tracking failed: ${String(error)}`);
       }
     })();
     return () => {
@@ -64,7 +65,7 @@ export function TopBar() {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       await getCurrentWindow().startDragging();
     } catch (error) {
-      console.error('start dragging failed', error);
+      logConsoleEvent('error', `start dragging failed: ${String(error)}`);
     }
   };
 
@@ -81,7 +82,7 @@ export function TopBar() {
         await window.close();
       }
     } catch (error) {
-      console.error('window action failed', error);
+      logConsoleEvent('error', `window action failed: ${String(error)}`);
     }
   };
 

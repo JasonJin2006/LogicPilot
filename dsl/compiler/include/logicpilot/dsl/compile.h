@@ -3,12 +3,15 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "logicpilot/dsl/ast.h"
 #include "logicpilot/dsl/diagnostics.h"
 
 namespace logicpilot::dsl {
+
+using ParameterOverrides = std::unordered_map<std::string, double>;
 
 struct CompileResult {
   bool ok{false};
@@ -29,11 +32,19 @@ struct CompileResult {
 [[nodiscard]] CompileResult compile_source(
     const std::string& source, const std::string& path,
     const std::vector<std::string>& library_dirs);
+[[nodiscard]] CompileResult compile_source(
+    const std::string& source, const std::string& path,
+    const std::vector<std::string>& library_dirs,
+    const ParameterOverrides& parameter_overrides);
 
 // Read `path` and compile it. IO failures yield a single LP0002 diagnostic.
 [[nodiscard]] CompileResult compile_file(const std::string& path);
 [[nodiscard]] CompileResult compile_file(
     const std::string& path,
     const std::vector<std::string>& library_dirs);
+[[nodiscard]] CompileResult compile_file(
+    const std::string& path,
+    const std::vector<std::string>& library_dirs,
+    const ParameterOverrides& parameter_overrides);
 
 }  // namespace logicpilot::dsl

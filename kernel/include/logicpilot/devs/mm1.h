@@ -13,6 +13,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
@@ -59,6 +60,13 @@ struct QueueingFlowSpec {
   // after `repair`. Both must be non-empty together; empty = never fails.
   TimeSampler failure;
   TimeSampler repair;
+  // Optional DSL stage identity for structured per-block metrics. Built-in
+  // queueing models leave these empty.
+  std::string source_name;
+  std::string queue_name;
+  std::string service_name;
+  std::string sink_name;
+  bool has_queue_block{false};
 };
 
 class QueueingFlowSim : public FlowEngine {

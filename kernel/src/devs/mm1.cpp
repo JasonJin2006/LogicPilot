@@ -273,6 +273,44 @@ ReplicationMetrics QueueingFlowSim::metrics() const {
         1.0 - static_cast<double>(area_down_ns_) /
                   static_cast<double>(horizon_ns) / servers_total;
   }
+  if (!spec_.source_name.empty()) {
+    BlockMetrics source;
+    source.name = spec_.source_name;
+    source.kind = "source";
+    source.arrived = config_.arrivals;
+    source.departed = config_.arrivals;
+    metrics.blocks.push_back(std::move(source));
+
+    if (spec_.has_queue_block) {
+      BlockMetrics queue;
+      queue.name = spec_.queue_name;
+      queue.kind = "queue";
+      queue.arrived = config_.arrivals;
+      queue.departed = config_.arrivals - dropped_;
+      queue.capacity = spec_.queue_capacity;
+      queue.mean_occupancy = metrics.mean_in_queue;
+      metrics.blocks.push_back(std::move(queue));
+    }
+
+    BlockMetrics service;
+    service.name = spec_.service_name;
+    service.kind = "service";
+    service.arrived = departures_;
+    service.departed = departures_;
+    service.capacity = spec_.has_queue_block ? 0 : spec_.queue_capacity;
+    service.utilization = metrics.utilization;
+    service.availability = metrics.availability;
+    metrics.blocks.push_back(std::move(service));
+
+    if (!spec_.sink_name.empty()) {
+      BlockMetrics sink;
+      sink.name = spec_.sink_name;
+      sink.kind = "sink";
+      sink.arrived = departures_;
+      sink.departed = departures_;
+      metrics.blocks.push_back(std::move(sink));
+    }
+  }
   return metrics;
 }
 

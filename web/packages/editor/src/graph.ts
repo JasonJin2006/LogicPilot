@@ -149,11 +149,7 @@ export function setParam(
   };
 }
 
-export function removeParam(
-  document: ModelDocument,
-  id: string,
-  key: string,
-): ModelDocument {
+export function removeParam(document: ModelDocument, id: string, key: string): ModelDocument {
   return {
     ...document,
     nodes: document.nodes.map((node) => {

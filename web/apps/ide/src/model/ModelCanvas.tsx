@@ -21,13 +21,7 @@ import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
 import { syncCanvasFromProject } from '../state/projectSync';
-import {
-  BLOCK_DEFAULTS,
-  blockPorts,
-  portAnchor,
-  PRESENTATION_KINDS,
-  STATECHART_KINDS,
-} from './blockDefs';
+import { blockPorts, portAnchor, PRESENTATION_KINDS, STATECHART_KINDS } from './blockDefs';
 import { ChartWidget } from './ChartWidget';
 import { BlockIcon } from './BlockIcon';
 import { PresentationRenderer } from '../presentation/renderer';
@@ -63,10 +57,7 @@ function visiblePorts(node: ModelNode): BlockPortDef[] {
 /** World-space port anchor for statechart shape elements. State shapes are
  *  larger than the 34px block cards, so their in/out ports sit on the
  *  rounded-rectangle's left/right mid-edge instead of the icon rail. */
-function statechartPortAnchor(
-  node: ModelNode,
-  port: string,
-): { x: number; y: number } {
+function statechartPortAnchor(node: ModelNode, port: string): { x: number; y: number } {
   const halfWidth =
     node.kind === 'state'
       ? 59
@@ -1114,8 +1105,12 @@ export function ModelCanvas() {
   // boxes, circles for initial/final/history, diamond branches); transition
   // blocks draw as arrows between their `from`/`to` states (by name).
   const scNodes = visibleNodes.filter((node) => STATECHART_KINDS.has(node.kind));
-  const scEdges: Array<{ id: string; name: string; a: { x: number; y: number }; b: { x: number; y: number } }> =
-    [];
+  const scEdges: Array<{
+    id: string;
+    name: string;
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  }> = [];
   for (const node of scNodes) {
     if (node.kind !== 'transition') continue;
     const fromName = String(node.params['from'] ?? '');
@@ -1124,7 +1119,12 @@ export function ModelCanvas() {
     const from = visibleNodes.find((entry) => entry.name === fromName);
     const to = visibleNodes.find((entry) => entry.name === toName);
     if (!from || !to) continue;
-    scEdges.push({ id: node.id, name: node.name, a: { x: from.x, y: from.y }, b: { x: to.x, y: to.y } });
+    scEdges.push({
+      id: node.id,
+      name: node.name,
+      a: { x: from.x, y: from.y },
+      b: { x: to.x, y: to.y },
+    });
   }
   const scBounds =
     scEdges.length > 0
@@ -1183,9 +1183,7 @@ export function ModelCanvas() {
     <>
       {scNodes
         .filter(
-          (node) =>
-            node.kind !== 'transition' ||
-            !scEdges.some((edge) => edge.id === node.id),
+          (node) => node.kind !== 'transition' || !scEdges.some((edge) => edge.id === node.id),
         )
         .map((node) => {
           const selected = node.id === selectedId;

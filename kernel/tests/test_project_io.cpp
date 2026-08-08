@@ -208,7 +208,7 @@ TEST_CASE("project dir: agent-centric layout expands nested containers") {
   }
   {
     std::ofstream out(dir / "model/scenes/Tune.lp");
-    out << "  experiment Tune {\n    budget = 20\n  }\n";
+    out << "  experiment Tune {\n    type = simulation\n    replications = 10\n    seed = 42\n  }\n";
   }
 
   ProjectBundleInfo info;

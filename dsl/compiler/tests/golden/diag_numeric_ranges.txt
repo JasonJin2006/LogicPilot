@@ -1,5 +1,4 @@
 input.lp:3:5: error[LP3001]: resource 'R' capacity must be >= 1 (got 0)
-input.lp:4:5: error[LP3001]: resource 'R' failure_rate must be in [0, 1] (got 1.500000)
 input.lp:6:24: error[LP3001]: source 'A' arrival: distribution parameter must be > 0 (got 0.000000)
 input.lp:8:11: error[LP1001]: duplicate declaration of service 'R' (previously declared at line 2)
 input.lp:8:22: error[LP3001]: service 'R' time: distribution parameter must be > 0 (got 0.000000)

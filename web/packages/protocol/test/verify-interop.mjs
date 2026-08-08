@@ -47,6 +47,7 @@ const {
   Transition,
   TriggerKind,
   BehaviorBinding,
+  ExperimentKind,
   Frame,
   FrameKind,
   FramePayload,
@@ -62,7 +63,9 @@ function check(label, actual, expected) {
   const a = typeof actual === 'bigint' ? Number(actual) : actual;
   const e = typeof expected === 'bigint' ? Number(expected) : expected;
   const ok =
-    typeof e === 'number' && typeof a === 'number'
+    Array.isArray(e) && Array.isArray(a)
+      ? JSON.stringify(a) === JSON.stringify(e)
+      : typeof e === 'number' && typeof a === 'number'
       ? Math.abs(a - e) < 1e-9
       : a === e;
   const fmt = (v) => JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? x.toString() : x));
@@ -190,6 +193,29 @@ check('v2 agent behaviors', agent2?.behaviorsLength(), 1);
 check('v2 behavior trigger', agent2?.behaviors(0)?.trigger(), 'on_tick');
 check('v2 behavior handler', agent2?.behaviors(0)?.handlerRef(),
       'agent.observer.collect');
+check('v2 agent extensions', agent2?.extensionsLength(), 1);
+check('v2 extension type', agent2?.extensions(0)?.typeUri(),
+      'urn:logicpilot:test:interop');
+check('v2 extension schema version', agent2?.extensions(0)?.schemaVersion(), 1);
+check('v2 extension encoding', agent2?.extensions(0)?.encoding(),
+      'application/octet-stream');
+check('v2 extension bytes', Array.from(agent2?.extensions(0)?.dataArray() ?? []),
+      [0x4c, 0x50, 0x32]);
+
+// Experiment contract: a C++-authored multi-axis variation is readable by
+// the generated TypeScript bindings without JSON side-channel assumptions.
+check('v2 experiments', mf.experimentsLength(), 1);
+const experiment2 = mf.experiments(0);
+check('v2 experiment kind', experiment2?.kind(), ExperimentKind.ParameterVariation);
+check('v2 experiment name', experiment2?.name(), 'CapacityStudy');
+check('v2 experiment metric', experiment2?.metric(), 'Wq');
+check('v2 experiment axes', experiment2?.axesLength(), 2);
+check('v2 axis[0] variable', experiment2?.axes(0)?.variable(), 'arrival_rate');
+check('v2 axis[0] min', experiment2?.axes(0)?.rangeMin(), 0.6);
+check('v2 axis[0] max', experiment2?.axes(0)?.rangeMax(), 1.0);
+check('v2 axis[0] step', experiment2?.axes(0)?.step(), 0.2);
+check('v2 axis[1] variable', experiment2?.axes(1)?.variable(), 'server_count');
+check('v2 axis[1] step', experiment2?.axes(1)?.step(), 1.0);
 
 // ---------------------------------------------------------------------------
 console.log('');

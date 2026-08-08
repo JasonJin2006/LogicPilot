@@ -2,19 +2,21 @@
 // -> IrAtomicModelV2 interpreter -> DevsExecutor, plus the
 // DevsReplicationModel adapter (internal-transition budget) and
 // determinism.
+#include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <memory>
 #include <string>
 
-#include <catch2/catch_test_macros.hpp>
-
-#include "ir_v2_generated.h"
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/executor.h"
 #include "logicpilot/devs/ir_atomic.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
+#include "logicpilot/runtime/simulation_kernel.h"
+
+#include "ir_v2_generated.h"
+#include "register.h"
 
 using namespace logicpilot;
 namespace v2 = logicpilot::ir::v2;
@@ -26,8 +28,7 @@ constexpr const char* kPulseChain = LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp";
 IrLoadResult load_pulse_chain() {
   const dsl::CompileResult compiled = dsl::compile_file(kPulseChain);
   REQUIRE(compiled.ok);
-  IrLoadResult loaded =
-      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
@@ -55,8 +56,7 @@ TEST_CASE("atomic DSL lowers to an executable DEVS tree", "[atomic][devs]") {
   REQUIRE(tree->find_child("Sink") != nullptr);
 }
 
-TEST_CASE("atomic tree runs on the DEVS executor under an internal budget",
-          "[atomic][devs]") {
+TEST_CASE("atomic tree runs on the DEVS executor under an internal budget", "[atomic][devs]") {
   const IrLoadResult loaded = load_pulse_chain();
   Xoshiro256PlusPlus engine{42};
   const v2::Node* root = loaded.file.v2_root->root();
@@ -89,8 +89,7 @@ TEST_CASE("DevsReplicationModel is deterministic under an internal budget",
           "[atomic][determinism]") {
   const IrLoadResult loaded = load_pulse_chain();
   std::string error;
-  std::unique_ptr<ReplicationModel> model =
-      build_replication_model(loaded.file, &error);
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
   REQUIRE(model != nullptr);
 
   ReplicationConfig config;
@@ -116,4 +115,26 @@ TEST_CASE("DevsReplicationModel is deterministic under an internal budget",
   const auto seen = atom->state("seen");
   REQUIRE(seen.has_value());
   REQUIRE(std::get<bool>(*seen));
+}
+
+TEST_CASE("DEVS runtime executes on the SimulationKernel shared queue",
+          "[atomic][devs][runtime][kernel]") {
+  register_all_methods();
+  const IrLoadResult loaded = load_pulse_chain();
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 5;
+
+  std::string error;
+  auto batch = build_replication_model(loaded.file, &error);
+  REQUIRE(batch != nullptr);
+  const ReplicationMetrics expected = batch->run(config, nullptr);
+
+  SimulationKernel kernel;
+  REQUIRE(kernel.load(loaded.file, &error));
+  const auto actual = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(actual.size() == 1);
+  REQUIRE(actual[0].arrivals == expected.arrivals);
+  REQUIRE(actual[0].horizon_seconds == expected.horizon_seconds);
 }

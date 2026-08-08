@@ -27,13 +27,30 @@ class ReplicationModel;
 class RuntimeContext;
 struct IrModelFile;
 
+// Declares how a runtime participates in kernel time coordination. A shared
+// event runtime schedules work into RuntimeContext and can compose with
+// other such methods. A driver-advanced runtime still owns a legacy batch
+// engine: it is executable as a single method but is not hybrid capable.
+enum class MethodExecutionMode {
+  kDriverAdvanced,
+  kSharedEventQueue,
+};
+
+struct MethodCapabilities {
+  MethodExecutionMode execution_mode{MethodExecutionMode::kDriverAdvanced};
+  bool incremental{false};
+  bool checkpoint_restore{false};
+};
+
 // One modeling method runtime (Process / Agent / SystemDynamics / ...).
 class SimulationMethod {
- public:
+public:
   virtual ~SimulationMethod() = default;
 
   // Stable registry key, e.g. "process", "agent", "sd", "statechart".
   [[nodiscard]] virtual std::string_view method_name() const = 0;
+
+  [[nodiscard]] virtual MethodCapabilities capabilities() const { return MethodCapabilities{}; }
 
   // Lifecycle for one replication: initialize() lowers the model and
   // prepares state, advance(until) steps simulation time forward, and

@@ -32,15 +32,14 @@ struct Node;
 
 // Recursive-descent evaluator for the v0 RHS grammar.
 class ExpressionEvaluator {
- public:
+public:
   explicit ExpressionEvaluator(std::string text);
 
   [[nodiscard]] bool ok() const { return root_ != nullptr; }
   [[nodiscard]] std::string error() const { return error_; }
-  double eval(
-      const std::function<double(const std::string&)>& lookup) const;
+  double eval(const std::function<double(const std::string&)>& lookup) const;
 
- private:
+private:
   struct Node {
     enum class Kind {
       kNumber,
@@ -72,9 +71,8 @@ class ExpressionEvaluator {
   std::unique_ptr<Node> parse_term();
   std::unique_ptr<Node> parse_factor();
   std::unique_ptr<Node> parse_primary();
-  static double eval_node(
-      const Node* node,
-      const std::function<double(const std::string&)>& lookup);
+  static double eval_node(const Node* node,
+                          const std::function<double(const std::string&)>& lookup);
 
   std::string text_;
   std::size_t pos_{0};
@@ -83,32 +81,29 @@ class ExpressionEvaluator {
 };
 
 class ContinuousReplicationModel final : public ReplicationModel {
- public:
+public:
   // v2-native: semantics {sd, equation} node.
-  ContinuousReplicationModel(std::vector<std::uint8_t> v2_bytes,
-                             const ir::v2::Node* v2_root);
+  ContinuousReplicationModel(std::vector<std::uint8_t> v2_bytes, const ir::v2::Node* v2_root);
 
-  ReplicationMetrics run(const ReplicationConfig& config,
-                         TraceRecorder* trace) override;
+  ReplicationMetrics run(const ReplicationConfig& config, TraceRecorder* trace) override;
+
+  bool reset(const ReplicationConfig& config);
+  bool step();
+  [[nodiscard]] bool done() const;
+  ReplicationMetrics finish(TraceRecorder* trace = nullptr);
 
   // Final integrated state (test inspection).
-  [[nodiscard]] std::unordered_map<std::string, double> last_state() const {
-    return last_state_;
-  }
+  [[nodiscard]] std::unordered_map<std::string, double> last_state() const { return last_state_; }
 
   // Sampled trajectory (one point per integration step) for visualization.
   struct TrajectoryPoint {
     double t{0.0};
     std::vector<double> values;  // aligned with variables()
   };
-  [[nodiscard]] const std::vector<std::string>& variables() const {
-    return variables_;
-  }
-  [[nodiscard]] const std::vector<TrajectoryPoint>& trajectory() const {
-    return trajectory_;
-  }
+  [[nodiscard]] const std::vector<std::string>& variables() const { return variables_; }
+  [[nodiscard]] const std::vector<TrajectoryPoint>& trajectory() const { return trajectory_; }
 
- private:
+private:
   struct Ode {
     std::string var;
     std::string rhs_text;
@@ -122,6 +117,13 @@ class ContinuousReplicationModel final : public ReplicationModel {
   std::unordered_map<std::string, double> last_state_;
   std::vector<std::string> variables_;
   std::vector<TrajectoryPoint> trajectory_;
+  std::vector<ExpressionEvaluator> evaluators_;
+  std::unordered_map<std::string, double> state_;
+  std::vector<double> y_;
+  std::uint64_t step_budget_{0};
+  std::uint64_t step_index_{0};
+  double current_t_{0.0};
+  bool active_{false};
 };
 
 }  // namespace logicpilot

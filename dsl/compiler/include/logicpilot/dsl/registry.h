@@ -9,7 +9,6 @@
 
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "logicpilot/dsl/diagnostics.h"
@@ -47,6 +46,11 @@ struct BlockPortSpec {
 };
 
 struct BlockShape {
+  // Owning semantic namespace from `library <name> { ... }`. This is kept
+  // all the way through lowering so a standalone third-party block becomes
+  // `{library, block}` in IR instead of being silently treated as process.
+  std::string library;
+  std::int64_t library_version{1};
   std::string kind;
   // Custom library blocks may map onto a built-in kernel block (e.g.
   // `block Machine { extends: ref = service }`); "" = no mapping. The
@@ -55,8 +59,7 @@ struct BlockShape {
   std::vector<BlockParamSpec> params;
   std::vector<BlockPortSpec> ports;
 
-  [[nodiscard]] const BlockParamSpec* param(
-      const std::string& name) const {
+  [[nodiscard]] const BlockParamSpec* param(const std::string& name) const {
     for (const BlockParamSpec& spec : params) {
       if (spec.name == name) {
         return &spec;
@@ -65,8 +68,7 @@ struct BlockShape {
     return nullptr;
   }
 
-  [[nodiscard]] const BlockPortSpec* port(
-      const std::string& name) const {
+  [[nodiscard]] const BlockPortSpec* port(const std::string& name) const {
     for (const BlockPortSpec& spec : ports) {
       if (spec.name == name) {
         return &spec;
@@ -96,36 +98,28 @@ struct BlockShape {
 
 // Registry loaded from DSL `library` declarations.
 class LibraryRegistry {
- public:
+public:
   // Parse a library source into shapes. Returns false (and fills
   // `diagnostics` when non-null) if the source does not parse.
-  [[nodiscard]] bool load(const std::string& source,
-                          std::vector<Diagnostic>* diagnostics);
+  [[nodiscard]] bool load(const std::string& source, std::vector<Diagnostic>* diagnostics);
   // Parse a library source and append its shapes (used to layer a custom
   // library over the built-in registry).
-  [[nodiscard]] bool merge(const std::string& source,
-                           std::vector<Diagnostic>* diagnostics);
+  [[nodiscard]] bool merge(const std::string& source, std::vector<Diagnostic>* diagnostics);
 
-  [[nodiscard]] bool has_block(const std::string& kind) const {
-    return index_.count(kind) > 0;
-  }
+  // Accepts either a short name or `library::block`. A short name resolves
+  // only when exactly one loaded library exports it.
+  [[nodiscard]] bool has_block(const std::string& kind) const { return block(kind) != nullptr; }
+  [[nodiscard]] const BlockShape* block(const std::string& kind) const;
+  [[nodiscard]] bool is_ambiguous(const std::string& kind) const;
 
-  [[nodiscard]] const BlockShape* block(const std::string& kind) const {
-    const auto it = index_.find(kind);
-    return it == index_.end() ? nullptr : &blocks_[it->second];
-  }
-
-  [[nodiscard]] const std::vector<BlockShape>& blocks() const {
-    return blocks_;
-  }
+  [[nodiscard]] const std::vector<BlockShape>& blocks() const { return blocks_; }
 
   // Effective shape for `kind`: follows the extends chain to the terminal
   // built-in block (custom `Machine` -> `service`). Returns the block's own
   // shape when it has no mapping, nullptr when unknown.
   [[nodiscard]] const BlockShape* resolve(const std::string& kind) const;
 
- private:
-  std::unordered_map<std::string, std::size_t> index_;
+private:
   std::vector<BlockShape> blocks_;
 };
 

@@ -14,10 +14,20 @@ import { fileURLToPath } from 'node:url';
 
 import {
   handleAiBuild,
+  handleAiCompareMetrics,
   handleAiExplain,
   handleAiOptimize,
+  handleAiPatch,
+  handleParameterVariation,
+  handleAiQueryMetrics,
+  handleAiRun,
+  handleAiValidate,
   handleConfig,
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
+import {
+  extendNativeRuntimePath,
+  findLpServer,
+} from '../scripts/tool-paths.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
@@ -35,28 +45,13 @@ const MIME = {
   '.map': 'application/json',
 };
 
-function ensureMinGwinPath() {
+function ensureMinGwinPath(executable) {
   if (process.platform !== 'win32') return;
+  if (!/[\\/](?:local-mingw|local-gcc)[\\/]/i.test(executable)) return;
   const mingwBin = 'C:\\msys64\\ucrt64\\bin';
   if (existsSync(mingwBin) && !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
     process.env.PATH = `${mingwBin};${process.env.PATH ?? ''}`;
   }
-}
-
-function findLpServer() {
-  if (process.env.LP_SERVER && existsSync(process.env.LP_SERVER)) {
-    return process.env.LP_SERVER;
-  }
-  const exe = process.platform === 'win32' ? 'lp-server.exe' : 'lp-server';
-  // The MSVC dev build is the maintained one on Windows; the older mingw
-  // builds are kept as fallbacks.
-  for (const dir of ['windows-msvc-dev', 'integration-dev', 'local-mingw']) {
-    const candidate = join(root, 'build', dir, 'kernel', exe);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return null;
 }
 
 function freePort() {
@@ -84,7 +79,8 @@ async function startGateway() {
     );
   }
   const port = await freePort();
-  ensureMinGwinPath();
+  ensureMinGwinPath(exe);
+  extendNativeRuntimePath(exe);
   const child = spawn(exe, ['--port', String(port)], {
     stdio: ['ignore', 'pipe', 'pipe'],
     // lp-server is a console-subsystem binary: without this flag Windows
@@ -134,6 +130,36 @@ async function main() {
     if (pathname === '/api/ai-optimize') {
       setCors(res);
       await handleAiOptimize(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-run') {
+      setCors(res);
+      await handleAiRun(req, res);
+      return;
+    }
+    if (pathname === '/api/parameter-variation') {
+      setCors(res);
+      await handleParameterVariation(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-validate') {
+      setCors(res);
+      await handleAiValidate(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-patch') {
+      setCors(res);
+      await handleAiPatch(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-query-metrics') {
+      setCors(res);
+      await handleAiQueryMetrics(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-compare-metrics') {
+      setCors(res);
+      await handleAiCompareMetrics(req, res);
       return;
     }
     if (pathname === '/api/ai-explain') {

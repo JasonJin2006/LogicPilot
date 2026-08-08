@@ -12,11 +12,20 @@
 
 const SYSTEM_PROMPT = `You are the LogicPilot model generator. Produce ONLY a
 valid LogicPilot DSL model for the user's description. Follow the v2 DSL
-(thin core grammar + process library blocks):
-model <Name> { resource <R> { capacity = <int> [failure_rate = <f>] }
-process <P> { source <S> { arrival = rate(<rate>) } queue <Q> {
-capacity = <int> } service <R> { time = exponential(<rate>) } } }
-Do not wrap the model in prose; output the model block only.`;
+(thin core grammar + flat process-library blocks):
+model <Name> {
+  use process
+  resource <R> { capacity = <int> }
+  source <S> { arrival = rate(<rate>) }
+  queue <Q> { capacity = <int> }
+  service <Work> { resource = <R> time = exponential(<rate>) }
+  sink <Done> { }
+  couple <S>.out -> <Q>.in
+  couple <Q>.out -> <Work>.in
+  couple <Work>.out -> <Done>.in
+}
+When a current model is supplied, preserve unrelated blocks, couplings, names,
+and properties. Do not wrap the model in prose; output the model block only.`;
 
 // ---------------------------------------------------------------------------
 // Rule-based provider
@@ -60,7 +69,7 @@ function repairSpec(spec, diagnostics) {
       }
       spec.lambda = Math.min(Math.max(spec.lambda, 0.01), 1000);
       spec.mu = Math.min(Math.max(spec.mu, 0.01), 1000);
-      spec.failureRate = Math.min(Math.max(spec.failureRate, 0.0), 1.0);
+      spec.failureRate = Math.max(spec.failureRate, 0.0);
       spec.servers = Math.max(1, spec.servers);
     } else if (code === 'LP4001') {
       // service references a resource: generator already names it Server.
@@ -180,7 +189,103 @@ function renderDsl(spec, features = new Set()) {
   return `${lines.join('\n')}\n`;
 }
 
-export function ruleBasedProvider(prompt, diagnostics = []) {
+function promptNumber(prompt, patterns) {
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (match) return Number.parseFloat(match[1]);
+  }
+  return null;
+}
+
+function replaceFirstBlockField(dsl, kind, field, renderedValue) {
+  const block = new RegExp(
+      `(^[ \\t]*${kind}[ \\t]+[A-Za-z_][A-Za-z0-9_]*[ \\t]*\\{)([\\s\\S]*?)(^[ \\t]*\\})`,
+      'm');
+  const match = block.exec(dsl);
+  if (!match) return null;
+  const body = match[2];
+  const fieldValue = new RegExp(
+      `(\\b${field}[ \\t]*=[ \\t]*)(?:[A-Za-z_][A-Za-z0-9_]*\\([^\\)\\r\\n]*\\)|"[^"\\r\\n]*"|[^\\s}\\r\\n]+)`);
+  let nextBody;
+  if (fieldValue.test(body)) {
+    nextBody = body.replace(fieldValue, `$1${renderedValue}`);
+  } else {
+    const headerIndent = match[1].match(/^[ \\t]*/)?.[0] ?? '';
+    nextBody = `${body}${headerIndent}  ${field} = ${renderedValue}\n`;
+  }
+  return `${dsl.slice(0, match.index)}${match[1]}${nextBody}${match[3]}` +
+      dsl.slice(match.index + match[0].length);
+}
+
+/** Apply common DES parameter requests without regenerating the model.
+ * This is the offline provider's incremental editing path: untouched DSL is
+ * retained byte-for-byte, so the editor can derive a small ModelPatch rather
+ * than deleting and recreating unrelated canvas content. */
+export function updateExistingDsl(prompt, contextDsl) {
+  if (!contextDsl.trim()) return null;
+  const text = prompt.toLowerCase();
+  const decimal = '(\\d+(?:\\.\\d+)?)';
+  const edits = [
+    {
+      kind: 'queue',
+      field: 'capacity',
+      value: promptNumber(text, [
+        new RegExp(`(?:queue capacity|capacity of (?:the )?queue|队列容量)[^\\d]{0,20}${decimal}`),
+        new RegExp(`${decimal}[^\\d]{0,8}(?:queue slots?|队列容量)`),
+      ]),
+      render: (value) => String(Math.max(0, Math.floor(value))),
+    },
+    {
+      kind: 'resource',
+      field: 'capacity',
+      value: promptNumber(text, [
+        new RegExp(`(?:servers?|resource capacity|capacity of (?:the )?resource|服务器(?:数量|容量)?|资源容量)[^\\d]{0,20}${decimal}`),
+        new RegExp(`${decimal}[^\\d]{0,8}(?:servers?|machines?|台服务器)`),
+      ]),
+      render: (value) => String(Math.max(1, Math.floor(value))),
+    },
+    {
+      kind: 'source',
+      field: 'arrival',
+      value: promptNumber(text, [
+        new RegExp(`(?:arrival rate|lambda|到达率)[^\\d]{0,20}${decimal}`),
+      ]),
+      render: (value) => `rate(${Math.max(0.000001, value)})`,
+    },
+    {
+      kind: 'service',
+      field: 'time',
+      value: promptNumber(text, [
+        new RegExp(`(?:service rate|service_rate|mu|服务率)[^\\d]{0,20}${decimal}`),
+      ]),
+      render: (value) => `exponential(${Math.max(0.000001, value)})`,
+    },
+    {
+      kind: 'resource',
+      field: 'failure_rate',
+      value: promptNumber(text, [
+        new RegExp(`(?:failure rate|故障率)[^\\d]{0,20}${decimal}`),
+      ]),
+      render: (value) => String(Math.max(0, value)),
+    },
+  ];
+
+  let updated = contextDsl;
+  let changed = false;
+  for (const edit of edits) {
+    if (edit.value === null || !Number.isFinite(edit.value)) continue;
+    const next = replaceFirstBlockField(updated, edit.kind, edit.field, edit.render(edit.value));
+    if (next !== null) {
+      updated = next;
+      changed = true;
+    }
+  }
+  return changed ? updated : null;
+}
+
+export function ruleBasedProvider(prompt, diagnostics = [], previousDsl = '', contextDsl = '') {
+  const incremental = updateExistingDsl(prompt, previousDsl || contextDsl);
+  if (incremental !== null) return incremental;
   const continuous = continuousDsl(prompt);
   if (continuous) {
     return continuous;
@@ -273,7 +378,7 @@ function extractDsl(content) {
   return match ? match[1].trim() : content.trim();
 }
 
-export async function llmProvider(prompt, diagnostics = [], previousDsl = '') {
+export async function llmProvider(prompt, diagnostics = [], previousDsl = '', contextDsl = '') {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('llmProvider requires OPENAI_API_KEY');
@@ -289,6 +394,13 @@ export async function llmProvider(prompt, diagnostics = [], previousDsl = '') {
           `${previousDsl}\n\nCompiler diagnostics (JSON):\n` +
           `${JSON.stringify(diagnostics, null, 2)}\n\n` +
           `Fix the DSL so it compiles.`,
+    });
+  } else if (contextDsl.trim()) {
+    messages.push({
+      role: 'user',
+      content:
+          `${prompt}\n\nCurrent LogicPilot model DSL:\n${contextDsl}\n\n` +
+          'Return the complete updated model while preserving unrelated content.',
     });
   } else {
     messages.push({ role: 'user', content: prompt });

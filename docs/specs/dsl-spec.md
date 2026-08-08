@@ -34,7 +34,7 @@ reference semantics stay in the compiler/runtime keyed by `{library, block}`.
 | R9 | `couple_declaration` | `couple <from>.<port> -> <to>.<port>` — explicit port wiring. |
 | R10 | `use_declaration` | `use <library>` — optional in stage 1 (the process library is implicitly available). |
 | R11 | `range_field` | `range = <min>..<max>` — experiment search range. |
-| R12 | `experiment` | `experiment <Name> { objective/metric/variable/range/budget }` — core config block, travels in `ModelFile.experiments`. |
+| R12 | `experiment` | `experiment <Name> { type/... }` — Simulation (`seed`/`replications`) or Optimization (`objective`/`metric`/`variable`/`range`/`budget`) config carried in `ModelFile.experiments`. |
 | R13 | `distribution_call` | `poisson(<Numeric>)` / `rate(<Numeric>)` (equivalent Poisson arrivals), `exponential(<Numeric>)`, `normal(<Numeric>, <Numeric>)`, `constant(<Numeric>)`. |
 | R14 | `literal_and_identifier` | Numeric literals (integer / float), identifiers `[A-Za-z_][A-Za-z0-9_]*`; `//` line and `/* ... */` block comments. |
 
@@ -113,9 +113,9 @@ See `docs/specs/ir-v2.md`.
 ## 5. Explicitly Out of Scope (v2 stage 1)
 
 Runtime-variable references in expressions (state variables are not
-compile-time constants), branching (`route`), priorities, replication and
-warmup/run-length settings (CLI-level today), multi-file imports, and
-expression support inside `experiment` blocks (literal-only).
+compile-time constants), branching (`route`), priorities, warmup/run-length
+settings (CLI-level today), multi-file imports, and expression support inside
+`experiment` blocks (literal-only).
 
 ## 6. Diagnostics JSON Protocol (AI Copilot loop)
 
@@ -241,6 +241,7 @@ part of the model and travel inside the v2 IR (`ModelFile.experiments`):
 
 ```logicpilot
 experiment Optimization {
+  type = optimization
   objective = minimize   // maximize | minimize
   metric = Wq            // throughput | W | Wq | Lq | ...
   variable = arrival_rate // declared model param to search over
@@ -248,10 +249,63 @@ experiment Optimization {
   range = 1..8           // inclusive integer range
   budget = 20            // search budget (optional, default 20)
 }
+
+experiment Baseline {
+  type = simulation
+  replications = 30      // fixed number, >= 1
+  seed = 42              // fixed seed, reproducible
+}
+
+experiment Adaptive {
+  type = simulation
+  seed_mode = random             // fixed | random
+  replication_mode = precision  // fixed | precision
+  min_replications = 5
+  max_replications = 100
+  confidence = 0.95
+  error_percent = 5              // CI half-width / abs(mean), percent
+  metric = Wq
+}
+
+experiment CapacityStudy {
+  type = parameter_variation
+  metric = Wq
+  seed_mode = fixed
+  seed = 42
+  replication_mode = fixed
+  replications = 10
+
+  axis ArrivalRate {
+    variable = arrival_rate
+    range = 0.6..1.0
+    step = 0.2
+  }
+  axis Servers {
+    variable = server_count
+    range = 1..4
+    step = 1
+  }
+}
 ```
 
 - `lpcli compile --experiments-json <path>` exports the declared experiments
   as JSON; `scripts/ai-optimize.mjs` reads it to drive grid/GA search.
+- `lpcli run --model-file model.lpir --experiment Baseline` uses the declared
+  seed/replication count. Explicit `--seed`/`--reps` remain higher-priority
+  command-line overrides.
+- Precision mode always runs `min_replications`, then stops when the selected
+  metric's two-sided Student-t CI relative half-width reaches
+  `error_percent`, or after `max_replications`. The resolved random seed and
+  actual replication count are written to `run.json`.
+- A `parameter_variation` experiment declares one or more named `axis` blocks.
+  Each `variable` references a unique top-level numeric model parameter;
+  inclusive `range` bounds and a positive `step` form a Cartesian product.
+  Floating-point axes are supported, while an `int` parameter requires integer
+  bounds and step. The compiler rejects more than 100,000 combinations.
+  `scripts/parameter-variation.mjs` compiles each point with typed parameter
+  overrides and executes points concurrently. Fixed seed mode intentionally
+  gives every point the same replication seeds (common random numbers).
 - Semantic validation (`LP2001`/`LP7001`-family) rejects missing
-  objective/metric/variable or malformed ranges
+  optimization fields, malformed ranges, invalid simulation replication
+  counts, negative seeds, and unknown experiment fields
   (see `tests/bad_sources/bad_experiment.lp`).

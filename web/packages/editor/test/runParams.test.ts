@@ -60,7 +60,9 @@ describe('modelRunParams', () => {
     doc = {
       ...doc,
       nodes: doc.nodes.map((node) =>
-        node.id === service.id ? { ...node, params: { ...node.params, time: 'normal(20,5)' } } : node,
+        node.id === service.id
+          ? { ...node, params: { ...node.params, time: 'normal(20,5)' } }
+          : node,
       ),
     };
     const params = modelRunParams(doc);

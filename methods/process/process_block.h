@@ -93,14 +93,14 @@ class BlockContext {
 
   // Resource-pool operations (Seize / Release). `resource` is the ResourcePool
   // block name; units are held on the entity until Release returns them.
-  virtual bool try_seize(const std::string& resource, std::int64_t quantity) = 0;
+  virtual bool try_seize(const std::string& resource,
+                         std::int64_t quantity) = 0;
   virtual void release_resources(const std::string& resource,
                                  std::int64_t quantity) = 0;
 
   // Whether every downstream edge on `port` can currently accept `entity`
   // (no side effects; used for atomic multi-port emissions like Match).
-  virtual bool downstream_accepts(const Entity& entity,
-                                  const char* port) = 0;
+  virtual bool downstream_accepts(const Entity& entity, const char* port) = 0;
 
   // TimeMeasureEnd measurement (seconds between paired start/end blocks).
   virtual void record_measure(const Entity& entity, double seconds) = 0;
@@ -153,6 +153,9 @@ class ProcessBlock {
   [[nodiscard]] virtual double area_occupancy() const = 0;
   [[nodiscard]] virtual double area_busy() const = 0;
   [[nodiscard]] virtual double area_down() const { return 0.0; }
+  [[nodiscard]] virtual std::int64_t buffer_capacity() const = 0;
+  [[nodiscard]] virtual std::uint64_t timed_out() const { return 0; }
+  [[nodiscard]] virtual std::uint64_t preempted() const { return 0; }
   virtual void accumulate_areas(std::int64_t dt_ns) = 0;
 
   virtual void reset_stats() = 0;
@@ -162,9 +165,19 @@ class ProcessBlock {
   // non-source blocks; the engine only calls it for sources).
   virtual double sample_gap(Xoshiro256PlusPlus& rng) = 0;
 
+  // Source generation contract. One arrival event may create several
+  // entities; max_arrival_events() limits arrival events (not entities),
+  // matching AnyLogic Source semantics. A negative maximum is unlimited.
+  [[nodiscard]] virtual std::int64_t agents_per_arrival() const { return 1; }
+  [[nodiscard]] virtual std::int64_t max_arrival_events() const { return -1; }
+  [[nodiscard]] virtual bool source_is_manual() const { return false; }
+  virtual double sample_first_gap(Xoshiro256PlusPlus& rng) {
+    return sample_gap(rng);
+  }
+
   // Attribute defaults the emitting source stamps on each created entity.
-  virtual const std::unordered_map<std::string, double>&
-  attribute_defaults() const {
+  virtual const std::unordered_map<std::string, double>& attribute_defaults()
+      const {
     static const std::unordered_map<std::string, double> kEmpty;
     return kEmpty;
   }
@@ -201,21 +214,18 @@ class BufferedBlock : public ProcessBlock {
   }
 
   [[nodiscard]] bool has_in_service() const override { return false; }
-  [[nodiscard]] std::size_t buffered() const final {
-    return input_.size();
-  }
-  [[nodiscard]] bool has_outgoing() const final {
-    return !outgoing_.empty();
-  }
+  [[nodiscard]] std::size_t buffered() const final { return input_.size(); }
+  [[nodiscard]] bool has_outgoing() const final { return !outgoing_.empty(); }
   [[nodiscard]] std::uint64_t arrived() const final { return arrived_; }
   [[nodiscard]] std::uint64_t departed() const final { return departed_; }
   [[nodiscard]] std::int64_t busy_units() const override { return 0; }
   [[nodiscard]] std::int64_t pool_capacity() const override { return 0; }
-  [[nodiscard]] double area_occupancy() const final {
-    return area_occupancy_;
-  }
+  [[nodiscard]] double area_occupancy() const final { return area_occupancy_; }
   [[nodiscard]] double area_busy() const final { return area_busy_; }
   [[nodiscard]] double area_down() const override { return area_down_; }
+  [[nodiscard]] std::int64_t buffer_capacity() const final {
+    return capacity_;
+  }
 
   void accumulate_areas(std::int64_t dt_ns) override {
     area_occupancy_ +=

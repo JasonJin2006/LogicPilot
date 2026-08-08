@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  deleteSpan,
-  insertMember,
-  parseProjectSource,
-  replaceSpan,
-} from './projectTree';
+import { deleteSpan, insertMember, parseProjectSource, replaceSpan } from './projectTree';
 
 const MM1 = `model MM1 {
   use process
@@ -25,7 +20,11 @@ const MM1 = `model MM1 {
   }
 
   experiment Tune {
-    objective = minimize Wq
+    type = optimization
+    objective = minimize
+    metric = Wq
+    variable = arrival_rate
+    range = 1..4
     budget = 20
   }
 }
@@ -61,20 +60,17 @@ describe('projectTree', () => {
   it('insertMember adds a block that re-parses', () => {
     const result = parseProjectSource(MM1);
     const model = result.model!;
-    const next = insertMember(
-      MM1,
-      model.bodyClose,
-      '  ',
-      'resource Backup {\n  capacity = 2\n}',
-    );
+    const next = insertMember(MM1, model.bodyClose, '  ', 'resource Backup {\n  capacity = 2\n}');
     const reparsed = parseProjectSource(next);
     expect(reparsed.ok).toBe(true);
     const kinds = reparsed.model!.members.map((member) => member.kind);
     expect(kinds).toContain('resource');
-    expect(reparsed.model!.members.find((m) => m.kind === 'resource' && m.name === 'Backup')).toBeDefined();
+    expect(
+      reparsed.model!.members.find((m) => m.kind === 'resource' && m.name === 'Backup'),
+    ).toBeDefined();
     // Original content is untouched.
     expect(next).toContain('param arrival_rate: float = 0.8');
-    expect(next).toContain('objective = minimize Wq');
+    expect(next).toContain('objective = minimize');
   });
 
   it('deleteSpan removes a member line range', () => {
@@ -118,18 +114,13 @@ describe('projectTree', () => {
       source,
       parsed.model!.bodyClose,
       '  ',
-      'experiment Experiment1 {\n  objective = minimize Wq\n  budget = 20\n}',
+      'experiment Experiment1 {\n  type = simulation\n  replications = 10\n  seed = 42\n}',
     );
     parsed = parseProjectSource(source);
     expect(parsed.ok).toBe(true);
 
     const agent = parsed.model!.members.find((m) => m.kind === 'agent')!;
-    source = insertMember(
-      source,
-      agent.bodyClose,
-      '    ',
-      'queue Queue2 {\n  capacity = 100\n}',
-    );
+    source = insertMember(source, agent.bodyClose, '    ', 'queue Queue2 {\n  capacity = 100\n}');
     parsed = parseProjectSource(source);
     expect(parsed.ok).toBe(true);
 
@@ -137,9 +128,6 @@ describe('projectTree', () => {
     source = deleteSpan(source, experiment.span.start, experiment.span.end);
     const final = parseProjectSource(source);
     expect(final.ok).toBe(true);
-    expect(final.model!.members.map((m) => m.kind)).toEqual([
-      'resource',
-      'agent',
-    ]);
+    expect(final.model!.members.map((m) => m.kind)).toEqual(['resource', 'agent']);
   });
 });

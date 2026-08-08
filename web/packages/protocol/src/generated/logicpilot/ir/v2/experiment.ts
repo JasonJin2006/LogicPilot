@@ -5,6 +5,9 @@
 import * as flatbuffers from 'flatbuffers';
 
 import { ExperimentKind } from '../../../logicpilot/ir/v2/experiment-kind.js';
+import { ReplicationPolicy } from '../../../logicpilot/ir/v2/replication-policy.js';
+import { SeedPolicy } from '../../../logicpilot/ir/v2/seed-policy.js';
+import { VariationAxis } from '../../../logicpilot/ir/v2/variation-axis.js';
 
 
 export class Experiment {
@@ -83,8 +86,55 @@ seed():bigint {
   return offset ? this.bb!.readUint64(this.bb_pos + offset) : BigInt('0');
 }
 
+seedPolicy():SeedPolicy {
+  const offset = this.bb!.__offset(this.bb_pos, 24);
+  return offset ? this.bb!.readInt8(this.bb_pos + offset) : SeedPolicy.Fixed;
+}
+
+replicationPolicy():ReplicationPolicy {
+  const offset = this.bb!.__offset(this.bb_pos, 26);
+  return offset ? this.bb!.readInt8(this.bb_pos + offset) : ReplicationPolicy.Fixed;
+}
+
+minReplications():number {
+  const offset = this.bb!.__offset(this.bb_pos, 28);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 5;
+}
+
+maxReplications():number {
+  const offset = this.bb!.__offset(this.bb_pos, 30);
+  return offset ? this.bb!.readUint32(this.bb_pos + offset) : 100;
+}
+
+confidence():number {
+  const offset = this.bb!.__offset(this.bb_pos, 32);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 0.95;
+}
+
+errorPercent():number {
+  const offset = this.bb!.__offset(this.bb_pos, 34);
+  return offset ? this.bb!.readFloat64(this.bb_pos + offset) : 5.0;
+}
+
+precisionMetric():string|null
+precisionMetric(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+precisionMetric(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 36);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+axes(index: number, obj?:VariationAxis):VariationAxis|null {
+  const offset = this.bb!.__offset(this.bb_pos, 38);
+  return offset ? (obj || new VariationAxis()).__init(this.bb!.__indirect(this.bb!.__vector(this.bb_pos + offset) + index * 4), this.bb!) : null;
+}
+
+axesLength():number {
+  const offset = this.bb!.__offset(this.bb_pos, 38);
+  return offset ? this.bb!.__vector_len(this.bb_pos + offset) : 0;
+}
+
 static startExperiment(builder:flatbuffers.Builder) {
-  builder.startObject(10);
+  builder.startObject(18);
 }
 
 static addKind(builder:flatbuffers.Builder, kind:ExperimentKind) {
@@ -127,12 +177,56 @@ static addSeed(builder:flatbuffers.Builder, seed:bigint) {
   builder.addFieldInt64(9, seed, BigInt('0'));
 }
 
+static addSeedPolicy(builder:flatbuffers.Builder, seedPolicy:SeedPolicy) {
+  builder.addFieldInt8(10, seedPolicy, SeedPolicy.Fixed);
+}
+
+static addReplicationPolicy(builder:flatbuffers.Builder, replicationPolicy:ReplicationPolicy) {
+  builder.addFieldInt8(11, replicationPolicy, ReplicationPolicy.Fixed);
+}
+
+static addMinReplications(builder:flatbuffers.Builder, minReplications:number) {
+  builder.addFieldInt32(12, minReplications, 5);
+}
+
+static addMaxReplications(builder:flatbuffers.Builder, maxReplications:number) {
+  builder.addFieldInt32(13, maxReplications, 100);
+}
+
+static addConfidence(builder:flatbuffers.Builder, confidence:number) {
+  builder.addFieldFloat64(14, confidence, 0.95);
+}
+
+static addErrorPercent(builder:flatbuffers.Builder, errorPercent:number) {
+  builder.addFieldFloat64(15, errorPercent, 5.0);
+}
+
+static addPrecisionMetric(builder:flatbuffers.Builder, precisionMetricOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(16, precisionMetricOffset, 0);
+}
+
+static addAxes(builder:flatbuffers.Builder, axesOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(17, axesOffset, 0);
+}
+
+static createAxesVector(builder:flatbuffers.Builder, data:flatbuffers.Offset[]):flatbuffers.Offset {
+  builder.startVector(4, data.length, 4);
+  for (let i = data.length - 1; i >= 0; i--) {
+    builder.addOffset(data[i]!);
+  }
+  return builder.endVector();
+}
+
+static startAxesVector(builder:flatbuffers.Builder, numElems:number) {
+  builder.startVector(4, numElems, 4);
+}
+
 static endExperiment(builder:flatbuffers.Builder):flatbuffers.Offset {
   const offset = builder.endObject();
   return offset;
 }
 
-static createExperiment(builder:flatbuffers.Builder, kind:ExperimentKind, nameOffset:flatbuffers.Offset, variableOffset:flatbuffers.Offset, objectiveOffset:flatbuffers.Offset, metricOffset:flatbuffers.Offset, rangeMin:number, rangeMax:number, budget:number, replications:number, seed:bigint):flatbuffers.Offset {
+static createExperiment(builder:flatbuffers.Builder, kind:ExperimentKind, nameOffset:flatbuffers.Offset, variableOffset:flatbuffers.Offset, objectiveOffset:flatbuffers.Offset, metricOffset:flatbuffers.Offset, rangeMin:number, rangeMax:number, budget:number, replications:number, seed:bigint, seedPolicy:SeedPolicy, replicationPolicy:ReplicationPolicy, minReplications:number, maxReplications:number, confidence:number, errorPercent:number, precisionMetricOffset:flatbuffers.Offset, axesOffset:flatbuffers.Offset):flatbuffers.Offset {
   Experiment.startExperiment(builder);
   Experiment.addKind(builder, kind);
   Experiment.addName(builder, nameOffset);
@@ -144,6 +238,14 @@ static createExperiment(builder:flatbuffers.Builder, kind:ExperimentKind, nameOf
   Experiment.addBudget(builder, budget);
   Experiment.addReplications(builder, replications);
   Experiment.addSeed(builder, seed);
+  Experiment.addSeedPolicy(builder, seedPolicy);
+  Experiment.addReplicationPolicy(builder, replicationPolicy);
+  Experiment.addMinReplications(builder, minReplications);
+  Experiment.addMaxReplications(builder, maxReplications);
+  Experiment.addConfidence(builder, confidence);
+  Experiment.addErrorPercent(builder, errorPercent);
+  Experiment.addPrecisionMetric(builder, precisionMetricOffset);
+  Experiment.addAxes(builder, axesOffset);
   return Experiment.endExperiment(builder);
 }
 }

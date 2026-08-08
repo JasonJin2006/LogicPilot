@@ -1,7 +1,7 @@
 # 快速开始
 
 LogicPilot 是一个 AI 原生、Web 化的多方法仿真平台。一条典型的体验路径：
-**写 DSL → 编译成 IR → C++ 内核运行 → 浏览器实时可视化 → AI 自动建模/优化**。
+**写 DSL → 编译成 IR → C++ 内核运行 → 浏览器流式可视化或批量摘要 → AI 自动建模/优化**。
 
 ## 环境要求
 
@@ -14,7 +14,7 @@ LogicPilot 是一个 AI 原生、Web 化的多方法仿真平台。一条典型�
 ```powershell
 cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
 cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 212 个测试
+ctest --preset windows-msvc-dev      # 294 项测试
 ```
 
 产物位于 `build/<preset>/kernel/apps/lpcli/lpcli.exe`（`lp-server` 在同目录 `build/<preset>/kernel/lp-server.exe`）。
@@ -82,7 +82,8 @@ pnpm install
 pnpm dev      # http://localhost:5173
 ```
 
-页面点 **Connect** → 设置参数 → **Start**，即可看到队列动画、实时图表与运行统计（详见 [Web IDE 使用](./web-ide)）。
+页面点 **Connect** → 设置参数 → **Start**。M/M/c 指数流程显示队列动画与实时图表；
+其他模型完成批量运行后显示统计摘要（详见 [Web IDE 使用](./web-ide)）。
 
 ## 下一步
 

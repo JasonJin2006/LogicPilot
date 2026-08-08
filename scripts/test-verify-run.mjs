@@ -56,6 +56,95 @@ try {
     throw new Error('verifier rejected a valid mm1 run');
   }
 
+  // Deterministic block-level DES conformance: this proves the complete
+  // DSL -> IR -> runtime -> structured metrics path, including Service's
+  // numberOfUnits resource requirement.
+  const conformance = join(root, 'examples', 'des-core-conformance.lp');
+  const conformanceExpect = join(
+    root,
+    'examples',
+    'des-core-conformance.expect.json',
+  );
+  const conformanceIr = join(dir, 'des-core-conformance.ir.bin');
+  const conformanceResults = join(dir, 'des-core-results');
+  run(lpcli, ['compile', conformance, '-o', conformanceIr]);
+  run(lpcli, [
+    'run', '--model-file', conformanceIr,
+    '--seed', '42',
+    '--reps', '1',
+    '--arrivals', '100',
+    '--warmup', '0',
+    '--results-dir', conformanceResults,
+  ]);
+  if (!verify(join(conformanceResults, 'metrics.json'), conformanceExpect)) {
+    throw new Error('verifier rejected DES core block metrics');
+  }
+
+  const shared = join(root, 'examples', 'des-shared-resource.lp');
+  const sharedExpect = join(
+    root,
+    'examples',
+    'des-shared-resource.expect.json',
+  );
+  const sharedIr = join(dir, 'des-shared-resource.ir.bin');
+  const sharedResults = join(dir, 'des-shared-results');
+  run(lpcli, ['compile', shared, '-o', sharedIr]);
+  run(lpcli, [
+    'run', '--model-file', sharedIr,
+    '--seed', '42',
+    '--reps', '1',
+    '--arrivals', '100',
+    '--warmup', '0',
+    '--results-dir', sharedResults,
+  ]);
+  if (!verify(join(sharedResults, 'metrics.json'), sharedExpect)) {
+    throw new Error('verifier rejected shared ResourcePool arbitration');
+  }
+
+  const queue = join(root, 'examples', 'des-queue-timeout-preempt.lp');
+  const queueExpect = join(
+    root,
+    'examples',
+    'des-queue-timeout-preempt.expect.json',
+  );
+  const queueIr = join(dir, 'des-queue-timeout-preempt.ir.bin');
+  const queueResults = join(dir, 'des-queue-results');
+  run(lpcli, ['compile', queue, '-o', queueIr]);
+  run(lpcli, [
+    'run', '--model-file', queueIr,
+    '--seed', '42',
+    '--reps', '1',
+    '--arrivals', '100',
+    '--warmup', '0',
+    '--results-dir', queueResults,
+  ]);
+  if (!verify(join(queueResults, 'metrics.json'), queueExpect)) {
+    throw new Error('verifier rejected Queue timeout/preemption semantics');
+  }
+
+  // Queue order must remain observable across the complete pipeline. Both
+  // models use the same arrivals; only FIFO/LIFO differs, so a swapped sink
+  // count catches either ignored configuration or incorrect ordering.
+  for (const order of ['fifo', 'lifo']) {
+    const modelName = `des-queue-${order}`;
+    const model = join(root, 'examples', `${modelName}.lp`);
+    const modelExpect = join(root, 'examples', `${modelName}.expect.json`);
+    const modelIr = join(dir, `${modelName}.ir.bin`);
+    const modelResults = join(dir, `${modelName}-results`);
+    run(lpcli, ['compile', model, '-o', modelIr]);
+    run(lpcli, [
+      'run', '--model-file', modelIr,
+      '--seed', '42',
+      '--reps', '1',
+      '--arrivals', '100',
+      '--warmup', '0',
+      '--results-dir', modelResults,
+    ]);
+    if (!verify(join(modelResults, 'metrics.json'), modelExpect)) {
+      throw new Error(`verifier rejected Queue ${order.toUpperCase()} semantics`);
+    }
+  }
+
   // A broken metrics file (departures > arrivals) must fail conservation.
   const broken = join(dir, 'broken.json');
   writeFileSync(

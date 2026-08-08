@@ -20,25 +20,11 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, '..');
+import { findLpcli } from './tool-paths.mjs';
 
-export function findLpcli() {
-  if (process.env.LPCLI && existsSync(process.env.LPCLI)) {
-    return process.env.LPCLI;
-  }
-  const exe = process.platform === 'win32' ? 'lpcli.exe' : 'lpcli';
-  for (const dir of ['integration-dev', 'local-mingw']) {
-    const candidate = join(root, 'build', dir, 'kernel', 'apps', 'lpcli', exe);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return 'lpcli';
-}
+export { findLpcli } from './tool-paths.mjs';
 
 export function runLpcli(lpcli, args) {
   if (process.platform === 'win32') {

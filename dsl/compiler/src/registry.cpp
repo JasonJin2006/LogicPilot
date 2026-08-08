@@ -2,6 +2,7 @@
 // sources (parse_library_source -> LibraryAst -> BlockShape table).
 #include "logicpilot/dsl/registry.h"
 
+#include <unordered_map>
 #include <utility>
 
 #include "logicpilot/dsl/parser.h"
@@ -10,34 +11,47 @@
 namespace logicpilot::dsl {
 
 BlockParamType block_param_type(const std::string& type_name) {
-  if (type_name == "int") return BlockParamType::kInt;
-  if (type_name == "float") return BlockParamType::kFloat;
-  if (type_name == "bool") return BlockParamType::kBool;
-  if (type_name == "string") return BlockParamType::kString;
-  if (type_name == "distribution") return BlockParamType::kDistribution;
-  if (type_name == "ref") return BlockParamType::kRef;
-  if (type_name == "expression") return BlockParamType::kExpression;
+  if (type_name == "int")
+    return BlockParamType::kInt;
+  if (type_name == "float")
+    return BlockParamType::kFloat;
+  if (type_name == "bool")
+    return BlockParamType::kBool;
+  if (type_name == "string")
+    return BlockParamType::kString;
+  if (type_name == "distribution")
+    return BlockParamType::kDistribution;
+  if (type_name == "ref")
+    return BlockParamType::kRef;
+  if (type_name == "expression")
+    return BlockParamType::kExpression;
   return BlockParamType::kUnknown;
 }
 
 const char* block_param_type_name(BlockParamType type) {
   switch (type) {
-    case BlockParamType::kInt: return "int";
-    case BlockParamType::kFloat: return "float";
-    case BlockParamType::kBool: return "bool";
-    case BlockParamType::kString: return "string";
-    case BlockParamType::kDistribution: return "distribution";
-    case BlockParamType::kRef: return "ref";
-    case BlockParamType::kExpression: return "expression";
-    case BlockParamType::kUnknown: return "unknown";
+    case BlockParamType::kInt:
+      return "int";
+    case BlockParamType::kFloat:
+      return "float";
+    case BlockParamType::kBool:
+      return "bool";
+    case BlockParamType::kString:
+      return "string";
+    case BlockParamType::kDistribution:
+      return "distribution";
+    case BlockParamType::kRef:
+      return "ref";
+    case BlockParamType::kExpression:
+      return "expression";
+    case BlockParamType::kUnknown:
+      return "unknown";
   }
   return "unknown";
 }
 
-bool LibraryRegistry::merge(const std::string& source,
-                            std::vector<Diagnostic>* diagnostics) {
-  const ParseLibraryOutput parsed =
-      parse_library_source(source, "<library>");
+bool LibraryRegistry::merge(const std::string& source, std::vector<Diagnostic>* diagnostics) {
+  const ParseLibraryOutput parsed = parse_library_source(source, "<library>");
   if (!parsed.ok()) {
     if (diagnostics != nullptr) {
       *diagnostics = parsed.diagnostics;
@@ -45,14 +59,34 @@ bool LibraryRegistry::merge(const std::string& source,
     return false;
   }
   const LibraryAst& library = *parsed.library;
+  // A qualified identity must be unique. Equal short names from different
+  // libraries are legal and require `library::block` at the use site.
+  std::unordered_map<std::string, bool> pending_names;
+  for (const LibraryBlock& block : library.blocks) {
+    const std::string qualified = library.name + "::" + block.kind;
+    const BlockShape* existing = this->block(qualified);
+    if (existing != nullptr || pending_names.count(qualified) > 0) {
+      if (diagnostics != nullptr) {
+        Diagnostic diagnostic;
+        diagnostic.severity = Severity::kError;
+        diagnostic.code = "LP2012";
+        diagnostic.span = block.span;
+        diagnostic.message = "duplicate block '" + qualified + "'";
+        diagnostics->push_back(std::move(diagnostic));
+      }
+      return false;
+    }
+    pending_names.emplace(qualified, true);
+  }
   for (const LibraryBlock& block : library.blocks) {
     BlockShape shape;
+    shape.library = library.name;
+    shape.library_version = library.version;
     shape.kind = block.kind;
     for (const LibraryParam& param : block.params) {
       // `extends: ref = <kind>` declares a mapping onto a built-in block;
       // it is a registry directive, not a model-facing field.
-      if (param.name == "extends" && param.type == "ref" &&
-          param.has_default &&
+      if (param.name == "extends" && param.type == "ref" && param.has_default &&
           param.default_value.kind == ValueKind::kIdentifier) {
         shape.extends_kind = param.default_value.string_value;
         continue;
@@ -71,25 +105,51 @@ bool LibraryRegistry::merge(const std::string& source,
       spec.condition = port.condition;
       shape.ports.push_back(std::move(spec));
     }
-    index_.emplace(block.kind, blocks_.size());
     blocks_.push_back(std::move(shape));
   }
   return true;
 }
 
-bool LibraryRegistry::load(const std::string& source,
-                           std::vector<Diagnostic>* diagnostics) {
+bool LibraryRegistry::load(const std::string& source, std::vector<Diagnostic>* diagnostics) {
   blocks_.clear();
-  index_.clear();
   return merge(source, diagnostics);
+}
+
+const BlockShape* LibraryRegistry::block(const std::string& key) const {
+  const std::size_t separator = key.find("::");
+  const bool qualified = separator != std::string::npos;
+  const std::string library = qualified ? key.substr(0, separator) : std::string{};
+  const std::string kind = qualified ? key.substr(separator + 2) : key;
+  const BlockShape* match = nullptr;
+  for (const BlockShape& shape : blocks_) {
+    if (shape.kind != kind || (qualified && shape.library != library)) {
+      continue;
+    }
+    if (match != nullptr) {
+      return nullptr;  // ambiguous short name
+    }
+    match = &shape;
+  }
+  return match;
+}
+
+bool LibraryRegistry::is_ambiguous(const std::string& kind) const {
+  if (kind.find("::") != std::string::npos) {
+    return false;
+  }
+  std::size_t matches = 0;
+  for (const BlockShape& shape : blocks_) {
+    if (shape.kind == kind && ++matches > 1) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const BlockShape* LibraryRegistry::resolve(const std::string& kind) const {
   const BlockShape* shape = block(kind);
   // Guard against extends cycles (a malformed library); cap the chain.
-  for (int hops = 0; shape != nullptr && !shape->extends_kind.empty() &&
-                     hops < 32;
-       ++hops) {
+  for (int hops = 0; shape != nullptr && !shape->extends_kind.empty() && hops < 32; ++hops) {
     shape = block(shape->extends_kind);
   }
   return shape;

@@ -113,9 +113,17 @@ module.exports = grammar({
     // agent elements); the parser disambiguates by lookahead: `state x = ...`
     // is a variable declaration, `state A { ... }` is a block declaration.
     declaration: $ => seq(
-      field('kind', choice($.identifier, 'state', 'param')),
+      field('kind', choice($.qualified_kind, $.identifier, 'state', 'param')),
       field('name', $.identifier),
       field('body', $.declaration_body),
+    ),
+
+    // Explicit library qualification disambiguates blocks exported under
+    // the same short name: `petri::place Buffer { ... }`.
+    qualified_kind: $ => seq(
+      $.identifier,
+      '::',
+      $.identifier,
     ),
 
     declaration_body: $ => seq(
@@ -148,9 +156,9 @@ module.exports = grammar({
     range_field: $ => seq(
       'range',
       '=',
-      field('min', $.integer),
+      field('min', choice($.float, $.integer)),
       '..',
-      field('max', $.integer),
+      field('max', choice($.float, $.integer)),
     ),
 
     // `state x = <value>` / `param k = <value>` with an optional type

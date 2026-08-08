@@ -1,0 +1,31 @@
+{
+  "model": "des-core-conformance",
+  "description": "Deterministic Source -> Service -> Sink contract: four resource units and two units per task permit two concurrent tasks.",
+  "blocks": [
+    {
+      "name": "Jobs",
+      "kind": "source",
+      "metrics": {
+        "arrived_mean": { "value": 4, "abs_tol": 0 },
+        "departed_mean": { "value": 4, "abs_tol": 0 }
+      }
+    },
+    {
+      "name": "Work",
+      "kind": "service",
+      "metrics": {
+        "arrived_mean": { "value": 4, "abs_tol": 0 },
+        "departed_mean": { "value": 4, "abs_tol": 0 },
+        "mean_occupancy": { "value": 0.7619047619047619, "abs_tol": 1e-6 },
+        "utilization": { "value": 0.9523809523809523, "abs_tol": 1e-6 }
+      }
+    },
+    {
+      "name": "Done",
+      "kind": "sink",
+      "metrics": {
+        "departed_mean": { "value": 4, "abs_tol": 0 }
+      }
+    }
+  ]
+}

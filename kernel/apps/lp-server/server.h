@@ -10,7 +10,10 @@
 //
 // Control plane: JSON text frames from any client
 //   {"cmd":"start"|"pause"|"resume"|"step"|"stop","speed":n,"seed":s,
-//    "reps":r,"arrivals":n,"warmup":n}
+//    "seedMode":"fixed"|"random","reps":r,
+//    "replicationMode":"fixed"|"precision","minReps":n,"maxReps":n,
+//    "errorPercent":p,"precisionMetric":"Wq",
+//    "arrivals":n,"warmup":n,"confidence":c}
 // are routed through SimServer::handle_control() (thread-safe) and answered
 // with a JSON ack/error text frame. pause/step/speed are thread-safe; the
 // speed multiplier only affects wall-clock pacing, never simulation results
@@ -41,6 +44,7 @@ struct ServerConfig {
   std::uint64_t reps{1};
   std::uint64_t arrivals{4000};
   std::uint64_t warmup{400};
+  double confidence{0.95};
   double lambda{0.8};
   double mu{1.0};
   // Milestone 1: model flow parameters (from the served IR model). servers

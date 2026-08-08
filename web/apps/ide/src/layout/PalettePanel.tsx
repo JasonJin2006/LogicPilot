@@ -15,7 +15,6 @@ import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
 import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
-import { useProjectStore } from '../state/projectStore';
 import { ScrollArea } from '../components/ScrollArea';
 
 interface PaletteBlock {
@@ -46,7 +45,6 @@ export function PalettePanel() {
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
   const recordUse = usePaletteStore((state) => state.recordUse);
-  const files = useProjectStore((state) => state.bundle?.files);
   const [importError, setImportError] = useState('');
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -229,38 +227,38 @@ export function PalettePanel() {
               }}
             >
               <span className="palette-chip">
-              <span className="palette-chip-icon">
-                <BlockIcon kind={block.kind} />
-                {(() => {
-                  // Port dots at the glyph's real port anchors (AnyLogic
-                  // green-dot positions), scaled to the 30px chip icon
-                  // (icon centre at (15,15), scale 0.75). Custom-library
-                  // blocks keep the old in/out edge dots via the fallback.
-                  const inPorts = block.inPorts?.length ? block.inPorts : block.in ? ['in'] : [];
-                  const outPorts = block.outPorts?.length
-                    ? block.outPorts
-                    : block.out
-                      ? ['out']
-                      : [];
-                  return [...inPorts, ...outPorts].map((name) => {
-                    const direction = inPorts.includes(name) ? 'in' : 'out';
-                    const [px, py] = portGlyphPoint(block.kind, name, direction);
-                    return (
-                      <span
-                        key={name}
-                        className={`palette-port port-${direction}`}
-                        style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
-                        aria-hidden
-                      />
-                    );
-                  });
-                })()}
+                <span className="palette-chip-icon">
+                  <BlockIcon kind={block.kind} />
+                  {(() => {
+                    // Port dots at the glyph's real port anchors (AnyLogic
+                    // green-dot positions), scaled to the 30px chip icon
+                    // (icon centre at (15,15), scale 0.75). Custom-library
+                    // blocks keep the old in/out edge dots via the fallback.
+                    const inPorts = block.inPorts?.length ? block.inPorts : block.in ? ['in'] : [];
+                    const outPorts = block.outPorts?.length
+                      ? block.outPorts
+                      : block.out
+                        ? ['out']
+                        : [];
+                    return [...inPorts, ...outPorts].map((name) => {
+                      const direction = inPorts.includes(name) ? 'in' : 'out';
+                      const [px, py] = portGlyphPoint(block.kind, name, direction);
+                      return (
+                        <span
+                          key={name}
+                          className={`palette-port port-${direction}`}
+                          style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
+                          aria-hidden
+                        />
+                      );
+                    });
+                  })()}
+                </span>
               </span>
-            </span>
-            <span className="palette-name">{block.name}</span>
-          </li>
-        ))}
-      </ul>
+              <span className="palette-name">{block.name}</span>
+            </li>
+          ))}
+        </ul>
       </ScrollArea>
       {ghost && (
         <span className="palette-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>

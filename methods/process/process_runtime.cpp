@@ -3,7 +3,7 @@
 // The lowering logic was moved verbatim from kernel/src/devs/ir_loader.cpp
 // (build_process_model) so the kernel no longer contains process-specific
 // knowledge: it resolves the method from the IR and delegates here.
-#include "process_runtime.h"
+#include "process_runtime.h"  // process semantics v1 runtime registration
 
 #include <cstring>
 #include <memory>
@@ -26,6 +26,7 @@ using ir::v2::Distribution;
 using ir::v2::Node;
 using logicpilot::ir_v2_util::make_sampler;
 using logicpilot::ir_v2_util::node_block;
+using logicpilot::ir_v2_util::node_bool_param;
 using logicpilot::ir_v2_util::node_dist_param;
 using logicpilot::ir_v2_util::node_float_param;
 using logicpilot::ir_v2_util::node_int_param;
@@ -118,19 +119,61 @@ std::unique_ptr<FlowEngine> lower_process_model(const Node* model_root,
   // selectOutput, ...) goes to the generic ProcessFlowSim engine.
   bool generic_flow = false;
   int source_count = 0;
+  int queue_count = 0;
+  int service_count = 0;
+  int sink_count = 0;
   for (const Node* stage : flow_stages) {
     const std::string block = node_block(stage);
     if (block == "source") {
       ++source_count;
-    } else if (block != "queue" && block != "service" &&
-               block != "sink") {
+      // Source features beyond the classic one-agent rate stream need the
+      // modular engine. Keeping them on the optimized M/M/c path would
+      // silently ignore valid DSL properties.
+      const std::string arrival_type =
+          node_string_param(stage, "arrivalType") != nullptr
+              ? node_string_param(stage, "arrivalType")
+              : "rate";
+      const std::string first_arrival_mode =
+          node_string_param(stage, "firstArrivalMode") != nullptr
+              ? node_string_param(stage, "firstArrivalMode")
+              : "after_timeout";
+      if (arrival_type != "rate" || first_arrival_mode != "after_timeout" ||
+          node_bool_param(stage, "multipleEntitiesPerArrival", false) ||
+          node_bool_param(stage, "limitArrivals", false)) {
+        generic_flow = true;
+      }
+    } else if (block == "queue") {
+      ++queue_count;
+      const char* queuing = node_string_param(stage, "queuing");
+      if (node_int_param(stage, "capacity", 100) == 0 ||
+          node_bool_param(stage, "maximumCapacity", false) ||
+          node_bool_param(stage, "enableTimeout", false) ||
+          node_bool_param(stage, "enablePreemption", false) ||
+          (queuing != nullptr && std::strcmp(queuing, "queuing_fifo") != 0)) {
+        generic_flow = true;
+      }
+    } else if (block == "service") {
+      ++service_count;
+      // The optimized M/M/c engine has no timeout/preemption ports and only
+      // one queue. Explicit Service-internal queue settings therefore use
+      // the modular engine instead of being silently discarded.
+      if (node_bool_param(stage, "enableTimeout", false) ||
+          node_bool_param(stage, "enablePreemption", false) ||
+          node_bool_param(stage, "maximumCapacity", false) ||
+          node_int_param(stage, "queueCapacity", 100) != 100 ||
+          node_int_param(stage, "numberOfUnits", 1) != 1) {
+        generic_flow = true;
+      }
+    } else if (block == "sink") {
+      ++sink_count;
+    } else {
       generic_flow = true;
     }
   }
-  if (generic_flow || source_count > 1) {
-    auto generic =
-        std::make_unique<ProcessFlowSim>(flow_stages, flow_couplings,
-                                         model_root, error);
+  if (generic_flow || source_count != 1 || service_count != 1 ||
+      queue_count > 1 || sink_count != 1) {
+    auto generic = std::make_unique<ProcessFlowSim>(flow_stages, flow_couplings,
+                                                    model_root, error);
     if (generic == nullptr || (error != nullptr && !error->empty())) {
       return fail(error != nullptr && !error->empty()
                       ? *error
@@ -203,10 +246,27 @@ std::unique_ptr<FlowEngine> lower_process_model(const Node* model_root,
   }
   spec.interarrival = std::move(arrival);
   spec.service = std::move(service_time);
+  spec.source_name = node_name(source);
+  spec.service_name = node_name(service);
+  spec.has_queue_block = queue != nullptr;
+  if (queue != nullptr) {
+    spec.queue_name = node_name(queue);
+  }
+  for (const Node* stage : flow_stages) {
+    if (std::strcmp(node_block(stage), "sink") == 0) {
+      spec.sink_name = node_name(stage);
+      break;
+    }
+  }
   if (queue != nullptr) {
     const std::int64_t capacity = node_int_param(queue, "capacity", 0);
-    // <= 0 is treated as unbounded (M/M/1 requires an infinite buffer).
-    spec.queue_capacity = capacity > 0 ? capacity : -1;
+    spec.queue_capacity = capacity;
+  } else {
+    std::int64_t capacity = node_int_param(service, "queueCapacity", 100);
+    if (node_bool_param(service, "maximumCapacity", false)) {
+      capacity = -1;
+    }
+    spec.queue_capacity = capacity >= 0 ? capacity : -1;
   }
 
   // Resource failure semantics (milestone 1): the service stage references a
@@ -231,8 +291,8 @@ std::unique_ptr<FlowEngine> lower_process_model(const Node* model_root,
     return fail("service resource capacity must be >= 1");
   }
   const double failure_rate = node_float_param(resource, "failure_rate", 0.0);
-  if (failure_rate < 0.0 || failure_rate > 1.0) {
-    return fail("failure_rate must be in [0, 1]");
+  if (failure_rate < 0.0) {
+    return fail("failure_rate must be >= 0");
   }
   if (failure_rate > 0.0) {
     const double repair_rate = node_float_param(resource, "repair_rate", 1.0);
@@ -254,8 +314,7 @@ std::unique_ptr<FlowEngine> lower_process_model(const Node* model_root,
 }  // namespace
 
 bool ProcessRuntime::initialize(RuntimeContext& context,
-                                const IrModelFile& model,
-                                std::string* error) {
+                                const IrModelFile& model, std::string* error) {
   context_ = &context;
   ran_ = false;
   last_metrics_ = ReplicationMetrics{};

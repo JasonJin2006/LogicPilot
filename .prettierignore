@@ -1,0 +1,4 @@
+# Generated sources are formatted by their generators. Running Prettier on
+# them creates noisy diffs that are overwritten by the next generation run.
+web/packages/protocol/src/generated/
+web/apps/ide/src/model/blockCatalog.ts

@@ -56,6 +56,10 @@ jobs:
           # pnpm on PATH; this job installs no packages, so opt out.
           package-manager-cache: false
 
+      - name: Setup pnpm (Linux browser E2E)
+        if: runner.os == 'Linux'
+        uses: pnpm/action-setup@v5
+
       - name: CMake configure
         run: cmake --preset ${{ matrix.preset }}
 
@@ -74,6 +78,32 @@ jobs:
         # that the .fbs schemas stay conformant.
         shell: pwsh
         run: scripts/run-schema-interop.ps1
+
+      - name: Install Web IDE dependencies (Linux browser E2E)
+        if: runner.os == 'Linux'
+        run: pnpm install --frozen-lockfile
+
+      - name: Browser end-to-end gateway and IDE flow (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./build/linux-clang-dev/kernel/lpcli serve examples/mm1.lp --port 8089 > /tmp/logicpilot-gateway.log 2>&1 &
+          gateway_pid=$!
+          pnpm --filter @logicpilot/ide dev --host 127.0.0.1 > /tmp/logicpilot-vite.log 2>&1 &
+          vite_pid=$!
+          cleanup() {
+            kill "$vite_pid" "$gateway_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:5173 >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail http://127.0.0.1:5173 >/dev/null
+          pnpm --filter @logicpilot/ide verify:browser
 
   web:
     name: web (pnpm)
@@ -99,6 +129,15 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint --max-warnings=0
+
+      - name: Formatting
+        run: pnpm format:check
+
       - name: Test
         # renderer2d vitest cases are the TS-side regression defense for the F2
         # wire contract; @logicpilot/protocol's verify-interop needs the C++
@@ -109,6 +148,16 @@ jobs:
         # The user manual lives in docs/ and is built with VitePress; a broken
         # page or markdown error must fail CI instead of shipping.
         run: pnpm docs:build
+
+  desktop:
+    name: desktop (Tauri / Rust)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Test desktop filesystem and shell
+        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
 
   bench:
     name: bench (perf gates)

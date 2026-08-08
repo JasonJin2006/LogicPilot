@@ -1,0 +1,6 @@
+library alpha {
+  version = 1
+  block shared {
+    value: int
+  }
+}

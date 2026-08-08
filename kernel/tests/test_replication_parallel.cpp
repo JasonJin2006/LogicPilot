@@ -2,6 +2,7 @@
 // must produce results bit-identical to a sequential run, and per-rep seeds
 // must match the canonical replication_seed(run_seed, rep) derivation.
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -79,4 +80,25 @@ TEST_CASE("parallel runner derives the canonical per-rep seeds",
   for (std::size_t i = 0; i < manual.size(); ++i) {
     REQUIRE(metrics_equal(parallel[i], manual[i]));
   }
+}
+
+TEST_CASE("precision stop uses relative Student-t confidence half-width",
+          "[replication][precision]") {
+  std::vector<ReplicationMetrics> stable(5);
+  for (std::size_t i = 0; i < stable.size(); ++i) {
+    stable[i].mean_wait = 10.0 + (static_cast<double>(i) - 2.0) * 0.01;
+  }
+  const auto summary = summarize_replications(stable, 0.95);
+  ReplicationMetric metric{};
+  REQUIRE(parse_replication_metric("Wq", metric));
+  CHECK(metric == ReplicationMetric::kWq);
+  CHECK(replication_precision_reached(summary, metric, 5, 1.0));
+  CHECK_FALSE(replication_precision_reached(summary, metric, 6, 1.0));
+
+  MetricSummary zero{};
+  CHECK(relative_ci_error_percent(zero) == 0.0);
+  zero.ci_low = -1.0;
+  zero.ci_high = 1.0;
+  CHECK(std::isinf(relative_ci_error_percent(zero)));
+  CHECK_FALSE(parse_replication_metric("not-a-metric", metric));
 }

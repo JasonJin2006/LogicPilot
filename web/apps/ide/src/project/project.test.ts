@@ -170,7 +170,9 @@ describe('project bundle', () => {
     count = 2
   }
   experiment Tune {
-    budget = 20
+    type = simulation
+    replications = 10
+    seed = 42
   }
 }
 `;
@@ -187,7 +189,7 @@ describe('project bundle', () => {
     expect(split['model/resources.lp']).toBeUndefined();
     expect(split['model/experiments.lp']).toBeUndefined();
     // Members keep their model-body indentation so the merged model stays tidy.
-    expect(split['model/main.lp']).toMatch(/  resource Server/);
+    expect(split['model/main.lp']).toMatch(/ {2}resource Server/);
     expect(split['model/scenes/Drone.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
   });
 
@@ -197,7 +199,8 @@ describe('project bundle', () => {
       'model/main.lp': main,
       'model/resources.lp': '  resource Server {\n    capacity = 1\n  }\n',
       'model/scenes/Drone.lp': '  agent Drone {\n    count = 2\n  }\n',
-      'model/experiments.lp': '  experiment Tune {\n    budget = 20\n  }\n',
+      'model/experiments.lp':
+        '  experiment Tune {\n    type = simulation\n    replications = 10\n    seed = 42\n  }\n',
     };
     const merged = mergeModelSource(main, files);
     expect(merged).toContain('resource Server');
@@ -457,9 +460,7 @@ describe('project bundle', () => {
     if (!parsed.ok) return;
     const restored = projectToDocument(parsed.bundle!);
     expect(restored.ok).toBe(true);
-    const kinds = new Set(
-      restored.document!.nodes.map((node) => `${node.kind}:${node.name}`),
-    );
+    const kinds = new Set(restored.document!.nodes.map((node) => `${node.kind}:${node.name}`));
     for (const node of document.nodes) {
       expect(kinds.has(`${node.kind}:${node.name}`)).toBe(true);
     }

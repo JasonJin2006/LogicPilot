@@ -76,8 +76,8 @@ export function SettingsDialog() {
         </div>
 
         <p className="dialog-hint">
-          The gateway streams telemetry frames over WebSocket (wire.fbs contract F2); run
-          parameters and controls live in the Run dialog on the canvas.
+          The gateway streams telemetry frames over WebSocket (wire.fbs contract F2); run parameters
+          and controls live in the Run dialog on the canvas.
         </p>
       </div>
     </div>

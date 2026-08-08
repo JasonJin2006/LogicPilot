@@ -23,15 +23,15 @@ export async function pickProjectFolder(): Promise<string | null> {
     const selected = await open({ directory: true, multiple: false });
     return typeof selected === 'string' && selected !== '' ? selected : null;
   } catch (error) {
+    // The picker API has no error channel distinct from user cancellation.
+    // Keep the native failure observable for desktop diagnostics.
+    // eslint-disable-next-line no-console
     console.error('folder picker failed', error);
     return null;
   }
 }
 
-function invokeCommand(
-  command: string,
-  args: Record<string, unknown>,
-): Promise<TauriFsResult> {
+function invokeCommand(command: string, args: Record<string, unknown>): Promise<TauriFsResult> {
   return import('@tauri-apps/api/core')
     .then(({ invoke }) =>
       invoke<string>(command, args).then(
@@ -73,10 +73,9 @@ export function readProjectDir(projectDir: string): Promise<ProjectDirReadResult
   }
   return import('@tauri-apps/api/core')
     .then(({ invoke }) =>
-      invoke<{ manifest_json: string; files: Record<string, string> }>(
-        'read_project_dir',
-        { projectDir },
-      ).then(
+      invoke<{ manifest_json: string; files: Record<string, string> }>('read_project_dir', {
+        projectDir,
+      }).then(
         (result) => ({
           ok: true,
           manifestJson: result.manifest_json,
@@ -118,10 +117,7 @@ export interface ProjectFileReadResult {
 }
 
 /** Read one project file as text (viewing files outside the bundle). */
-export function readProjectFile(
-  projectDir: string,
-  rel: string,
-): Promise<ProjectFileReadResult> {
+export function readProjectFile(projectDir: string, rel: string): Promise<ProjectFileReadResult> {
   if (!isTauri()) {
     return Promise.resolve({ ok: false, error: 'desktop client required' });
   }
@@ -155,10 +151,7 @@ export function writeProjectFile(
 }
 
 /** Create one directory inside the project. */
-export function createDirectory(
-  projectDir: string,
-  rel: string,
-): Promise<TauriFsResult> {
+export function createDirectory(projectDir: string, rel: string): Promise<TauriFsResult> {
   if (!isTauri()) {
     return Promise.resolve({ ok: false, error: 'desktop client required' });
   }
@@ -192,10 +185,7 @@ export function renameProjectEntry(
 }
 
 /** Delete a file or folder (recursive for folders). */
-export function deleteProjectEntry(
-  projectDir: string,
-  rel: string,
-): Promise<TauriFsResult> {
+export function deleteProjectEntry(projectDir: string, rel: string): Promise<TauriFsResult> {
   if (!isTauri()) {
     return Promise.resolve({ ok: false, error: 'desktop client required' });
   }

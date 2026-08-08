@@ -8,7 +8,7 @@
 // (parsed, never dropped), so the model tree survives any DSL the AI or a
 // user writes. Process stages are coupled in declaration order.
 
-import type { BlockKind, ModelDocument, ModelNode } from './graph.js';
+import type { ModelDocument, ModelNode } from './graph.js';
 import { connect, createDocument, freshId } from './graph.js';
 
 /** One structured DSL/project diagnostic. Error families follow
@@ -215,40 +215,26 @@ class Parser {
    *  rate(0.8) and expressions like -k*y are reconstructed. */
   private readValue(): string | number | boolean {
     const parts: string[] = [];
-    let literalOnly = true;
     for (;;) {
       const token = this.peek();
       if (this.isSeparator(token)) {
         break;
       }
       this.next();
-      if (
-        token!.type === 'word' &&
-        this.peek()?.type === 'punct' &&
-        this.peek()!.text === '('
-      ) {
+      if (token!.type === 'word' && this.peek()?.type === 'punct' && this.peek()!.text === '(') {
         this.next();
         parts.push(`${token!.text}(${this.captureParens()}`);
-        literalOnly = false;
         continue;
       }
       if (token!.type === 'punct' && token!.text === '(') {
         parts.push(`(${this.captureParens()}`);
-        literalOnly = false;
         continue;
       }
       if (token!.type === 'string') {
         parts.push(JSON.stringify(token!.text));
-        literalOnly = false;
         continue;
       }
       parts.push(token!.text);
-      if (
-        token!.type !== 'number' ||
-        !Number.isFinite(Number(token!.text))
-      ) {
-        literalOnly = false;
-      }
     }
     if (parts.length === 1) {
       const only = parts[0]!;
@@ -256,9 +242,7 @@ class Parser {
         return only === 'true';
       }
       const numeric = Number(only);
-      return /^-?[0-9.eE+-]+$/.test(only) && Number.isFinite(numeric)
-        ? numeric
-        : only;
+      return /^-?[0-9.eE+-]+$/.test(only) && Number.isFinite(numeric) ? numeric : only;
     }
     return Parser.joinTokens(parts.map((part) => ({ text: part })));
   }
@@ -516,10 +500,7 @@ export function parseDsl(source: string): ParseResult {
     return { x, y };
   };
 
-  const flatten = (
-    member: BodyMember,
-    parent: string | undefined,
-  ): void => {
+  const flatten = (member: BodyMember, parent: string | undefined): void => {
     const isBehavior = member.kind.startsWith('on_');
     if (
       !isBehavior &&
@@ -644,7 +625,7 @@ export function parseDsl(source: string): ParseResult {
     const from = nameToId.get(couple.from);
     const to = nameToId.get(couple.to);
     if (from === undefined || to === undefined) {
-      continue;  // unresolved stages (e.g. external) stay warnings-free
+      continue; // unresolved stages (e.g. external) stay warnings-free
     }
     doc = connect(doc, from, to, couple.fromPort, couple.toPort).document;
   }

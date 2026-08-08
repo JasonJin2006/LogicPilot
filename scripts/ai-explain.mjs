@@ -7,28 +7,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { ruleBasedProvider } from './ai-provider.mjs';
 import { parseMetric } from './optimize.mjs';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, '..');
-
-function findLpcli() {
-  if (process.env.LPCLI && existsSync(process.env.LPCLI)) {
-    return process.env.LPCLI;
-  }
-  const exe = process.platform === 'win32' ? 'lpcli.exe' : 'lpcli';
-  for (const dir of ['integration-dev', 'local-mingw']) {
-    const candidate = join(root, 'build', dir, 'kernel', 'apps', 'lpcli', exe);
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return 'lpcli';
-}
+import { findLpcli } from './tool-paths.mjs';
 
 function runLpcli(lpcli, args) {
   if (process.platform === 'win32') {

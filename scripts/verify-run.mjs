@@ -115,6 +115,38 @@ function verify(metrics, theory, strict) {
     }
   }
 
+  // Optional deterministic per-block contract. This is used for semantic
+  // conformance cases where a global queueing formula is less precise than
+  // asserting the observable behavior of Source/Queue/Service/Sink.
+  if (theory && Array.isArray(theory.blocks)) {
+    const actualBlocks = Array.isArray(metrics.blocks) ? metrics.blocks : [];
+    for (const expectedBlock of theory.blocks) {
+      const actual = actualBlocks.find(
+        (block) => block.name === expectedBlock.name && block.kind === expectedBlock.kind,
+      );
+      const blockName = `${expectedBlock.kind}:${expectedBlock.name}`;
+      checks.push(check(
+        `block:${blockName}:present`,
+        actual !== undefined,
+        actual ? '' : `missing block metrics for ${blockName}`,
+      ));
+      if (!actual) continue;
+      for (const [metric, contract] of Object.entries(expectedBlock.metrics ?? {})) {
+        const expected = contract?.value;
+        const tolerance = contract?.abs_tol ?? 0;
+        const actualValue = actual[metric];
+        const passed =
+          finite(expected) && finite(tolerance) && tolerance >= 0 &&
+          finite(actualValue) && Math.abs(actualValue - expected) <= tolerance;
+        checks.push(check(
+          `block:${blockName}:${metric}`,
+          passed,
+          `|${actualValue} - ${expected}| <= ${tolerance}`,
+        ));
+      }
+    }
+  }
+
   const failures = checks.filter((entry) => !entry.passed);
   return {
     ok: failures.length === 0,

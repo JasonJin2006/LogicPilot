@@ -67,6 +67,76 @@ const EXECUTED_EXPRESSIONS: ReadonlySet<string> = new Set([
   'transition.condition',
 ]);
 
+export type PropertyExecutionStatus = 'executed' | 'partial' | 'not-executed';
+
+/**
+ * Runtime contract for the DES MVP blocks. The imported catalog deliberately
+ * retains the full AnyLogic property surface as reference metadata, but these
+ * sets prevent the editor from presenting a parsed/documented field as if the
+ * LogicPilot runtime already honored it.
+ */
+const DES_MVP_EXECUTED_PROPERTIES: Readonly<Record<string, ReadonlySet<string>>> = {
+  resource: new Set(['capacity', 'failure_rate', 'repair_rate']),
+  source: new Set([
+    'arrival',
+    'interarrivalTime',
+    'firstArrivalMode',
+    'firstArrivalTime',
+    'multipleEntitiesPerArrival',
+    'agentsPerArrival',
+    'limitArrivals',
+    'maxArrivals',
+  ]),
+  queue: new Set([
+    'capacity',
+    'maximumCapacity',
+    'queuing',
+    'agentPriority',
+    'agent1IsPreferredToAgent2',
+    'enableTimeout',
+    'timeout',
+    'enablePreemption',
+  ]),
+  service: new Set([
+    'resource',
+    'numberOfUnits',
+    'queueCapacity',
+    'maximumCapacity',
+    'time',
+    'taskPriority',
+    'taskMayPreempt',
+    'enableTimeout',
+    'timeout',
+    'enablePreemption',
+  ]),
+  sink: new Set(),
+};
+
+const DES_MVP_PARTIAL_PROPERTIES: Readonly<Record<string, ReadonlySet<string>>> = {
+  // Rate, interarrival time and manual mode are recognized. Schedule/database
+  // modes fail explicitly and manual injection has no public command yet.
+  source: new Set(['arrivalType']),
+  // Only the single-pool mode and terminate-style task preemption execute.
+  service: new Set(['seizeFromOnePool', 'taskPreemptionPolicy']),
+};
+
+export function propertyExecutionStatus(
+  blockKind: string,
+  field: Pick<BlockPropertyDef, 'name' | 'type' | 'section'>,
+): PropertyExecutionStatus {
+  const executed = DES_MVP_EXECUTED_PROPERTIES[blockKind];
+  if (executed) {
+    if (executed.has(field.name)) return 'executed';
+    if (DES_MVP_PARTIAL_PROPERTIES[blockKind]?.has(field.name)) return 'partial';
+    return 'not-executed';
+  }
+  if (field.section === 'actions') return 'not-executed';
+  if (NO_RUNTIME_TYPES.has(field.type) && !EXECUTED_EXPRESSIONS.has(`${blockKind}.${field.name}`)) {
+    return 'not-executed';
+  }
+  return 'executed';
+}
+
 /** Modern toggle switch (replaces the native checkbox in the properties
  *  panel): hidden input drives the styled track/thumb. */
 function Toggle({
@@ -180,7 +250,12 @@ export function PropertiesPanel() {
     renameBlockParam(node.id, oldKey, attributeKey(clean, type));
   };
 
-  const changeAttributeType = (oldKey: string, name: string, newType: string, value: string | number | boolean) => {
+  const changeAttributeType = (
+    oldKey: string,
+    name: string,
+    newType: string,
+    value: string | number | boolean,
+  ) => {
     const key = attributeKey(name, newType);
     renameBlockParam(node.id, oldKey, key);
     if (newType === 'bool' && typeof value !== 'boolean') {
@@ -190,31 +265,41 @@ export function PropertiesPanel() {
     }
   };
   const visibleBySection = new Map<string, BlockPropertyDef[]>();
+  // Newly dropped blocks store only user overrides. Conditional visibility
+  // must still evaluate against catalog defaults (for example a Source's
+  // default arrivalType is "rate"), otherwise its primary fields disappear
+  // until an unrelated property is edited.
+  const effectiveParams = {
+    ...(BLOCK_DEFAULTS[node.kind] ?? {}),
+    ...node.params,
+  };
   for (const section of sections) {
     visibleBySection.set(
       section,
       properties.filter(
-        (field) => field.section === section && visibleWhenHolds(field.visibleWhen, node.params),
+        (field) =>
+          field.section === section && visibleWhenHolds(field.visibleWhen, effectiveParams),
       ),
     );
   }
 
   const renderField = (field: BlockPropertyDef) => {
     const value = valueFor(field);
-    const noRuntime =
-      field.section === 'actions' ||
-      (NO_RUNTIME_TYPES.has(field.type) &&
-        !EXECUTED_EXPRESSIONS.has(`${node.kind}.${field.name}`));
+    const execution = propertyExecutionStatus(node.kind, field);
     return (
       <label className="props-field" key={field.name}>
         <span className="props-field-name">
           {field.displayName || field.name}
-          {noRuntime && (
+          {execution !== 'executed' && (
             <em
               className="props-no-runtime"
-              title="Declared for compatibility; the kernel does not execute this yet"
+              title={
+                execution === 'partial'
+                  ? 'Only a documented subset is executed by the current runtime'
+                  : 'Declared for compatibility; the kernel does not execute this yet'
+              }
             >
-              not executed
+              {execution === 'partial' ? 'partial' : 'not executed'}
             </em>
           )}
         </span>
@@ -333,7 +418,11 @@ export function PropertiesPanel() {
               onClick={() => {
                 const name = newAttrName.trim();
                 if (!name) return;
-                setBlockParam(node.id, attributeKey(name, newAttrType), newAttrType === 'bool' ? true : 0);
+                setBlockParam(
+                  node.id,
+                  attributeKey(name, newAttrType),
+                  newAttrType === 'bool' ? true : 0,
+                );
                 setNewAttrName('');
               }}
             >

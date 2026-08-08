@@ -17,20 +17,6 @@ const CONTAINER_KINDS: ReadonlySet<string> = new Set([
   'experiment',
 ]);
 
-/** Statechart element kinds: emitted as nested declarations inside a
- *  `statechart` container. `state` is a legal declaration kind in the DSL
- *  (the grammar disambiguates `state A { }` from the typed state variable
- *  `state x: type = value`). */
-const STATECHART_KINDS: ReadonlySet<string> = new Set([
-  'state',
-  'transition',
-  'statechartEntryPoint',
-  'initialStatePointer',
-  'finalState',
-  'historyState',
-  'branch',
-]);
-
 /** Serialize a field/param value. Parser-produced values are already
  *  verbatim (numbers as numbers, quoted strings, calls, expressions), while
  *  hand-built params follow the old rules: bare identifiers and distribution
@@ -43,11 +29,7 @@ function fieldValue(value: string | number | boolean): string {
     return String(value);
   }
   const text = value.trim();
-  if (
-    text.startsWith('"') ||
-    /^[0-9]/.test(text) ||
-    /^[A-Za-z_][A-Za-z0-9_]*\(.*\)$/.test(text)
-  ) {
+  if (text.startsWith('"') || /^[0-9]/.test(text) || /^[A-Za-z_][A-Za-z0-9_]*\(.*\)$/.test(text)) {
     return text;
   }
   if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) {
@@ -57,7 +39,7 @@ function fieldValue(value: string | number | boolean): string {
   // identifiers) pass through unquoted so `condition = t < 3` survives the
   // round trip as an expression instead of a string literal. Plain
   // multi-word text without operators is a string and gets quoted.
-  if (/[<>=*/+(),.\-]/.test(text)) {
+  if (/[<>=*/+(),.-]/.test(text)) {
     return text;
   }
   return JSON.stringify(value);
@@ -109,9 +91,7 @@ export function generateDsl(document: ModelDocument): string {
   // Drawing/behavior annotations (presentation/action libraries) are
   // canvas-only and never emit; process and statechart members do.
   const emitCandidate = (node: ModelNode): boolean =>
-    node.library === undefined ||
-    node.library === 'process' ||
-    node.library === 'statechart';
+    node.library === undefined || node.library === 'process' || node.library === 'statechart';
   const childrenOf = (name: string, excludeId?: string): ModelNode[] =>
     document.nodes.filter(
       (node) => node.container === name && node.id !== excludeId && emitCandidate(node),
@@ -180,27 +160,21 @@ export function generateDsl(document: ModelDocument): string {
       // initial state pointer) inside the container.
       const pointers = document.nodes.filter(
         (entry) =>
-          (entry.kind === 'statechartEntryPoint' ||
-            entry.kind === 'initialStatePointer') &&
+          (entry.kind === 'statechartEntryPoint' || entry.kind === 'initialStatePointer') &&
           entry.container === node.name,
       );
       const targetName = String(
-        pointers.find((entry) => typeof entry.params['target'] === 'string')
-          ?.params['target'] ?? '',
+        pointers.find((entry) => typeof entry.params['target'] === 'string')?.params['target'] ??
+          '',
       );
       const initial =
-        (targetName !== ''
-          ? children.find((child) => child.name === targetName)
-          : undefined) ??
+        (targetName !== '' ? children.find((child) => child.name === targetName) : undefined) ??
         document.edges
           .map((edge) => {
             const from = findNode(document, edge.from);
             const to = findNode(document, edge.to);
             if (!from || !to || from.container !== node.name) return null;
-            if (
-              from.kind !== 'statechartEntryPoint' &&
-              from.kind !== 'initialStatePointer'
-            ) {
+            if (from.kind !== 'statechartEntryPoint' && from.kind !== 'initialStatePointer') {
               return null;
             }
             return to;

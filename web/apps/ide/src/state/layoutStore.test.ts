@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { mergePersistedLayout, useLayoutStore } from './layoutStore';
-import type { LayoutState } from './layoutStore';
 
 describe('layoutStore', () => {
   beforeEach(() => {
@@ -89,7 +88,12 @@ describe('layoutStore', () => {
     const stale = {
       state: {
         areas: {
-          left: { size: 280, collapsed: false, activePanel: 'modelInfo', panels: ['modelInfo', 'palette'] },
+          left: {
+            size: 280,
+            collapsed: false,
+            activePanel: 'modelInfo',
+            panels: ['modelInfo', 'palette'],
+          },
         },
       },
     };
