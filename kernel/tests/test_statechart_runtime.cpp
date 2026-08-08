@@ -348,6 +348,55 @@ TEST_CASE("statechart method: history state returns to last visited",
   REQUIRE(replication->last_state() == 0);
 }
 
+TEST_CASE("statechart method: condition-triggered transition fires on time",
+          "[runtime][statechart]") {
+  register_all_methods();
+  // idle --condition(t >= 3)--> done: the condition is polled and must
+  // become true at t = 3.0 (within the poll cadence).
+  flatbuffers::FlatBufferBuilder builder;
+  const auto idle = v2::CreateState(builder, builder.CreateString("idle"));
+  const auto done = v2::CreateState(builder, builder.CreateString("done"));
+  const auto idle_done = v2::CreateTransition(
+      builder, builder.CreateString("idle"), builder.CreateString("done"),
+      v2::TriggerKind_Condition, 0.0, 0, 0.0, 0,
+      builder.CreateString("t >= 3"), 0);
+  const auto chart = v2::CreateStatechart(
+      builder,
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<v2::State>>{idle, done}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Transition>>{
+          idle_done}),
+      builder.CreateString("idle"));
+  const auto root = v2::CreateNode(
+      builder,
+      v2::CreateMetadata(builder, builder.CreateString("ConditionChart"), 0,
+                         0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("statechart"),
+                             builder.CreateString("statechart"), 0, 0),
+      0, 0, chart, 0, 0);
+  builder.Finish(v2::CreateModelFile(builder, 2, root, 0, 0), "LP2R");
+
+  IrLoadResult result = load_model_buffer(builder.GetBufferPointer(),
+                                          builder.GetSize());
+  REQUIRE(result.ok());
+  std::string error;
+  auto replication =
+      std::make_unique<StatechartReplicationModel>(result.file.v2_root->root(),
+                                                   &error);
+  REQUIRE(replication != nullptr);
+  ReplicationConfig config;
+  config.arrivals = 10;
+  const ReplicationMetrics metrics = replication->run(config, nullptr);
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.final_value == 1.0);  // "done"
+  // The condition becomes true at t = 3.0; the poll cadence (50 ms) adds at
+  // most one step, so the horizon is in [3.0, 3.05].
+  REQUIRE(metrics.horizon_seconds >= 3.0);
+  REQUIRE(metrics.horizon_seconds < 3.1);
+}
+
 TEST_CASE("statechart method: invalid tables fail lowering with an error",
           "[runtime][statechart]") {
   register_all_methods();

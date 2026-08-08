@@ -154,6 +154,21 @@ set_tests_properties(lpcli_run_statechart PROPERTIES
   DEPENDS lpcli_compile_statechart
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+# Condition-triggered statechart transition compiles and runs through lpcli.
+add_test(NAME lpcli_compile_condition_statechart
+  COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/condition_statechart.lp"
+          -o "${CMAKE_CURRENT_BINARY_DIR}/condition_statechart.ir.bin")
+set_tests_properties(lpcli_compile_condition_statechart PROPERTIES
+  PASS_REGULAR_EXPRESSION "compiled")
+
+add_test(NAME lpcli_run_condition_statechart
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/condition_statechart.ir.bin"
+          --seed=42 --reps=1 --arrivals=10 --warmup=0)
+set_tests_properties(lpcli_run_condition_statechart PROPERTIES
+  DEPENDS lpcli_compile_condition_statechart
+  PASS_REGULAR_EXPRESSION "summary: 1 replications")
+
 # Continuous DSL: decay example compiles (v2 default) and runs the ODE engine.
 add_test(NAME lpcli_compile_continuous
   COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/decay.lp"

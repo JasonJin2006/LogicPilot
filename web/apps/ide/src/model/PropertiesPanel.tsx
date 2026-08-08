@@ -49,6 +49,18 @@ const SECTION_LABELS: Record<string, string> = {
 
 const NO_RUNTIME_TYPES: ReadonlySet<string> = new Set(['expression']);
 
+/** Expression fields the kernel evaluates at runtime (ADR-0009 scripting
+ *  Phase 1): routing/blocking conditions and comparison expressions. These
+ *  must not carry the "not executed" marker; everything else stays honest
+ *  until the engine implements it. Keyed by `${blockKind}.${fieldName}`. */
+const EXECUTED_EXPRESSIONS: ReadonlySet<string> = new Set([
+  'selectOutput.condition',
+  'hold.blockingCondition',
+  'match.matchCondition',
+  'queue.agent1IsPreferredToAgent2',
+  'transition.condition',
+]);
+
 /** Modern toggle switch (replaces the native checkbox in the properties
  *  panel): hidden input drives the styled track/thumb. */
 function Toggle({
@@ -183,7 +195,10 @@ export function PropertiesPanel() {
 
   const renderField = (field: BlockPropertyDef) => {
     const value = valueFor(field);
-    const noRuntime = NO_RUNTIME_TYPES.has(field.type) || field.section === 'actions';
+    const noRuntime =
+      field.section === 'actions' ||
+      (NO_RUNTIME_TYPES.has(field.type) &&
+        !EXECUTED_EXPRESSIONS.has(`${node.kind}.${field.name}`));
     return (
       <label className="props-field" key={field.name}>
         <span className="props-field-name">

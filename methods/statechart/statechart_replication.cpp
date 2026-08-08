@@ -37,6 +37,7 @@
 #include "logicpilot/core/scheduler/handler_registry.h"
 #include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/core/time/clock.h"
+#include "logicpilot/devs/continuous.h"  // ExpressionEvaluator
 #include "logicpilot/devs/mm1.h"  // TimeSampler
 #include "logicpilot/runtime/runtime_context.h"
 
@@ -52,6 +53,13 @@ using ir::v2::TriggerKind_Rate;
 using ir::v2::TriggerKind_Timeout;
 
 constexpr EventType kTimerEventType = 30;
+constexpr EventType kConditionPollType = 31;
+// Condition transitions are polled on a fixed cadence (AnyLogic monitors
+// conditions continuously; v1 uses a 50 ms step). The poll count is capped
+// so a condition that never becomes true still terminates the run instead
+// of looping forever.
+constexpr double kConditionPollDt = 0.05;
+constexpr std::uint64_t kMaxConditionPolls = 20000;
 // FSM event ids: timed triggers use dedicated slots so a state may own both
 // a timeout and a rate transition; messages and conditions get ids >= 2.
 constexpr FsmEventId kTimeoutFsmEvent = 0;
@@ -82,6 +90,10 @@ struct StatechartReplicationModel::Impl {
   std::unordered_map<StateId, std::vector<TimedTrigger>> timed_triggers;
   // Condition transitions that fire immediately on entry (empty/"true").
   std::unordered_map<StateId, std::vector<FsmEventId>> immediate_conditions;
+  // Non-trivial condition transitions (text is not empty/"true"): polled
+  // while the source state is current; first true condition fires.
+  std::unordered_map<StateId, std::vector<std::pair<FsmEventId, std::string>>>
+      condition_triggers;
   std::unordered_set<StateId> final_states;
   std::unordered_set<StateId> history_states;
   std::unordered_map<StateId, std::vector<BranchExit>> branch_targets;
@@ -94,9 +106,11 @@ struct StatechartReplicationModel::Impl {
   SimulationClock owned_clock_;
   EventHandlerRegistry owned_handlers_;
   HandlerId timer_handler_{0};
+  HandlerId condition_handler_{0};
   StateMachine machine;
   ReplicationConfig config_;
   std::uint64_t steps_{0};
+  std::uint64_t condition_polls_{0};
   StateId last_visited{kInvalidState};
   bool done_{false};
 
@@ -172,6 +186,57 @@ struct StatechartReplicationModel::Impl {
     schedule_triggers(machine.current());
   }
 
+  void on_condition_poll() {
+    if (done_) {
+      return;
+    }
+    if (++condition_polls_ > kMaxConditionPolls) {
+      done_ = true;
+      return;
+    }
+    const StateId state = machine.current();
+    const auto triggers = condition_triggers.find(state);
+    if (triggers != condition_triggers.end()) {
+      const double now_seconds =
+          static_cast<double>(clock().now().as_ns()) * 1e-9;
+      const auto lookup = [now_seconds](const std::string& name) {
+        if (name == "t" || name == "time") {
+          return now_seconds;
+        }
+        return 0.0;
+      };
+      FsmEventId fired = kInvalidState;
+      for (const auto& [event, condition] : triggers->second) {
+        const ExpressionEvaluator evaluator{condition};
+        if (evaluator.ok() && evaluator.eval(lookup) != 0.0) {
+          fired = event;
+          break;
+        }
+      }
+      if (fired != kInvalidState) {
+        const StateId from = machine.current();
+        FsmContext ctx;
+        if (machine.dispatch(definition, fired, ctx)) {
+          last_visited = from;
+          ++steps_;
+          settle();
+        }
+      }
+    }
+    schedule_condition_poll(machine.current());
+  }
+
+  void schedule_condition_poll(StateId state) {
+    if (done_) {
+      return;
+    }
+    if (condition_triggers.count(state) == 0) {
+      return;
+    }
+    scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(kConditionPollDt)),
+                         kConditionPollType, condition_handler_, 0);
+  }
+
   void schedule_triggers(StateId state) {
     if (done_) {
       return;
@@ -196,6 +261,7 @@ struct StatechartReplicationModel::Impl {
                              event);
       }
     }
+    schedule_condition_poll(state);
   }
 
   // Register one transition on the FSM definition; returns false when the
@@ -266,6 +332,8 @@ struct StatechartReplicationModel::Impl {
       definition.add_transition(from, event, to);
       if (condition.empty() || condition == "true") {
         immediate_conditions[from].push_back(event);
+      } else {
+        condition_triggers[from].push_back({event, condition});
       }
       return true;
     }
@@ -393,6 +461,7 @@ void StatechartReplicationModel::reset(const ReplicationConfig& config) {
   }
   impl_->config_ = config;
   impl_->steps_ = 0;
+  impl_->condition_polls_ = 0;
   impl_->done_ = false;
   impl_->last_visited = kInvalidState;
   impl_->machine = StateMachine{impl_->initial};
@@ -404,6 +473,9 @@ void StatechartReplicationModel::reset(const ReplicationConfig& config) {
   }
   impl_->timer_handler_ = impl_->handlers().add([this](const Event& event) {
     impl_->on_timer(event);
+  });
+  impl_->condition_handler_ = impl_->handlers().add([this](const Event&) {
+    impl_->on_condition_poll();
   });
   impl_->settle();
   impl_->schedule_triggers(impl_->machine.current());
