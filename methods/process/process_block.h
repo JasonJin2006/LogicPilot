@@ -69,6 +69,11 @@ class BlockContext {
   virtual void schedule_depart(std::int64_t hold_ns,
                                std::uint64_t entity_id) = 0;
 
+  // Cancel the pending depart event scheduled for `entity_id` (pool-wide
+  // failures preempt in-service tasks; their stale depart events must not
+  // fire after the task restarts).
+  virtual void cancel_depart(std::uint64_t entity_id) = 0;
+
   // Schedule a resource failure / repair event for `entity_id` (the entity
   // occupying the failing unit) at now + hold_ns.
   virtual void schedule_failure(std::int64_t hold_ns,
@@ -192,6 +197,13 @@ class ProcessBlock {
       const std::vector<std::pair<std::string, double>>& targets) {
     (void)targets;
   }
+
+  // Pool-wide failure notifications (AnyLogic ResourcePool busy-time
+  // failure). The engine owns one failure/repair clock per declared pool;
+  // when the pool goes down it interrupts every in-service task of every
+  // consumer, and on repair it lets them restart (preemptive-repeat).
+  virtual void on_pool_down(BlockContext&, const std::string&) {}
+  virtual void on_pool_up(BlockContext&, const std::string&) {}
 };
 
 // Shared buffering/counter state for the common input -> forward model.

@@ -502,12 +502,6 @@ class Engine final : public BlockContext {
         return;
       }
       const std::string pool_resource = block->pool_resource();
-      if (kind == "service" && !pool_resource.empty()) {
-        const auto pool = resource_pools_.find(pool_resource);
-        if (pool != resource_pools_.end() && pool->second.failure_rate > 0.0) {
-          service_failure_pools_.insert(pool_resource);
-        }
-      }
       index_[name] = blocks_.size();
       if (kind == "source") {
         sources_.push_back(blocks_.size());
@@ -651,6 +645,7 @@ class Engine final : public BlockContext {
     }
     emitted_ = 0;
     arrival_events_ = 0;
+    depart_tokens_.clear();
     source_arrival_events_.assign(blocks_.size(), 0);
     departures_ = 0;
     in_system_ = 0;
@@ -666,6 +661,7 @@ class Engine final : public BlockContext {
     available_.clear();
     pool_busy_.clear();
     pool_down_.clear();
+    pool_down_units_.clear();
     pool_gen_.clear();
     pool_down_area_.clear();
     pool_busy_area_.clear();
@@ -775,11 +771,10 @@ class Engine final : public BlockContext {
                             static_cast<double>(servers_total_);
       double down_area = 0.0;
       for (const auto& block : blocks_) {
-        // Seize-style shared pools contribute downtime once below. A pool
-        // whose busy-time failures are owned by Service blocks instead uses
-        // their per-unit interruption areas.
-        if (block->pool_resource().empty() ||
-            service_failure_pools_.contains(block->pool_resource())) {
+        // Pool-wide busy-time failure: every declared pool contributes its
+        // downtime through pool_down_area_ (scaled by the held units). Blocks
+        // without a declared pool have no failure clock.
+        if (block->pool_resource().empty()) {
           down_area += block->area_down();
         }
       }
@@ -865,9 +860,22 @@ class Engine final : public BlockContext {
   }
 
   void schedule_depart(std::int64_t hold_ns, std::uint64_t entity_id) override {
-    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                         kDepartEvent, depart_handler_,
-                         self_payload(current_, entity_id));
+    const EventToken token =
+        scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
+                             kDepartEvent, depart_handler_,
+                             self_payload(current_, entity_id));
+    if (token.valid()) {
+      depart_tokens_[self_payload(current_, entity_id)] = token;
+    }
+  }
+
+  void cancel_depart(std::uint64_t entity_id) override {
+    const auto it = depart_tokens_.find(self_payload(current_, entity_id));
+    if (it == depart_tokens_.end()) {
+      return;
+    }
+    scheduler().cancel(it->second);
+    depart_tokens_.erase(it);
   }
 
   void schedule_failure(std::int64_t hold_ns,
@@ -987,7 +995,11 @@ class Engine final : public BlockContext {
       pool_busy_area_[resource] +=
           static_cast<double>(dt) * static_cast<double>(pool_busy_[resource]);
       if (spec.failure_rate > 0.0 && pool_down_[resource]) {
-        pool_down_area_[resource] += static_cast<double>(dt);
+        // Unit-seconds down: the units that failed at the start of the down
+        // period count until the repair, even if held tasks release early.
+        pool_down_area_[resource] +=
+            static_cast<double>(dt) *
+            static_cast<double>(pool_down_units_[resource]);
       }
     }
     last_ns_ = now_ns;
@@ -1011,7 +1023,9 @@ class Engine final : public BlockContext {
         entity.attributes = blocks_[source]->attribute_defaults();
         ++emitted_;
         ++in_system_;
-        if (!push_downstream(source, entity, "out")) {
+        current_ = source;
+        if (!downstream_accepts(entity, "out") ||
+            !push_downstream(source, entity, "out")) {
           blocks_[source]->receive(entity);
         }
         pump(source);
@@ -1031,6 +1045,7 @@ class Engine final : public BlockContext {
   void on_depart(const Event& event) {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    depart_tokens_.erase(event.payload);
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->complete(*this, entity_id);
@@ -1064,18 +1079,12 @@ class Engine final : public BlockContext {
     pump(block);
   }
 
-  // Seized-pool failures (AnyLogic ResourcePool busy-time failure): while
-  // the pool has units held by Seize, it alternates up/down with exponential
-  // time-to-failure / repair; while down, no new seizes are granted and the
-  // downtime is reflected in availability. Held agents are not interrupted
-  // (documented simplification).
+  // Pool-wide busy-time failure (AnyLogic ResourcePool): one clock per
+  // declared pool. While any unit is held (by Seize, Service, or Assembler)
+  // the pool alternates up/down with exponential time-to-failure / repair;
+  // while down, no new grants are issued and every consumer's in-service
+  // tasks are interrupted (preemptive-repeat on repair).
   double pool_failure_rate(const std::string& resource) const {
-    // Service blocks already implement the pool's busy-time interruption and
-    // repair law. Starting the separate Seize-style pool clock as well would
-    // draw two independent failures for the same physical capacity.
-    if (service_failure_pools_.contains(resource)) {
-      return 0.0;
-    }
     const auto it = resource_pools_.find(resource);
     return it != resource_pools_.end() ? it->second.failure_rate : 0.0;
   }
@@ -1107,8 +1116,18 @@ class Engine final : public BlockContext {
     }
     if (pool_busy_[resource] > 0 && !pool_down_[resource]) {
       pool_down_[resource] = true;
+      pool_down_units_[resource] =
+          std::max<std::int64_t>(pool_busy_[resource], 1);
       const PoolSpec& spec = resource_pools_[resource];
       Exponential<Xoshiro256PlusPlus> repair{spec.repair_rate};
+      // Interrupt every in-service task of every consumer sharing the pool
+      // (they restart when the pool comes back up).
+      for (std::size_t i = 0; i < blocks_.size(); ++i) {
+        if (blocks_[i]->pool_resource() == resource) {
+          current_ = i;
+          blocks_[i]->on_pool_down(*this, resource);
+        }
+      }
       scheduler().schedule(
           clock().now() + SimTime::from_ns(to_ns(repair(engine_))),
           kPoolRepairEvent, pool_repair_handler_,
@@ -1124,8 +1143,16 @@ class Engine final : public BlockContext {
     const std::string& resource = pool_order_[index];
     accumulate_areas(clock().now().as_ns());
     pool_down_[resource] = false;
+    pool_down_units_.erase(resource);
     if (pool_busy_[resource] > 0 && pool_failure_rate(resource) > 0.0) {
       schedule_pool_failure(resource);
+    }
+    // Let preempted consumers restart their tasks (preemptive-repeat).
+    for (std::size_t i = 0; i < blocks_.size(); ++i) {
+      if (blocks_[i]->pool_resource() == resource) {
+        current_ = i;
+        blocks_[i]->on_pool_up(*this, resource);
+      }
     }
     for (const std::size_t waiter : resource_waiters_) {
       pump(waiter);  // handler wake-up: the worklist needs a pump run
@@ -1232,15 +1259,16 @@ class Engine final : public BlockContext {
   std::unordered_map<std::size_t, std::vector<Edge>> out_edges_;
   std::unordered_map<std::size_t, std::vector<std::size_t>> in_edges_;
   std::unordered_map<std::string, PoolSpec> resource_pools_;
-  std::unordered_set<std::string> service_failure_pools_;
   std::vector<std::pair<std::string, std::string>> path_edges_;
   SpatialGraph spatial_;
   std::unordered_map<std::string, std::int64_t> available_;
   std::unordered_map<std::string, std::int64_t> pool_busy_;
   std::unordered_map<std::string, bool> pool_down_;
+  std::unordered_map<std::string, std::int64_t> pool_down_units_;
   std::unordered_map<std::string, std::int64_t> pool_gen_;
   std::unordered_map<std::string, double> pool_down_area_;
   std::unordered_map<std::string, double> pool_busy_area_;
+  std::unordered_map<std::uint64_t, EventToken> depart_tokens_;
   std::vector<std::string> pool_order_;
   std::unordered_map<std::string, std::size_t> pool_index_;
   std::vector<std::size_t> resource_waiters_;

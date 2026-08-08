@@ -13,6 +13,7 @@
 
 #include "ir_v2_generated.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
+#include "logicpilot/core/random/streams.h"
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/devs/replication.h"
 #include "process_flow.h"
@@ -25,6 +26,11 @@ using logicpilot::ReplicationSummary;
 using logicpilot::BlockMetrics;
 using logicpilot::summarize_replications;
 using namespace logicpilot::ir::v2;
+
+std::uint64_t replication_seed(std::uint64_t run_seed, std::uint64_t rep) {
+  const logicpilot::SeedStreams streams{run_seed};
+  return streams.derive_state(rep)[0];
+}
 
 flatbuffers::Offset<Distribution> dist(flatbuffers::FlatBufferBuilder& b,
                                        std::uint8_t kind,
@@ -1172,7 +1178,8 @@ TEST_CASE("process flow: generic engine honors resource failures (M/G/1)",
   for (std::uint64_t rep = 0; rep < kReps; ++rep) {
     flatbuffers::FlatBufferBuilder builder;
     auto model = build_model(builder);
-    const ReplicationMetrics metrics = run_once(*model, 42, kArrivals, kWarmup);
+    const ReplicationMetrics metrics =
+        run_once(*model, replication_seed(42, rep), kArrivals, kWarmup);
     REQUIRE(metrics.departures == kArrivals);  // preemption never loses a job
     results.push_back(metrics);
   }
@@ -2178,6 +2185,91 @@ TEST_CASE("process flow: seized resource units honor pool failures",
   REQUIRE(again.departures == failing.departures);
   REQUIRE(again.availability == failing.availability);
   REQUIRE(again.mean_in_queue == failing.mean_in_queue);
+}
+
+TEST_CASE("process flow: shared failure pool interrupts every consumer "
+          "together",
+          "[process_flow][failure][des_blocks]") {
+  // Two Service blocks share one 4-unit pool, each task needing 2 units.
+  // Busy-time failure is pool-wide (AnyLogic ResourcePool): one failure
+  // clock per pool, and when it fires both consumers' in-service tasks are
+  // preempted at the same instant and restart only after the pool repair.
+  // Preemptive-repeat must extend sojourn (a stale pre-failure depart event
+  // completing early would keep it near the bare 1.0s service time).
+  const auto build_model = [](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+    const auto resource =
+        block(builder, "Crew", "resource",
+              {var_int(builder, "capacity", 4),
+               var_float(builder, "failure_rate", 1.0),
+               var_float(builder, "repair_rate", 1.0)},
+              {});
+    const auto left = block(
+        builder, "Left", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Crew"),
+         var_int(builder, "numberOfUnits", 2)}, {});
+    const auto right = block(
+        builder, "Right", "service",
+        {var_dist(builder, "time", dist(builder, 0, {1.0})),
+         var_string(builder, "resource", "Crew"),
+         var_int(builder, "numberOfUnits", 2)}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(
+        builder, {source, left, right, sink},
+        {couple(builder, "In", "out", "Left", "in"),
+         couple(builder, "In", "out", "Right", "in"),
+         couple(builder, "Left", "out", "K", "in"),
+         couple(builder, "Right", "out", "K", "in")},
+        root, &error);
+    REQUIRE(model != nullptr);
+    return model;
+  };
+  const auto departed = [](const ReplicationMetrics& metrics,
+                           const char* name) {
+    for (const BlockMetrics& block : metrics.blocks) {
+      if (block.name == name) {
+        return block.departed;
+      }
+    }
+    return std::uint64_t{0};
+  };
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics metrics = run_once(*model, 17, 60, 0);
+  // Each arrival fans out to both lanes (source -> Left + Right), so 60
+  // arrivals produce 120 tasks; preemption never loses a job.
+  REQUIRE(metrics.departures == 120);
+  // f = r = 1.0: long-run availability is ~0.5 (both consumers share one
+  // pool-wide down period).
+  REQUIRE(metrics.availability > 0.30);
+  REQUIRE(metrics.availability < 0.70);
+  // Preemptive-repeat: constant 1.0s service plus repair cycles keeps mean
+  // sojourn well above the bare service time.
+  REQUIRE(metrics.mean_sojourn > 1.3);
+  // Both consumers actually served work.
+  REQUIRE(departed(metrics, "Left") > 0);
+  REQUIRE(departed(metrics, "Right") > 0);
+
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder builder2;
+  auto model2 = build_model(builder2);
+  const ReplicationMetrics again = run_once(*model2, 17, 60, 0);
+  REQUIRE(again.departures == metrics.departures);
+  REQUIRE(again.mean_sojourn == metrics.mean_sojourn);
+  REQUIRE(again.availability == metrics.availability);
 }
 
 TEST_CASE("process flow: exit removes agents from the flow (sojourn kept)",

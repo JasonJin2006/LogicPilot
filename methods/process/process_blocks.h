@@ -56,6 +56,12 @@ class SourceBlock final : public BufferedBlock {
       return false;
     }
     Entity entity = input_.front();
+    // Atomic broadcast: a source feeding several branches must not deliver
+    // to some and then re-emit the same entity when a later branch frees up
+    // (that would duplicate the entity and can livelock the flow).
+    if (!ctx.downstream_accepts(entity, "out")) {
+      return false;
+    }
     if (!ctx.emit(entity, "out")) {
       return false;
     }
@@ -621,6 +627,9 @@ class ServiceBlock final : public BufferedBlock {
     if (it == in_service_.end()) {
       return;
     }
+    if (down_.count(entity_id) != 0) {
+      return;  // the pool is down for repair; on_pool_up restarts the task
+    }
     Entity entity = *it;
     in_service_.erase(it);
     ++departed_;
@@ -634,6 +643,42 @@ class ServiceBlock final : public BufferedBlock {
     }
     if (!ctx.emit(entity, "out")) {
       outgoing_.push_back(entity);
+    }
+  }
+
+  // Pool-wide failure (the engine owns one clock per declared ResourcePool):
+  // every in-service task of this consumer is preempted until the repair.
+  void on_pool_down(BlockContext& ctx, const std::string& resource) override {
+    if (!shared_pool_ || resource != resource_) {
+      return;
+    }
+    for (Entity& entity : in_service_) {
+      if (down_.insert(entity.id).second) {
+        --busy_;
+        // The pre-failure depart event must never fire after the task
+        // restarts (preemptive-repeat): cancel it now.
+        if (!seize_) {
+          ctx.cancel_depart(entity.id);
+        }
+      }
+    }
+  }
+
+  void on_pool_up(BlockContext& ctx, const std::string& resource) override {
+    if (!shared_pool_ || resource != resource_) {
+      return;
+    }
+    std::vector<std::uint64_t> restart;
+    restart.reserve(down_.size());
+    for (Entity& entity : in_service_) {
+      if (down_.erase(entity.id) != 0) {
+        entity.service_start_ns = ctx.now().as_ns();
+        ++busy_;
+        restart.push_back(entity.id);
+      }
+    }
+    for (const std::uint64_t entity_id : restart) {
+      schedule_service(ctx, entity_id);
     }
   }
 
@@ -762,15 +807,9 @@ class ServiceBlock final : public BufferedBlock {
 
   void schedule_service(BlockContext& ctx, std::uint64_t entity_id) {
     const double hold = service_time_(ctx.rng());
-    if (failure_) {
-      const double failure_time = failure_(ctx.rng());
-      if (failure_time < hold) {
-        ctx.schedule_failure(
-            static_cast<std::int64_t>(std::llround(failure_time * 1e9)),
-            entity_id);
-        return;
-      }
-    }
+    // Busy-time failure is pool-wide (the engine's ResourcePool clock):
+    // per-entity TTF draws would give every consumer an independent failure
+    // process for the same physical capacity.
     ctx.schedule_depart(static_cast<std::int64_t>(std::llround(hold * 1e9)),
                         entity_id);
   }

@@ -46,9 +46,20 @@ victim identity (including newcomer self-preemption), and arbitration between
 multiple Service blocks sharing a healthy fixed ResourcePool. Invalid Queue
 modes and incomplete comparison expressions now fail at compile time. The MVP
 property editor badges partial and non-executed AnyLogic fields. Remaining M1
-work includes the wider unsupported-property matrix and correct pool-wide
-interruption semantics when a failure-enabled ResourcePool is shared by
-multiple consumers.
+work includes the wider unsupported-property matrix.
+
+Progress (2026-08-09): busy-time failure is now pool-wide. The engine owns one
+failure/repair clock per declared ResourcePool; when a shared failure-enabled
+pool goes down, every consumer's in-service tasks are interrupted together and
+restart only after the repair (preemptive-repeat), stale pre-failure depart
+events are cancelled, and availability counts the units held at failure time
+for the whole down period. A deterministic two-consumer golden test covers the
+interruption, and the M/G/1 failure acceptance now averages across derived
+per-replication seeds (the old single-seed loop had zero-width CIs). Fixing the
+shared-pool scenario also uncovered and fixed a pre-existing engine bug: a
+source feeding several branches with backpressure re-emitted buffered entities
+into branches that already accepted them, duplicating entities and livelocking
+the flow; source emission is now atomic (all branches must accept).
 
 ### M2 — AI modeling tool loop
 
