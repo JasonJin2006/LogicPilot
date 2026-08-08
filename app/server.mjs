@@ -87,6 +87,9 @@ async function startGateway() {
     // pops a separate terminal window next to the GUI app.
     windowsHide: true,
   });
+  // The gateway's own parent watchdog (lp-server) uses this pid to exit when
+  // the app server dies hard; expose it for ops/tests (crash-cleanup checks).
+  process.stdout.write(`LOGICPILOT_GATEWAY_PID ${child.pid}\n`);
   child.stdout.on('data', (chunk) => process.stdout.write(`[lp-server] ${chunk}`));
   child.stderr.on('data', (chunk) => process.stderr.write(`[lp-server] ${chunk}`));
   child.on('exit', (code) => {

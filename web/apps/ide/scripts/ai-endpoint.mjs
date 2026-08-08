@@ -117,6 +117,7 @@ export async function handleAiBuild(req, res) {
       ok: result.ok,
       iterations: result.iterations,
       dsl: result.dsl,
+      provider: result.provider,
       diagnostics: result.lastDiagnostics,
       runSummary: result.runSummary,
       metrics: result.metrics,

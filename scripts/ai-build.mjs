@@ -383,6 +383,7 @@ export async function buildModel({
       iterations,
       dsl: finalDsl,
       lpcli,
+      provider: process.env.OPENAI_API_KEY ? 'llm' : 'rule-based',
       lastDiagnostics: diagnostics,
       runSummary,
       metrics: runMetrics,

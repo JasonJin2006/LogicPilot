@@ -20,6 +20,8 @@ for (const path of [node, lpcli, lpserver, join(stage, 'app', 'server.mjs')]) {
 }
 const manifest = JSON.parse(readFileSync(join(stage, 'runtime-manifest.json'), 'utf8'));
 assert.equal(manifest.format, 1);
+assert.equal(manifest.platform, process.platform);
+assert.equal(manifest.architecture, process.arch);
 assert.ok(manifest.files.length > 10);
 assert.match(manifest.nodeVersion, /^v(?:2\d|[3-9]\d)\./);
 for (const entry of manifest.files) {

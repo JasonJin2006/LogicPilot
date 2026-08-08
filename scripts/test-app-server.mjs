@@ -32,7 +32,7 @@ function selectedLpServer() {
   throw new Error('lp-server not found; pass --lpserver <path>');
 }
 
-function waitForPort(child, timeoutMs = 20_000) {
+function waitForPort(child, onGatewayPid = () => {}, timeoutMs = 20_000) {
   return new Promise((resolve, reject) => {
     let buffered = '';
     const timeout = setTimeout(() => {
@@ -43,6 +43,8 @@ function waitForPort(child, timeoutMs = 20_000) {
       buffered += chunk.toString();
       const match = buffered.match(/(?:^|\r?\n)LOGICPILOT_PORT (\d+)(?:\r?\n|$)/);
       if (!match) return;
+      const gateway = buffered.match(/(?:^|\r?\n)LOGICPILOT_GATEWAY_PID (\d+)(?:\r?\n|$)/);
+      if (gateway) onGatewayPid(Number(gateway[1]));
       clearTimeout(timeout);
       child.stdout.off('data', onData);
       resolve(Number(match[1]));
@@ -55,16 +57,34 @@ function waitForPort(child, timeoutMs = 20_000) {
   });
 }
 
+// True when the process with `pid` is no longer running (existence probe).
+async function waitForProcessExit(pid, timeoutMs = 8000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
+
 const lpcli = argument('--lpcli') ?? process.env.LPCLI ?? findLpcli();
 assert.ok(lpcli && existsSync(lpcli), 'lpcli not found; pass --lpcli <path>');
 
+const serverEnv = {
+  ...process.env,
+  LP_SERVER: selectedLpServer(),
+  LPCLI: lpcli,
+};
+// Force the offline provider so the AI loop cannot depend on the network.
+delete serverEnv.OPENAI_API_KEY;
+
 const child = spawn(process.execPath, [join(root, 'app', 'server.mjs')], {
   cwd: root,
-  env: {
-    ...process.env,
-    LP_SERVER: selectedLpServer(),
-    LPCLI: lpcli,
-  },
+  env: serverEnv,
   stdio: ['ignore', 'pipe', 'pipe'],
   windowsHide: true,
 });
@@ -101,6 +121,7 @@ try {
   assert.equal(buildResponse.status, 200);
   const result = await buildResponse.json();
   assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
+  assert.equal(result.provider, 'rule-based');
   assert.ok(Array.isArray(result.metrics?.blocks));
   assert.ok(result.metrics.blocks.some((block) => block.kind === 'queue'));
   assert.ok(result.metrics.blocks.some((block) => block.kind === 'service'));
@@ -178,6 +199,42 @@ try {
   const compareResult = await compareResponse.json();
   assert.equal(compareResult.kind, 'metric-comparison');
   assert.ok(compareResult.findings.length > 0);
+
+  // Crash cleanup: a hard-killed app server (simulating a crashed Tauri
+  // shell) must not leave the lp-server gateway orphaned. lp-server runs its
+  // own parent-process watchdog and exits when the parent dies.
+  {
+    let gatewayPid = 0;
+    const crashChild = spawn(
+        process.execPath, [join(root, 'app', 'server.mjs')],
+        {
+          cwd: root,
+          env: serverEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        },
+    );
+    let crashStderr = '';
+    crashChild.stderr.on('data', (chunk) => { crashStderr += chunk.toString(); });
+    try {
+      const crashPort = await waitForPort(
+          crashChild, (pid) => { gatewayPid = pid; }, 20_000);
+      assert.ok(gatewayPid > 0, 'app server must report the gateway pid');
+      const crashBase = `http://127.0.0.1:${crashPort}`;
+      const alive = await fetch(`${crashBase}/api/config`)
+          .then((response) => response.ok)
+          .catch(() => false);
+      assert.ok(alive, 'gateway must be serving before the crash');
+      crashChild.kill('SIGKILL');  // no graceful shutdown path runs
+      const exited = await waitForProcessExit(gatewayPid, 10_000);
+      assert.ok(exited, `gateway pid ${gatewayPid} survived its parent's crash`);
+    } catch (error) {
+      if (crashStderr.trim()) process.stderr.write(crashStderr);
+      throw error;
+    } finally {
+      try { crashChild.kill(); } catch { /* already gone */ }
+    }
+  }
 
   console.log('APP-SERVER TEST: PASS');
 } catch (error) {
