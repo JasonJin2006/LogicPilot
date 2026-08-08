@@ -19,19 +19,19 @@ if (flag >= 0 && process.argv[flag + 1]) {
     throughput: 0.8, W: 9, Wq: 8, Lq: 6,
     utilization: 0.81, availability: 0.91,
   });
-  assert.ok(lowAvailability.some((f) => f.includes('可用性')));
+  assert.ok(lowAvailability.some((f) => f.includes('Availability')));
 
   const saturated = explainFromSummary({
     throughput: 0.8, W: 5, Wq: 2, Lq: 1,
     utilization: 0.97, availability: 1.0,
   });
-  assert.ok(saturated.some((f) => f.includes('利用率')));
+  assert.ok(saturated.some((f) => f.includes('saturation')));
 
   const healthy = explainFromSummary({
     throughput: 0.5, W: 2, Wq: 0.3, Lq: 0.1,
     utilization: 0.6, availability: 1.0,
   });
-  assert.ok(healthy.some((f) => f.includes('健康')));
+  assert.ok(healthy.some((f) => f.includes('healthy')));
 }
 
 // 2. End-to-end on the failure model: downtime must be called out.
@@ -44,7 +44,8 @@ if (flag >= 0 && process.argv[flag + 1]) {
   });
   assert.equal(result.kind, 'explain');
   assert.ok(result.metrics.availability < 0.97);
-  assert.ok(result.findings.some((f) => f.includes('可用性')));
+  assert.ok(result.findings.some((f) => f.includes('Availability')));
+  assert.ok(Array.isArray(result.blocks) && result.blocks.length > 0);
 }
 
 // 3. Prompt-driven path returns findings for a plain M/M/1.
@@ -55,6 +56,7 @@ if (flag >= 0 && process.argv[flag + 1]) {
   });
   assert.equal(result.kind, 'explain');
   assert.ok(result.findings.length >= 1);
+  assert.ok(result.findings.some((f) => f.includes('Bottleneck')));
 }
 
 console.log('EXPLAIN TEST: PASS');

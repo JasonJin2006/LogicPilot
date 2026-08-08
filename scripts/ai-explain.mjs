@@ -5,7 +5,7 @@
 // Usage: node scripts/ai-explain.mjs ["<prompt>"] [--model-file <path>]
 //        [--json] [--lpcli <path>] [--question "..."]
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,27 +27,58 @@ function runLpcli(lpcli, args) {
   });
 }
 
-export function explainFromSummary(summary, question = '') {
+export function explainFromSummary(summary, question = '', blocks = []) {
   const findings = [];
+  const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+  const utilized = (blocks ?? [])
+    .filter((block) => finite(block.utilization) > 0)
+    .sort((a, b) => finite(b.utilization) - finite(a.utilization));
+  const queued = (blocks ?? [])
+    .filter(
+      (block) =>
+        (block.kind === 'queue' || block.kind === 'wait') &&
+        finite(block.mean_occupancy) > 0,
+    )
+    .sort((a, b) => finite(b.mean_occupancy) - finite(a.mean_occupancy));
+  const busiest = utilized[0];
+  const largestQueue = queued[0];
   const waitShare = summary.W > 0 ? summary.Wq / summary.W : 0;
+  if (busiest) {
+    const saturation =
+      finite(busiest.utilization) > 0.9
+        ? ' (saturated - adding capacity there will help the most)'
+        : '.';
+    findings.push(
+      `Bottleneck: ${busiest.name} has the highest utilization at ` +
+      `${(finite(busiest.utilization) * 100).toFixed(1)}%${saturation}`,
+    );
+  } else if (summary.utilization > 0.9) {
+    findings.push(
+      `Server pool utilization is ${(summary.utilization * 100).toFixed(1)}%, ` +
+        'near saturation - capacity is the bottleneck',
+    );
+  }
   if (summary.availability < 0.97) {
     findings.push(
-        `机器可用性仅 ${(summary.availability * 100).toFixed(1)}%` +
-        `（约 ${((1 - summary.availability) * 100).toFixed(1)}% 时间处于` +
-        `故障/维修）——宕机是吞吐受限与等待上升的主导因素`);
+      `Availability is only ${(summary.availability * 100).toFixed(1)}% ` +
+        `(${((1 - summary.availability) * 100).toFixed(1)}% of the time in ` +
+        'failure/repair); downtime is the dominant cause of congestion.',
+    );
   }
-  if (summary.utilization > 0.9) {
+  if (largestQueue) {
     findings.push(
-        `服务器池利用率 ${(summary.utilization * 100).toFixed(1)}%，` +
-        `接近饱和——容量是瓶颈，建议增加服务器数量`);
+      `${largestQueue.name} has the largest mean queue occupancy at ` +
+        `${finite(largestQueue.mean_occupancy).toFixed(3)} agents`,
+    );
   }
   if (waitShare > 0.6) {
     findings.push(
-        `等待占滞留时间 ${(waitShare * 100).toFixed(1)}%（Wq/W）——` +
-        `瓶颈在排队环节（服务率或容量不足）`);
+      `Waiting accounts for ${(waitShare * 100).toFixed(1)}% of sojourn ` +
+        `(Wq/W)${largestQueue ? `; the queue builds before ${largestQueue.name}` : ''}.`,
+    );
   }
   if (findings.length === 0) {
-    findings.push('各项指标均在健康区间：未发现显著瓶颈');
+    findings.push('All indicators are in the healthy range; no significant bottleneck found.');
   }
   return findings;
 }
@@ -77,26 +108,46 @@ export async function aiExplain({
       writeFileSync(lp, dsl, 'utf8');
       runLpcli(lpcli, ['compile', lp, '-o', ir]);
     }
+    const resultsDir = join(dir, 'results');
     const output = runLpcli(lpcli, [
       'run', '--model-file', ir,
       '--seed', '42',
       '--reps', String(reps),
       '--arrivals', String(arrivals),
       '--warmup', String(warmup),
+      '--results-dir', resultsDir,
     ]);
-    const summary = {
-      throughput: parseMetric(output, 'throughput'),
-      W: parseMetric(output, 'W'),
-      Wq: parseMetric(output, 'Wq'),
-      Lq: parseMetric(output, 'Lq'),
-      utilization: parseMetric(output, 'utilization'),
-      availability: parseMetric(output, 'availability'),
-    };
+    let summary;
+    let blocks = [];
+    const metricsPath = join(resultsDir, 'metrics.json');
+    if (existsSync(metricsPath)) {
+      const metrics = JSON.parse(readFileSync(metricsPath, 'utf8'));
+      const mean = (name) => metrics.summary?.[name]?.mean ?? 0;
+      summary = {
+        throughput: mean('throughput'),
+        W: mean('W'),
+        Wq: mean('Wq'),
+        Lq: mean('Lq'),
+        utilization: mean('utilization'),
+        availability: mean('availability'),
+      };
+      blocks = metrics.blocks ?? [];
+    } else {
+      summary = {
+        throughput: parseMetric(output, 'throughput'),
+        W: parseMetric(output, 'W'),
+        Wq: parseMetric(output, 'Wq'),
+        Lq: parseMetric(output, 'Lq'),
+        utilization: parseMetric(output, 'utilization'),
+        availability: parseMetric(output, 'availability'),
+      };
+    }
     return {
       kind: 'explain',
       question,
       metrics: summary,
-      findings: explainFromSummary(summary, question),
+      blocks,
+      findings: explainFromSummary(summary, question, blocks),
       output,
     };
   } finally {
