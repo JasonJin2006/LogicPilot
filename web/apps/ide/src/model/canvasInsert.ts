@@ -23,7 +23,6 @@ export function insertBlockAt(
   world?: { x: number; y: number },
 ): void {
   if (library === 'process' && !isExecutableProcessKind(kind)) {
-    console.warn(`block '${kind}' is not executable yet; refusing to insert`);
     return;
   }
   const { addBlock } = useModelStore.getState();

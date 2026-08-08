@@ -68,9 +68,7 @@ export function resetVizState(viz: VizState): void {
 
 /** Parse generic process-flow counters (`block.<name>.<field>`) into the
  *  per-block live state map. Non-block counters are ignored. */
-export function parseBlockCounters(
-  values: Record<string, number>,
-): Map<string, BlockLiveState> {
+export function parseBlockCounters(values: Record<string, number>): Map<string, BlockLiveState> {
   const blocks = new Map<string, BlockLiveState>();
   for (const [key, value] of Object.entries(values)) {
     const match = /^block\.(.+)\.(buffered|in_service|arrived|departed)$/.exec(key);

@@ -823,10 +823,7 @@ export function ModelCanvas() {
             const edge = outs[i % outs.length]!;
             const toNode = flowNodesRef.current.find((node) => node.id === edge.to);
             if (!toNode) continue;
-            const a = portAnchor(
-              fromNode,
-              edge.fromPort ?? firstOutPort(fromNode),
-            );
+            const a = portAnchor(fromNode, edge.fromPort ?? firstOutPort(fromNode));
             const b = portAnchor(toNode, edge.toPort ?? firstInPort(toNode));
             const id = tokenSeq.current++;
             setTokens((prev) => [...prev.slice(-47), { id, a, b, born: now }]);

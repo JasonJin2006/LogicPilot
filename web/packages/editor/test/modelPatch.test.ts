@@ -92,8 +92,12 @@ describe('ModelPatch', () => {
     expect(result.ok).toBe(true);
     expect(result.document.nodes.map((node) => node.name)).toEqual(['S', 'Q', 'Buffer']);
     expect(result.document.edges).toHaveLength(2);
-    expect(result.document.edges[0]!.to).toBe(result.document.nodes.find((n) => n.name === 'Buffer')!.id);
-    expect(result.document.edges[1]!.from).toBe(result.document.nodes.find((n) => n.name === 'Buffer')!.id);
+    expect(result.document.edges[0]!.to).toBe(
+      result.document.nodes.find((n) => n.name === 'Buffer')!.id,
+    );
+    expect(result.document.edges[1]!.from).toBe(
+      result.document.nodes.find((n) => n.name === 'Buffer')!.id,
+    );
   });
 
   it('replaces a block kind while preserving the flow topology', () => {
