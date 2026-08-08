@@ -3,6 +3,10 @@
 // frontend (tauri://localhost, so the window controls' IPC is allowed). The
 // app server reports its ports on stdout; a command hands them to the page.
 
+// The packaged client is a GUI app: without this Rust defaults to the
+// console subsystem and Windows opens a stray terminal on every launch.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
