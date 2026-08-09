@@ -12,3 +12,6 @@
   vcpkg manifest pass. Use `-Configure` after changing CMake files or presets;
   a missing build tree is configured automatically. The script always loads
   and validates the complete toolchain.
+- Use `-Clean` for a reproducible clean rebuild. It refreshes the CMake rules
+  before cleaning, preserves dependency caches, and then performs the normal
+  build; combine it with `-Test` for the full local gate.

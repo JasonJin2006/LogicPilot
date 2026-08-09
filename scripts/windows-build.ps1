@@ -3,6 +3,7 @@ param(
   [ValidateSet('windows-msvc-dev', 'windows-msvc-release')]
   [string]$Preset = 'windows-msvc-dev',
   [switch]$Configure,
+  [switch]$Clean,
   [switch]$Test
 )
 
@@ -156,8 +157,13 @@ Assert-ToolchainEnvironment
 
 Push-Location $repoRoot
 try {
-  if ($Configure -or -not (Test-Path $cachePath)) {
+  # Reconfigure before cleaning so stale generated build rules cannot make the
+  # clean target fail (and so CMake changes are reflected in the rebuild).
+  if ($Configure -or $Clean -or -not (Test-Path $cachePath)) {
     Invoke-Checked 'cmake' @('--preset', $Preset)
+  }
+  if ($Clean) {
+    Invoke-Checked 'cmake' @('--build', '--preset', $Preset, '--target', 'clean')
   }
   Invoke-Checked 'cmake' @('--build', '--preset', $Preset)
   if ($Test) {

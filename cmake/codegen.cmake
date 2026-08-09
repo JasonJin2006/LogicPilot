@@ -137,8 +137,7 @@ set(LOGICPILOT_WIRE_GENERATED "${LOGICPILOT_GENERATED_DIR}/wire_generated.h")
 file(MAKE_DIRECTORY "${LOGICPILOT_GENERATED_DIR}")
 
 add_custom_command(
-  OUTPUT "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_V2_GENERATED}"
-         "${LOGICPILOT_WIRE_GENERATED}"
+  OUTPUT "${LOGICPILOT_V2_GENERATED}" "${LOGICPILOT_WIRE_GENERATED}"
   COMMAND "${FLATC_EXECUTABLE}" --cpp
           -o "${LOGICPILOT_GENERATED_DIR}"
           "${LOGICPILOT_V2_SCHEMA}"
@@ -150,8 +149,7 @@ add_custom_command(
 )
 
 add_custom_target(logicpilot_codegen DEPENDS
-  "${LOGICPILOT_IR_GENERATED}" "${LOGICPILOT_V2_GENERATED}"
-  "${LOGICPILOT_WIRE_GENERATED}")
+  "${LOGICPILOT_V2_GENERATED}" "${LOGICPILOT_WIRE_GENERATED}")
 
 # INTERFACE library consumed by kernel/tool targets:
 #   target_link_libraries(<tgt> PRIVATE logicpilot_schemas)
