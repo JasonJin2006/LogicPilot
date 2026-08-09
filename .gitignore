@@ -60,3 +60,7 @@ Thumbs.db
 # Local scratch: browser-verify screenshots, server/dev logs
 # ---------------------------------------------------------------------------
 .verify/
+
+# Local agent session data (Reasonix)
+# ---------------------------------------------------------------------------
+.reasonix/
