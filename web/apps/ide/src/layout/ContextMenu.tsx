@@ -1,10 +1,14 @@
-// Small fixed-position context menu used by the Explorer and Project trees.
+// Small fixed-position context menu shared by trees and the modeling canvas.
 // Closes on outside mousedown, Escape or after selecting an action.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 export interface ContextAction {
   label: string;
+  icon?: ReactNode;
+  shortcut?: string;
+  separatorBefore?: boolean;
+  disabled?: boolean;
   danger?: boolean;
   onSelect: () => void;
 }
@@ -14,11 +18,13 @@ export function ContextMenu({
   y,
   actions,
   onClose,
+  label = 'Context menu',
 }: {
   x: number;
   y: number;
   actions: ContextAction[];
   onClose: () => void;
+  label?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -42,20 +48,33 @@ export function ContextMenu({
   }, [onClose]);
 
   return (
-    <div className="context-menu" role="menu" ref={ref} style={{ left: x, top: y }}>
+    <div
+      className="context-menu"
+      role="menu"
+      aria-label={label}
+      ref={ref}
+      style={{ left: x, top: y }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
       {actions.map((action) => (
-        <button
-          key={action.label}
-          className={`context-item${action.danger ? ' danger' : ''}`}
-          role="menuitem"
-          onClick={(event) => {
-            event.stopPropagation();
-            onClose();
-            action.onSelect();
-          }}
-        >
-          {action.label}
-        </button>
+        <div key={action.label} className={action.separatorBefore ? 'context-group' : undefined}>
+          <button
+            className={`context-item${action.danger ? ' danger' : ''}`}
+            role="menuitem"
+            disabled={action.disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClose();
+              action.onSelect();
+            }}
+          >
+            <span className="context-item-icon" aria-hidden="true">
+              {action.icon}
+            </span>
+            <span className="context-item-label">{action.label}</span>
+            {action.shortcut && <kbd className="context-shortcut">{action.shortcut}</kbd>}
+          </button>
+        </div>
       ))}
     </div>
   );

@@ -828,22 +828,44 @@
   padding: 2px 0 2px 18px;
 }
 
-/* Right-click context menus (Explorer / Project trees). */
+/* Right-click context menus shared by trees and the modeling canvas. */
 .context-menu {
   position: fixed;
   z-index: 200;
   display: flex;
   flex-direction: column;
-  min-width: 160px;
-  padding: 4px;
-  background: var(--surface-1);
+  min-width: 210px;
+  padding: 5px;
+  background: color-mix(in srgb, var(--surface-1) 96%, transparent);
   border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  box-shadow: var(--shadow);
+  border-radius: 8px;
+  box-shadow: 0 12px 36px rgb(0 0 0 / 0.32), 0 2px 8px rgb(0 0 0 / 0.2);
+  backdrop-filter: blur(12px);
+  cursor: var(--cursor-arrow);
+  animation: context-menu-in 90ms ease-out;
+}
+
+@keyframes context-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.985);
+  }
+}
+
+.context-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
 }
 
 .context-item {
-  padding: 4px 10px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 7px;
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -853,9 +875,46 @@
   cursor: var(--cursor-pointer);
 }
 
+.context-item:disabled {
+  opacity: 0.4;
+  cursor: var(--cursor-arrow);
+}
+
+.context-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.context-item-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.7;
+}
+
+.context-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-shortcut {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: 10px/1 var(--font-mono);
+}
+
 .context-item:hover:not(:disabled) {
   background: var(--accent-dim);
   color: var(--accent-text);
+}
+
+.context-item:hover:not(:disabled) .context-item-icon,
+.context-item:hover:not(:disabled) .context-shortcut {
+  color: inherit;
 }
 
 .context-item.danger {

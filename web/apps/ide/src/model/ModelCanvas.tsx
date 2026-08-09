@@ -6,7 +6,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
-import { Focus, MousePointer2, PenLine, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  Focus,
+  MousePointer2,
+  PenLine,
+  Redo2,
+  RotateCcw,
+  Trash2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
@@ -32,6 +42,7 @@ import { insertBlockAt } from './canvasInsert';
 import { departedDelta, vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
+import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -313,6 +324,7 @@ export function ModelCanvas() {
   const [penPoints, setPenPoints] = useState<Array<{ x: number; y: number }>>([]);
   // Active path-point drag on a selected path node.
   const [pathEdit, setPathEdit] = useState<{ id: string; point: PathPoint } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Delete/Backspace removes the selected block (unless typing in a field).
   useEffect(() => {
@@ -522,6 +534,16 @@ export function ModelCanvas() {
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const openContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Keep the menu inside the visible window even when invoked near an edge.
+    setContextMenu({
+      x: Math.min(event.clientX, window.innerWidth - 226),
+      y: Math.min(event.clientY, window.innerHeight - (selectedId ? 302 : 264)),
+    });
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1413,10 +1435,60 @@ export function ModelCanvas() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onContextMenu={openContextMenu}
       onDragEnter={(event) => event.preventDefault()}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
+      {contextMenu && (() => {
+        const actions: ContextAction[] = [
+          { label: 'Undo', icon: <Undo2 />, shortcut: 'Ctrl Z', onSelect: undo },
+          { label: 'Redo', icon: <Redo2 />, shortcut: 'Ctrl Y', onSelect: redo },
+          {
+            label: 'Fit model in view',
+            icon: <Focus />,
+            shortcut: 'F',
+            separatorBefore: true,
+            onSelect: fitVisibleModel,
+          },
+          {
+            label: 'Reset view',
+            icon: <RotateCcw />,
+            onSelect: () => setView(defaultView),
+          },
+          { label: 'Zoom in', icon: <ZoomIn />, onSelect: () => zoomAtCenter(1.2) },
+          { label: 'Zoom out', icon: <ZoomOut />, onSelect: () => zoomAtCenter(1 / 1.2) },
+          {
+            label: 'Select tool',
+            icon: <MousePointer2 />,
+            shortcut: 'V',
+            separatorBefore: true,
+            onSelect: () => {
+              cancelPen();
+              setTool('select');
+            },
+          },
+        ];
+        if (selectedId) {
+          actions.push({
+            label: 'Delete selection',
+            icon: <Trash2 />,
+            shortcut: 'Del',
+            separatorBefore: true,
+            danger: true,
+            onSelect: () => removeBlock(selectedId),
+          });
+        }
+        return (
+          <ContextMenu
+            x={Math.max(8, contextMenu.x)}
+            y={Math.max(8, contextMenu.y)}
+            label="Canvas actions"
+            actions={actions}
+            onClose={() => setContextMenu(null)}
+          />
+        );
+      })()}
       {focusView && (
         <div className="canvas-view-pill" title="Editing this container's subgraph">
           <button
