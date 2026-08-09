@@ -40,6 +40,17 @@ describe('graph document operations', () => {
     expect(text.transform.height).toBe(24);
   });
 
+  it('creates composable polygon and star primitives', () => {
+    const polygon = createGraphicNode('polygon', 10, 20);
+    const star = createGraphicNode('star', 10, 20);
+    expect(polygon.geometry?.shapeType).toBe('polygon');
+    expect(polygon.geometry?.points).toHaveLength(6);
+    expect(star.geometry?.shapeType).toBe('polygon');
+    expect(star.geometry?.points).toHaveLength(10);
+    const radii = star.geometry!.points!.map((point) => Math.hypot(point.x - 0.5, point.y - 0.5));
+    expect(Math.min(...radii)).toBeLessThan(Math.max(...radii) * 0.6);
+  });
+
   it('normalizes legacy shape objects to the unified model', () => {
     const legacy = {
       type: 'roundedRect',

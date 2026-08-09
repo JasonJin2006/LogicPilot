@@ -32,8 +32,16 @@ import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
 import { syncCanvasFromProject } from '../state/projectSync';
-import { blockPorts, portAnchor, PRESENTATION_KINDS, STATECHART_KINDS } from './blockDefs';
+import {
+  blockPorts,
+  CONTROL_KINDS,
+  portAnchor,
+  portGlyphPoint,
+  PRESENTATION_KINDS,
+  STATECHART_KINDS,
+} from './blockDefs';
 import { ChartWidget } from './ChartWidget';
+import { ControlWidget } from './ControlWidget';
 import { BlockIcon } from './BlockIcon';
 import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
@@ -69,44 +77,29 @@ function visiblePorts(node: ModelNode): BlockPortDef[] {
 /** World-space port anchor for statechart shape elements. State shapes are
  *  larger than the 34px block cards, so their in/out ports sit on the
  *  rounded-rectangle's left/right mid-edge instead of the icon rail. */
+const STATECHART_BODY_SIZE = 52;
+const STATECHART_TOTAL_HEIGHT = 69; // 52px body + 4px gap + 13px label
+
 function statechartPortAnchor(node: ModelNode, port: string): { x: number; y: number } {
-  const halfWidth =
-    node.kind === 'state'
-      ? 59
-      : node.kind === 'finalState' || node.kind === 'historyState'
-        ? 14
-        : 16; // branch diamond
-  const bodyCenterY = -8.5; // body (46/28/30px) sits above the name line
-  return port === 'in'
-    ? { x: node.x - halfWidth, y: node.y + bodyCenterY }
-    : { x: node.x + halfWidth, y: node.y + bodyCenterY };
+  const local = statechartPortLocal(node, port);
+  return {
+    x: node.x - STATECHART_BODY_SIZE / 2 + local.x,
+    y: node.y - STATECHART_TOTAL_HEIGHT / 2 + local.y,
+  };
 }
 
 /** Local (div-content-box) position of a statechart shape port. The shape
  *  div translates by half its own size, so these offsets are NOT the world
  *  anchor; they place the dot on the body's edge before that transform. */
 function statechartPortLocal(node: ModelNode, port: string): { x: number; y: number } {
-  if (node.kind === 'finalState' || node.kind === 'historyState') {
-    return port === 'in' ? { x: 0, y: 14 } : { x: 28, y: 14 };
-  }
-  if (node.kind === 'branch') {
-    return port === 'in' ? { x: 0, y: 15 } : { x: 30, y: 15 };
-  }
-  return port === 'in' ? { x: 0, y: 23 } : { x: 118, y: 23 };
+  const spec = blockPorts(node.kind).find((entry) => entry.name === port);
+  const [x, y] = portGlyphPoint(node.kind, port, spec?.direction ?? 'out');
+  return { x: (x / 40) * STATECHART_BODY_SIZE, y: (y / 40) * STATECHART_BODY_SIZE };
 }
 
 /** Ports the statechart linking tool exposes on shape elements. */
 function statechartShapePorts(node: ModelNode): string[] {
-  switch (node.kind) {
-    case 'state':
-    case 'historyState':
-    case 'branch':
-      return ['in', 'out'];
-    case 'finalState':
-      return ['in'];
-    default:
-      return [];
-  }
+  return blockPorts(node.kind).map((port) => port.name);
 }
 
 /** Analysis-library chart blocks render as live data widgets. */
@@ -1282,8 +1275,8 @@ export function ModelCanvas() {
     scEdges.push({
       id: node.id,
       name: node.name,
-      a: { x: from.x, y: from.y },
-      b: { x: to.x, y: to.y },
+      a: statechartPortAnchor(from, 'out'),
+      b: statechartPortAnchor(to, 'in'),
     });
   }
   const scBounds =
@@ -1312,11 +1305,10 @@ export function ModelCanvas() {
           const len = Math.hypot(dx, dy) || 1;
           const ux = dx / len;
           const uy = dy / len;
-          // Shorten the arrow so it stops at the target state's border.
-          const tipX = edge.b.x - ux * 26;
-          const tipY = edge.b.y - uy * 26;
-          const tailX = edge.a.x + ux * 26;
-          const tailY = edge.a.y + uy * 26;
+          const tipX = edge.b.x;
+          const tipY = edge.b.y;
+          const tailX = edge.a.x;
+          const tailY = edge.a.y;
           const d = `M ${tailX - scBounds.minX} ${tailY - scBounds.minY} L ${tipX - scBounds.minX} ${tipY - scBounds.minY}`;
           const head = `M ${tipX - scBounds.minX} ${tipY - scBounds.minY} L ${tipX - ux * 9 - uy * 4.5 - scBounds.minX} ${tipY - uy * 9 + ux * 4.5 - scBounds.minY} L ${tipX - ux * 9 + uy * 4.5 - scBounds.minX} ${tipY - uy * 9 - ux * 4.5 - scBounds.minY} Z`;
           const mx = (tailX + tipX) / 2 - scBounds.minX;
@@ -1361,36 +1353,41 @@ export function ModelCanvas() {
               }}
               title={node.kind}
             >
-              <span className="sc-shape-body" aria-hidden />
-              {statechartShapePorts(node).map((port) => {
-                const local = statechartPortLocal(node, port);
-                const isIn = port === 'in';
-                const targeted =
-                  isIn &&
-                  wireTarget !== null &&
-                  wireTarget.id === node.id &&
-                  wireTarget.port === port;
-                return (
-                  <span
-                    key={port}
-                    className={`model-port sc-shape-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
-                    data-port={port}
-                    title={`${port} port`}
-                    style={{
-                      left: local.x,
-                      top: local.y,
-                    }}
-                    onPointerDown={
-                      isIn
-                        ? (event) => event.stopPropagation()
-                        : (event) => startWire(event, node, port)
-                    }
-                    onPointerMove={moveWire}
-                    onPointerUp={endWire}
-                    onPointerCancel={cancelWire}
-                  />
-                );
-              })}
+              <span className="sc-shape-body">
+                <BlockIcon kind={node.kind} />
+                {statechartShapePorts(node).map((port) => {
+                  const local = statechartPortLocal(node, port);
+                  const direction = blockPorts(node.kind).find(
+                    (entry) => entry.name === port,
+                  )?.direction;
+                  const isIn = direction === 'in' || direction === 'inout';
+                  const targeted =
+                    isIn &&
+                    wireTarget !== null &&
+                    wireTarget.id === node.id &&
+                    wireTarget.port === port;
+                  return (
+                    <span
+                      key={port}
+                      className={`model-port sc-shape-port ${isIn ? 'port-in' : 'port-out'}${targeted ? ' wire-target' : ''}`}
+                      data-port={port}
+                      title={`${port} port`}
+                      style={{
+                        left: local.x,
+                        top: local.y,
+                      }}
+                      onPointerDown={
+                        isIn
+                          ? (event) => event.stopPropagation()
+                          : (event) => startWire(event, node, port)
+                      }
+                      onPointerMove={moveWire}
+                      onPointerUp={endWire}
+                      onPointerCancel={cancelWire}
+                    />
+                  );
+                })}
+              </span>
               <span className="sc-shape-name">{node.name}</span>
             </div>
           );
@@ -1422,6 +1419,33 @@ export function ModelCanvas() {
               title={`${node.name} - live ${String(node.params['value'] ?? 'queueLength')}`}
             >
               <ChartWidget kind={node.kind} params={node.params} name={node.name} />
+            </div>
+          );
+        })}
+    </>
+  );
+
+  const controlsView = (
+    <>
+      {visibleNodes
+        .filter((node) => CONTROL_KINDS.has(node.kind))
+        .map((node) => {
+          const selected = node.id === selectedId;
+          return (
+            <div
+              key={node.id}
+              className={`model-control kind-${node.kind}${selected ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+              style={{ left: node.x, top: node.y }}
+              onPointerDown={(event) => onElementPointerDown(event, node)}
+              onPointerMove={(event) => onElementPointerMove(event, node)}
+              onPointerUp={(event) => onElementPointerUp(event, node)}
+              onPointerCancel={() => {
+                elementDrag.current = null;
+                setDraggingId(null);
+              }}
+              title={`${node.name} (${node.kind})`}
+            >
+              <ControlWidget kind={node.kind} params={node.params} name={node.name} />
             </div>
           );
         })}
@@ -1549,12 +1573,14 @@ export function ModelCanvas() {
         {scEdgesView}
         {scShapesView}
         {chartsView}
+        {controlsView}
         {visibleNodes.map((node) => {
           const nodeLive = live ? vizState.blocks.get(node.name) : undefined;
           if (
             PRESENTATION_KINDS.has(node.kind) ||
             STATECHART_KINDS.has(node.kind) ||
-            ANALYSIS_CHART_KINDS.has(node.kind)
+            ANALYSIS_CHART_KINDS.has(node.kind) ||
+            CONTROL_KINDS.has(node.kind)
           ) {
             return null; // rendered as a real shape above
           }

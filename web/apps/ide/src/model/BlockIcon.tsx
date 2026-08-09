@@ -386,10 +386,22 @@ export function BlockIcon({ kind }: { kind: string }) {
           <rect x="9" y="12" width="22" height="16" />
         </Glyph>
       );
-    case 'roundedRect':
+    case 'triangle':
       return (
         <Glyph>
-          <rect x="9" y="12" width="22" height="16" rx="4" />
+          <path d="M20 8 L33 31 L7 31 Z" />
+        </Glyph>
+      );
+    case 'polygon':
+      return (
+        <Glyph>
+          <path d="M20 7 L31 13 L31 27 L20 33 L9 27 L9 13 Z" />
+        </Glyph>
+      );
+    case 'star':
+      return (
+        <Glyph>
+          <path d="M20 6 L24 15 L34 15 L26 21 L29 31 L20 25 L11 31 L14 21 L6 15 L16 15 Z" />
         </Glyph>
       );
     case 'oval':
@@ -473,8 +485,8 @@ export function BlockIcon({ kind }: { kind: string }) {
     case 'transition':
       return (
         <Glyph>
-          <path d="M8 28 L30 12" />
-          <path d="M25 11 L31 10 L30 16" />
+          <path d="M20 8 V31" />
+          <path d="M15 25 L20 31 L25 25" />
         </Glyph>
       );
     case 'historyState':
@@ -677,17 +689,17 @@ export function BlockIcon({ kind }: { kind: string }) {
     case 'statechartEntryPoint':
       return (
         <Glyph>
-          <circle cx="12" cy="20" r="4" fill="currentColor" stroke="none" />
-          <path d="M16 20h12" />
-          <path d="M24 16l4 4-4 4" />
+          <circle cx="20" cy="10" r="4" fill="currentColor" stroke="none" />
+          <path d="M20 14v18" />
+          <path d="M16 27l4 5 4-5" />
         </Glyph>
       );
     case 'initialStatePointer':
       return (
         <Glyph>
-          <circle cx="12" cy="20" r="3" fill="currentColor" stroke="none" />
-          <path d="M15 20h10" />
-          <path d="M21 16.5l3.5 3.5-3.5 3.5" />
+          <circle cx="20" cy="10" r="3" fill="currentColor" stroke="none" />
+          <path d="M20 13v17" />
+          <path d="M16.5 25.5l3.5 4.5 3.5-4.5" />
         </Glyph>
       );
     // ── Analysis library ─────────────────────────────────────────────────

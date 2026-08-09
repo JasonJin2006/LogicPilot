@@ -149,8 +149,10 @@ const PROCESS_DEFS: BlockDef[] = [
 const PRESENTATION_DEFS: BlockDef[] = (
   [
     ['rect', 'Rectangle'],
-    ['roundedRect', 'Rounded Rectangle'],
     ['oval', 'Oval'],
+    ['triangle', 'Triangle'],
+    ['polygon', 'Polygon'],
+    ['star', 'Star'],
     ['line', 'Line'],
     ['polyline', 'Polyline'],
     ['arc', 'Arc'],
@@ -982,25 +984,90 @@ const CONTROLS_DEFS: BlockDef[] = [
   },
 ];
 
-// Action chart library (AnyLogic action charts).
-const ACTION_DEFS: BlockDef[] = (
-  [
-    ['action', 'Action'],
-    ['decision', 'Decision'],
-    ['whileLoop', 'While Loop'],
-    ['forLoop', 'For Loop'],
-    ['doWhileLoop', 'Do-While Loop'],
-    ['break', 'Break'],
-    ['return', 'Return'],
-    ['localVariable', 'Local Variable'],
-  ] as const
-).map(([kind, name]) => ({
-  kind,
-  library: 'action',
-  name,
-  ports: [],
-  properties: [],
-}));
+function verticalInputPort(): BlockPortDef[] {
+  return [{ name: 'in', direction: 'in', conditionalOn: null, description: '' }];
+}
+
+function verticalFlowPorts(...outputs: string[]): BlockPortDef[] {
+  const names = outputs.length > 0 ? outputs : ['out'];
+  return [
+    ...verticalInputPort(),
+    ...names.map((name) => ({
+      name,
+      direction: 'out' as const,
+      conditionalOn: null,
+      description: '',
+    })),
+  ];
+}
+
+// Action chart library (AnyLogic action charts). Flow is vertical by
+// default, which keeps code-like control structures readable top-to-bottom.
+const ACTION_DEFS: BlockDef[] = [
+  {
+    kind: 'action',
+    library: 'action',
+    name: 'Action',
+    ports: verticalFlowPorts(),
+    properties: commonProps([actionProp('action', 'Action')]),
+  },
+  {
+    kind: 'decision',
+    library: 'action',
+    name: 'Decision',
+    ports: verticalFlowPorts('true', 'false'),
+    properties: commonProps([stringProp('condition', 'Condition', 'true')]),
+  },
+  {
+    kind: 'whileLoop',
+    library: 'action',
+    name: 'While Loop',
+    ports: verticalFlowPorts('loop', 'done'),
+    properties: commonProps([stringProp('condition', 'Condition', 'true')]),
+  },
+  {
+    kind: 'forLoop',
+    library: 'action',
+    name: 'For Loop',
+    ports: verticalFlowPorts('loop', 'done'),
+    properties: commonProps([
+      stringProp('initialization', 'Initialization', 'int i = 0'),
+      stringProp('condition', 'Condition', 'i < 10'),
+      stringProp('iteration', 'Iteration', 'i++'),
+    ]),
+  },
+  {
+    kind: 'doWhileLoop',
+    library: 'action',
+    name: 'Do-While Loop',
+    ports: verticalFlowPorts('loop', 'done'),
+    properties: commonProps([stringProp('condition', 'Condition', 'true')]),
+  },
+  {
+    kind: 'break',
+    library: 'action',
+    name: 'Break',
+    ports: verticalInputPort(),
+    properties: commonProps(),
+  },
+  {
+    kind: 'return',
+    library: 'action',
+    name: 'Return',
+    ports: verticalInputPort(),
+    properties: commonProps([stringProp('value', 'Return value', '')]),
+  },
+  {
+    kind: 'localVariable',
+    library: 'action',
+    name: 'Local Variable',
+    ports: verticalFlowPorts(),
+    properties: commonProps([
+      enumProp('type', 'Type', ['int', 'double', 'bool', 'string'], 'double'),
+      stringProp('initialValue', 'Initial value', '0'),
+    ]),
+  },
+];
 
 export const BLOCK_DEFS: BlockDef[] = [
   // Catalog-only process kinds (restrictedArea*, pickup/dropoff, ...) have
@@ -1033,6 +1100,9 @@ export const STATECHART_KINDS: ReadonlySet<string> = new Set([
   'initialStatePointer',
   'transition',
 ]);
+
+/** Runtime controls render as real design-time widget previews. */
+export const CONTROL_KINDS: ReadonlySet<string> = new Set(CONTROLS_DEFS.map((def) => def.kind));
 
 /** The block's full port list (direction + conditional visibility). */
 export function blockPorts(kind: string): BlockPortDef[] {
@@ -1138,6 +1208,21 @@ const PORT_LAYOUTS: Record<string, Record<string, [number, number]>> = {
   restrictedAreaStart: { in: [10, 20], out: [25, 20] },
   restrictedAreaEnd: { in: [15, 20], out: [30, 20] },
   plainTransfer: { in: [10, 20], out: [30, 20] },
+  state: { in: [20, 11], out: [20, 29] },
+  finalState: { in: [20, 9] },
+  historyState: { in: [20, 10], out: [20, 30] },
+  branch: { in: [20, 7], out: [20, 33] },
+  statechartEntryPoint: { out: [20, 32] },
+  initialStatePointer: { out: [20, 30] },
+  transition: { in: [20, 10], out: [20, 30] },
+  action: { in: [20, 12], out: [20, 28] },
+  decision: { in: [20, 7], true: [13, 27], false: [27, 27] },
+  whileLoop: { in: [20, 8], loop: [13, 29], done: [27, 29] },
+  forLoop: { in: [20, 8], loop: [13, 29], done: [27, 29] },
+  doWhileLoop: { in: [20, 9], loop: [13, 29], done: [27, 29] },
+  break: { in: [20, 14] },
+  return: { in: [20, 9] },
+  localVariable: { in: [20, 12], out: [20, 28] },
 };
 
 /** Port anchor in the icon's 40×40 viewBox space (used by the palette dots). */

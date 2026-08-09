@@ -31,6 +31,7 @@ export {
   groupNode,
   imageNode,
   normalizeGraphicNode,
+  regularPolygonPoints,
   pathNode,
   shapeNode,
   textNode,

@@ -5,7 +5,7 @@
 // Pure: every edit calls back with a fresh GraphicNode; the model store
 // commits it (undoable).
 
-import { createGraphicNode } from '@logicpilot/editor';
+import { createGraphicNode, regularPolygonPoints } from '@logicpilot/editor';
 import type { BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
@@ -70,6 +70,20 @@ export function PresentationInspector({
     onChange({ ...object, geometry: { ...object.geometry!, ...patch } });
   const ts = object.textStyle;
   const shapeType = object.type === 'shape' ? object.geometry?.shapeType : undefined;
+  const polygonPoints = shapeType === 'polygon' ? (object.geometry?.points ?? []) : [];
+  const polygonRadii = polygonPoints.map((point) => Math.hypot(point.x - 0.5, point.y - 0.5));
+  const alternatingPolygon =
+    polygonRadii.length >= 6 &&
+    polygonRadii.length % 2 === 0 &&
+    polygonRadii.filter((_, index) => index % 2 === 1).reduce((sum, value) => sum + value, 0) /
+      (polygonRadii.length / 2) <
+      (polygonRadii.filter((_, index) => index % 2 === 0).reduce((sum, value) => sum + value, 0) /
+        (polygonRadii.length / 2)) *
+        0.8;
+  const polygonSides = alternatingPolygon ? polygonPoints.length / 2 : polygonPoints.length;
+  const polygonInnerRadius = alternatingPolygon
+    ? Math.min(...polygonRadii) / Math.max(...polygonRadii)
+    : 1;
   const shadow = s.shadow;
   const fill = s.fill;
   const binding = object.binding;
@@ -102,6 +116,8 @@ export function PresentationInspector({
       {numField('W', t.width, (width) => patchTransform({ width: Math.max(1, width) }), 1, 1)}
       {numField('H', t.height, (height) => patchTransform({ height: Math.max(1, height) }), 1, 1)}
       {numField('Rotation °', t.rotation, (rotation) => patchTransform({ rotation }), 1)}
+      {numField('Skew X °', t.skewX, (skewX) => patchTransform({ skewX }), 1)}
+      {numField('Skew Y °', t.skewY, (skewY) => patchTransform({ skewY }), 1)}
 
       {shapeType === 'rectangle' && (
         <label className="props-field">
@@ -115,6 +131,38 @@ export function PresentationInspector({
             }
           />
         </label>
+      )}
+
+      {shapeType === 'polygon' && (
+        <>
+          {numField(
+            'Sides',
+            polygonSides || 3,
+            (sides) =>
+              patchGeometry({
+                points: regularPolygonPoints(
+                  Math.max(3, Math.min(32, Math.round(sides))),
+                  alternatingPolygon ? polygonInnerRadius : 1,
+                ),
+              }),
+            1,
+            3,
+          )}
+          {alternatingPolygon &&
+            numField(
+              'Inner radius',
+              polygonInnerRadius,
+              (innerRadius) =>
+                patchGeometry({
+                  points: regularPolygonPoints(
+                    polygonSides,
+                    Math.max(0.05, Math.min(0.95, innerRadius)),
+                  ),
+                }),
+              0.05,
+              0.05,
+            )}
+        </>
       )}
 
       <label className="props-field">
@@ -218,6 +266,42 @@ export function PresentationInspector({
           }
         />
       </label>
+      <label className="props-field">
+        <span className="props-field-name">Stroke join</span>
+        <select
+          value={s.stroke.join}
+          onChange={(event) =>
+            patchStyle({
+              stroke: {
+                ...s.stroke,
+                join: event.target.value as GraphicStyle['stroke']['join'],
+              },
+            })
+          }
+        >
+          <option value="miter">Miter</option>
+          <option value="round">Round</option>
+          <option value="bevel">Bevel</option>
+        </select>
+      </label>
+      <label className="props-field">
+        <span className="props-field-name">Stroke cap</span>
+        <select
+          value={s.stroke.cap}
+          onChange={(event) =>
+            patchStyle({
+              stroke: {
+                ...s.stroke,
+                cap: event.target.value as GraphicStyle['stroke']['cap'],
+              },
+            })
+          }
+        >
+          <option value="butt">Butt</option>
+          <option value="round">Round</option>
+          <option value="square">Square</option>
+        </select>
+      </label>
       {numField(
         'Opacity',
         s.opacity,
@@ -281,6 +365,19 @@ export function PresentationInspector({
           {numField('Font size', ts?.fontSize ?? 16, (fontSize) =>
             onChange({ ...object, textStyle: { ...ts!, fontSize } }),
           )}
+          <label className="props-field">
+            <span className="props-field-name">Font family</span>
+            <input
+              type="text"
+              value={ts?.fontFamily ?? 'Arial'}
+              onChange={(event) =>
+                onChange({
+                  ...object,
+                  textStyle: { ...ts!, fontFamily: event.target.value },
+                })
+              }
+            />
+          </label>
           <label className="props-field">
             <span className="props-field-name">Bold</span>
             <input

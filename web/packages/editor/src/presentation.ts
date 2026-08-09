@@ -209,6 +209,37 @@ export function pathNode(
   };
 }
 
+/** Normalized vertices for regular polygons and stars. The first point is
+ * always at twelve o'clock so resizing preserves a familiar design-tool
+ * orientation. */
+export function regularPolygonPoints(sides: number, innerRadius = 1): Point[] {
+  const count = Math.max(3, Math.round(sides));
+  const star = innerRadius > 0 && innerRadius < 1;
+  const points: Point[] = [];
+  const vertices = star ? count * 2 : count;
+  for (let index = 0; index < vertices; index += 1) {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / vertices;
+    const radius = star && index % 2 === 1 ? innerRadius : 1;
+    points.push({
+      x: 0.5 + Math.cos(angle) * 0.5 * radius,
+      y: 0.5 + Math.sin(angle) * 0.5 * radius,
+    });
+  }
+  return points;
+}
+
+function polygonNode(x: number, y: number, sides: number, innerRadius = 1): GraphicNode {
+  return {
+    ...shapeNode('polygon', x, y, 96, 96),
+    geometry: {
+      shapeType: 'polygon',
+      width: 96,
+      height: 96,
+      points: regularPolygonPoints(sides, innerRadius),
+    },
+  };
+}
+
 /** Palette kind -> a fresh GraphicNode with the matching geometry. */
 export function createGraphicNode(kind: string, x: number, y: number): GraphicNode {
   switch (kind) {
@@ -218,11 +249,21 @@ export function createGraphicNode(kind: string, x: number, y: number): GraphicNo
       return shapeNode('rectangle', x, y, 120, 80, 12);
     case 'oval':
       return shapeNode('ellipse', x, y, 120, 80);
+    case 'triangle':
+      return polygonNode(x, y, 3);
+    case 'polygon':
+      return polygonNode(x, y, 6);
+    case 'star':
+      return polygonNode(x, y, 5, 0.45);
     case 'line':
       return shapeNode('line', x, y, 120, 0);
     case 'polyline':
       return {
         ...shapeNode('polygon', x, y, 120, 64),
+        style: {
+          ...defaultGraphicStyle(),
+          fill: { kind: 'solid', color: 'transparent' },
+        },
         geometry: {
           shapeType: 'polygon',
           width: 120,

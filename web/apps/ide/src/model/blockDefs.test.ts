@@ -2,7 +2,7 @@
 // compile and run: catalog-only kinds (restrictedArea*, pickup/dropoff,
 // resourceTask*, downtime, ...) fail DSL compilation with LP2004.
 import { describe, expect, it } from 'vitest';
-import { BLOCK_DEFS } from './blockDefs';
+import { BLOCK_DEFS, portGlyphPoint } from './blockDefs';
 import { EXECUTABLE_PROCESS_KINDS } from './blockCatalog';
 
 describe('process library executable matrix', () => {
@@ -38,5 +38,28 @@ describe('process library executable matrix', () => {
     ]) {
       expect(EXECUTABLE_PROCESS_KINDS.has(kind), `${kind} must stay hidden`).toBe(false);
     }
+  });
+});
+
+describe('visual library contracts', () => {
+  it('uses rectangle radius instead of a duplicate rounded rectangle component', () => {
+    const presentationKinds = BLOCK_DEFS.filter((block) => block.library === 'presentation').map(
+      (block) => block.kind,
+    );
+    expect(presentationKinds).toContain('rect');
+    expect(presentationKinds).not.toContain('roundedRect');
+    expect(presentationKinds).toEqual(expect.arrayContaining(['triangle', 'polygon', 'star']));
+  });
+
+  it('lays out statechart and action flow ports from top to bottom', () => {
+    for (const kind of ['state', 'action', 'localVariable']) {
+      const input = portGlyphPoint(kind, 'in', 'in');
+      const output = portGlyphPoint(kind, 'out', 'out');
+      expect(input[0]).toBe(output[0]);
+      expect(input[1]).toBeLessThan(output[1]);
+    }
+    expect(portGlyphPoint('decision', 'true', 'out')[1]).toBeGreaterThan(
+      portGlyphPoint('decision', 'in', 'in')[1],
+    );
   });
 });
