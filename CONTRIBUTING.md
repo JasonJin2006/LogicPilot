@@ -17,10 +17,13 @@
 ### Windows（MSVC）
 
 ```powershell
-cmake --preset windows-msvc-dev
-cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev
+.\scripts\windows-build.ps1 -Preset windows-msvc-dev -Test
 ```
+
+这是 Windows 的规范构建入口：它会自动发现 Visual Studio、加载 x64
+MSVC/Windows SDK 环境并定位 vcpkg。普通 PowerShell 按设计没有 `INCLUDE`
+和 `LIB`；不要把带版本号的 SDK 路径永久写入用户环境变量。
+已有构建目录默认跳过 configure，修改 CMake 文件后再显式加 `-Configure`。
 
 ### Linux（clang）
 

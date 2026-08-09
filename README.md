@@ -50,10 +50,12 @@ flowchart LR
 ### 构建内核
 
 ```powershell
-cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
-cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 294 项测试
+.\scripts\windows-build.ps1 -Preset windows-msvc-dev -Test
 ```
+
+普通 PowerShell 下请始终使用此入口。脚本会自动发现并加载匹配的
+MSVC/Windows SDK 环境，不需要永久配置 `INCLUDE`/`LIB`。Linux 仍直接使用
+`linux-clang-dev` CMake preset。
 
 ### 第一条仿真
 

@@ -92,6 +92,11 @@
       "output": { "outputOnFailure": true }
     },
     {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
       "name": "linux-clang-dev",
       "configurePreset": "linux-clang-dev",
       "output": { "outputOnFailure": true }
