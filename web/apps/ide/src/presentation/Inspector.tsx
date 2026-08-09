@@ -6,7 +6,8 @@
 // commits it (undoable).
 
 import { createGraphicNode, regularPolygonPoints } from '@logicpilot/editor';
-import type { BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
+import type { Arrowhead, BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
+import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
 type ConstraintShape = NonNullable<GraphicNode['constraints']>;
@@ -23,6 +24,11 @@ interface InspectorProps {
   onBoolean?: (op: BooleanOp) => void;
   onBringToFront?: () => void;
   onSendToBack?: () => void;
+  layers?: Array<{ id: string; name: string; kind: string; object: GraphicNode }>;
+  selectedLayerId?: string;
+  onSelectLayer?: (id: string) => void;
+  onToggleLayerVisibility?: (id: string) => void;
+  onToggleLayerLock?: (id: string) => void;
 }
 
 function numField(
@@ -59,6 +65,11 @@ export function PresentationInspector({
   onBoolean,
   onBringToFront,
   onSendToBack,
+  layers,
+  selectedLayerId,
+  onSelectLayer,
+  onToggleLayerVisibility,
+  onToggleLayerLock,
 }: InspectorProps) {
   const t = object.transform;
   const s = object.style;
@@ -111,6 +122,49 @@ export function PresentationInspector({
       <div className="props-kind">
         {object.type === 'shape' ? (shapeType ?? 'shape') : object.type}
       </div>
+      {(layers?.length ?? 0) > 0 && (
+        <div className="props-section presentation-layers">
+          <div className="props-section-title">Layers</div>
+          <div className="presentation-layer-list">
+            {[...(layers ?? [])].reverse().map((layer) => {
+              const visible = layer.object.visible !== false;
+              const locked = layer.object.locked === true;
+              return (
+                <div
+                  key={layer.id}
+                  className={`presentation-layer-row${layer.id === selectedLayerId ? ' selected' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="presentation-layer-main"
+                    title={`Select ${layer.name}`}
+                    onClick={() => onSelectLayer?.(layer.id)}
+                  >
+                    <span>{layer.name}</span>
+                    <small>{layer.kind}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="presentation-layer-icon"
+                    title={visible ? 'Hide layer' : 'Show layer'}
+                    onClick={() => onToggleLayerVisibility?.(layer.id)}
+                  >
+                    {visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="presentation-layer-icon"
+                    title={locked ? 'Unlock layer' : 'Lock layer'}
+                    onClick={() => onToggleLayerLock?.(layer.id)}
+                  >
+                    {locked ? <Lock size={14} /> : <Unlock size={14} />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {numField('X', t.x, (x) => patchTransform({ x }))}
       {numField('Y', t.y, (y) => patchTransform({ y }))}
       {numField('W', t.width, (width) => patchTransform({ width: Math.max(1, width) }), 1, 1)}
@@ -302,6 +356,28 @@ export function PresentationInspector({
           <option value="square">Square</option>
         </select>
       </label>
+      {(shapeType === 'line' || shapeType === 'polyline' || object.type === 'path') && (
+        <div className="props-align-row">
+          {(['startArrow', 'endArrow'] as const).map((key) => (
+            <label className="props-field props-arrow-field" key={key}>
+              <span className="props-field-name">{key === 'startArrow' ? 'Start' : 'End'}</span>
+              <select
+                value={s.stroke[key] ?? 'none'}
+                onChange={(event) =>
+                  patchStyle({
+                    stroke: { ...s.stroke, [key]: event.target.value as Arrowhead },
+                  })
+                }
+              >
+                <option value="none">None</option>
+                <option value="arrow">Arrow</option>
+                <option value="circle">Circle</option>
+                <option value="diamond">Diamond</option>
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
       {numField(
         'Opacity',
         s.opacity,
@@ -391,6 +467,51 @@ export function PresentationInspector({
               }
             />
           </label>
+          <div className="props-align-row">
+            <label className="props-field props-arrow-field">
+              <span className="props-field-name">Italic</span>
+              <input
+                type="checkbox"
+                checked={ts?.fontStyle === 'italic'}
+                onChange={(event) =>
+                  onChange({
+                    ...object,
+                    textStyle: {
+                      ...ts!,
+                      fontStyle: event.target.checked ? 'italic' : 'normal',
+                    },
+                  })
+                }
+              />
+            </label>
+            <label className="props-field props-arrow-field">
+              <span className="props-field-name">Underline</span>
+              <input
+                type="checkbox"
+                checked={ts?.textDecoration === 'underline'}
+                onChange={(event) =>
+                  onChange({
+                    ...object,
+                    textStyle: {
+                      ...ts!,
+                      textDecoration: event.target.checked ? 'underline' : 'none',
+                    },
+                  })
+                }
+              />
+            </label>
+          </div>
+          {numField(
+            'Line height',
+            ts?.lineHeight ?? 1.2,
+            (lineHeight) =>
+              onChange({ ...object, textStyle: { ...ts!, lineHeight: Math.max(0.5, lineHeight) } }),
+            0.1,
+            0.5,
+          )}
+          {numField('Letter spacing', ts?.letterSpacing ?? 0, (letterSpacing) =>
+            onChange({ ...object, textStyle: { ...ts!, letterSpacing } }),
+          )}
           <label className="props-field">
             <span className="props-field-name">Align</span>
             <select
@@ -405,6 +526,25 @@ export function PresentationInspector({
               <option value="left">Left</option>
               <option value="center">Center</option>
               <option value="right">Right</option>
+            </select>
+          </label>
+          <label className="props-field">
+            <span className="props-field-name">Vertical align</span>
+            <select
+              value={ts?.verticalAlign ?? 'middle'}
+              onChange={(event) =>
+                onChange({
+                  ...object,
+                  textStyle: {
+                    ...ts!,
+                    verticalAlign: event.target.value as 'top' | 'middle' | 'bottom',
+                  },
+                })
+              }
+            >
+              <option value="top">Top</option>
+              <option value="middle">Middle</option>
+              <option value="bottom">Bottom</option>
             </select>
           </label>
         </>

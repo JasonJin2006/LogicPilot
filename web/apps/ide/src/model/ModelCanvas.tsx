@@ -51,6 +51,7 @@ import { departedDelta, vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
+import { useRunStore } from '../state/runStore';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -166,6 +167,7 @@ interface View {
 }
 
 export function ModelCanvas() {
+  const runActive = useRunStore((state) => state.running);
   const rawDocument = useModelStore((state) => state.document);
   // Defensive: the persisted document can transiently be incomplete (older
   // builds, hand-edited localStorage) and lack `nodes`/`edges`. The store
@@ -325,6 +327,10 @@ export function ModelCanvas() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' && event.key !== 'Backspace') return;
       if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+      const selected = useModelStore
+        .getState()
+        .document.nodes.find((entry) => entry.id === selectedId);
+      if (selected?.presentation?.locked) return;
       event.preventDefault();
       removeBlock(selectedId);
     };
@@ -426,6 +432,8 @@ export function ModelCanvas() {
       }
       if (mod && (key === ']' || key === '[')) {
         if (!selectedId) return;
+        const node = doc().nodes.find((entry) => entry.id === selectedId);
+        if (node?.presentation?.locked) return;
         event.preventDefault();
         const store = useModelStore.getState();
         if (key === ']') store.bringToFront(selectedId);
@@ -436,7 +444,7 @@ export function ModelCanvas() {
         if (!selectedId) return;
         event.preventDefault();
         const node = doc().nodes.find((entry) => entry.id === selectedId);
-        if (!node?.presentation) return;
+        if (!node?.presentation || node.presentation.locked) return;
         const step = event.shiftKey ? 10 : 1;
         const dx = key === 'arrowright' ? step : key === 'arrowleft' ? -step : 0;
         const dy = key === 'arrowdown' ? step : key === 'arrowup' ? -step : 0;
@@ -1099,6 +1107,7 @@ export function ModelCanvas() {
   // Presentation shapes: rendered as real drawing shapes in a bounds-fitted
   // svg inside the world layer (canvas annotations, not process blocks).
   const shapeNodes = visibleNodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
+  const renderedShapeNodes = shapeNodes.filter((node) => node.presentation?.visible !== false);
   const runtime = live
     ? {
         queueLength: vizState.queueLength,
@@ -1111,10 +1120,16 @@ export function ModelCanvas() {
       }
     : undefined;
   let shapesView: ReactElement | null = null;
-  if (shapeNodes.length > 0 || penPoints.length > 0) {
+  if (renderedShapeNodes.length > 0 || penPoints.length > 0) {
     const pad = 80;
-    const allX = [...shapeNodes.map((node) => node.x), ...penPoints.map((point) => point.x)];
-    const allY = [...shapeNodes.map((node) => node.y), ...penPoints.map((point) => point.y)];
+    const allX = [
+      ...renderedShapeNodes.map((node) => node.x),
+      ...penPoints.map((point) => point.x),
+    ];
+    const allY = [
+      ...renderedShapeNodes.map((node) => node.y),
+      ...penPoints.map((point) => point.y),
+    ];
     const minX = Math.min(...allX) - pad;
     const minY = Math.min(...allY) - pad;
     const maxX = Math.max(...allX) + pad;
@@ -1124,7 +1139,7 @@ export function ModelCanvas() {
         className="model-shapes"
         style={{ left: minX, top: minY, width: maxX - minX, height: maxY - minY }}
       >
-        {shapeNodes.map((node) => {
+        {renderedShapeNodes.map((node) => {
           const shapeObject = node.presentation ?? createGraphicNode(node.kind, node.x, node.y);
           const selected = node.id === selectedId;
           const multi = shapeIds.includes(node.id);
@@ -1133,6 +1148,7 @@ export function ModelCanvas() {
             <g
               key={node.id}
               className={`model-shape kind-${node.kind}${selected ? ' selected' : ''}${multi ? ' multi-selected' : ''}`}
+              style={{ pointerEvents: shapeObject.locked ? 'none' : undefined }}
               onPointerDown={(event) => {
                 if (event.shiftKey) {
                   event.stopPropagation();
@@ -1193,7 +1209,7 @@ export function ModelCanvas() {
                   />
                 </foreignObject>
               )}
-              {selected && (
+              {selected && !shapeObject.locked && (
                 <TransformHandles
                   object={shapeObject}
                   ox={minX}
@@ -1208,35 +1224,38 @@ export function ModelCanvas() {
                   }}
                 />
               )}
-              {selected && tool === 'select' && shapeObject.type === 'path' && (
-                <g
-                  className="shape-path-editor"
-                  transform={`translate(${shapeObject.transform.x - minX},${shapeObject.transform.y - minY}) rotate(${shapeObject.transform.rotation} ${shapeObject.transform.width / 2} ${shapeObject.transform.height / 2}) scale(${shapeObject.transform.scaleX},${shapeObject.transform.scaleY})`}
-                >
-                  {pathPointList(shapeObject.path?.commands ?? []).map((point, index) => (
-                    <circle
-                      key={index}
-                      className="shape-path-point"
-                      cx={point.x}
-                      cy={point.y}
-                      r={4}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        setPathEdit({ id: node.id, point });
-                      }}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        setPresentation(node.id, {
-                          ...shapeObject,
-                          path: {
-                            commands: removePathPoint(shapeObject.path?.commands ?? [], point),
-                          },
-                        });
-                      }}
-                    />
-                  ))}
-                </g>
-              )}
+              {selected &&
+                !shapeObject.locked &&
+                tool === 'select' &&
+                shapeObject.type === 'path' && (
+                  <g
+                    className="shape-path-editor"
+                    transform={`translate(${shapeObject.transform.x - minX},${shapeObject.transform.y - minY}) rotate(${shapeObject.transform.rotation} ${shapeObject.transform.width / 2} ${shapeObject.transform.height / 2}) scale(${shapeObject.transform.scaleX},${shapeObject.transform.scaleY})`}
+                  >
+                    {pathPointList(shapeObject.path?.commands ?? []).map((point, index) => (
+                      <circle
+                        key={index}
+                        className="shape-path-point"
+                        cx={point.x}
+                        cy={point.y}
+                        r={4}
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setPathEdit({ id: node.id, point });
+                        }}
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          setPresentation(node.id, {
+                            ...shapeObject,
+                            path: {
+                              commands: removePathPoint(shapeObject.path?.commands ?? [], point),
+                            },
+                          });
+                        }}
+                      />
+                    ))}
+                  </g>
+                )}
             </g>
           );
         })}
@@ -1416,9 +1435,14 @@ export function ModelCanvas() {
                 setDraggingId(null);
               }}
               onDoubleClick={() => select(node.id)}
-              title={`${node.name} - live ${String(node.params['value'] ?? 'queueLength')}`}
+              title={`${node.name} - ${runActive ? 'live' : 'design preview'} ${String(node.params['value'] ?? 'queueLength')}`}
             >
-              <ChartWidget kind={node.kind} params={node.params} name={node.name} />
+              <ChartWidget
+                kind={node.kind}
+                params={node.params}
+                name={node.name}
+                active={runActive}
+              />
             </div>
           );
         })}

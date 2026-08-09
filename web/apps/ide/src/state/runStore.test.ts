@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateRunOptions, type RunOptions } from './runStore';
+import { useRunStore, validateRunOptions, type RunOptions } from './runStore';
 
 const valid: RunOptions = {
   seed: 42,
@@ -41,5 +41,15 @@ describe('validateRunOptions', () => {
     expect(validateRunOptions({ ...valid, replicationMode: 'precision', errorPercent: 0 })).toMatch(
       /errorPercent/,
     );
+  });
+});
+
+describe('run lifecycle', () => {
+  it('tracks active execution independently from historical telemetry', () => {
+    useRunStore.getState().reset();
+    useRunStore.getState().started({} as never);
+    expect(useRunStore.getState().running).toBe(true);
+    useRunStore.getState().finished({} as never);
+    expect(useRunStore.getState().running).toBe(false);
   });
 });

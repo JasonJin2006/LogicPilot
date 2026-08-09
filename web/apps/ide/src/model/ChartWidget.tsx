@@ -210,10 +210,12 @@ export function ChartWidget({
   kind,
   params,
   name,
+  active = false,
 }: {
   kind: string;
   params: Record<string, string | number | boolean>;
   name: string;
+  active?: boolean;
 }) {
   const [samples, setSamples] = useState<number[]>([]);
   const metric = resolveMetric(params['value']);
@@ -221,6 +223,7 @@ export function ChartWidget({
   const color = KIND_COLORS[kind] ?? '#4cc2ff';
 
   useEffect(() => {
+    if (!active) return undefined;
     const id = window.setInterval(() => {
       setSamples((previous) => {
         const next = [...previous, metric()];
@@ -230,19 +233,25 @@ export function ChartWidget({
     return () => window.clearInterval(id);
     // The metric binding is part of the block's params; a change restarts
     // the sampling loop.
-  }, [metric, params['value']]);
+  }, [active, metric, params['value']]);
+
+  const displayedSamples = active ? samples : [2, 3, 2.5, 4, 5.5, 4.8, 6.2, 7, 6.4, 8.1, 7.6, 9];
 
   const body =
     kind === 'barChart' || kind === 'stackChart' || kind === 'timeStackChart' ? (
-      <BarChart samples={samples} title={title} color={color} />
+      <BarChart samples={displayedSamples} title={title} color={color} />
     ) : kind === 'pieChart' ? (
-      <PieChart samples={samples} title={title} color={color} />
+      <PieChart samples={displayedSamples} title={title} color={color} />
     ) : (
-      <LineChart samples={samples} title={title} color={color} />
+      <LineChart samples={displayedSamples} title={title} color={color} />
     );
 
   return (
-    <div className="chart-widget" role="img" aria-label={`${title} live chart`}>
+    <div
+      className="chart-widget"
+      role="img"
+      aria-label={`${title} ${active ? 'live' : 'design preview'} chart`}
+    >
       <span className="chart-widget-title">{title}</span>
       {body}
       <span className="chart-widget-kind">{kind}</span>

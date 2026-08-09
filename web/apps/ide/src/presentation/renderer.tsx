@@ -48,6 +48,16 @@ function shapeFor(
     strokeLinejoin: s.stroke.join,
     strokeLinecap: s.stroke.cap,
   };
+  const markers = {
+    markerStart:
+      uid && s.stroke.startArrow && s.stroke.startArrow !== 'none'
+        ? `url(#marker-start-${uid})`
+        : undefined,
+    markerEnd:
+      uid && s.stroke.endArrow && s.stroke.endArrow !== 'none'
+        ? `url(#marker-end-${uid})`
+        : undefined,
+  };
   const fill = fillPaint(s, uid);
   switch (object.type) {
     case 'shape': {
@@ -58,6 +68,10 @@ function shapeFor(
       if (g?.shapeType === 'polygon') {
         const points = (g.points ?? []).map((p) => `${p.x * w},${p.y * h}`).join(' ');
         return <polygon points={points} fill={fill} {...stroke} />;
+      }
+      if (g?.shapeType === 'polyline') {
+        const points = (g.points ?? []).map((p) => `${p.x * w},${p.y * h}`).join(' ');
+        return <polyline points={points} fill="none" {...stroke} {...markers} />;
       }
       if (g?.shapeType === 'line') {
         return (
@@ -70,6 +84,7 @@ function shapeFor(
             strokeWidth={s.stroke.width}
             strokeDasharray={stroke.strokeDasharray}
             opacity={s.opacity}
+            {...markers}
           />
         );
       }
@@ -78,26 +93,43 @@ function shapeFor(
     }
     case 'path': {
       const d = object.path?.commands.join(' ') ?? '';
-      return <path d={d} fill={fill} {...stroke} />;
+      return <path d={d} fill={fill} {...stroke} {...markers} />;
     }
     case 'text': {
       const ts = object.textStyle;
       const anchor = ts?.align === 'left' ? 'start' : ts?.align === 'right' ? 'end' : 'middle';
+      const lines = (object.text ?? '').split('\n');
+      const lineHeight = (ts?.lineHeight ?? 1.2) * (ts?.fontSize ?? 16);
+      const textHeight = Math.max(1, lines.length) * lineHeight;
+      const firstBaseline =
+        ts?.verticalAlign === 'top'
+          ? 0
+          : ts?.verticalAlign === 'bottom'
+            ? h - textHeight
+            : (h - textHeight) / 2;
+      const textX = ts?.align === 'left' ? 0 : ts?.align === 'right' ? w : w / 2;
       return (
         <text
-          x={ts?.align === 'left' ? 0 : w / 2}
-          y={h / 2}
+          x={textX}
+          y={firstBaseline}
           textAnchor={anchor}
-          dominantBaseline="central"
+          dominantBaseline="hanging"
           fill={s.fill.kind === 'solid' ? s.fill.color : s.stroke.color}
           stroke={s.stroke.width > 0 ? s.stroke.color : 'none'}
           strokeWidth={s.stroke.width}
           fontFamily={ts?.fontFamily}
           fontSize={ts?.fontSize}
           fontWeight={ts?.fontWeight}
+          fontStyle={ts?.fontStyle}
+          textDecoration={ts?.textDecoration}
+          letterSpacing={ts?.letterSpacing}
           opacity={s.opacity}
         >
-          {object.text ?? ''}
+          {lines.map((line, index) => (
+            <tspan key={index} x={textX} dy={index === 0 ? 0 : lineHeight}>
+              {line || ' '}
+            </tspan>
+          ))}
         </text>
       );
     }
@@ -209,6 +241,44 @@ function shapeDefs(object: GraphicNode, uid: string | undefined): ReactNode {
   const s = object.style;
   const t = object.transform;
   const defs: ReactNode[] = [];
+  const marker = (position: 'start' | 'end', kind: NonNullable<typeof s.stroke.startArrow>) => {
+    const id = `marker-${position}-${uid}`;
+    const common = {
+      id,
+      markerWidth: 8,
+      markerHeight: 8,
+      refX: 5,
+      refY: 5,
+      orient: 'auto-start-reverse' as const,
+      markerUnits: 'strokeWidth' as const,
+      viewBox: '0 0 10 10',
+    };
+    if (kind === 'circle') {
+      return (
+        <marker key={id} {...common}>
+          <circle cx="5" cy="5" r="3" fill={s.stroke.color} />
+        </marker>
+      );
+    }
+    if (kind === 'diamond') {
+      return (
+        <marker key={id} {...common}>
+          <path d="M 5 1 L 9 5 L 5 9 L 1 5 Z" fill={s.stroke.color} />
+        </marker>
+      );
+    }
+    return (
+      <marker key={id} {...common} refX={8}>
+        <path d="M 1 1 L 9 5 L 1 9 Z" fill={s.stroke.color} />
+      </marker>
+    );
+  };
+  if (s.stroke.startArrow && s.stroke.startArrow !== 'none') {
+    defs.push(marker('start', s.stroke.startArrow));
+  }
+  if (s.stroke.endArrow && s.stroke.endArrow !== 'none') {
+    defs.push(marker('end', s.stroke.endArrow));
+  }
   if (s.fill.kind === 'gradient') {
     defs.push(
       <linearGradient key="grad" id={`grad-${uid}`} gradientTransform={`rotate(${s.fill.angle})`}>
@@ -260,6 +330,9 @@ export function PresentationRenderer({
   offsetY,
 }: RendererProps) {
   const resolved = runtime && object.binding ? resolveGraphicBindings(object, runtime) : object;
+  if (resolved.visible === false) {
+    return null;
+  }
   const t = resolved.transform;
   const x = (offsetX ?? t.x) - ox;
   const y = (offsetY ?? t.y) - oy;

@@ -55,6 +55,7 @@ export function validateRunOptions(options: RunOptions): string | null {
 interface RunStore {
   runInfo: RunStartedView | null;
   results: RunFinishedView | null;
+  running: boolean;
   runOptions: RunOptions;
 
   started: (info: RunStartedView) => void;
@@ -66,6 +67,7 @@ interface RunStore {
 export const useRunStore = create<RunStore>((set) => ({
   runInfo: null,
   results: null,
+  running: false,
   runOptions: {
     seed: 42,
     seedMode: 'fixed',
@@ -82,8 +84,8 @@ export const useRunStore = create<RunStore>((set) => ({
     speed: 10,
   },
 
-  started: (info) => set({ runInfo: info, results: null }),
-  finished: (results) => set({ results }),
-  reset: () => set({ runInfo: null, results: null }),
+  started: (info) => set({ runInfo: info, results: null, running: true }),
+  finished: (results) => set({ results, running: false }),
+  reset: () => set({ runInfo: null, results: null, running: false }),
   setRunOptions: (options) => set((state) => ({ runOptions: { ...state.runOptions, ...options } })),
 }));

@@ -44,6 +44,7 @@ export type { BooleanOp } from './boolean.js';
 export { parsePathCommands, pathPointList, removePathPoint, updatePathPoint } from './path.js';
 export type { PathCommand, PathPoint } from './path.js';
 export type {
+  Arrowhead,
   GraphicFill,
   GraphicNode,
   GraphicPath,

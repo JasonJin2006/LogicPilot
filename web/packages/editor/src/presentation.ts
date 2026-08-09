@@ -11,7 +11,8 @@
 // keep rendering.
 
 export type GraphicType = 'shape' | 'text' | 'image' | 'group' | 'path' | 'frame';
-export type ShapeType = 'rectangle' | 'ellipse' | 'polygon' | 'line';
+export type ShapeType = 'rectangle' | 'ellipse' | 'polygon' | 'polyline' | 'line';
+export type Arrowhead = 'none' | 'arrow' | 'circle' | 'diamond';
 
 export interface Point {
   x: number;
@@ -52,6 +53,8 @@ export interface GraphicStroke {
   dash: number[];
   join: 'miter' | 'round' | 'bevel';
   cap: 'butt' | 'round' | 'square';
+  startArrow?: Arrowhead;
+  endArrow?: Arrowhead;
 }
 
 export interface GraphicShadow {
@@ -75,6 +78,11 @@ export interface GraphicTextStyle {
   fontSize: number;
   fontWeight: number;
   align: 'left' | 'center' | 'right';
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+  lineHeight?: number;
+  letterSpacing?: number;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
 }
 
 export interface GraphicPath {
@@ -108,6 +116,10 @@ export interface GraphicNode {
     horizontal: 'left' | 'right' | 'center' | 'scale';
     vertical: 'top' | 'bottom' | 'center' | 'scale';
   };
+  /** Design-time layer state. Hidden nodes remain editable from the layer
+   * list; locked nodes render but cannot be manipulated on the canvas. */
+  visible?: boolean;
+  locked?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +166,17 @@ export function textNode(x: number, y: number): GraphicNode {
     transform: defaultGraphicTransform(x, y, 120, 24),
     style: defaultGraphicStyle(),
     text: 'Text',
-    textStyle: { fontFamily: 'Arial', fontSize: 16, fontWeight: 400, align: 'center' },
+    textStyle: {
+      fontFamily: 'Arial',
+      fontSize: 16,
+      fontWeight: 400,
+      align: 'center',
+      fontStyle: 'normal',
+      textDecoration: 'none',
+      lineHeight: 1.2,
+      letterSpacing: 0,
+      verticalAlign: 'middle',
+    },
   };
 }
 
@@ -259,13 +281,13 @@ export function createGraphicNode(kind: string, x: number, y: number): GraphicNo
       return shapeNode('line', x, y, 120, 0);
     case 'polyline':
       return {
-        ...shapeNode('polygon', x, y, 120, 64),
+        ...shapeNode('polyline', x, y, 120, 64),
         style: {
           ...defaultGraphicStyle(),
           fill: { kind: 'solid', color: 'transparent' },
         },
         geometry: {
-          shapeType: 'polygon',
+          shapeType: 'polyline',
           width: 120,
           height: 64,
           points: [
@@ -331,7 +353,7 @@ function normalizeStyle(value: unknown): GraphicStyle {
   }
   const stroke = raw.stroke as unknown;
   if (stroke && typeof stroke === 'object' && 'color' in (stroke as object)) {
-    base.stroke = stroke as GraphicStyle['stroke'];
+    base.stroke = { ...base.stroke, ...(stroke as Partial<GraphicStyle['stroke']>) };
   } else if (typeof stroke === 'string') {
     base.stroke = { ...base.stroke, color: stroke };
   }
@@ -371,7 +393,7 @@ function legacyGeometry(type: string, t: GraphicTransform): ShapeGeometry | unde
   }
   if (type === 'polyline') {
     return {
-      shapeType: 'polygon',
+      shapeType: 'polyline',
       width: t.width,
       height: t.height,
       points: [
@@ -436,7 +458,18 @@ export function normalizeGraphicNode(value: unknown): GraphicNode | null {
     node.text = raw.text;
   }
   if (raw.textStyle && typeof raw.textStyle === 'object') {
-    node.textStyle = raw.textStyle as GraphicTextStyle;
+    node.textStyle = {
+      fontFamily: 'Arial',
+      fontSize: 16,
+      fontWeight: 400,
+      align: 'center',
+      fontStyle: 'normal',
+      textDecoration: 'none',
+      lineHeight: 1.2,
+      letterSpacing: 0,
+      verticalAlign: 'middle',
+      ...(raw.textStyle as Partial<GraphicTextStyle>),
+    };
   }
   if (raw.image && typeof raw.image === 'object') {
     node.image = raw.image as GraphicNode['image'];
@@ -466,6 +499,12 @@ export function normalizeGraphicNode(value: unknown): GraphicNode | null {
   }
   if (raw.constraints && typeof raw.constraints === 'object') {
     node.constraints = raw.constraints as GraphicNode['constraints'];
+  }
+  if (typeof raw.visible === 'boolean') {
+    node.visible = raw.visible;
+  }
+  if (typeof raw.locked === 'boolean') {
+    node.locked = raw.locked;
   }
   return node;
 }

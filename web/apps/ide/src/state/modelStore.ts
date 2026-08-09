@@ -45,6 +45,8 @@ function presentationKindFor(child: GraphicNode): string {
       case 'ellipse':
         return 'oval';
       case 'polygon':
+        return 'polygon';
+      case 'polyline':
         return 'polyline';
       default:
         return 'line';

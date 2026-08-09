@@ -33,6 +33,30 @@ describe('graph document operations', () => {
     expect(doc.nodes[0]!.presentation!.geometry?.shapeType).toBe('rectangle');
   });
 
+  it('keeps polylines open and supports connector arrowheads', () => {
+    const object = createGraphicNode('polyline', 10, 20);
+    expect(object.geometry?.shapeType).toBe('polyline');
+    object.style.stroke.startArrow = 'circle';
+    object.style.stroke.endArrow = 'arrow';
+    expect(object.style.stroke).toMatchObject({ startArrow: 'circle', endArrow: 'arrow' });
+  });
+
+  it('normalizes text and design-time layer state from older documents', () => {
+    const normalized = normalizeGraphicNode({
+      ...createGraphicNode('text', 0, 0),
+      textStyle: { fontFamily: 'Inter', fontSize: 18, fontWeight: 400, align: 'left' },
+      visible: false,
+      locked: true,
+    });
+    expect(normalized?.visible).toBe(false);
+    expect(normalized?.locked).toBe(true);
+    expect(normalized?.textStyle).toMatchObject({
+      fontFamily: 'Inter',
+      lineHeight: 1.2,
+      verticalAlign: 'middle',
+    });
+  });
+
   it('default text presentation carries editable text and style', () => {
     const text = createGraphicNode('text', 0, 0);
     expect(text.text).toBe('Text');

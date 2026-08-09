@@ -9,6 +9,7 @@ import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockD
 import { PresentationInspector } from '../presentation/Inspector';
 import { useShapeSelection } from '../presentation/selectionStore';
 import { useState } from 'react';
+import type { GraphicNode, ModelNode } from '@logicpilot/editor';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
@@ -182,6 +183,7 @@ export function PropertiesPanel() {
   const removeBlockParam = useModelStore((state) => state.removeBlockParam);
   const renameBlockParam = useModelStore((state) => state.renameBlockParam);
   const setPresentation = useModelStore((state) => state.setPresentation);
+  const select = useModelStore((state) => state.select);
   const alignIds = useShapeSelection((state) => state.ids);
   const removeBlock = useModelStore((state) => state.removeBlock);
   const [newAttrName, setNewAttrName] = useState('');
@@ -214,6 +216,31 @@ export function PropertiesPanel() {
         }
         onBringToFront={() => useModelStore.getState().bringToFront(node.id)}
         onSendToBack={() => useModelStore.getState().sendToBack(node.id)}
+        layers={(document?.nodes ?? [])
+          .filter(
+            (entry): entry is ModelNode & { presentation: GraphicNode } =>
+              !!entry.presentation && entry.container === node.container,
+          )
+          .map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            kind: entry.kind,
+            object: entry.presentation,
+          }))}
+        selectedLayerId={node.id}
+        onSelectLayer={select}
+        onToggleLayerVisibility={(id) => {
+          const layer = useModelStore
+            .getState()
+            .document.nodes.find((entry) => entry.id === id)?.presentation;
+          if (layer) setPresentation(id, { ...layer, visible: layer.visible === false });
+        }}
+        onToggleLayerLock={(id) => {
+          const layer = useModelStore
+            .getState()
+            .document.nodes.find((entry) => entry.id === id)?.presentation;
+          if (layer) setPresentation(id, { ...layer, locked: !layer.locked });
+        }}
       />
     );
   }
