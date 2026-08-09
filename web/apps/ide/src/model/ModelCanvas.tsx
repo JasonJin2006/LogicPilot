@@ -6,17 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
-import {
-  Focus,
-  MousePointer2,
-  PenLine,
-  Redo2,
-  RotateCcw,
-  Trash2,
-  Undo2,
-  ZoomIn,
-  ZoomOut,
-} from 'lucide-react';
+import { Focus, Redo2, RotateCcw, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
@@ -316,8 +306,11 @@ export function ModelCanvas() {
   const shapeIds = useShapeSelection((state) => state.ids);
   const [imageTargetId, setImageTargetId] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  // Pen tool: click-to-add-points path drawing.
-  const [tool, setTool] = useState<'select' | 'pen'>('select');
+  // Palette-driven point drawing. Drawable line items arm this mode on
+  // double-click; the canvas toolbar remains dedicated to viewport controls.
+  const drawingKind = usePaletteStore((state) => state.drawingKind);
+  const stopDrawing = usePaletteStore((state) => state.stopDrawing);
+  const tool = drawingKind ? 'pen' : 'select';
   const [penPoints, setPenPoints] = useState<Array<{ x: number; y: number }>>([]);
   // Active path-point drag on a selected path node.
   const [pathEdit, setPathEdit] = useState<{ id: string; point: PathPoint } | null>(null);
@@ -376,7 +369,6 @@ export function ModelCanvas() {
         if (event.key === 'Enter') {
           event.preventDefault();
           finishPen();
-          setTool('select');
           return;
         }
         if (event.key === 'Escape') {
@@ -461,7 +453,18 @@ export function ModelCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, shapeIds, editingTextId, tool, penPoints, addBlock, moveBlock, select]);
+  }, [
+    selectedId,
+    shapeIds,
+    editingTextId,
+    tool,
+    drawingKind,
+    penPoints,
+    addBlock,
+    moveBlock,
+    select,
+    stopDrawing,
+  ]);
 
   const drag = useRef<{
     startX: number;
@@ -526,7 +529,14 @@ export function ModelCanvas() {
     }
     if (tool === 'pen') {
       const world = clientToWorld(event.clientX, event.clientY);
-      setPenPoints((points) => [...points, world]);
+      const points = [...penPoints, world];
+      if (drawingKind === 'line' && points.length >= 2) {
+        finishPen(points);
+      } else if (event.detail >= 2 && points.length >= 2) {
+        finishPen(points);
+      } else {
+        setPenPoints(points);
+      }
       return;
     }
     drag.current = {
@@ -737,23 +747,37 @@ export function ModelCanvas() {
     setTransformDrag({ id, kind: 'rotate', startTransform: object.transform });
 
   // Finish the pen draft as a path node (commands are local to the bounds).
-  const finishPen = () => {
-    if (penPoints.length === 0) {
+  const finishPen = (draft = penPoints) => {
+    const pts = draft.filter(
+      (point, index) =>
+        index === 0 ||
+        Math.hypot(point.x - draft[index - 1]!.x, point.y - draft[index - 1]!.y) > 0.01,
+    );
+    if (pts.length < 2 || !drawingKind) {
+      setPenPoints([]);
+      stopDrawing();
       return;
     }
-    const pts = penPoints;
     const xs = pts.map((p) => p.x);
     const ys = pts.map((p) => p.y);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
     const maxX = Math.max(...xs);
     const maxY = Math.max(...ys);
-    const commands = pts.map((p, index) =>
-      index === 0 ? `M ${p.x - minX} ${p.y - minY}` : `L ${p.x - minX} ${p.y - minY}`,
-    );
+    const local = pts.map((point) => ({ x: point.x - minX, y: point.y - minY }));
+    const commands =
+      drawingKind === 'curve' && local.length >= 3
+        ? [
+            `M ${local[0]!.x} ${local[0]!.y}`,
+            `Q ${local[1]!.x} ${local[1]!.y} ${local[2]!.x} ${local[2]!.y}`,
+            ...local.slice(3).map((point) => `T ${point.x} ${point.y}`),
+          ]
+        : local.map((point, index) =>
+            index === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`,
+          );
     addBlock({
-      kind: 'curve',
-      name: 'path',
+      kind: drawingKind,
+      name: drawingKind,
       x: minX,
       y: minY,
       params: {},
@@ -767,10 +791,11 @@ export function ModelCanvas() {
       ),
     });
     setPenPoints([]);
+    stopDrawing();
   };
   const cancelPen = () => {
     setPenPoints([]);
-    setTool('select');
+    stopDrawing();
   };
 
   // Dragging a path point rewrites its command (window-level, undoable).
@@ -1565,16 +1590,6 @@ export function ModelCanvas() {
             },
             { label: 'Zoom in', icon: <ZoomIn />, onSelect: () => zoomAtCenter(1.2) },
             { label: 'Zoom out', icon: <ZoomOut />, onSelect: () => zoomAtCenter(1 / 1.2) },
-            {
-              label: 'Select tool',
-              icon: <MousePointer2 />,
-              shortcut: 'V',
-              separatorBefore: true,
-              onSelect: () => {
-                cancelPen();
-                setTool('select');
-              },
-            },
           ];
           if (selectedId) {
             actions.push({
@@ -1773,28 +1788,6 @@ export function ModelCanvas() {
         <div className="model-empty">Drag blocks from the palette to build a model.</div>
       )}
       <div className="canvas-tools">
-        <button
-          className={tool === 'select' ? 'active' : ''}
-          aria-label="Select tool"
-          title="Select and move · V"
-          onClick={() => {
-            if (tool === 'pen') {
-              finishPen();
-            }
-            setTool('select');
-          }}
-        >
-          <MousePointer2 size={14} />
-        </button>
-        <button
-          className={tool === 'pen' ? 'active' : ''}
-          aria-label="Pen tool"
-          title="Draw a path · P"
-          onClick={() => setTool('pen')}
-        >
-          <PenLine size={14} />
-        </button>
-        <span className="canvas-tools-divider" />
         <button aria-label="Zoom out" title="Zoom out" onClick={() => zoomAtCenter(1 / 1.2)}>
           <ZoomOut size={14} />
         </button>
@@ -1822,7 +1815,8 @@ export function ModelCanvas() {
       </div>
       {tool === 'pen' && (
         <div className="canvas-tool-hint">
-          Click to add points · Enter to finish · Esc to cancel
+          Drawing {drawingKind} · Click to add points · Double-click or Enter to finish · Esc to
+          cancel
         </div>
       )}
       <input

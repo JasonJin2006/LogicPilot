@@ -9,7 +9,7 @@
 // rejects with a no-drop cursor.
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { Plus } from 'lucide-react';
+import { PencilLine, Plus } from 'lucide-react';
 import { BLOCK_DEFS, LIBRARIES, portGlyphPoint } from '../model/blockDefs';
 import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
@@ -38,6 +38,8 @@ interface DragSession {
   moved: boolean;
 }
 
+const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
+
 export function PalettePanel() {
   const library = usePaletteStore((state) => state.library);
   const customLibraries = usePaletteStore((state) => state.customLibraries);
@@ -45,6 +47,8 @@ export function PalettePanel() {
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
   const recordUse = usePaletteStore((state) => state.recordUse);
+  const drawingKind = usePaletteStore((state) => state.drawingKind);
+  const startDrawing = usePaletteStore((state) => state.startDrawing);
   const [importError, setImportError] = useState('');
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -193,8 +197,14 @@ export function PalettePanel() {
           {visible.map((block) => (
             <li
               key={block.kind}
-              className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}`}
-              title={block.hint ? `${block.kind} - ${block.hint}` : block.kind}
+              className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
+              title={
+                DRAWABLE_PRESENTATION_KINDS.has(block.kind)
+                  ? `${block.name}: double-click to draw point by point; drag to insert a preset`
+                  : block.hint
+                    ? `${block.kind} - ${block.hint}`
+                    : block.kind
+              }
               onPointerDown={(event) => {
                 if (event.button !== 0) return;
                 dragRef.current = {
@@ -227,6 +237,11 @@ export function PalettePanel() {
                 setGhost(null);
               }}
               onDoubleClick={() => {
+                if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
+                  startDrawing(block.kind as 'line' | 'polyline' | 'curve');
+                  recordUse(block.kind);
+                  return;
+                }
                 insertBlockAt(block.kind, block.library ?? 'process');
                 recordUse(block.kind);
               }}
@@ -258,6 +273,9 @@ export function PalettePanel() {
                       );
                     });
                   })()}
+                  {DRAWABLE_PRESENTATION_KINDS.has(block.kind) && (
+                    <PencilLine className="palette-drawable-mark" size={11} aria-hidden />
+                  )}
                 </span>
               </span>
               <span className="palette-name">{block.name}</span>

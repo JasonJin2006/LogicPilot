@@ -29,7 +29,11 @@ interface PaletteState {
   library: string;
   customLibraries: Record<string, CustomLibrary>;
   recentKinds: string[];
+  /** Transient palette-driven drawing mode (not persisted). */
+  drawingKind: 'line' | 'polyline' | 'curve' | null;
   setLibrary: (library: string) => void;
+  startDrawing: (kind: 'line' | 'polyline' | 'curve') => void;
+  stopDrawing: () => void;
   recordUse: (kind: string) => void;
   importLibrary: (source: string, fileName: string) => { ok: boolean; error?: string };
 }
@@ -40,7 +44,10 @@ export const usePaletteStore = create<PaletteState>()(
       library: 'all',
       customLibraries: {},
       recentKinds: [],
+      drawingKind: null,
       setLibrary: (library) => set({ library }),
+      startDrawing: (drawingKind) => set({ drawingKind }),
+      stopDrawing: () => set({ drawingKind: null }),
       recordUse: (kind) =>
         set((state) => ({
           recentKinds: [kind, ...state.recentKinds.filter((entry) => entry !== kind)].slice(
