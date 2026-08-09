@@ -3,7 +3,7 @@
 // structured metrics. Optimization remains a separate experiment action.
 
 import { useRef, useState } from 'react';
-import { generateDsl } from '@logicpilot/editor';
+import { generateDsl, type ModelPatch } from '@logicpilot/editor';
 import {
   BarChart3,
   Bot,
@@ -15,6 +15,7 @@ import {
   SendHorizontal,
   SlidersHorizontal,
   Sparkles,
+  Square,
   TerminalSquare,
   UserRound,
   WandSparkles,
@@ -44,13 +45,17 @@ import { OptimizeChart, TrajectoryChart } from './charts';
 import { useAiConversationStore } from './conversationStore';
 import { routeAiIntent, type AiAction } from './intentRouter';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
+import { buildAssistantContext } from './contextBuilder';
+import { runAssistantTurn, type AssistantStepRecord } from './assistantRuntime';
+import { createAssistantSession } from './assistantTypes';
+import type { AssistantTurnMessage } from './assistantTypes';
+import { undoAssistantChange } from './assistantTools';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useRunStore } from '../state/runStore';
 import { ScrollArea } from '../components/ScrollArea';
 import { useCanvasView } from '../state/canvasView';
-
-const EXAMPLE_PROMPT = 'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0';
+import { getAppConfig } from '../state/appConfig';
 
 function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentSettings): boolean {
   return (
@@ -72,7 +77,7 @@ function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentS
 export function AIPanel() {
   const dslRef = useRef<HTMLPreElement>(null);
   const runRef = useRef<HTMLPreElement>(null);
-  const [prompt, setPrompt] = useState(EXAMPLE_PROMPT);
+  const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
   const [proposal, setProposal] = useState<ModelProposal | null>(null);
@@ -84,6 +89,12 @@ export function AIPanel() {
   const [comparison, setComparison] = useState<MetricComparisonResult | null>(null);
   const [proposalPrompt, setProposalPrompt] = useState('');
   const [error, setError] = useState('');
+  // Assistant Runtime state: the persistent session (dsl/diagnostics/run
+  // metrics/undo bookkeeping) survives across turns; live steps render the
+  // in-flight tool execution inline.
+  const sessionRef = useRef(createAssistantSession());
+  const abortRef = useRef<AbortController | null>(null);
+  const [liveSteps, setLiveSteps] = useState<AssistantStepRecord[]>([]);
   const document = useModelStore((state) => state.document);
   const projectPath = useProjectStore((state) => state.path);
   const projectBundle = useProjectStore((state) => state.bundle);
@@ -176,7 +187,8 @@ export function AIPanel() {
   };
 
   const run = async (kind: AiAction, requestPrompt = prompt) => {
-    const completedMetrics = result?.metrics;
+    // Analysis tools also see metrics produced by assistant-driven runs.
+    const completedMetrics = result?.metrics ?? sessionRef.current.runMetrics;
     setBusy(true);
     setError('');
     // A model-generation request replaces the primary result. Analysis tools
@@ -312,42 +324,184 @@ export function AIPanel() {
     void run(action, requestPrompt);
   };
 
-  const submitPrompt = () => {
-    const decision = routeAiIntent(prompt, {
-      hasModel: document.nodes.length > 0,
-      hasMetrics: result?.metrics != null,
+  // Assistant Runtime: one continuous conversation turn with inline tool
+  // execution. Falls back to the intent-router one-shot path when the
+  // assistant endpoint is unavailable (e.g. no server-side API key).
+  const sendAssistant = async () => {
+    const request = prompt.trim();
+    if (request === '' || busy) {
+      return;
+    }
+    const session = sessionRef.current;
+    const current = useModelStore.getState().document;
+    session.documentSnapshot = current;
+    if (session.dsl === '') {
+      session.dsl = generateDsl(current);
+    }
+    setPrompt('');
+    setError('');
+    setBusy(true);
+    setLiveSteps([]);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const context = buildAssistantContext({
+      projectName: projectPath ?? document.name,
+      document: current,
+      selectedId: useModelStore.getState().selectedId,
+      session,
     });
-    dispatchAction(decision.action, decision.cleanedPrompt);
+    const history: AssistantTurnMessage[] = conversation.slice(-6).flatMap((turn) => [
+      { role: 'user' as const, content: turn.user },
+      { role: 'assistant' as const, content: turn.assistant },
+    ]);
+    const config = await getAppConfig();
+    const result = await runAssistantTurn({
+      message: request,
+      context,
+      session,
+      history,
+      apiBase: config?.apiBase ?? '',
+      signal: controller.signal,
+      onProgress: setLiveSteps,
+    });
+    abortRef.current = null;
+    setBusy(false);
+    setLiveSteps([]);
+    if (result.cancelled) {
+      setError('Assistant step cancelled.');
+      return;
+    }
+    if (!result.ok && (result.error ?? '').includes('OPENAI_API_KEY')) {
+      setError('Assistant endpoint unavailable (no API key); using quick actions.');
+      const decision = routeAiIntent(request, {
+        hasModel: current.nodes.length > 0,
+        hasMetrics: session.runMetrics != null,
+      });
+      dispatchAction(decision.action, decision.cleanedPrompt);
+      return;
+    }
+    appendConversation(conversationScope, {
+      user: request,
+      assistant:
+        result.message !== ''
+          ? result.message
+          : result.ok
+            ? 'Done.'
+            : 'The request did not complete.',
+      patch: session.lastPatch ?? { version: 1, operations: [] },
+      outcome: result.ok ? 'applied' : 'run_failed',
+      assistantRecord: {
+        steps: result.steps,
+        error: result.error,
+        cancelled: result.cancelled,
+        undoable: result.undoTokenId !== undefined,
+        undoTokenId: result.undoTokenId,
+        changeSummary: session.lastChangeSummary,
+      },
+    });
+  };
+
+  const cancelAssistant = () => {
+    abortRef.current?.abort();
+  };
+
+  // Undo the most recent AI-applied change (one atomic undo step).
+  const undoLastChange = (tokenId: string) => {
+    const session = sessionRef.current;
+    const undone = undoAssistantChange(session, tokenId);
+    if (!undone.ok) {
+      setError(undone.error ?? 'This AI change can no longer be undone safely.');
+      return;
+    }
+    session.lastPatch = null;
+    session.lastChangeSummary = '';
+    setError('');
+  };
+
+  const patchSummaryLines = (patch: ModelPatch | null): string[] => {
+    if (!patch) {
+      return [];
+    }
+    const lines: string[] = [];
+    for (const operation of patch.operations) {
+      switch (operation.op) {
+        case 'add_block':
+          lines.push(`Add ${operation.kind} '${operation.name}'`);
+          break;
+        case 'update_block':
+          lines.push(
+            `Update '${operation.target}': ${Object.entries(operation.params ?? {})
+              .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+              .join(', ')}`,
+          );
+          break;
+        case 'remove_block':
+          lines.push(`Remove '${operation.target}'`);
+          break;
+        case 'connect':
+          lines.push(
+            `Connect ${operation.from}.${operation.fromPort ?? 'out'} → ${operation.to}.${operation.toPort ?? 'in'}`,
+          );
+          break;
+        case 'disconnect':
+          lines.push(`Disconnect ${operation.from ?? '?'} → ${operation.to ?? '?'}`);
+          break;
+        case 'rename_model':
+          lines.push(`Rename model to '${operation.name}'`);
+          break;
+      }
+    }
+    return lines;
+  };
+
+  const renderSteps = (steps: AssistantStepRecord[]) => (
+    <ul className="ai-steps">
+      {steps.map((step, index) => {
+        if (step.kind === 'message') {
+          return (
+            <li key={index} className="ai-step-message">
+              {step.label}
+            </li>
+          );
+        }
+        if (step.kind === 'plan') {
+          return (
+            <li key={index} className="ai-step-plan">
+              <span className="ai-step-dot" aria-hidden />
+              {step.label}
+            </li>
+          );
+        }
+        if (step.kind === 'tool') {
+          return (
+            <li key={index} className="ai-step-tool">
+              <span className="ai-step-spinner" aria-hidden />
+              {step.label}…
+            </li>
+          );
+        }
+        if (step.kind === 'tool-result') {
+          return (
+            <li key={index} className="ai-step-result">
+              {step.label}
+            </li>
+          );
+        }
+        return (
+          <li key={index} className="ai-step-error">
+            {step.label}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const submitPrompt = () => {
+    void sendAssistant();
   };
 
   return (
     <div className="ai-panel">
-      <header className="ai-header">
-        <div className="ai-identity">
-          <span className="ai-avatar" aria-hidden>
-            <Sparkles size={16} />
-          </span>
-          <span>
-            <strong>LogicPilot Copilot</strong>
-            <small>
-              {document.nodes.length > 0
-                ? `${document.name} · ${document.nodes.length} blocks in context`
-                : 'Ready to create your first model'}
-            </small>
-          </span>
-        </div>
-        {conversation.length > 0 && (
-          <button
-            className="ai-icon-button"
-            aria-label="Clear conversation"
-            title="Clear conversation"
-            disabled={busy}
-            onClick={() => clearConversation(conversationScope)}
-          >
-            <Eraser size={14} />
-          </button>
-        )}
-      </header>
       <div className="ai-thread" aria-label="AI modeling conversation">
         {conversation.length === 0 && result === null && (
           <div className="ai-welcome">
@@ -390,17 +544,58 @@ export function AIPanel() {
               <div>
                 <strong>Copilot</strong>
                 <p>{turn.assistant}</p>
+                {turn.assistantRecord?.steps != null && turn.assistantRecord.steps.length > 0 && (
+                  renderSteps(turn.assistantRecord.steps)
+                )}
+                {turn.assistantRecord?.error != null && (
+                  <p className="ai-error">{turn.assistantRecord.error}</p>
+                )}
                 <span className={`ai-outcome ${turn.outcome}`}>
                   <CheckCircle2 size={11} /> {turn.outcome === 'applied' ? 'Applied' : 'Run failed'}
                 </span>
+                {turn.assistantRecord?.undoable === true &&
+                  turn.assistantRecord.undoTokenId != null && (
+                  <span className="ai-turn-actions">
+                    {turn.patch != null && turn.patch.operations.length > 0 && (
+                      <details className="ai-changes">
+                        <summary title="View the changes made by this turn">
+                          View changes <ChevronDown size={11} />
+                        </summary>
+                        <ul className="ai-findings">
+                          {patchSummaryLines(turn.patch).map((line, index) => (
+                            <li key={`${index}:${line}`}>{line}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                    <button
+                      className="ai-undo"
+                      disabled={
+                        busy ||
+                        sessionRef.current.activeUndo?.id !== turn.assistantRecord.undoTokenId ||
+                        sessionRef.current.activeUndo?.after !== document
+                      }
+                      onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
+                      title="Undo the last AI-applied change"
+                    >
+                      Undo
+                    </button>
+                  </span>
+                )}
               </div>
             </div>
           </div>
         ))}
         {busy && (
           <div className="ai-thinking" role="status">
-            <span /> <span /> <span />
-            <em>Reading the model and choosing the next action…</em>
+            {liveSteps.length > 0 ? (
+              renderSteps(liveSteps)
+            ) : (
+              <>
+                <span /> <span /> <span />
+                <em>Reading the model and choosing the next action…</em>
+              </>
+            )}
           </div>
         )}
         {error !== '' && <p className="ai-error">{error}</p>}
@@ -674,7 +869,7 @@ export function AIPanel() {
                 </span>
               </button>
               <button
-                disabled={busy || result?.metrics == null}
+                disabled={busy || (result?.metrics ?? sessionRef.current.runMetrics) == null}
                 onClick={() => dispatchAction('explain')}
               >
                 <BarChart3 size={14} />
@@ -685,18 +880,40 @@ export function AIPanel() {
               </button>
             </div>
           </details>
-          <span className="ai-context-pill">
-            {document.nodes.length > 0 ? `${document.nodes.length} blocks` : 'Empty canvas'}
-          </span>
-          <button
-            className="ai-send"
-            aria-label="Send to Copilot"
-            title="Send (Enter)"
-            disabled={busy || prompt.trim() === ''}
-            onClick={submitPrompt}
-          >
-            <SendHorizontal size={15} />
-          </button>
+          {conversation.length > 0 && (
+            <button
+              className="ai-icon-button"
+              aria-label="Clear conversation"
+              title="Clear conversation"
+              disabled={busy}
+              onClick={() => clearConversation(conversationScope)}
+            >
+              <Eraser size={14} />
+            </button>
+          )}
+          {document.nodes.length > 0 && (
+            <span className="ai-context-pill">{document.nodes.length} blocks</span>
+          )}
+          {busy ? (
+            <button
+              className="ai-send"
+              aria-label="Stop assistant"
+              title="Stop"
+              onClick={cancelAssistant}
+            >
+              <Square size={14} />
+            </button>
+          ) : (
+            <button
+              className="ai-send"
+              aria-label="Send to Copilot"
+              title="Send (Enter)"
+              disabled={prompt.trim() === ''}
+              onClick={submitPrompt}
+            >
+              <SendHorizontal size={15} />
+            </button>
+          )}
         </div>
       </div>
     </div>

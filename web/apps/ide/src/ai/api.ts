@@ -221,12 +221,14 @@ export function aiProposePatch(
 
 export async function aiValidateDsl(
   dsl: string,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; diagnostics: AiDiagnostic[] }> {
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-validate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dsl }),
+    signal,
   });
   const data = (await response.json()) as {
     ok: boolean;
@@ -237,12 +239,17 @@ export async function aiValidateDsl(
   return data;
 }
 
-export async function aiRunDsl(dsl: string, experiment?: ExperimentSettings): Promise<AiResult> {
+export async function aiRunDsl(
+  dsl: string,
+  experiment?: ExperimentSettings,
+  signal?: AbortSignal,
+): Promise<AiResult> {
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dsl, ...experiment }),
+    signal,
   });
   const data = (await response.json()) as Omit<AiResult, 'iterations' | 'dsl'> & { error?: string };
   if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);

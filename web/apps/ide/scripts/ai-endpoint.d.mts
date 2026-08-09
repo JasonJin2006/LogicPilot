@@ -8,4 +8,5 @@ export function handleAiQueryMetrics(req: unknown, res: unknown): Promise<void>;
 export function handleAiCompareMetrics(req: unknown, res: unknown): Promise<void>;
 export function handleAiOptimize(req: unknown, res: unknown): Promise<void>;
 export function handleAiExplain(req: unknown, res: unknown): Promise<void>;
+export function handleAiAssistant(req: unknown, res: unknown): Promise<void>;
 export function handleConfig(req: unknown, res: unknown): void;

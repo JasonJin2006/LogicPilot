@@ -13,6 +13,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  handleAiAssistant,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -168,6 +169,11 @@ async function main() {
     if (pathname === '/api/ai-explain') {
       setCors(res);
       await handleAiExplain(req, res);
+      return;
+    }
+    if (pathname === '/api/assistant') {
+      setCors(res);
+      await handleAiAssistant(req, res);
       return;
     }
     if (pathname === '/api/config') {

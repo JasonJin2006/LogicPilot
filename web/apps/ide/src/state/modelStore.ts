@@ -141,6 +141,19 @@ function commit(state: ModelState, next: ModelDocument): Partial<ModelState> {
   };
 }
 
+/** AI/editor patches are explicit transactions and must never coalesce with
+ * a user's immediately preceding drag or field edit. */
+function commitAtomic(state: ModelState, next: ModelDocument): Partial<ModelState> {
+  return {
+    document: next,
+    past: [...state.past, state.document].slice(-MAX_HISTORY),
+    future: [],
+    lastCommitAt: 0,
+    canUndo: true,
+    canRedo: false,
+  };
+}
+
 export const useModelStore = create<ModelState>()((set, get) => ({
   document: createDocument('Model'),
   selectedId: null,
@@ -229,7 +242,7 @@ export const useModelStore = create<ModelState>()((set, get) => ({
     const state = get();
     const result = applyModelPatch(state.document, patch);
     if (result.ok) {
-      set({ ...commit(state, result.document), selectedId: null });
+      set({ ...commitAtomic(state, result.document), selectedId: null });
     }
     return result;
   },

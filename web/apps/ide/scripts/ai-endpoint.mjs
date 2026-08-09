@@ -57,6 +57,12 @@ async function loadAiExplain() {
   return module.aiExplain;
 }
 
+async function loadAssistant() {
+  const module = await import(
+      pathToFileURL(join(root, 'scripts', 'ai-assistant.mjs')).href);
+  return module.runAssistant;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -387,5 +393,56 @@ export async function handleAiExplain(req, res) {
     send(res, 200, result);
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+// Assistant Runtime step endpoint: stateless per call; the client owns the
+// plan -> tool call -> result loop. The API key stays server-side.
+export async function handleAiAssistant(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    send(res, 400, { ok: false, error: 'invalid JSON body' });
+    return;
+  }
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  if (messages.length === 0) {
+    send(res, 400, { ok: false, error: 'missing messages' });
+    return;
+  }
+  if (
+    messages.length > 32 ||
+    messages.some(
+      (message) =>
+        message === null ||
+        typeof message !== 'object' ||
+        !['user', 'assistant'].includes(message.role) ||
+        typeof message.content !== 'string',
+    )
+  ) {
+    send(res, 400, { ok: false, error: 'invalid assistant messages' });
+    return;
+  }
+  const context = payload?.context ?? null;
+  if (JSON.stringify({ messages, context }).length > 2 * 1024 * 1024) {
+    send(res, 413, { ok: false, error: 'assistant payload is too large' });
+    return;
+  }
+  try {
+    const runAssistant = await loadAssistant();
+    const result = await runAssistant({ messages, context });
+    send(res, 200, result);
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    if (/OPENAI_API_KEY|LLM request failed|malformed JSON|schema validation/.test(message)) {
+      send(res, 502, { ok: false, error: message });
+      return;
+    }
+    send(res, 500, { ok: false, error: message });
   }
 }

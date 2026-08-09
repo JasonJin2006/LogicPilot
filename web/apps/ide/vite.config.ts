@@ -8,6 +8,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
 import {
+  handleAiAssistant,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -51,6 +52,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/ai-explain', (req, res) => {
       void handleAiExplain(req, res);
+    });
+    server.middlewares.use('/api/assistant', (req, res) => {
+      void handleAiAssistant(req, res);
     });
     server.middlewares.use('/api/config', (req, res) => {
       handleConfig(req, res);

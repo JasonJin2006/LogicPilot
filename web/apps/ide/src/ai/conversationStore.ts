@@ -1,6 +1,7 @@
 import type { ModelPatch } from '@logicpilot/editor';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { AssistantStepRecord } from './assistantRuntime';
 
 export interface AiConversationTurn {
   id: string;
@@ -9,6 +10,19 @@ export interface AiConversationTurn {
   assistant: string;
   patch: ModelPatch;
   outcome: 'applied' | 'run_failed';
+  /** Assistant Runtime record (optional: legacy turns and one-shot tool
+   *  turns do not carry it). */
+  assistantRecord?: {
+    steps: AssistantStepRecord[];
+    error?: string;
+    cancelled?: boolean;
+    /** True when the turn's model change is one atomic undo step. */
+    undoable?: boolean;
+    /** Opaque in-memory transaction id; stale/persisted ids are never enough
+     * to authorize an undo by themselves. */
+    undoTokenId?: string;
+    changeSummary?: string;
+  };
 }
 
 type NewTurn = Omit<AiConversationTurn, 'id' | 'createdAt'>;

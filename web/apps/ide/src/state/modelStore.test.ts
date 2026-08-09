@@ -38,4 +38,15 @@ describe('modelStore entity attribute params', () => {
     expect(useModelStore.getState().document.nodes).toHaveLength(0);
     expect(useModelStore.getState().document.edges).toHaveLength(0);
   });
+
+  it('does not coalesce an AI patch with an immediately preceding user edit', () => {
+    useModelStore.getState().reset();
+    useModelStore.getState().addBlock({ kind: 'source', name: 'Manual', x: 0, y: 0 });
+    useModelStore.getState().applyPatch({
+      version: 1,
+      operations: [{ op: 'add_block', kind: 'sink', name: 'AI' }],
+    });
+    useModelStore.getState().undo();
+    expect(useModelStore.getState().document.nodes.map((node) => node.name)).toEqual(['Manual']);
+  });
 });
