@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
+import { Focus, MousePointer2, PenLine, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
@@ -216,6 +217,56 @@ export function ModelCanvas() {
     setViewport({ scale: view.scale, panX: view.panX, panY: view.panY });
   }, [view, setViewport]);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const zoomAtCenter = (factor: number) => {
+    const centerX = size.width / 2;
+    const centerY = size.height / 2;
+    setView((current) => {
+      const scale = clamp(current.scale * factor, MIN_SCALE, MAX_SCALE);
+      const worldX = (centerX - current.panX) / current.scale;
+      const worldY = (centerY - current.panY) / current.scale;
+      return {
+        scale,
+        panX: centerX - worldX * scale,
+        panY: centerY - worldY * scale,
+      };
+    });
+  };
+  const fitVisibleModel = () => {
+    if (visibleNodes.length === 0 || size.width === 0 || size.height === 0) {
+      setView(defaultView);
+      return;
+    }
+    const xs = visibleNodes.map((node) => node.x);
+    const ys = visibleNodes.map((node) => node.y);
+    const minX = Math.min(...xs) - 70;
+    const maxX = Math.max(...xs) + 70;
+    const minY = Math.min(...ys) - 60;
+    const maxY = Math.max(...ys) + 60;
+    const contentWidth = Math.max(140, maxX - minX);
+    const contentHeight = Math.max(120, maxY - minY);
+    const scale = clamp(
+      Math.min((size.width - 96) / contentWidth, (size.height - 96) / contentHeight),
+      MIN_SCALE,
+      1.4,
+    );
+    setView({
+      scale,
+      panX: (size.width - (minX + maxX) * scale) / 2,
+      panY: (size.height - (minY + maxY) * scale) / 2,
+    });
+  };
+  useEffect(() => {
+    // A newly opened canvas should reveal the complete model once. After a
+    // camera is stored, subsequent model edits preserve the user's view.
+    if (
+      size.width > 0 &&
+      size.height > 0 &&
+      visibleNodes.length > 0 &&
+      !cameraCache.current.has(viewKey)
+    ) {
+      fitVisibleModel();
+    }
+  }, [fitVisibleModel, size.height, size.width, viewKey, visibleNodes.length]);
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Port-to-port wiring: a live wire from an out port to the cursor, plus
@@ -1543,6 +1594,8 @@ export function ModelCanvas() {
       <div className="canvas-tools">
         <button
           className={tool === 'select' ? 'active' : ''}
+          aria-label="Select tool"
+          title="Select and move · V"
           onClick={() => {
             if (tool === 'pen') {
               finishPen();
@@ -1550,10 +1603,40 @@ export function ModelCanvas() {
             setTool('select');
           }}
         >
-          Select
+          <MousePointer2 size={14} />
         </button>
-        <button className={tool === 'pen' ? 'active' : ''} onClick={() => setTool('pen')}>
-          Pen
+        <button
+          className={tool === 'pen' ? 'active' : ''}
+          aria-label="Pen tool"
+          title="Draw a path · P"
+          onClick={() => setTool('pen')}
+        >
+          <PenLine size={14} />
+        </button>
+        <span className="canvas-tools-divider" />
+        <button aria-label="Zoom out" title="Zoom out" onClick={() => zoomAtCenter(1 / 1.2)}>
+          <ZoomOut size={14} />
+        </button>
+        <button
+          className="canvas-zoom-value"
+          aria-label="Reset zoom"
+          title="Reset zoom to 100%"
+          onClick={() => setView((current) => ({ ...current, scale: 1 }))}
+        >
+          {Math.round(view.scale * 100)}%
+        </button>
+        <button aria-label="Zoom in" title="Zoom in" onClick={() => zoomAtCenter(1.2)}>
+          <ZoomIn size={14} />
+        </button>
+        <button aria-label="Fit model" title="Fit model in view" onClick={fitVisibleModel}>
+          <Focus size={14} />
+        </button>
+        <button
+          aria-label="Reset view"
+          title="Reset canvas view"
+          onClick={() => setView(defaultView)}
+        >
+          <RotateCcw size={13} />
         </button>
       </div>
       {tool === 'pen' && (
