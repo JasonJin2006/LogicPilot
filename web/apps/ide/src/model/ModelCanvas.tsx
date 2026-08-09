@@ -1440,55 +1440,56 @@ export function ModelCanvas() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
     >
-      {contextMenu && (() => {
-        const actions: ContextAction[] = [
-          { label: 'Undo', icon: <Undo2 />, shortcut: 'Ctrl Z', onSelect: undo },
-          { label: 'Redo', icon: <Redo2 />, shortcut: 'Ctrl Y', onSelect: redo },
-          {
-            label: 'Fit model in view',
-            icon: <Focus />,
-            shortcut: 'F',
-            separatorBefore: true,
-            onSelect: fitVisibleModel,
-          },
-          {
-            label: 'Reset view',
-            icon: <RotateCcw />,
-            onSelect: () => setView(defaultView),
-          },
-          { label: 'Zoom in', icon: <ZoomIn />, onSelect: () => zoomAtCenter(1.2) },
-          { label: 'Zoom out', icon: <ZoomOut />, onSelect: () => zoomAtCenter(1 / 1.2) },
-          {
-            label: 'Select tool',
-            icon: <MousePointer2 />,
-            shortcut: 'V',
-            separatorBefore: true,
-            onSelect: () => {
-              cancelPen();
-              setTool('select');
+      {contextMenu &&
+        (() => {
+          const actions: ContextAction[] = [
+            { label: 'Undo', icon: <Undo2 />, shortcut: 'Ctrl Z', onSelect: undo },
+            { label: 'Redo', icon: <Redo2 />, shortcut: 'Ctrl Y', onSelect: redo },
+            {
+              label: 'Fit model in view',
+              icon: <Focus />,
+              shortcut: 'F',
+              separatorBefore: true,
+              onSelect: fitVisibleModel,
             },
-          },
-        ];
-        if (selectedId) {
-          actions.push({
-            label: 'Delete selection',
-            icon: <Trash2 />,
-            shortcut: 'Del',
-            separatorBefore: true,
-            danger: true,
-            onSelect: () => removeBlock(selectedId),
-          });
-        }
-        return (
-          <ContextMenu
-            x={Math.max(8, contextMenu.x)}
-            y={Math.max(8, contextMenu.y)}
-            label="Canvas actions"
-            actions={actions}
-            onClose={() => setContextMenu(null)}
-          />
-        );
-      })()}
+            {
+              label: 'Reset view',
+              icon: <RotateCcw />,
+              onSelect: () => setView(defaultView),
+            },
+            { label: 'Zoom in', icon: <ZoomIn />, onSelect: () => zoomAtCenter(1.2) },
+            { label: 'Zoom out', icon: <ZoomOut />, onSelect: () => zoomAtCenter(1 / 1.2) },
+            {
+              label: 'Select tool',
+              icon: <MousePointer2 />,
+              shortcut: 'V',
+              separatorBefore: true,
+              onSelect: () => {
+                cancelPen();
+                setTool('select');
+              },
+            },
+          ];
+          if (selectedId) {
+            actions.push({
+              label: 'Delete selection',
+              icon: <Trash2 />,
+              shortcut: 'Del',
+              separatorBefore: true,
+              danger: true,
+              onSelect: () => removeBlock(selectedId),
+            });
+          }
+          return (
+            <ContextMenu
+              x={Math.max(8, contextMenu.x)}
+              y={Math.max(8, contextMenu.y)}
+              label="Canvas actions"
+              actions={actions}
+              onClose={() => setContextMenu(null)}
+            />
+          );
+        })()}
       {focusView && (
         <div className="canvas-view-pill" title="Editing this container's subgraph">
           <button

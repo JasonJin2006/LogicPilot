@@ -26,9 +26,7 @@ function installFetch(handler: FetchHandler) {
     async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
       const body =
-        typeof init?.body === 'string'
-          ? (JSON.parse(init.body) as Record<string, unknown>)
-          : {};
+        typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
       calls.push({ url, body });
       const data = await handler({ url, body }, calls);
       return {
@@ -42,33 +40,11 @@ function installFetch(handler: FetchHandler) {
   return { fetchMock, calls };
 }
 
-function failFetch(handler: FetchHandler) {
-  const calls: MockCall[] = [];
-  const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = String(input);
-      const body =
-        typeof init?.body === 'string'
-          ? (JSON.parse(init.body) as Record<string, unknown>)
-          : {};
-      calls.push({ url, body });
-      const data = await handler({ url, body }, calls);
-      return {
-        ok: false,
-        status: 502,
-        json: async () => data,
-      } as Response;
-    },
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  return { fetchMock, calls };
-}
-
 /** Queue assistant responses; /api/ai-validate and /api/ai-run pass through
  *  with defaults unless overridden. */
 function queueAssistant(responses: unknown[], options: { validate?: unknown; run?: unknown } = {}) {
   let index = 0;
-  return installFetch(async ({ url }, calls) => {
+  return installFetch(async ({ url }) => {
     if (url.endsWith('/api/assistant')) {
       const response = responses[Math.min(index, responses.length - 1)];
       index += 1;
@@ -304,31 +280,34 @@ describe('assistant runtime: control flow', () => {
   it('propagates cancellation into a running compile tool', async () => {
     const controller = new AbortController();
     let assistantCalls = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith('/api/assistant')) {
-        assistantCalls += 1;
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            message: 'compile',
-            plan: [],
-            toolCalls: [{ id: 'c1', name: 'compile_model', arguments: {} }],
-            done: false,
-          }),
-        } as Response);
-      }
-      if (url.endsWith('/api/ai-validate')) {
-        expect(init?.signal).toBe(controller.signal);
-        return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('aborted', 'AbortError')),
-          );
-        });
-      }
-      throw new Error(`unexpected fetch to ${url}`);
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/api/assistant')) {
+          assistantCalls += 1;
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              message: 'compile',
+              plan: [],
+              toolCalls: [{ id: 'c1', name: 'compile_model', arguments: {} }],
+              done: false,
+            }),
+          } as Response);
+        }
+        if (url.endsWith('/api/ai-validate')) {
+          expect(init?.signal).toBe(controller.signal);
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          });
+        }
+        throw new Error(`unexpected fetch to ${url}`);
+      }),
+    );
     const pending = runAssistantTurn({
       message: 'compile it',
       context: baseContext(),
@@ -344,37 +323,58 @@ describe('assistant runtime: control flow', () => {
   it('rolls back AI edits when the turn is cancelled after applying them', async () => {
     const controller = new AbortController();
     let assistantCalls = 0;
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.endsWith('/api/ai-validate')) {
-        return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, diagnostics: [] }) } as Response);
-      }
-      if (url.endsWith('/api/assistant')) {
-        assistantCalls += 1;
-        if (assistantCalls === 1) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/api/ai-validate')) {
           return Promise.resolve({
             ok: true,
             status: 200,
-            json: async () => ({
-              message: 'apply', plan: [], done: false,
-              toolCalls: [{ id: 'c1', name: 'apply_model_patch', arguments: {
-                summary: 'add queue',
-                patch: { version: 1, operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }] },
-              } }],
-            }),
+            json: async () => ({ ok: true, diagnostics: [] }),
           } as Response);
         }
-        return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('aborted', 'AbortError')),
-          );
-        });
-      }
-      throw new Error(`unexpected fetch to ${url}`);
-    }));
+        if (url.endsWith('/api/assistant')) {
+          assistantCalls += 1;
+          if (assistantCalls === 1) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                message: 'apply',
+                plan: [],
+                done: false,
+                toolCalls: [
+                  {
+                    id: 'c1',
+                    name: 'apply_model_patch',
+                    arguments: {
+                      summary: 'add queue',
+                      patch: {
+                        version: 1,
+                        operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }],
+                      },
+                    },
+                  },
+                ],
+              }),
+            } as Response);
+          }
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          });
+        }
+        throw new Error(`unexpected fetch to ${url}`);
+      }),
+    );
     const session = createAssistantSession();
     const pending = runAssistantTurn({
-      message: 'build then stop', context: baseContext(), session, signal: controller.signal,
+      message: 'build then stop',
+      context: baseContext(),
+      session,
+      signal: controller.signal,
     });
     await vi.waitFor(() => expect(useModelStore.getState().document.nodes).toHaveLength(1));
     controller.abort();
@@ -426,7 +426,11 @@ describe('assistant tools: validation', () => {
       session: createAssistantSession(),
     });
     expect(result.ok).toBe(true); // loop recovered
-    expect(result.steps.some((step) => step.kind === 'error' && step.label.includes("unknown tool 'eval'"))).toBe(true);
+    expect(
+      result.steps.some(
+        (step) => step.kind === 'error' && step.label.includes("unknown tool 'eval'"),
+      ),
+    ).toBe(true);
     expect(calls.every((call) => call.url.endsWith('/api/assistant'))).toBe(true);
   });
 
@@ -457,7 +461,11 @@ describe('assistant tools: validation', () => {
       context: baseContext(),
       session: createAssistantSession(),
     });
-    expect(result.steps.some((step) => step.kind === 'error' && step.label.includes('not a known block type'))).toBe(true);
+    expect(
+      result.steps.some(
+        (step) => step.kind === 'error' && step.label.includes('not a known block type'),
+      ),
+    ).toBe(true);
     expect(calls.every((call) => call.url.endsWith('/api/assistant'))).toBe(true);
   });
 
@@ -553,8 +561,24 @@ describe('assistant tools: model editing', () => {
     const document = {
       ...blankDocument(),
       nodes: [
-        { id: 'q1', kind: 'queue', name: 'Q', x: 0, y: 0, params: { capacity: 1 }, library: 'process' as const },
-        { id: 'q2', kind: 'queue', name: 'Q', x: 1, y: 1, params: { capacity: 1 }, library: 'process' as const },
+        {
+          id: 'q1',
+          kind: 'queue',
+          name: 'Q',
+          x: 0,
+          y: 0,
+          params: { capacity: 1 },
+          library: 'process' as const,
+        },
+        {
+          id: 'q2',
+          kind: 'queue',
+          name: 'Q',
+          x: 1,
+          y: 1,
+          params: { capacity: 1 },
+          library: 'process' as const,
+        },
       ],
     } as ModelDocument;
     useModelStore.setState({ document });
@@ -587,9 +611,7 @@ describe('assistant tools: model editing', () => {
                 arguments: {
                   patch: {
                     version: 1,
-                    operations: [
-                      { op: 'add_block', kind: 'queue', name: 'Broken' },
-                    ],
+                    operations: [{ op: 'add_block', kind: 'queue', name: 'Broken' }],
                   },
                   summary: 'add queue',
                 },
@@ -603,7 +625,9 @@ describe('assistant tools: model editing', () => {
         const messages = calls.filter((call) => call.url.endsWith('/api/assistant'));
         const second = messages[1]!.body as { messages: unknown[] };
         const assistantMessage = second.messages[1] as { toolResults: unknown[] };
-        const results = assistantMessage.toolResults as Array<{ result: { compiled?: { ok: boolean; diagnostics: unknown[] } } }>;
+        const results = assistantMessage.toolResults as Array<{
+          result: { compiled?: { ok: boolean; diagnostics: unknown[] } };
+        }>;
         expect(results[0]!.result.compiled?.ok).toBe(false);
         expect(results[0]!.result.compiled?.diagnostics).toEqual([
           { code: 'LP1001', message: 'queue capacity missing' },
@@ -668,7 +692,11 @@ describe('assistant tools: model editing', () => {
     // The manual edit survived; the AI write was rejected.
     expect(finalDocument.name).toBe('UserEdited');
     expect(finalDocument.nodes[0]!.params.capacity).toBe(10);
-    expect(result.steps.some((step) => step.kind === 'error' && step.label.includes('changed during the AI request'))).toBe(true);
+    expect(
+      result.steps.some(
+        (step) => step.kind === 'error' && step.label.includes('changed during the AI request'),
+      ),
+    ).toBe(true);
     expect(calls.some((call) => call.url.endsWith('/api/ai-validate'))).toBe(false);
   });
 
@@ -719,7 +747,10 @@ describe('assistant tools: model editing', () => {
 describe('assistant tools: runs and metrics', () => {
   it('explain-without-metrics fails cleanly instead of inventing numbers', async () => {
     const tool = findAssistantTool('inspect_run_metrics')!;
-    const result = await tool.execute({}, { session: createAssistantSession(), experiment: { seed: 1 } as never });
+    const result = await tool.execute(
+      {},
+      { session: createAssistantSession(), experiment: { seed: 1 } as never },
+    );
     expect(result.ok).toBe(false);
     expect(String(result.error)).toContain('no run metrics available');
   });
@@ -773,15 +804,18 @@ describe('assistant tools: runs and metrics', () => {
     useModelStore.setState({ document });
     const session = createAssistantSession();
     session.documentSnapshot = document;
-    const { calls } = queueAssistant([
-      {
-        message: 'run',
-        plan: [],
-        toolCalls: [{ id: 'c1', name: 'run_simulation', arguments: {} }],
-        done: false,
-      },
-      { message: 'done', plan: [], toolCalls: [], done: true },
-    ], { validate: { ok: false, diagnostics: [{ code: 'LP2001', message: 'no source' }] } });
+    const { calls } = queueAssistant(
+      [
+        {
+          message: 'run',
+          plan: [],
+          toolCalls: [{ id: 'c1', name: 'run_simulation', arguments: {} }],
+          done: false,
+        },
+        { message: 'done', plan: [], toolCalls: [], done: true },
+      ],
+      { validate: { ok: false, diagnostics: [{ code: 'LP2001', message: 'no source' }] } },
+    );
     const result = await runAssistantTurn({
       message: 'run it',
       context: baseContext(),
@@ -797,22 +831,34 @@ describe('assistant tools: runs and metrics', () => {
     useModelStore.setState({ document });
     const session = createAssistantSession();
     session.documentSnapshot = document;
-    queueAssistant([
+    queueAssistant(
+      [
+        {
+          message: 'run',
+          plan: [],
+          toolCalls: [{ id: 'c1', name: 'run_simulation', arguments: {} }],
+          done: false,
+        },
+        { message: 'done', plan: [], toolCalls: [], done: true },
+      ],
       {
-        message: 'run',
-        plan: [],
-        toolCalls: [{ id: 'c1', name: 'run_simulation', arguments: {} }],
-        done: false,
+        validate: { ok: true, diagnostics: [] },
+        run: {
+          ok: false,
+          diagnostics: [{ code: 'LP3001', message: 'run crashed' }],
+          runSummary: '',
+        },
       },
-      { message: 'done', plan: [], toolCalls: [], done: true },
-    ], { validate: { ok: true, diagnostics: [] }, run: { ok: false, diagnostics: [{ code: 'LP3001', message: 'run crashed' }], runSummary: '' } });
+    );
     const result = await runAssistantTurn({
       message: 'run it',
       context: baseContext(),
       session,
     });
     expect(result.ok).toBe(true);
-    expect(result.steps.some((step) => step.kind === 'error' && step.label.includes('run failed'))).toBe(true);
+    expect(
+      result.steps.some((step) => step.kind === 'error' && step.label.includes('run failed')),
+    ).toBe(true);
   });
 });
 
@@ -821,8 +867,24 @@ describe('assistant context', () => {
     const document: ModelDocument = {
       ...blankDocument(),
       nodes: [
-        { id: 'q1', kind: 'queue', name: 'Waiting', x: 0, y: 0, params: { capacity: 20 }, library: 'process' as const },
-        { id: 's1', kind: 'service', name: 'Server', x: 1, y: 1, params: { units: 1 }, library: 'process' as const },
+        {
+          id: 'q1',
+          kind: 'queue',
+          name: 'Waiting',
+          x: 0,
+          y: 0,
+          params: { capacity: 20 },
+          library: 'process' as const,
+        },
+        {
+          id: 's1',
+          kind: 'service',
+          name: 'Server',
+          x: 1,
+          y: 1,
+          params: { units: 1 },
+          library: 'process' as const,
+        },
       ],
       edges: [{ id: 'e1', from: 'q1', to: 's1' }],
     };
@@ -833,7 +895,7 @@ describe('assistant context', () => {
       session: createAssistantSession(),
     });
     expect(context.project).toBe('Demo');
-    expect(context.modelSummary).toContain("id=q1");
+    expect(context.modelSummary).toContain('id=q1');
     expect(context.modelSummary).toContain("name='Waiting'");
     expect(context.modelSummary).toContain('capacity=20');
     expect(context.selection).toContain("name='Server'");
@@ -845,24 +907,42 @@ describe('assistant undo transactions', () => {
   it('undoes every AI patch from one reasoning turn as a unit', async () => {
     queueAssistant([
       {
-        message: 'add queue', plan: [], done: false,
-        toolCalls: [{ id: 'c1', name: 'apply_model_patch', arguments: {
-          summary: 'add queue',
-          patch: { version: 1, operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }] },
-        } }],
+        message: 'add queue',
+        plan: [],
+        done: false,
+        toolCalls: [
+          {
+            id: 'c1',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: 'add queue',
+              patch: { version: 1, operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }] },
+            },
+          },
+        ],
       },
       {
-        message: 'add sink', plan: [], done: false,
-        toolCalls: [{ id: 'c2', name: 'apply_model_patch', arguments: {
-          summary: 'add sink',
-          patch: { version: 1, operations: [{ op: 'add_block', kind: 'sink', name: 'Out' }] },
-        } }],
+        message: 'add sink',
+        plan: [],
+        done: false,
+        toolCalls: [
+          {
+            id: 'c2',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: 'add sink',
+              patch: { version: 1, operations: [{ op: 'add_block', kind: 'sink', name: 'Out' }] },
+            },
+          },
+        ],
       },
       { message: 'done', plan: [], toolCalls: [], done: true },
     ]);
     const session = createAssistantSession();
     const result = await runAssistantTurn({
-      message: 'build it', context: baseContext(), session,
+      message: 'build it',
+      context: baseContext(),
+      session,
     });
     expect(useModelStore.getState().document.nodes).toHaveLength(2);
     expect(result.undoTokenId).toBeTruthy();
@@ -873,22 +953,35 @@ describe('assistant undo transactions', () => {
   it('rejects AI undo after a manual model edit', async () => {
     queueAssistant([
       {
-        message: 'add queue', plan: [], done: false,
-        toolCalls: [{ id: 'c1', name: 'apply_model_patch', arguments: {
-          summary: 'add queue',
-          patch: { version: 1, operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }] },
-        } }],
+        message: 'add queue',
+        plan: [],
+        done: false,
+        toolCalls: [
+          {
+            id: 'c1',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: 'add queue',
+              patch: { version: 1, operations: [{ op: 'add_block', kind: 'queue', name: 'Q' }] },
+            },
+          },
+        ],
       },
       { message: 'done', plan: [], toolCalls: [], done: true },
     ]);
     const session = createAssistantSession();
     const result = await runAssistantTurn({
-      message: 'add it', context: baseContext(), session,
+      message: 'add it',
+      context: baseContext(),
+      session,
     });
     useModelStore.getState().addBlock({ kind: 'sink', name: 'Manual', x: 0, y: 0 });
     const undone = undoAssistantChange(session, result.undoTokenId!);
     expect(undone.ok).toBe(false);
-    expect(useModelStore.getState().document.nodes.map((node) => node.name)).toEqual(['Q', 'Manual']);
+    expect(useModelStore.getState().document.nodes.map((node) => node.name)).toEqual([
+      'Q',
+      'Manual',
+    ]);
   });
 });
 
@@ -900,7 +993,10 @@ describe('conversation isolation with assistant records', () => {
       assistant: 'done',
       patch: { version: 1, operations: [] },
       outcome: 'applied',
-      assistantRecord: { steps: [{ kind: 'tool-result', label: 'applied 1 change(s)' }], undoable: true },
+      assistantRecord: {
+        steps: [{ kind: 'tool-result', label: 'applied 1 change(s)' }],
+        undoable: true,
+      },
     });
     append('project:b', {
       user: 'run it',

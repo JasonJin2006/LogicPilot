@@ -544,9 +544,9 @@ export function AIPanel() {
               <div>
                 <strong>Copilot</strong>
                 <p>{turn.assistant}</p>
-                {turn.assistantRecord?.steps != null && turn.assistantRecord.steps.length > 0 && (
-                  renderSteps(turn.assistantRecord.steps)
-                )}
+                {turn.assistantRecord?.steps != null &&
+                  turn.assistantRecord.steps.length > 0 &&
+                  renderSteps(turn.assistantRecord.steps)}
                 {turn.assistantRecord?.error != null && (
                   <p className="ai-error">{turn.assistantRecord.error}</p>
                 )}
@@ -555,33 +555,33 @@ export function AIPanel() {
                 </span>
                 {turn.assistantRecord?.undoable === true &&
                   turn.assistantRecord.undoTokenId != null && (
-                  <span className="ai-turn-actions">
-                    {turn.patch != null && turn.patch.operations.length > 0 && (
-                      <details className="ai-changes">
-                        <summary title="View the changes made by this turn">
-                          View changes <ChevronDown size={11} />
-                        </summary>
-                        <ul className="ai-findings">
-                          {patchSummaryLines(turn.patch).map((line, index) => (
-                            <li key={`${index}:${line}`}>{line}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    )}
-                    <button
-                      className="ai-undo"
-                      disabled={
-                        busy ||
-                        sessionRef.current.activeUndo?.id !== turn.assistantRecord.undoTokenId ||
-                        sessionRef.current.activeUndo?.after !== document
-                      }
-                      onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
-                      title="Undo the last AI-applied change"
-                    >
-                      Undo
-                    </button>
-                  </span>
-                )}
+                    <span className="ai-turn-actions">
+                      {turn.patch != null && turn.patch.operations.length > 0 && (
+                        <details className="ai-changes">
+                          <summary title="View the changes made by this turn">
+                            View changes <ChevronDown size={11} />
+                          </summary>
+                          <ul className="ai-findings">
+                            {patchSummaryLines(turn.patch).map((line, index) => (
+                              <li key={`${index}:${line}`}>{line}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      <button
+                        className="ai-undo"
+                        disabled={
+                          busy ||
+                          sessionRef.current.activeUndo?.id !== turn.assistantRecord.undoTokenId ||
+                          sessionRef.current.activeUndo?.after !== document
+                        }
+                        onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
+                        title="Undo the last AI-applied change"
+                      >
+                        Undo
+                      </button>
+                    </span>
+                  )}
               </div>
             </div>
           </div>

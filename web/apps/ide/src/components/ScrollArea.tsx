@@ -1,6 +1,8 @@
 // Custom scroll area: keeps native scrolling (wheel / touch / keyboard /
 // middle-drag) but hides the OS scrollbar and draws a themed thumb with the
 // app's custom cursor series (pointer on hover, grabbing while dragging).
+// The thumb auto-hides: it fades out after a short idle period without
+// pointer activity or scrolling, and reappears on the next interaction.
 // Two modes:
 //   - default: a viewport wrapper scrolls its children;
 //   - scrollRef: an external element (e.g. a native textarea) keeps its own
@@ -8,6 +10,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
+
+// Idle delay before the thumb fades out (matches overlay-scrollbar feel).
+const IDLE_HIDE_MS = 500;
 
 interface ScrollAreaProps {
   children: ReactNode;
@@ -23,8 +28,31 @@ export function ScrollArea({ children, className, style, axis = 'y', scrollRef }
   const viewportRef = useRef<HTMLDivElement>(null);
   const [thumb, setThumb] = useState({ size: 0, offset: 0, visible: false });
   const [dragging, setDragging] = useState(false);
+  const [idle, setIdle] = useState(false);
+  const idleTimerRef = useRef<number | null>(null);
   const dragRef = useRef<{ id: number; start: number; offset: number } | null>(null);
   const vertical = axis !== 'x';
+
+  // Wake the thumb (show it now) and re-arm the fade timer. Uses only refs
+  // and stable setState, so the closure stays valid across renders.
+  const wake = () => {
+    setIdle(false);
+    if (idleTimerRef.current !== null) {
+      window.clearTimeout(idleTimerRef.current);
+    }
+    idleTimerRef.current = window.setTimeout(() => setIdle(true), IDLE_HIDE_MS);
+  };
+
+  // The thumb starts visible; if nothing interacts with it, it fades after
+  // the first idle period. Clear the timer on unmount.
+  useEffect(() => {
+    wake();
+    return () => {
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+      }
+    };
+  }, []);
 
   const measure = () => {
     const el = scrollRef?.current ?? viewportRef.current;
@@ -50,8 +78,15 @@ export function ScrollArea({ children, className, style, axis = 'y', scrollRef }
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(measure);
     };
-    el.addEventListener('scroll', schedule, { passive: true });
-    el.addEventListener('input', schedule, { passive: true });
+    // Scrolling (wheel, keyboard, touch, programmatic) also counts as
+    // activity, so a thumb the user is driving never fades out from under
+    // the cursor.
+    const onActivity = () => {
+      schedule();
+      wake();
+    };
+    el.addEventListener('scroll', onActivity, { passive: true });
+    el.addEventListener('input', onActivity, { passive: true });
     const observer = new ResizeObserver(schedule);
     observer.observe(el);
     if (el.firstElementChild) {
@@ -61,8 +96,8 @@ export function ScrollArea({ children, className, style, axis = 'y', scrollRef }
     measure();
     return () => {
       cancelAnimationFrame(raf);
-      el.removeEventListener('scroll', schedule);
-      el.removeEventListener('input', schedule);
+      el.removeEventListener('scroll', onActivity);
+      el.removeEventListener('input', onActivity);
       window.removeEventListener('resize', schedule);
       observer.disconnect();
     };
@@ -118,6 +153,8 @@ export function ScrollArea({ children, className, style, axis = 'y', scrollRef }
       className={`scroll-area${className ? ` ${className}` : ''}`}
       style={style}
       data-axis={axis}
+      onPointerEnter={wake}
+      onPointerMove={wake}
     >
       {scrollRef ? (
         children
@@ -128,7 +165,7 @@ export function ScrollArea({ children, className, style, axis = 'y', scrollRef }
       )}
       {thumb.visible && (
         <div
-          className={`scroll-area-thumb${dragging ? ' dragging' : ''}`}
+          className={`scroll-area-thumb${idle ? ' idle' : ''}${dragging ? ' dragging' : ''}`}
           style={
             vertical
               ? { top: thumb.offset, height: thumb.size }

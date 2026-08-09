@@ -32,15 +32,13 @@ export function summarizeModel(document: ModelDocument): {
 } {
   return {
     name: document.name,
-    nodes: document.nodes
-      .slice(0, MAX_NODES_IN_SUMMARY)
-      .map((node) => ({
-        id: node.id,
-        kind: node.kind,
-        name: node.name,
-        container: node.container ?? null,
-        params: node.params,
-      })),
+    nodes: document.nodes.slice(0, MAX_NODES_IN_SUMMARY).map((node) => ({
+      id: node.id,
+      kind: node.kind,
+      name: node.name,
+      container: node.container ?? null,
+      params: node.params,
+    })),
     edges: document.edges.map((edge) => ({
       id: edge.id,
       from: edge.from,
@@ -98,9 +96,7 @@ function renderMetrics(metrics: AiMetrics): string {
   return lines.join('\n');
 }
 
-function renderDiagnostics(
-  diagnostics: Array<{ code: string; message: string }>,
-): string {
+function renderDiagnostics(diagnostics: Array<{ code: string; message: string }>): string {
   if (diagnostics.length === 0) {
     return 'no diagnostics (last compile passed)';
   }

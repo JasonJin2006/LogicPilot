@@ -12,10 +12,13 @@ LogicPilot 是一个 AI 原生、Web 化的多方法仿真平台。一条典型�
 ## 构建内核
 
 ```powershell
-cmake --preset windows-msvc-dev      # Linux 用 linux-clang-dev
-cmake --build --preset windows-msvc-dev
-ctest --preset windows-msvc-dev      # 355 项测试
+.\scripts\windows-build.ps1 -Preset windows-msvc-dev -Test
 ```
+
+这是 Windows 的标准入口，会自动加载 MSVC、Windows SDK 和仓库配置的 vcpkg；
+无需在普通 PowerShell 中永久设置 `INCLUDE` / `LIB`。需要完全重建时增加
+`-Clean`。Linux 使用 `cmake --preset linux-clang-dev`、`cmake --build --preset
+linux-clang-dev` 和 `ctest --preset linux-clang-dev`。
 
 产物位于 `build/<preset>/kernel/apps/lpcli/lpcli.exe`（`lp-server` 在同目录 `build/<preset>/kernel/lp-server.exe`）。
 
@@ -88,6 +91,7 @@ Pause/Step（详见 [Web IDE 使用](./web-ide)）。
 
 ## 下一步
 
+- 想安装或重建 Windows 客户端：[桌面客户端](./desktop)
 - 想看语言能力：[DSL 语言速查](./dsl)
 - 想让 AI 帮你建模型：[AI Copilot](./ai-copilot)
 - 想了解如何保证可复现：[确定性复现与契约](./determinism)

@@ -15,14 +15,15 @@ live on the IDE's own top bar, which also doubles as the drag region.
 
 ## Build & run
 
-```text
-# 1. build the frontend
-pnpm --filter @logicpilot/ide build
+普通用户请参阅[桌面客户端手册](../docs/guide/desktop.md)。以下内容面向开发者。
 
-# 2. build the Tauri shell (requires Rust + cargo)
-cargo build --manifest-path desktop/src-tauri/Cargo.toml
+```powershell
+# 自动加载 MSVC/Windows SDK，构建原生依赖
+.\scripts\windows-build.ps1 -Preset windows-msvc-dev -Test
 
-# 3. run
+# 无安装包的 Tauri 开发构建（requires Rust + cargo）
+$env:TAURI_CONFIG = Get-Content -Raw desktop/src-tauri/tauri.test.conf.json
+cargo build --locked --manifest-path desktop/src-tauri/Cargo.toml
 desktop/src-tauri/target/debug/logicpilot-desktop.exe
 ```
 
@@ -47,9 +48,8 @@ it to `tauri build`.
 The distributable does not use a machine-wide Node installation or repository
 build directory. Stage its version-matched resources first:
 
-```text
-cmake --preset windows-msvc-release
-cmake --build --preset windows-msvc-release --target lpcli lp-server
+```powershell
+.\scripts\windows-build.ps1 -Preset windows-msvc-release -Clean -Test
 pnpm desktop:stage
 pnpm desktop:test-staged
 ```

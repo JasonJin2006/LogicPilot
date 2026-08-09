@@ -23,12 +23,7 @@ import { useModelStore } from '../state/modelStore';
 
 export const DEFAULT_MAX_ITERATIONS = 8;
 
-export type AssistantStepKind =
-  | 'message'
-  | 'plan'
-  | 'tool'
-  | 'tool-result'
-  | 'error';
+export type AssistantStepKind = 'message' | 'plan' | 'tool' | 'tool-result' | 'error';
 
 export interface AssistantStepRecord {
   kind: AssistantStepKind;
@@ -101,8 +96,12 @@ async function requestStep(
   }
   // Runtime schema validation: malformed model output becomes a readable
   // error instead of crashing the UI.
-  if (data === null || typeof data !== 'object' || typeof (data as { message?: unknown }).message !== 'string' ||
-      typeof (data as { done?: unknown }).done !== 'boolean') {
+  if (
+    data === null ||
+    typeof data !== 'object' ||
+    typeof (data as { message?: unknown }).message !== 'string' ||
+    typeof (data as { done?: unknown }).done !== 'boolean'
+  ) {
     throw new Error('assistant returned malformed JSON (schema validation failed)');
   }
   const responseValue = data as AssistantStepResponse;
@@ -110,8 +109,12 @@ async function requestStep(
     throw new Error('assistant returned malformed JSON (schema validation failed)');
   }
   for (const call of responseValue.toolCalls) {
-    if (typeof call.id !== 'string' || typeof call.name !== 'string' || call.arguments === null ||
-        typeof call.arguments !== 'object') {
+    if (
+      typeof call.id !== 'string' ||
+      typeof call.name !== 'string' ||
+      call.arguments === null ||
+      typeof call.arguments !== 'object'
+    ) {
       throw new Error('assistant returned malformed JSON (schema validation failed)');
     }
   }
@@ -134,11 +137,7 @@ function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? `tool ${name}`;
 }
 
-function describeToolResult(
-  name: string,
-  result: Record<string, unknown>,
-  ok: boolean,
-): string {
+function describeToolResult(name: string, result: Record<string, unknown>, ok: boolean): string {
   if (!ok) {
     return `failed: ${String(result.error ?? 'unknown error')}`;
   }
@@ -157,7 +156,9 @@ function describeToolResult(
     }
     case 'compile_model': {
       const diagnostics = (result.diagnostics as unknown[]) ?? [];
-      return diagnostics.length === 0 ? 'compiled OK' : `compile failed (${diagnostics.length} diagnostics)`;
+      return diagnostics.length === 0
+        ? 'compiled OK'
+        : `compile failed (${diagnostics.length} diagnostics)`;
     }
     case 'run_simulation': {
       const summary = typeof result.summary === 'string' ? result.summary : '';
@@ -178,9 +179,7 @@ function describeToolResult(
 
 /** Run one assistant turn. Never throws: failures are recorded as steps and
  *  returned in the result. */
-export async function runAssistantTurn(
-  options: RunAssistantOptions,
-): Promise<AssistantRunResult> {
+export async function runAssistantTurn(options: RunAssistantOptions): Promise<AssistantRunResult> {
   const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const steps: AssistantStepRecord[] = [];
   const session = options.session;
@@ -190,7 +189,11 @@ export async function runAssistantTurn(
     if (appliedTransactionSteps <= 0) return null;
     const store = useModelStore.getState();
     const startIndex = store.past.length - appliedTransactionSteps;
-    if (store.document === turnStartDocument || startIndex < 0 || store.past[startIndex] !== turnStartDocument) {
+    if (
+      store.document === turnStartDocument ||
+      startIndex < 0 ||
+      store.past[startIndex] !== turnStartDocument
+    ) {
       return null;
     }
     const id = `ai-undo-${++undoSequence}`;
@@ -220,110 +223,110 @@ export async function runAssistantTurn(
   const executeLoop = async (): Promise<AssistantRunResult> => {
     try {
       for (let iteration = 0; iteration < maxIterations; ++iteration) {
-      if (options.signal?.aborted) {
-        cancelled = true;
-        break;
-      }
-      const response = await requestStep(messages, options.context, options);
-      lastMessage = response.message;
-      record({ kind: 'message', label: response.message });
-      for (const step of response.plan) {
-        record({ kind: 'plan', label: step.label });
-      }
-      if (response.done) {
-        return { ok: true, message: response.message, steps, cancelled: false };
-      }
-      if (response.toolCalls.length === 0) {
-        const error = 'assistant finished without a final answer or tool call';
-        record({ kind: 'error', label: error });
-        return { ok: false, message: response.message, steps, cancelled: false, error };
-      }
-
-      const toolResults: AssistantToolResult[] = [];
-      for (const call of response.toolCalls) {
         if (options.signal?.aborted) {
           cancelled = true;
           break;
         }
-        const tool = findAssistantTool(call.name);
-        if (tool === null) {
-          const error = `unknown tool '${call.name}' rejected`;
-          toolResults.push({ toolCallId: call.id, ok: false, result: {}, error });
-          record({ kind: 'error', label: error });
-          continue;
+        const response = await requestStep(messages, options.context, options);
+        lastMessage = response.message;
+        record({ kind: 'message', label: response.message });
+        for (const step of response.plan) {
+          record({ kind: 'plan', label: step.label });
         }
-        const problem = tool.validate(call.arguments);
-        if (problem !== null) {
-          const error = `invalid arguments for ${call.name}: ${problem}`;
-          toolResults.push({ toolCallId: call.id, ok: false, result: {}, error });
-          record({ kind: 'error', label: error });
-          continue;
+        if (response.done) {
+          return { ok: true, message: response.message, steps, cancelled: false };
         }
-        record({
-          kind: 'tool',
-          label: toolLabel(tool.name),
-          toolName: tool.name,
-          toolCallId: call.id,
-        });
-        try {
-          if (tool.name === 'undo_last_ai_change' && appliedTransactionSteps > 0) {
-            activateCurrentUndo();
+        if (response.toolCalls.length === 0) {
+          const error = 'assistant finished without a final answer or tool call';
+          record({ kind: 'error', label: error });
+          return { ok: false, message: response.message, steps, cancelled: false, error };
+        }
+
+        const toolResults: AssistantToolResult[] = [];
+        for (const call of response.toolCalls) {
+          if (options.signal?.aborted) {
+            cancelled = true;
+            break;
           }
-          const executed = await tool.execute(call.arguments, {
-            session,
-            experiment: currentExperiment(),
-            signal: options.signal,
-          });
-          // Tools report clean failures via result.ok === false; those must
-          // surface as visible error steps (and still feed back to the
-          // model so the loop can recover).
-          const toolOk = executed.ok !== false;
-          toolResults.push({
+          const tool = findAssistantTool(call.name);
+          if (tool === null) {
+            const error = `unknown tool '${call.name}' rejected`;
+            toolResults.push({ toolCallId: call.id, ok: false, result: {}, error });
+            record({ kind: 'error', label: error });
+            continue;
+          }
+          const problem = tool.validate(call.arguments);
+          if (problem !== null) {
+            const error = `invalid arguments for ${call.name}: ${problem}`;
+            toolResults.push({ toolCallId: call.id, ok: false, result: {}, error });
+            record({ kind: 'error', label: error });
+            continue;
+          }
+          record({
+            kind: 'tool',
+            label: toolLabel(tool.name),
+            toolName: tool.name,
             toolCallId: call.id,
-            ok: toolOk,
-            result: executed,
           });
-          if (toolOk) {
-            if (tool.name === 'apply_model_patch' && Number(executed.applied ?? 0) > 0) {
-              appliedTransactionSteps += 1;
-            } else if (tool.name === 'undo_last_ai_change' && executed.undone === true) {
-              appliedTransactionSteps = 0;
+          try {
+            if (tool.name === 'undo_last_ai_change' && appliedTransactionSteps > 0) {
+              activateCurrentUndo();
             }
-            record({
-              kind: 'tool-result',
-              label: describeToolResult(tool.name, executed, true),
-              toolName: tool.name,
-              toolCallId: call.id,
-              ok: true,
+            const executed = await tool.execute(call.arguments, {
+              session,
+              experiment: currentExperiment(),
+              signal: options.signal,
             });
-          } else {
+            // Tools report clean failures via result.ok === false; those must
+            // surface as visible error steps (and still feed back to the
+            // model so the loop can recover).
+            const toolOk = executed.ok !== false;
+            toolResults.push({
+              toolCallId: call.id,
+              ok: toolOk,
+              result: executed,
+            });
+            if (toolOk) {
+              if (tool.name === 'apply_model_patch' && Number(executed.applied ?? 0) > 0) {
+                appliedTransactionSteps += 1;
+              } else if (tool.name === 'undo_last_ai_change' && executed.undone === true) {
+                appliedTransactionSteps = 0;
+              }
+              record({
+                kind: 'tool-result',
+                label: describeToolResult(tool.name, executed, true),
+                toolName: tool.name,
+                toolCallId: call.id,
+                ok: true,
+              });
+            } else {
+              record({
+                kind: 'error',
+                label: `failed: ${String(executed.error ?? 'tool failed')}`,
+                toolName: tool.name,
+                toolCallId: call.id,
+                ok: false,
+              });
+            }
+          } catch (error) {
+            const text = error instanceof Error ? error.message : String(error);
+            toolResults.push({ toolCallId: call.id, ok: false, result: {}, error: text });
             record({
               kind: 'error',
-              label: `failed: ${String(executed.error ?? 'tool failed')}`,
+              label: `${toolLabel(tool.name)} failed: ${text}`,
               toolName: tool.name,
               toolCallId: call.id,
               ok: false,
             });
           }
-        } catch (error) {
-          const text = error instanceof Error ? error.message : String(error);
-          toolResults.push({ toolCallId: call.id, ok: false, result: {}, error: text });
-          record({
-            kind: 'error',
-            label: `${toolLabel(tool.name)} failed: ${text}`,
-            toolName: tool.name,
-            toolCallId: call.id,
-            ok: false,
-          });
         }
-      }
-      if (cancelled) break;
-      messages.push({
-        role: 'assistant',
-        content: response.message,
-        toolCalls: response.toolCalls,
-        toolResults,
-      });
+        if (cancelled) break;
+        messages.push({
+          role: 'assistant',
+          content: response.message,
+          toolCalls: response.toolCalls,
+          toolResults,
+        });
       }
       if (cancelled) {
         record({ kind: 'error', label: 'cancelled' });

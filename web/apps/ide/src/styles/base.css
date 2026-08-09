@@ -212,9 +212,17 @@ textarea,
   border-radius: 3px;
   background: var(--border-strong);
   cursor: var(--cursor-pointer);
+  opacity: 1;
   transition:
     background 100ms ease,
-    opacity 100ms ease;
+    opacity 350ms ease;
+}
+
+/* Auto-hide: the thumb fades out after an idle period without pointer
+   activity or scrolling (ScrollArea re-arms the timer on interaction). */
+.scroll-area-thumb.idle {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .scroll-area[data-axis='y'] .scroll-area-thumb {

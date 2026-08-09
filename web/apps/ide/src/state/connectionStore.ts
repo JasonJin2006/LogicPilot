@@ -26,14 +26,12 @@ interface ConnectionStore {
   conn: ConnState;
   seq: bigint | null;
   simTimeNs: bigint | null;
-  fps: number;
   lastAck: string;
   error: string;
   badFrames: number;
   events: LogEvent[];
 
   setUrl: (url: string) => void;
-  setFps: (fps: number) => void;
   /** Connect now and retry silently while the gateway boots. */
   autoConnect: () => void;
   connect: () => void;
@@ -247,14 +245,12 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
     conn: 'disconnected',
     seq: null,
     simTimeNs: null,
-    fps: 0,
     lastAck: '',
     error: '',
     badFrames: 0,
     events: [],
 
     setUrl: (url) => set({ url }),
-    setFps: (fps) => set({ fps }),
     connect: () => {
       stopAutoConnect();
       connectNow(false);

@@ -1,5 +1,32 @@
 # FAQ / 排错
 
+## Windows 编译提示找不到 `<memory>`、`<cstdint>` 或 Windows SDK
+
+这通常不是代码错误，而是普通 PowerShell 没有加载 Visual Studio 开发环境。请从
+仓库根目录使用标准入口：
+
+```powershell
+.\scripts\windows-build.ps1 -Preset windows-msvc-dev -Test
+```
+
+脚本会自动发现 Visual Studio、执行 `vcvars64.bat`、校验 MSVC 标准库和 Windows
+SDK 的 `INCLUDE` / `LIB`，并定位 vcpkg。Release 构建把 preset 改为
+`windows-msvc-release`；完全重建增加 `-Clean`。不要把某次开发者终端里的
+`INCLUDE` / `LIB` 永久复制到系统环境变量。
+
+## AI 助手提示没有 API Key
+
+在线助手需要在启动 Vite 或桌面客户端的同一个环境中设置：
+
+```powershell
+$env:OPENAI_API_KEY="..."
+$env:OPENAI_BASE_URL="https://.../v1"  # 可选
+$env:OPENAI_MODEL="..."                # 可选
+```
+
+未配置时 IDE 会回退到内置快速操作。不要把密钥写入仓库或工程文件；仓库已忽略
+`.env` 和 `.env.local`。
+
 ## 运行编译产物提示"找不到 DLL"（0xc0000135）
 
 `build/integration-dev` 是 MinGW 动态构建，运行前把运行时目录加入 `PATH`：

@@ -17,7 +17,7 @@ desktop/src-tauri/target/debug/logicpilot-desktop.exe
 IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使用它的地址；
 浏览器模式默认连接 `ws://127.0.0.1:8089/sim`（网关未就绪时自动重试，失败后
 状态栏红点提示）。活动栏齿轮打开**设置**可改网关地址并手动
-**Connect / Disconnect**。连接状态显示在底部状态栏（圆点 + FPS + 通知铃铛）。
+**Connect / Disconnect**。连接状态显示在底部状态栏（圆点 + 通知铃铛）。
 
 ## 建模画布
 
@@ -77,8 +77,6 @@ coupling 连线以令牌动画流动（新一轮运行/切换模型/重连时动
 Agent、Atomic 和 Continuous 模型目前完成批量复制后返回统计摘要，不提供
 Pause/Step 粒度的 Tick 流。
 
-## AI 面板（右侧）
-
 ## 状态机连线与实时图表
 
 - **状态机过渡连线**：在 Statechart 画布中，状态（State）左右边缘有端口点。从源状态的
@@ -88,18 +86,30 @@ Pause/Step 粒度的 Tick 流。
   （队列长度、吞吐、平均等待等），运行模型时在画布上实时滚动绘制。图表块的 `value`
   属性选择指标，`title` 设置标题。
 
-| 按钮 | 作用 | 示例 |
-|---|---|---|
-| `generate + run` | 生成 DSL → 编译修复 → 运行；可 **Load to canvas** 加载进画布 | "build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0" |
-| `optimize` | 在声明区间内搜索最优参数 | "minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0" |
-| `explain` | 运行后给出瓶颈归因 | 同一 M/M/1 提示词 |
+## AI 助手（右侧）
+
+AI 面板使用连续对话界面。输入目标后，助手会根据当前模型和最近运行结果自主选择
+检查模型、应用最小补丁、编译、运行或读取指标，不需要先选择 generate / optimize /
+explain 按钮。
+
+- 回复中实时显示计划、工具调用和执行结果。
+- 右下角停止按钮会取消正在进行的网络请求、编译或仿真；若本轮已修改模型，取消
+  会自动回滚该轮修改。
+- **View changes** 展示本轮结构化 `ModelPatch`；**Undo** 只撤销对应的 AI 事务。
+  如果模型之后被手动修改，按钮会禁用，避免误撤用户编辑。
+- 会话按工程和模型隔离并保存；发送时仅附带有限的最近对话。
+- 无 `OPENAI_API_KEY` 时自动回退到内置快速操作。
+
+示例：“添加一个容量为 20 的 Queue 并连接到 Service”“运行 5 次复制并解释
+等待时间”“把服务器容量从 1 调到 4，比较修改前后的指标”。配置与协议详见
+[AI Copilot](./ai-copilot)。
 
 ## 数据流
 
 ```text
 lp-server (C++) ── WebSocket(wire.fbs, LPWR) ──► SimClient ──► vizState ──► 画布实时徽标
      │                                              └─► Console 事件日志
-     └── /api/ai-build|optimize|explain（Node 后端，vite dev 或 app/server.mjs）
+     └── /api/assistant + /api/ai-*（Node 后端，vite dev 或 app/server.mjs）
 ```
 
 帧协议为冻结契约 F2（FlatBuffers size-prefixed），C++ 与 TS 双向互操作由

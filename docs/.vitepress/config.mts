@@ -71,6 +71,7 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: '快速开始', link: '/guide/quickstart' },
+          { text: '桌面客户端', link: '/guide/desktop' },
           { text: 'lpcli 命令参考', link: '/guide/cli' },
           { text: 'DSL 语言速查', link: '/guide/dsl' },
           { text: 'Web IDE 使用', link: '/guide/web-ide' },

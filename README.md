@@ -130,15 +130,15 @@ pause/step）。
 
 ## 文档
 
-- 在线手册（VitePress）：`docs/guide`（快速开始 / CLI / DSL / Web IDE /
-  AI / 确定性 / FAQ），构建：`pnpm docs:build`
+- 在线手册（VitePress）：`docs/guide`（快速开始 / 桌面客户端 / CLI / DSL /
+  Web IDE / AI / 确定性 / FAQ），构建：`pnpm docs:build`
 - 总计划与现状：[docs/roadmap.md](docs/roadmap.md)
 - 工程化路线（P0–P3 执行状态）：[docs/dev-plan.md](docs/dev-plan.md)
 - 设计规范与 ADR：`docs/specs/`、`docs/adr/`
 
 ## 测试与门禁
 
-- **kernel/DSL**：294 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
+- **kernel/DSL**：386 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
 - **前端**：editor / renderer2d / protocol vitest + 浏览器 E2E
 - **契约**：F1/F2 schema conform + 基线 SHA256 双门禁；C++↔TS 互操作逐字段校验
 - **性能**：bench 门禁（≥ 1M events/s，`bench/`）

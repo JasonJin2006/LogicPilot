@@ -46,8 +46,8 @@ IDE 启动时自动连接网关（桌面客户端自动拉起 lp-server；浏览
 - **Run**（画布左上角）：seed / reps / arrivals / warmup / speed +
   M/M/c 指数流程支持 Start / Pause / Resume / Step / Stop；运行中画布块显示实时队列长度与
   忙/闲/宕机状态点。
-- **AI 面板**（右侧）：`generate + run`（NL → DSL → 编译修复 → 运行，
-  Load to canvas）、`optimize`（声明区间内搜索）、`explain`（瓶颈归因）。
+- **AI 助手**（右侧）：连续对话读取当前模型、选择和最近运行指标，自主调用
+  ModelPatch、编译、运行与分析工具；显示实时步骤，支持取消回滚和版本安全撤销。
 - **工程**：`*.lpproj` 单文件打包 + agent-centric 目录；会话态启动（每次从
   空状态开始，Open Recent / Open 重新打开）。
 

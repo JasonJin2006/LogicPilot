@@ -13,7 +13,7 @@ import {
   type ModelPatchOperation,
 } from '@logicpilot/editor';
 import { aiRunDsl, aiValidateDsl, type ExperimentSettings } from './api';
-import type { AssistantSessionState, AssistantToolResult } from './assistantTypes';
+import type { AssistantSessionState } from './assistantTypes';
 import { summarizeModel } from './contextBuilder';
 import { BLOCK_DEFS, blockPorts, isExecutableProcessKind } from '../model/blockDefs';
 import { useModelStore } from '../state/modelStore';
@@ -238,7 +238,11 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
           error: 'no run metrics available - run the model first (run_simulation)',
         };
       }
-      return { ok: true, metrics: summarizeMetrics(session.runMetrics), summary: session.runSummary };
+      return {
+        ok: true,
+        metrics: summarizeMetrics(session.runMetrics),
+        summary: session.runSummary,
+      };
     },
   },
   {
@@ -253,7 +257,7 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
         return 'apply_model_patch.summary must be a string';
       }
       const checked = previewPatch(args.patch);
-      return checked.ok ? null : checked.error ?? 'invalid patch';
+      return checked.ok ? null : (checked.error ?? 'invalid patch');
     },
     execute: async (args, { session, signal }) => {
       const summary = stringArg(args, 'summary') ?? '';
@@ -284,9 +288,13 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
         (edge) => !after.edges.some((entry) => entry.id === edge.id),
       ).length;
       session.documentSnapshot = after;
-      session.lastPatch = session.lastPatch === null
-        ? patch
-        : { version: MODEL_PATCH_VERSION, operations: [...session.lastPatch.operations, ...patch.operations] };
+      session.lastPatch =
+        session.lastPatch === null
+          ? patch
+          : {
+              version: MODEL_PATCH_VERSION,
+              operations: [...session.lastPatch.operations, ...patch.operations],
+            };
       session.lastChangeSummary = [session.lastChangeSummary, summary].filter(Boolean).join('; ');
       session.runStatus = 'none';
       session.runMetrics = null;
