@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 use serde::Serialize;
@@ -318,15 +319,24 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building the LogicPilot desktop app");
+    // Tauri reports both ExitRequested and Exit during a normal shutdown.
+    // Cleanup must start once, and it must never wait on the UI event loop:
+    // waiting for taskkill here leaves the already-clicked window visibly
+    // hanging until Node and the gateway have both terminated.
+    let cleanup_started = AtomicBool::new(false);
     app.run(move |_app_handle, event| {
-        if matches!(
+        let exiting = matches!(
             event,
             tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
-        ) {
+        );
+        if exiting && !cleanup_started.swap(true, Ordering::AcqRel) {
             // Kill the app server AND its gateway child. A plain kill()
             // terminates Node without letting it shut lp-server down,
             // orphaning the console-subsystem gateway (and its terminal
-            // window) next to the closed app.
+            // window) next to the closed app. Spawn taskkill but deliberately
+            // do not wait for it: Windows keeps the spawned process alive
+            // after this shell exits. The Node parent/stdout watchdogs remain
+            // a second cleanup path if taskkill cannot be launched.
             #[cfg(windows)]
             {
                 let pid = app_server.id().to_string();
@@ -339,7 +349,7 @@ fn main() {
                     .arg("/F")
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .status();
+                    .spawn();
             }
             #[cfg(not(windows))]
             {
