@@ -52,6 +52,7 @@ import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
+import { snapRect, type SnapGuide } from '../presentation/snapping';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -223,6 +224,7 @@ export function ModelCanvas() {
     setViewport({ scale: view.scale, panX: view.panX, panY: view.panY });
   }, [view, setViewport]);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const zoomAtCenter = (factor: number) => {
     const centerX = size.width / 2;
     const centerY = size.height / 2;
@@ -959,7 +961,40 @@ export function ModelCanvas() {
     const dy = event.clientY - gesture.startY;
     if (!gesture.moved && Math.hypot(dx, dy) < 3) return;
     gesture.moved = true;
-    moveBlock(gesture.id, gesture.worldX + dx / view.scale, gesture.worldY + dy / view.scale);
+    let x = gesture.worldX + dx / view.scale;
+    let y = gesture.worldY + dy / view.scale;
+    const current = useModelStore
+      .getState()
+      .document.nodes.find((entry) => entry.id === gesture.id);
+    if (current?.presentation && !event.altKey) {
+      const t = current.presentation.transform;
+      const peers = useModelStore
+        .getState()
+        .document.nodes.filter(
+          (entry) =>
+            entry.id !== gesture.id &&
+            entry.container === current.container &&
+            entry.presentation?.visible !== false,
+        )
+        .map((entry) => ({
+          id: entry.id,
+          x: entry.presentation!.transform.x,
+          y: entry.presentation!.transform.y,
+          width: entry.presentation!.transform.width,
+          height: entry.presentation!.transform.height,
+        }));
+      const snapped = snapRect(
+        { id: gesture.id, x, y, width: t.width, height: t.height },
+        peers,
+        6 / view.scale,
+      );
+      x = snapped.x;
+      y = snapped.y;
+      setSnapGuides(snapped.guides);
+    } else {
+      setSnapGuides([]);
+    }
+    moveBlock(gesture.id, x, y);
   };
 
   const onElementPointerUp = (
@@ -969,6 +1004,7 @@ export function ModelCanvas() {
     const gesture = elementDrag.current;
     elementDrag.current = null;
     setDraggingId(null);
+    setSnapGuides([]);
     if (gesture && gesture.id === node.id && !gesture.moved) {
       select(node.id);
     }
@@ -1163,6 +1199,7 @@ export function ModelCanvas() {
               onPointerCancel={() => {
                 elementDrag.current = null;
                 setDraggingId(null);
+                setSnapGuides([]);
               }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
@@ -1259,6 +1296,27 @@ export function ModelCanvas() {
             </g>
           );
         })}
+        {snapGuides.map((guide, index) =>
+          guide.axis === 'x' ? (
+            <line
+              key={`snap-x-${index}`}
+              className="shape-snap-guide"
+              x1={guide.value - minX}
+              x2={guide.value - minX}
+              y1={guide.from - minY}
+              y2={guide.to - minY}
+            />
+          ) : (
+            <line
+              key={`snap-y-${index}`}
+              className="shape-snap-guide"
+              x1={guide.from - minX}
+              x2={guide.to - minX}
+              y1={guide.value - minY}
+              y2={guide.value - minY}
+            />
+          ),
+        )}
         {penPoints.length > 0 && (
           <g className="pen-draft">
             <polyline

@@ -194,6 +194,15 @@
   filter: drop-shadow(0 0 2px var(--accent));
 }
 
+.model-shapes .shape-snap-guide {
+  fill: none;
+  stroke: #ff4fb3;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 /* Inline text editor for presentation text objects (double-click). */
 .shape-text-editor {
   width: 100%;
@@ -1312,6 +1321,19 @@
   overflow: auto;
 }
 
+.presentation-component-section {
+  padding-top: 4px;
+}
+
+.presentation-component-status {
+  margin: 0 0 6px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .presentation-layers {
   position: sticky;
   top: 0;
@@ -1336,6 +1358,24 @@
 .presentation-layer-row.selected {
   border-color: var(--accent);
   background: var(--accent-dim);
+}
+
+.presentation-layer-row.dragging {
+  opacity: 0.45;
+}
+
+.presentation-layer-row[draggable='true'] {
+  cursor: grab;
+}
+
+.presentation-layer-row[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.presentation-layer-grip {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  color: var(--text-muted);
 }
 
 .presentation-layer-main,

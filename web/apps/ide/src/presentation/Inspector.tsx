@@ -7,7 +7,8 @@
 
 import { createGraphicNode, regularPolygonPoints } from '@logicpilot/editor';
 import type { Arrowhead, BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
-import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
+import { useState } from 'react';
+import { Eye, EyeOff, GripVertical, Lock, Unlock } from 'lucide-react';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
 
 type ConstraintShape = NonNullable<GraphicNode['constraints']>;
@@ -29,6 +30,11 @@ interface InspectorProps {
   onSelectLayer?: (id: string) => void;
   onToggleLayerVisibility?: (id: string) => void;
   onToggleLayerLock?: (id: string) => void;
+  onReorderLayers?: (idsTopFirst: string[]) => void;
+  onMakeComponent?: () => void;
+  onCreateInstance?: () => void;
+  onDetachInstance?: () => void;
+  onConnectSelection?: () => void;
 }
 
 function numField(
@@ -70,7 +76,13 @@ export function PresentationInspector({
   onSelectLayer,
   onToggleLayerVisibility,
   onToggleLayerLock,
+  onReorderLayers,
+  onMakeComponent,
+  onCreateInstance,
+  onDetachInstance,
+  onConnectSelection,
 }: InspectorProps) {
+  const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
   const t = object.transform;
   const s = object.style;
   const patchTransform = (patch: Partial<GraphicNode['transform']>) =>
@@ -116,24 +128,72 @@ export function PresentationInspector({
         i === index ? { ...child, ...patch } : child,
       ),
     });
+  const topFirstLayers = [...(layers ?? [])].reverse();
+  const dropLayer = (targetId: string) => {
+    if (!draggedLayerId || draggedLayerId === targetId) return;
+    const ids = topFirstLayers.map((layer) => layer.id).filter((id) => id !== draggedLayerId);
+    const targetIndex = ids.indexOf(targetId);
+    ids.splice(targetIndex < 0 ? ids.length : targetIndex, 0, draggedLayerId);
+    onReorderLayers?.(ids);
+    setDraggedLayerId(null);
+  };
 
   return (
     <div className="side-panel-body properties">
       <div className="props-kind">
         {object.type === 'shape' ? (shapeType ?? 'shape') : object.type}
       </div>
+      <div className="props-section presentation-component-section">
+        <div className="props-section-title">Component</div>
+        {object.instanceOf ? (
+          <>
+            <p className="presentation-component-status">Linked instance · {object.instanceOf}</p>
+            <button className="props-align-btn" onClick={onDetachInstance}>
+              Detach instance
+            </button>
+          </>
+        ) : object.componentId ? (
+          <>
+            <p className="presentation-component-status">Master · {object.componentId}</p>
+            <button className="props-align-btn" onClick={onCreateInstance}>
+              Create instance
+            </button>
+          </>
+        ) : (
+          <button className="props-align-btn" onClick={onMakeComponent}>
+            Create component
+          </button>
+        )}
+      </div>
       {(layers?.length ?? 0) > 0 && (
         <div className="props-section presentation-layers">
           <div className="props-section-title">Layers</div>
           <div className="presentation-layer-list">
-            {[...(layers ?? [])].reverse().map((layer) => {
+            {topFirstLayers.map((layer) => {
               const visible = layer.object.visible !== false;
               const locked = layer.object.locked === true;
               return (
                 <div
                   key={layer.id}
-                  className={`presentation-layer-row${layer.id === selectedLayerId ? ' selected' : ''}`}
+                  className={`presentation-layer-row${layer.id === selectedLayerId ? ' selected' : ''}${layer.id === draggedLayerId ? ' dragging' : ''}`}
+                  draggable={!!onReorderLayers}
+                  onDragStart={(event) => {
+                    setDraggedLayerId(layer.id);
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData('text/plain', layer.id);
+                  }}
+                  onDragEnd={() => setDraggedLayerId(null)}
+                  onDragOver={(event) => {
+                    if (!draggedLayerId) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'move';
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    dropLayer(layer.id);
+                  }}
                 >
+                  <GripVertical className="presentation-layer-grip" size={13} aria-hidden />
                   <button
                     type="button"
                     className="presentation-layer-main"
@@ -783,6 +843,13 @@ export function PresentationInspector({
                   {label}
                 </button>
               ))}
+            </div>
+          )}
+          {(alignIds?.length ?? 0) === 2 && onConnectSelection && (
+            <div className="props-align-row" style={{ marginTop: 6 }}>
+              <button className="props-align-btn" onClick={onConnectSelection}>
+                Connect with elbow
+              </button>
             </div>
           )}
         </div>

@@ -120,6 +120,17 @@ export interface GraphicNode {
    * list; locked nodes render but cannot be manipulated on the canvas. */
   visible?: boolean;
   locked?: boolean;
+  /** Reusable component linkage. A master owns componentId; linked copies
+   * carry instanceOf and are refreshed whenever the master is edited. */
+  componentId?: string;
+  instanceOf?: string;
+  /** A connector references two top-level presentation nodes. Its geometry
+   * is regenerated when either endpoint moves or resizes. */
+  connector?: {
+    fromId: string;
+    toId: string;
+    routing: 'orthogonal';
+  };
 }
 
 // ---------------------------------------------------------------------------

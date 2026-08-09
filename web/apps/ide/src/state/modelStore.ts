@@ -29,6 +29,7 @@ import {
   type ModelNode,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
+import { routeOrthogonal } from '../presentation/routing';
 
 const MAX_HISTORY = 100;
 // Rapid successive edits (drag moves, typing) within this window collapse
@@ -62,6 +63,31 @@ function presentationKindFor(child: GraphicNode): string {
 export type AlignAxis = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
 /** Distribution axis: equal spacing along the union span. */
 export type DistributeAxis = 'horizontal' | 'vertical';
+
+function refreshLinkedConnectors(document: ModelDocument): ModelDocument {
+  const byId = new Map(document.nodes.map((node) => [node.id, node]));
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => {
+      const connector = node.presentation?.connector;
+      if (!connector || !node.presentation?.geometry) return node;
+      const from = byId.get(connector.fromId)?.presentation;
+      const to = byId.get(connector.toId)?.presentation;
+      if (!from || !to) return node;
+      const route = routeOrthogonal(from.transform, to.transform);
+      return {
+        ...node,
+        x: route.transform.x,
+        y: route.transform.y,
+        presentation: {
+          ...node.presentation,
+          transform: route.transform,
+          geometry: { ...node.presentation.geometry, points: route.points },
+        },
+      };
+    }),
+  };
+}
 
 // Validate a hydrated document: must be an object with `nodes` and `edges`
 // arrays. Older builds (or hand-edited localStorage) can leave a partial
@@ -119,6 +145,17 @@ interface ModelState {
   bringToFront: (id: string) => void;
   /** Move a node to the start of the render order (behind everything). */
   sendToBack: (id: string) => void;
+  /** Replace the z-order of the given presentation layers. The ids are in
+   * visual top-to-bottom order, matching the Layers panel. */
+  reorderPresentationLayers: (idsTopFirst: string[]) => void;
+  /** Turn a presentation node into a reusable component master. */
+  makeComponent: (id: string) => string | null;
+  /** Create a linked instance of a component master. */
+  createComponentInstance: (id: string) => string | null;
+  /** Break a component instance link while preserving its current visuals. */
+  detachComponentInstance: (id: string) => void;
+  /** Create a linked, automatically routed connector between two shapes. */
+  connectPresentationShapes: (ids: string[]) => string | null;
   /** Apply a boolean operation over presentation shapes, replacing them
    *  with a single path node (undoable). Returns the new node id. */
   applyBooleanShapes: (ids: string[], op: BooleanOp) => string | null;
@@ -186,7 +223,7 @@ export const useModelStore = create<ModelState>()((set, get) => ({
             : entry,
         ),
       };
-      return commit(state, next);
+      return commit(state, refreshLinkedConnectors(next));
     }),
   connectBlocks: (from, to, fromPort, toPort) =>
     set((state) => {
@@ -232,10 +269,21 @@ export const useModelStore = create<ModelState>()((set, get) => ({
     }),
   disconnectEdge: (id) => set((state) => commit(state, disconnect(state.document, id))),
   removeBlock: (id) =>
-    set((state) => ({
-      ...commit(state, removeNode(state.document, id)),
-      selectedId: state.selectedId === id ? null : state.selectedId,
-    })),
+    set((state) => {
+      const removed = removeNode(state.document, id);
+      const document = {
+        ...removed,
+        nodes: removed.nodes.filter(
+          (node) =>
+            node.presentation?.connector?.fromId !== id &&
+            node.presentation?.connector?.toId !== id,
+        ),
+      };
+      return {
+        ...commit(state, document),
+        selectedId: state.selectedId === id ? null : state.selectedId,
+      };
+    }),
   select: (id) => set({ selectedId: id }),
   renameBlock: (id, name) => set((state) => commit(state, renameNode(state.document, id, name))),
   setBlockParam: (id, key, value) =>
@@ -255,7 +303,7 @@ export const useModelStore = create<ModelState>()((set, get) => ({
   setPresentation: (id, object) =>
     set((state) => {
       let found = false;
-      const document: ModelDocument = {
+      let document: ModelDocument = {
         ...state.document,
         nodes: state.document.nodes.map((node) => {
           if (node.id !== id) {
@@ -270,6 +318,29 @@ export const useModelStore = create<ModelState>()((set, get) => ({
           };
         }),
       };
+      if (object.componentId && !object.instanceOf) {
+        document = {
+          ...document,
+          nodes: document.nodes.map((node) => {
+            const instance = node.presentation;
+            if (!instance || instance.instanceOf !== object.componentId) return node;
+            const transform = instance.transform;
+            return {
+              ...node,
+              presentation: {
+                ...object,
+                id: instance.id,
+                componentId: undefined,
+                instanceOf: object.componentId,
+                transform,
+                visible: instance.visible,
+                locked: instance.locked,
+              },
+            };
+          }),
+        };
+      }
+      document = refreshLinkedConnectors(document);
       return found ? commit(state, document) : {};
     }),
   groupShapes: (ids) => {
@@ -455,6 +526,122 @@ export const useModelStore = create<ModelState>()((set, get) => ({
     }
     const nodes = [node, ...state.document.nodes.filter((entry) => entry.id !== id)];
     set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  reorderPresentationLayers: (idsTopFirst) => {
+    const state = get();
+    const requested = [...new Set(idsTopFirst)];
+    const requestedSet = new Set(requested);
+    const layerSlots = state.document.nodes.filter(
+      (node) => requestedSet.has(node.id) && node.presentation,
+    );
+    if (layerSlots.length !== requested.length) return;
+    const byId = new Map(layerSlots.map((node) => [node.id, node]));
+    const bottomFirst = [...requested].reverse().map((id) => byId.get(id)!);
+    let cursor = 0;
+    const nodes = state.document.nodes.map((node) =>
+      requestedSet.has(node.id) ? bottomFirst[cursor++]! : node,
+    );
+    if (nodes.every((node, index) => node === state.document.nodes[index])) return;
+    set({ ...commitAtomic(state, { ...state.document, nodes }) });
+  },
+  makeComponent: (id) => {
+    const state = get();
+    const node = state.document.nodes.find((entry) => entry.id === id && entry.presentation);
+    if (!node?.presentation || node.presentation.instanceOf) return null;
+    const componentId = node.presentation.componentId ?? freshId('component');
+    const nodes = state.document.nodes.map((entry) =>
+      entry.id === id ? { ...entry, presentation: { ...node.presentation!, componentId } } : entry,
+    );
+    set({ ...commitAtomic(state, { ...state.document, nodes }) });
+    return componentId;
+  },
+  createComponentInstance: (id) => {
+    const state = get();
+    const requested = state.document.nodes.find((entry) => entry.id === id && entry.presentation);
+    const master = requested?.presentation?.instanceOf
+      ? state.document.nodes.find(
+          (entry) => entry.presentation?.componentId === requested.presentation?.instanceOf,
+        )
+      : requested;
+    if (!master?.presentation) return null;
+    const componentId = master.presentation.componentId ?? freshId('component');
+    const instanceId = freshId(`${master.kind}-instance`);
+    const masterObject = { ...master.presentation, componentId };
+    const transform = {
+      ...masterObject.transform,
+      x: masterObject.transform.x + 32,
+      y: masterObject.transform.y + 32,
+    };
+    const instance: ModelNode = {
+      ...master,
+      id: instanceId,
+      name: `${master.name} instance`,
+      x: transform.x,
+      y: transform.y,
+      presentation: {
+        ...masterObject,
+        componentId: undefined,
+        instanceOf: componentId,
+        transform,
+      },
+    };
+    const nodes = state.document.nodes.map((entry) =>
+      entry.id === master.id ? { ...entry, presentation: masterObject } : entry,
+    );
+    nodes.push(instance);
+    set({ ...commitAtomic(state, { ...state.document, nodes }), selectedId: instanceId });
+    return instanceId;
+  },
+  detachComponentInstance: (id) => {
+    const state = get();
+    const nodes = state.document.nodes.map((node) =>
+      node.id === id && node.presentation?.instanceOf
+        ? { ...node, presentation: { ...node.presentation, instanceOf: undefined } }
+        : node,
+    );
+    set({ ...commitAtomic(state, { ...state.document, nodes }) });
+  },
+  connectPresentationShapes: (ids) => {
+    const state = get();
+    const unique = [...new Set(ids)];
+    if (unique.length !== 2) return null;
+    const from = state.document.nodes.find((node) => node.id === unique[0] && node.presentation);
+    const to = state.document.nodes.find((node) => node.id === unique[1] && node.presentation);
+    if (!from?.presentation || !to?.presentation || from.container !== to.container) return null;
+    const route = routeOrthogonal(from.presentation.transform, to.presentation.transform);
+    const style = defaultGraphicStyle();
+    const id = freshId('connector');
+    const connector: ModelNode = {
+      id,
+      kind: 'polyline',
+      name: 'Connector',
+      x: route.transform.x,
+      y: route.transform.y,
+      params: {},
+      library: 'presentation',
+      container: from.container,
+      presentation: {
+        type: 'shape',
+        transform: route.transform,
+        style: {
+          ...style,
+          fill: { kind: 'solid', color: 'transparent' },
+          stroke: { ...style.stroke, width: 2, endArrow: 'arrow' },
+        },
+        geometry: {
+          shapeType: 'polyline',
+          width: route.transform.width,
+          height: route.transform.height,
+          points: route.points,
+        },
+        connector: { fromId: from.id, toId: to.id, routing: 'orthogonal' },
+      },
+    };
+    set({
+      ...commitAtomic(state, { ...state.document, nodes: [...state.document.nodes, connector] }),
+      selectedId: id,
+    });
+    return id;
   },
   applyBooleanShapes: (ids, op) => {
     const state = useModelStore.getState();

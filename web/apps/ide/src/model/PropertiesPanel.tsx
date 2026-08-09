@@ -241,6 +241,15 @@ export function PropertiesPanel() {
             .document.nodes.find((entry) => entry.id === id)?.presentation;
           if (layer) setPresentation(id, { ...layer, locked: !layer.locked });
         }}
+        onReorderLayers={(idsTopFirst) =>
+          useModelStore.getState().reorderPresentationLayers(idsTopFirst)
+        }
+        onMakeComponent={() => useModelStore.getState().makeComponent(node.id)}
+        onCreateInstance={() => useModelStore.getState().createComponentInstance(node.id)}
+        onDetachInstance={() => useModelStore.getState().detachComponentInstance(node.id)}
+        onConnectSelection={() =>
+          useModelStore.getState().connectPresentationShapes([...new Set([...alignIds, node.id])])
+        }
       />
     );
   }
