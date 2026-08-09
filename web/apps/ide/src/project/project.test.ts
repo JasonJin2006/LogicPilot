@@ -439,7 +439,7 @@ describe('project bundle', () => {
     expect(restored).toBeDefined();
     expect(restored!.presentation?.transform.x).toBe(300);
     expect(restored!.presentation?.transform.width).toBe(120);
-    expect(restored!.presentation?.style.fill).toEqual({ kind: 'solid', color: '#ffffff' });
+    expect(restored!.presentation?.style.fill).toEqual({ kind: 'none' });
   });
 
   it('saves a canvas-built statechart without dropping members (LP4001)', () => {

@@ -625,7 +625,7 @@ export const useModelStore = create<ModelState>()((set, get) => ({
         transform: route.transform,
         style: {
           ...style,
-          fill: { kind: 'solid', color: 'transparent' },
+          fill: { kind: 'none' },
           stroke: { ...style.stroke, width: 2, endArrow: 'arrow' },
         },
         geometry: {

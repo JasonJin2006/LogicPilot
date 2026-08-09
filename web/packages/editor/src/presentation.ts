@@ -43,6 +43,7 @@ export interface GraphicTransform {
 }
 
 export type GraphicFill =
+  | { kind: 'none' }
   | { kind: 'solid'; color: string }
   | { kind: 'gradient'; angle: number; stops: Array<{ offset: number; color: string }> }
   | { kind: 'image'; src: string };
@@ -139,7 +140,7 @@ export interface GraphicNode {
 
 export function defaultGraphicStyle(): GraphicStyle {
   return {
-    fill: { kind: 'solid', color: '#ffffff' },
+    fill: { kind: 'none' },
     stroke: { color: '#333333', width: 1.5, dash: [], join: 'miter', cap: 'butt' },
     opacity: 1,
   };
@@ -172,10 +173,15 @@ export function shapeNode(
 }
 
 export function textNode(x: number, y: number): GraphicNode {
+  const style = defaultGraphicStyle();
   return {
     type: 'text',
     transform: defaultGraphicTransform(x, y, 120, 24),
-    style: defaultGraphicStyle(),
+    style: {
+      ...style,
+      fill: { kind: 'solid', color: '#333333' },
+      stroke: { ...style.stroke, width: 0 },
+    },
     text: 'Text',
     textStyle: {
       fontFamily: 'Arial',
@@ -293,10 +299,6 @@ export function createGraphicNode(kind: string, x: number, y: number): GraphicNo
     case 'polyline':
       return {
         ...shapeNode('polyline', x, y, 120, 64),
-        style: {
-          ...defaultGraphicStyle(),
-          fill: { kind: 'solid', color: 'transparent' },
-        },
         geometry: {
           shapeType: 'polyline',
           width: 120,

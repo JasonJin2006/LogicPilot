@@ -286,19 +286,22 @@ export function PresentationInspector({
           onChange={(event) =>
             patchStyle({
               fill:
-                event.target.value === 'gradient'
-                  ? {
-                      kind: 'gradient',
-                      angle: 0,
-                      stops: [
-                        { offset: 0, color: fill.kind === 'solid' ? fill.color : '#ffffff' },
-                        { offset: 1, color: '#000000' },
-                      ],
-                    }
-                  : { kind: 'solid', color: fill.kind === 'solid' ? fill.color : '#ffffff' },
+                event.target.value === 'none'
+                  ? { kind: 'none' }
+                  : event.target.value === 'gradient'
+                    ? {
+                        kind: 'gradient',
+                        angle: 0,
+                        stops: [
+                          { offset: 0, color: fill.kind === 'solid' ? fill.color : '#ffffff' },
+                          { offset: 1, color: '#000000' },
+                        ],
+                      }
+                    : { kind: 'solid', color: fill.kind === 'solid' ? fill.color : '#ffffff' },
             })
           }
         >
+          <option value="none">None</option>
           <option value="solid">Solid</option>
           <option value="gradient">Gradient</option>
         </select>

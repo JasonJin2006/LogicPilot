@@ -2,7 +2,7 @@
 // geometry, path, text, image or group) as real SVG inside the canvas shapes
 // layer. Coordinates are world-based; `ox`/`oy` are the layer origin.
 
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import { computeFrameLayout, resolveGraphicBindings } from '@logicpilot/editor';
 
@@ -23,6 +23,9 @@ interface RendererProps {
 
 function fillPaint(style: GraphicStyle, uid: string | undefined): string {
   const fill = style.fill;
+  if (fill.kind === 'none') {
+    return 'none';
+  }
   if (fill.kind === 'solid') {
     return fill.color;
   }
@@ -319,7 +322,7 @@ function shapeDefs(object: GraphicNode, uid: string | undefined): ReactNode {
   return defs.length > 0 ? <defs>{defs}</defs> : null;
 }
 
-export function PresentationRenderer({
+export const PresentationRenderer = memo(function PresentationRenderer({
   object,
   ox,
   oy,
@@ -347,4 +350,4 @@ export function PresentationRenderer({
       {shapeFor(resolved, uid, runtime)}
     </g>
   );
-}
+});

@@ -43,6 +43,7 @@ import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
 import { snapRect, type SnapGuide } from '../presentation/snapping';
+import { graphicIntersectsViewport, worldViewportFromCamera } from '../presentation/viewport';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -1168,7 +1169,21 @@ export function ModelCanvas() {
   // Presentation shapes: rendered as real drawing shapes in a bounds-fitted
   // svg inside the world layer (canvas annotations, not process blocks).
   const shapeNodes = visibleNodes.filter((node) => PRESENTATION_KINDS.has(node.kind));
-  const renderedShapeNodes = shapeNodes.filter((node) => node.presentation?.visible !== false);
+  const shapeViewport = worldViewportFromCamera(
+    view.panX,
+    view.panY,
+    view.scale,
+    size.width,
+    size.height,
+  );
+  const renderedShapeNodes = shapeNodes.filter(
+    (node) =>
+      node.presentation?.visible !== false &&
+      (node.id === selectedId ||
+        shapeIds.includes(node.id) ||
+        !node.presentation ||
+        graphicIntersectsViewport(node.presentation.transform, shapeViewport)),
+  );
   const runtime = live
     ? {
         queueLength: vizState.queueLength,
@@ -1191,10 +1206,24 @@ export function ModelCanvas() {
       ...renderedShapeNodes.map((node) => node.y),
       ...penPoints.map((point) => point.y),
     ];
+    const allRight = [
+      ...renderedShapeNodes.map(
+        (node) =>
+          (node.presentation?.transform.x ?? node.x) + (node.presentation?.transform.width ?? 0),
+      ),
+      ...penPoints.map((point) => point.x),
+    ];
+    const allBottom = [
+      ...renderedShapeNodes.map(
+        (node) =>
+          (node.presentation?.transform.y ?? node.y) + (node.presentation?.transform.height ?? 0),
+      ),
+      ...penPoints.map((point) => point.y),
+    ];
     const minX = Math.min(...allX) - pad;
     const minY = Math.min(...allY) - pad;
-    const maxX = Math.max(...allX) + pad;
-    const maxY = Math.max(...allY) + pad;
+    const maxX = Math.max(...allRight) + pad;
+    const maxY = Math.max(...allBottom) + pad;
     shapesView = (
       <svg
         className="model-shapes"
