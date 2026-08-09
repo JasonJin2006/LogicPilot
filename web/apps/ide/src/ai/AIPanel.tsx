@@ -42,6 +42,7 @@ import type {
 } from './api';
 import { OptimizeChart, TrajectoryChart } from './charts';
 import { useAiConversationStore } from './conversationStore';
+import { routeAiIntent, type AiAction } from './intentRouter';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
@@ -174,11 +175,13 @@ export function AIPanel() {
     }
   };
 
-  const run = async (kind: 'build' | 'optimize' | 'explain' | 'variation') => {
+  const run = async (kind: AiAction, requestPrompt = prompt) => {
     const completedMetrics = result?.metrics;
     setBusy(true);
     setError('');
-    if (kind !== 'explain') setResult(null);
+    // A model-generation request replaces the primary result. Analysis tools
+    // operate on it, so keep the last valid run visible if one of them fails.
+    if (kind === 'build') setResult(null);
     setProposal(null);
     setOptimized(null);
     setVariation(null);
@@ -216,12 +219,12 @@ export function AIPanel() {
           }),
         );
       } else if (kind === 'optimize') {
-        setOptimized(await aiOptimize(prompt));
+        setOptimized(await aiOptimize(requestPrompt));
       } else if (kind === 'explain') {
         if (completedMetrics == null) {
           setError('Run and apply a model before asking a result question.');
         } else {
-          setExplained(await aiQueryMetrics(prompt, completedMetrics));
+          setExplained(await aiQueryMetrics(requestPrompt, completedMetrics));
         }
       } else {
         const current = useModelStore.getState().document;
@@ -243,7 +246,7 @@ export function AIPanel() {
           }
           setBaselineMetrics(baseline);
           setProposalExperiment(baselineExperiment);
-          const proposed = await aiProposePatch(prompt, current, conversation);
+          const proposed = await aiProposePatch(requestPrompt, current, conversation);
           if (!proposed.supported) {
             setError(
               'No safe structured change could be inferred. Name the target block and requested operation.',
@@ -264,17 +267,17 @@ export function AIPanel() {
                 mode: 'validated',
               });
               if (validation.ok) setProposal(nextProposal);
-              if (validation.ok) setProposalPrompt(prompt);
+              if (validation.ok) setProposalPrompt(requestPrompt);
             }
           }
         } else {
           setBaselineMetrics(null);
-          const built = await aiBuild(prompt, generateDsl(current), experimentSettings);
+          const built = await aiBuild(requestPrompt, generateDsl(current), experimentSettings);
           setResult(built);
           if (built.ok) {
             const nextProposal = createModelProposal(current, built.dsl);
             setProposal(nextProposal);
-            setProposalPrompt(prompt);
+            setProposalPrompt(requestPrompt);
             if (!nextProposal.ok) setError(nextProposal.error ?? 'invalid model proposal');
           }
         }
@@ -284,6 +287,37 @@ export function AIPanel() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const defaultPromptFor = (action: AiAction): string => {
+    switch (action) {
+      case 'optimize':
+        return 'Optimize the current model.';
+      case 'variation':
+        return 'Run a parameter study for the current model.';
+      case 'explain':
+        return 'Explain the last simulation results.';
+      default:
+        return '';
+    }
+  };
+
+  const dispatchAction = (action: AiAction, candidatePrompt = prompt) => {
+    const requestPrompt = candidatePrompt.trim() || defaultPromptFor(action);
+    if (requestPrompt === '') {
+      setError('Describe the model or change you want Copilot to make.');
+      return;
+    }
+    setPrompt('');
+    void run(action, requestPrompt);
+  };
+
+  const submitPrompt = () => {
+    const decision = routeAiIntent(prompt, {
+      hasModel: document.nodes.length > 0,
+      hasMetrics: result?.metrics != null,
+    });
+    dispatchAction(decision.action, decision.cleanedPrompt);
   };
 
   return (
@@ -613,7 +647,7 @@ export function AIPanel() {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              if (!busy && prompt.trim() !== '') void run('build');
+              if (!busy && prompt.trim() !== '') submitPrompt();
             }
           }}
         />
@@ -625,14 +659,14 @@ export function AIPanel() {
               <ChevronDown size={12} />
             </summary>
             <div className="ai-tools-popover">
-              <button disabled={busy} onClick={() => void run('optimize')}>
+              <button disabled={busy} onClick={() => dispatchAction('optimize')}>
                 <SlidersHorizontal size={14} />
                 <span>
                   <strong>Optimize model</strong>
                   <small>Search for a better parameter value</small>
                 </span>
               </button>
-              <button disabled={busy} onClick={() => void run('variation')}>
+              <button disabled={busy} onClick={() => dispatchAction('variation')}>
                 <FlaskConical size={14} />
                 <span>
                   <strong>Parameter study</strong>
@@ -641,7 +675,7 @@ export function AIPanel() {
               </button>
               <button
                 disabled={busy || result?.metrics == null}
-                onClick={() => void run('explain')}
+                onClick={() => dispatchAction('explain')}
               >
                 <BarChart3 size={14} />
                 <span>
@@ -659,7 +693,7 @@ export function AIPanel() {
             aria-label="Send to Copilot"
             title="Send (Enter)"
             disabled={busy || prompt.trim() === ''}
-            onClick={() => void run('build')}
+            onClick={submitPrompt}
           >
             <SendHorizontal size={15} />
           </button>
