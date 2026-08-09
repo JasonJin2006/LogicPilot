@@ -12,6 +12,9 @@ export interface RunOptions {
   maxReps: number;
   errorPercent: number;
   precisionMetric: 'throughput' | 'L' | 'Lq' | 'W' | 'Wq' | 'utilization' | 'availability';
+  // "fast" (default) runs without wall-clock pacing; "animated" paces by
+  // speed and keeps pause/step meaningful.
+  executionMode: 'fast' | 'animated';
   arrivals: number;
   warmup: number;
   confidence: number;
@@ -35,6 +38,9 @@ export function validateRunOptions(options: RunOptions): string | null {
   if (options.warmup >= options.arrivals) return 'warmup must be less than arrivals';
   if (options.replicationMode === 'precision' && options.maxReps < options.minReps) {
     return 'maxReps must be greater than or equal to minReps';
+  }
+  if (options.executionMode !== 'fast' && options.executionMode !== 'animated') {
+    return 'executionMode must be "fast" or "animated"';
   }
   if (!Number.isFinite(options.errorPercent) || options.errorPercent <= 0) {
     return 'errorPercent must be greater than 0';
@@ -69,6 +75,7 @@ export const useRunStore = create<RunStore>((set) => ({
     maxReps: 100,
     errorPercent: 5,
     precisionMetric: 'Wq',
+    executionMode: 'fast',
     arrivals: 4000,
     warmup: 400,
     confidence: 0.95,

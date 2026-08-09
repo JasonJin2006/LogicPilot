@@ -205,6 +205,44 @@ TEST_CASE("semantic: process coupling validates ports and conditions",
   REQUIRE(bad_port_diags.front().code == "LP5003");
 }
 
+TEST_CASE("semantic: process output ports do not fan out implicitly",
+          "[dsl][semantic][fan_out]") {
+  // One source feeding two branches would push the same entity id into both:
+  // every branch exit counts as a system departure (departures > arrivals,
+  // negative in_system). Duplication requires an explicit split block.
+  const ParseOutput fan_out = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  sink Left { }\n"
+      "  sink Right { }\n"
+      "  couple A.out -> Left.in\n"
+      "  couple A.out -> Right.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(fan_out.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*fan_out.model);
+  REQUIRE(diags.size() == 1);
+  REQUIRE(diags.front().code == "LP5007");
+  REQUIRE(diags.front().message.find("A.out") != std::string::npos);
+  REQUIRE(diags.front().message.find("split") != std::string::npos);
+
+  // Different ports of one block may each reach one downstream (split's
+  // original and copy lanes, selectOutput's true/false exits): no fan-out.
+  const ParseOutput distinct_ports = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  split S { numberOfCopies = 2 }\n"
+      "  sink K1 { }\n"
+      "  sink K2 { }\n"
+      "  couple A.out -> S.in\n"
+      "  couple S.out -> K1.in\n"
+      "  couple S.outCopy -> K2.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(distinct_ports.ok());
+  REQUIRE(analyze_model(*distinct_ports.model).empty());
+}
+
 TEST_CASE("semantic: agent-centric flows live in the model root or agent",
           "[dsl][semantic]") {
   // A flat model: process-library blocks + couplings directly under the

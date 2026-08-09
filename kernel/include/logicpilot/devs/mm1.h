@@ -93,6 +93,12 @@ class QueueingFlowSim : public FlowEngine {
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
 
+  // Exact current simulation time (nanoseconds) from the engine clock.
+  [[nodiscard]] std::int64_t now_ns() const override;
+
+  // Live telemetry: the scheduler is drained when no event is pending.
+  [[nodiscard]] bool has_pending_events() override;
+
   // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
   // clock/scheduler/handler registry instead of per-engine owned facilities.
   void attach(RuntimeContext& context);
@@ -127,6 +133,20 @@ class QueueingFlowSim : public FlowEngine {
   std::int64_t busy_servers_{0};
   std::int64_t down_servers_{0};
   bool has_failure_{false};
+
+  // Pending event tokens owned by this engine: the next source arrival and
+  // one in-flight depart/fail/repair event per server. In external
+  // (kernel-owned) scheduler mode reset() cancels them so stale events
+  // from a previous replication can never advance the shared clock.
+  EventToken arrive_token_{};
+  std::vector<EventToken> server_tokens_;
+  // Handler registration identity: the registry the HandlerIds were
+  // obtained from and its epoch at registration time (see ensure in
+  // reset()). A different registry (attach / replaced owned registry) or a
+  // registry clear() invalidates the HandlerIds; repeated resets on the
+  // same registry do not accumulate duplicates.
+  const EventHandlerRegistry* handlers_owner_{nullptr};
+  std::uint64_t handlers_epoch_{0};
 
   // Statistics accumulators.
   std::int64_t last_ns_{0};

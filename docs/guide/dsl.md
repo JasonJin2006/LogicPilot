@@ -122,16 +122,49 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   引用两侧 agent 的属性字段，可组合 `==`/`!=`/比较运算符）。
 - `seize` / `release`：`seize` 从 `resource` 资源池按 `numberOfUnits` 抢占
   单位（不足时在块内队列等待），`release` 归还该 agent 持有的全部单位。
-- **被 seize 持有的单元同样服从池故障**：资源池的 `failure_rate` /
-  `repair_rate` 在单元被持有期间生效——池进入故障后不再放行新的 seize，
-  修复后恢复；`availability` 反映停机占比。
-- **池级故障是全局的**：每个声明资源池只有一条忙时故障/修复时钟。多个
-  `service`/`seize` 共享同一故障池时，故障会同时中断所有消费者的在服任务
-  （抢占式重启：修复后任务重新计时），不会给每个消费者各画一条独立故障
-  曲线；停机时间按故障发生时刻持有的单元数折算进 `availability`。
+- **池故障语义（MVP 边界）**：资源池的 `failure_rate` / `repair_rate` 按
+  「忙时故障 + 修复」建模（时钟只在池中有单元被持有时运行）。故障期间的
+  行为按消费者区分：
+  - `service` 消费者：池故障会**中断**其全部在服任务（取消未决 depart
+    事件），修复后按**抢占式重启（preemptive-repeat）**重新计时；
+  - `seize` / `assembler` 消费者：故障期间**不再放行新授权**（等待中的
+    agent 继续排队），已持有的单元**不被中断**（AnyLogic 默认
+    "No preemption" 策略下故障任务等待单元释放），修复后恢复；
+    `availability` 反映停机占比。
+  注意：当前是**整池一条故障/修复时钟**（所有单元同时故障/修复），
+  AnyLogic 是**按单元**独立故障——这是已知简化，单元级故障为后续工作。
+  故障时钟的**生命周期**：一个 busy period 从池中首次有单元被持有开始、
+  到最后一个单元被释放结束。period 结束时**尚未发生**的 time-to-failure
+  事件被取消并失效（普通 idle gap 不再累计故障时间）；**已经发生的故障
+  必须完成 repair**——释放最后一个单元不会取消维修、也不会清除 down
+  状态，等待中的请求直到 repair 事件真正触发才恢复。
+  **"业务结束"的判定**：没有任何 Source 将来还能产生外部 arrival（自身
+  `maxArrivals` 耗尽、`manual`/`maxArrivals=0`、采样器停止产生有效正
+  间隔、或全局 arrivals 上限已达成）、没有有效 pending Source arrival、
+  且系统内实体归零。普通 idle gap（仍有 pending arrival 或 Source 未
+  耗尽）不算结束，期间的 repair 不会被取消；达到全局 arrivals 上限时
+  其他 Source 已预调度的 arrival 会被立即取消。业务真正结束后，尾部不再
+  影响业务的维护事件会被清理，调度器停在精确的业务结束时刻（horizon 与
+  时间积分指标不受未来故障时间影响；generation 校验只是第二层防御，不能
+  阻止事件被弹出前 run_until 已发生的时钟推进——事件本身会被取消）。
+- **普通输出端口不允许隐式扇出**：一个 process 输出端口最多连接一个下游
+  （`couple A.out -> B.in` + `couple A.out -> C.in` 会在编译期报 `LP5007`）。
+  需要复制实体时必须显式使用 `split`（原件走 `out`、副本走 `outCopy`，
+  每个副本是独立实体，arrivals/departures/in-system 计数保持一致）。
+- **warm-up 按外部 Source arrivals 判定**：`--warmup N`（或实验配置）排除
+  前 N 个**外部到达事件**产生的实体（含 `agentsPerArrival > 1` 的整批）。
+  `split` 副本继承原实体的统计资格（lineage），不会因为获得新的唯一 ID
+  而越过 warm-up 边界，也不会推高后续实体的序号——改变副本数量不影响
+  被排除的外部 arrivals 数量。`metrics.arrivals` 表示**全部实体 births**
+  （含 split 副本，副本创建即计数、离开即减，arrivals == departures）。
 - `wait` / `seize` 的**退出超时**：`enableTimeout = true` 时，等待超过
   `timeout` 秒的 agent 从 `outTimeout` 出口离开（AnyLogic 语义；couple 到
-  `outTimeout` 时编译器要求 `enableTimeout` 为 true）。
+  `outTimeout` 时编译器要求 `enableTimeout` 为 true）。超时拥有完整的
+  schedule/cancel 生命周期：实体在超时前**正常离开等待区、开始服务/获得
+  资源、或被抢占/溢出路由**时，其未决 timeout 会被取消——失效 timeout
+  不会在业务结束后触发并把 horizon 拖到无意义的未来时刻；`business_finished`
+  成立时清尾逻辑会取消全部残留的块级尾事件（timeout/failure/repair），
+  而普通 idle gap 中仍有效的 timeout/repair/未来 arrival 不会被提前取消。
 - **优先级排队与抢占**：`queue`/`wait` 的 `queuing` 支持
   `queuing_fifo`（默认）/ `queuing_lifo` / `queuing_priority`；优先级取
   实体属性 `priority`（无则回退块字段 `agentPriority`，越大越靠前）。

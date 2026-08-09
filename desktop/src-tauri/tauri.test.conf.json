@@ -1,0 +1,8 @@
+{
+  "build": {
+    "frontendDist": "test-dist"
+  },
+  "bundle": {
+    "resources": null
+  }
+}

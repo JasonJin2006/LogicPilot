@@ -42,6 +42,13 @@ class FlowEngine : public ReplicationModel {
   [[nodiscard]] virtual ReplicationMetrics metrics() const = 0;
   virtual void attach(RuntimeContext& context) = 0;
 
+  // Exact current simulation time in nanoseconds. The engine clock only
+  // advances to real event times, never to slice boundaries, so final
+  // telemetry frames must use this instead of converting
+  // metrics().horizon_seconds back through double (which loses precision
+  // and has range issues near the int64 limits).
+  [[nodiscard]] virtual std::int64_t now_ns() const = 0;
+
   // Live telemetry for streamed runs (defaults keep non-flow engines on the
   // batch path).
   [[nodiscard]] virtual std::vector<BlockSnapshot> block_snapshots() const {

@@ -157,7 +157,16 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Test desktop filesystem and shell
-        run: cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
+        # A fresh checkout has no staged build/desktop-runtime tree, and
+        # tauri-build copies bundle resources at compile time, so the stock
+        # tauri.conf.json would fail the build. Merge the test-only config
+        # (empty bundle resources) via TAURI_CONFIG; formal packaging
+        # (pnpm desktop:bundle) still uses tauri.conf.json and keeps
+        # requiring the staged runtime.
+        shell: pwsh
+        run: |
+          $env:TAURI_CONFIG = Get-Content -Raw desktop/src-tauri/tauri.test.conf.json
+          cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
 
   bench:
     name: bench (perf gates)

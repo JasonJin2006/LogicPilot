@@ -63,6 +63,7 @@ export function RunDialog() {
   const [arrivals, setArrivals] = useState(String(runOptions.arrivals));
   const [warmup, setWarmup] = useState(String(runOptions.warmup));
   const [confidence, setConfidence] = useState(String(runOptions.confidence));
+  const [executionMode, setExecutionMode] = useState(runOptions.executionMode);
   const [speed, setSpeedField] = useState(String(runOptions.speed));
 
   useEffect(() => {
@@ -75,6 +76,7 @@ export function RunDialog() {
       maxReps: parseNum(maxReps) ?? initial.current.maxReps,
       errorPercent: parseNum(errorPercent) ?? initial.current.errorPercent,
       precisionMetric,
+      executionMode,
       arrivals: parseNum(arrivals) ?? initial.current.arrivals,
       warmup: parseNum(warmup) ?? initial.current.warmup,
       confidence: parseNum(confidence) ?? initial.current.confidence,
@@ -89,6 +91,7 @@ export function RunDialog() {
     maxReps,
     errorPercent,
     precisionMetric,
+    executionMode,
     arrivals,
     warmup,
     confidence,
@@ -110,6 +113,7 @@ export function RunDialog() {
     maxReps: parseNum(maxReps) ?? Number.NaN,
     errorPercent: parseNum(errorPercent) ?? Number.NaN,
     precisionMetric,
+    executionMode,
     arrivals: parseNum(arrivals) ?? Number.NaN,
     warmup: parseNum(warmup) ?? Number.NaN,
     confidence: parseNum(confidence) ?? Number.NaN,
@@ -125,6 +129,7 @@ export function RunDialog() {
     maxReps: parseNum(maxReps),
     errorPercent: parseNum(errorPercent),
     precisionMetric,
+    executionMode,
     arrivals: parseNum(arrivals),
     warmup: parseNum(warmup),
     confidence: parseNum(confidence),
@@ -242,12 +247,29 @@ export function RunDialog() {
               onChange={setConfidence}
               disabled={!connected}
             />
+            <label className="field">
+              <span>execution mode</span>
+              <select
+                value={executionMode}
+                disabled={!connected}
+                onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}
+              >
+                <option value="fast">Fast (batch) - run at full speed</option>
+                <option value="animated">Animated (realtime) - pace by speed</option>
+              </select>
+            </label>
             <NumberField
               label="speed"
               value={speed}
               onChange={setSpeedField}
-              disabled={!connected}
+              disabled={!connected || executionMode !== 'animated'}
             />
+            {executionMode === 'fast' && (
+              <p className="dialog-hint">
+                Fast mode ignores speed and runs without animation pacing; telemetry frames are
+                rate-limited. Use Animated mode when you want to watch the simulation.
+              </p>
+            )}
           </div>
           <div className="dialog-actions">
             <button

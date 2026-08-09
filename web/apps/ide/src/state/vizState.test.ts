@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseBlockCounters, resetVizState, vizState } from './vizState';
+import {
+  createVizState,
+  departedDelta,
+  parseBlockCounters,
+  resetVizState,
+  vizState,
+} from './vizState';
 
 describe('parseBlockCounters', () => {
   it('maps generic flow counters into per-block live state', () => {
@@ -30,5 +36,35 @@ describe('parseBlockCounters', () => {
     resetVizState(vizState);
     expect(vizState.blocks.size).toBe(0);
     expect(vizState.tickVersion).toBeGreaterThan(before);
+  });
+});
+
+describe('flow token baseline', () => {
+  it('round 2 spawns tokens from a fresh baseline after a reset', () => {
+    // Round 1: the run advanced to departed = 100 (baseline recorded).
+    const viz = createVizState();
+    viz.lastDeparted.set('S', 100);
+    viz.blocks.set('S', { buffered: 0, inService: 0, arrived: 100, departed: 100 });
+    expect(departedDelta(viz.lastDeparted.get('S') ?? 0, viz.blocks.get('S')!.departed)).toBe(0);
+
+    // New run starts: resetVizState clears the baseline (and bumps the
+    // generation so the renderer drops in-flight tokens).
+    const generation = viz.tokenGeneration;
+    resetVizState(viz);
+    expect(viz.lastDeparted.size).toBe(0);
+    expect(viz.tokenGeneration).toBe(generation + 1);
+
+    // Round 2: departed = 1 must produce a token delta - the old baseline
+    // of 100 must not suppress it.
+    viz.blocks.set('S', { buffered: 0, inService: 0, arrived: 1, departed: 1 });
+    expect(departedDelta(viz.lastDeparted.get('S') ?? 0, viz.blocks.get('S')!.departed)).toBe(1);
+    viz.lastDeparted.set('S', 1);
+
+    // The baseline advances with the counter; a stalled counter emits
+    // nothing further.
+    expect(departedDelta(viz.lastDeparted.get('S') ?? 0, 1)).toBe(0);
+    // A big jump is capped per frame.
+    expect(departedDelta(viz.lastDeparted.get('S') ?? 0, 7)).toBe(4);
+    expect(departedDelta(0, 1000)).toBe(4);
   });
 });

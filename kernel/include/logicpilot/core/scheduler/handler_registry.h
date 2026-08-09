@@ -27,6 +27,10 @@ class EventHandlerRegistry {
 
   [[nodiscard]] std::size_t size() const { return handlers_.size(); }
 
+  // Registry generation: bumped by clear() so engines can detect that
+  // previously obtained HandlerIds are no longer valid and re-register.
+  [[nodiscard]] std::uint64_t epoch() const { return epoch_; }
+
   void dispatch(const Event& event) const {
     assert(event.handler < handlers_.size());
     const Handler& h = handlers_[event.handler];
@@ -39,10 +43,14 @@ class EventHandlerRegistry {
     return handlers_[id];
   }
 
-  void clear() { handlers_.clear(); }
+  void clear() {
+    handlers_.clear();
+    ++epoch_;
+  }
 
  private:
   std::vector<Handler> handlers_;
+  std::uint64_t epoch_{0};
 };
 
 }  // namespace logicpilot

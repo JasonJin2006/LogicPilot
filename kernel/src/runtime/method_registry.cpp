@@ -13,6 +13,10 @@ MethodRegistry& MethodRegistry::instance() {
   return registry;
 }
 
+void MethodRegistry::register_method(std::string method, Factory factory) {
+  register_method(std::move(method), std::move(factory), Descriptor{});
+}
+
 void MethodRegistry::register_method(std::string method, Factory factory, Descriptor descriptor) {
   for (const Entry& entry : entries_) {
     if (entry.method == method) {

@@ -282,6 +282,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
       client?.disconnect();
       client = null;
       set({ conn: 'disconnected' });
+      // A reconnect starts a fresh run: drop the stale telemetry and the
+      // token-animation baseline so the next run spawns tokens from zero.
+      resetVizState(vizState);
+      useRunStore.getState().reset();
     },
     start: (options) => {
       client?.start(options);
@@ -336,6 +340,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
           maxReps: options.maxReps,
           errorPercent: options.errorPercent,
           precisionMetric: options.precisionMetric,
+          executionMode: options.executionMode,
           arrivals: options.arrivals,
           warmup: options.warmup,
           confidence: options.confidence,

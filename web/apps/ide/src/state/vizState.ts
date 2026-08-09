@@ -38,6 +38,17 @@ export interface VizState {
   blocks: Map<string, BlockLiveState>;
   /** Bumped on every applied Tick so the renderer can detect new data. */
   tickVersion: number;
+  /**
+   * Token-animation baseline: last observed `departed` count per block.
+   * Tokens spawn on the delta, so the baseline must be cleared whenever a
+   * new run starts, the model switches, or the connection resets - an old
+   * baseline (e.g. departed = 100 from round 1) would suppress round 2's
+   * tokens until their counters climb back above it.
+   */
+  lastDeparted: Map<string, number>;
+  /** Bumped whenever the token baseline resets so renderers can drop
+   *  in-flight tokens instead of animating leftovers from the old run. */
+  tokenGeneration: number;
 }
 
 export function createVizState(): VizState {
@@ -51,6 +62,8 @@ export function createVizState(): VizState {
     meanWait: 0,
     blocks: new Map(),
     tickVersion: 0,
+    lastDeparted: new Map(),
+    tokenGeneration: 0,
   };
 }
 
@@ -64,6 +77,21 @@ export function resetVizState(viz: VizState): void {
   viz.meanWait = 0;
   viz.blocks = new Map();
   viz.tickVersion += 1;
+  // Fresh token baseline: the next run's counters start from zero, so the
+  // old departed values must not suppress its token deltas, and any tokens
+  // still animating belong to the previous run.
+  viz.lastDeparted = new Map();
+  viz.tokenGeneration += 1;
+}
+
+/**
+ * Token spawn count for one block given the previous baseline and the new
+ * departed counter (capped per frame so a huge catch-up delta cannot flood
+ * the canvas). Returns 0 when the counter has not advanced.
+ */
+export function departedDelta(previous: number, current: number, max = 4): number {
+  if (current <= previous) return 0;
+  return Math.min(current - previous, max);
 }
 
 /** Parse generic process-flow counters (`block.<name>.<field>`) into the

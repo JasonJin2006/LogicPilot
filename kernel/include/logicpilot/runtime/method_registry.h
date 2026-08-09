@@ -35,7 +35,13 @@ public:
 
   static MethodRegistry& instance();
 
-  void register_method(std::string method, Factory factory, Descriptor descriptor = Descriptor{});
+  // Two overloads instead of a default argument: Descriptor has default member
+  // initializers, and a default argument of the enclosing-class-nested type
+  // trips Clang 18 ("default member initializer ... needed within definition
+  // of enclosing class"). The two-argument form is equivalent to passing
+  // Descriptor{}.
+  void register_method(std::string method, Factory factory);
+  void register_method(std::string method, Factory factory, Descriptor descriptor);
   // Validates that a host-resolved factory matches its package manifest and
   // admits it to the same registry as built-ins. Dynamic C-ABI/WASM adapters
   // can supply the factory without changing kernel method discovery.

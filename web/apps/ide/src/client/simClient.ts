@@ -27,6 +27,9 @@ export interface StartOptions {
   maxReps?: number;
   errorPercent?: number;
   precisionMetric?: string;
+  // "fast" (default) runs without wall-clock pacing and bounds telemetry
+  // frames; "animated" paces by `speed` and keeps pause/step meaningful.
+  executionMode?: 'fast' | 'animated';
   arrivals?: number;
   warmup?: number;
   confidence?: number;
@@ -108,6 +111,7 @@ export class SimClient {
       'maxReps',
       'errorPercent',
       'precisionMetric',
+      'executionMode',
       'arrivals',
       'warmup',
       'confidence',

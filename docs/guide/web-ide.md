@@ -54,12 +54,26 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 
 ## 运行
 
-画布左上角 **Run** 打开运行对话框：seed / reps / arrivals / warmup / speed
-参数 + Start / Pause / Resume / Step / Stop。空画布运行网关内置模型；有画布
-模型时先编译再带模型参数运行。M/M/c 指数流程在运行中显示实时队列长度与忙/闲
-状态点（Tick 增量帧）。**泛型 process 流程**（delay/split/selectOutput/
-Service 共享资源池等拓扑）同样以分片方式流式执行：每个块实时显示缓冲徽标与
-忙/闲状态点，实体沿 coupling 连线以令牌动画流动，Pause / Step 粒度可用。
+画布左上角 **Run** 打开运行对话框：seed / reps / arrivals / warmup /
+**execution mode** / speed 参数 + Start / Pause / Resume / Step / Stop。
+空画布运行网关内置模型；有画布模型时先编译再带模型参数运行。
+
+执行模式（`executionMode`，默认 **Fast**）：
+
+- **Fast（批量）**：不按仿真时钟休眠，仿真尽快完成；遥测帧按每 replication
+  的帧预算限流（事件稀疏时自动放大分片，不会因时间跨度大而产生海量空帧；
+  **预算包含最终状态帧**——排空后强制发送一帧最终 Counters，画布上显示的
+  最后一个状态就是运行结束时的真实状态；最终帧的 `sim_time_ns` 是引擎的
+  精确最后事件时间（不是切片采样边界），`RunFinished.sim_time_ns` 与之一致）。
+  4000 arrivals 的普通 DES 保持秒级完成。**speed 在 Fast 模式下被禁用**——
+  不会出现"以为 speed 只影响动画，结果批量实验被意外拖慢"的情况。
+- **Animated（实时）**：按 speed 进行 wall-clock 节奏（1.0 = 实时），
+  Pause / Resume / Step 在这个模式下才有动画意义；遥测按固定分片输出。
+
+M/M/c 指数流程在运行中显示实时队列长度与忙/闲状态点（Tick 增量帧）。
+**泛型 process 流程**（delay/split/selectOutput/Service 共享资源池等拓扑）
+同样以分片方式流式执行：每个块实时显示缓冲徽标与忙/闲状态点，实体沿
+coupling 连线以令牌动画流动（新一轮运行/切换模型/重连时动画基线自动重置）。
 Agent、Atomic 和 Continuous 模型目前完成批量复制后返回统计摘要，不提供
 Pause/Step 粒度的 Tick 流。
 

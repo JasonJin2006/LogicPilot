@@ -187,6 +187,13 @@ TEST_CASE("method registry: register, create, contains and idempotency", "[runti
   });
   REQUIRE(registry.contains("test_method_xyz"));
 
+  // Two-argument registration must carry the default Descriptor (runtime
+  // version "1", semantics versions {"1"}).
+  const MethodRegistry::Descriptor* defaults = registry.descriptor("test_method_xyz");
+  REQUIRE(defaults != nullptr);
+  REQUIRE(defaults->runtime_version == "1");
+  REQUIRE(defaults->semantics_versions == std::vector<std::string>{"1"});
+
   // First registration wins; re-registering must not replace the factory.
   registry.register_method("test_method_xyz", [] { return std::make_unique<TestMethod>("other"); });
   auto method = registry.create("test_method_xyz");

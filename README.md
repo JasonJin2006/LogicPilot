@@ -82,14 +82,34 @@ pnpm --filter @logicpilot/ide dev          # http://localhost:5173
 ### 离散事件（process）块语义
 
 process 库 23 块中 22 块已有内核真语义（以 AnyLogic 官方文档为参考）：
-`source/queue/wait/delay/service/sink`、`resource`（含故障/修复与
-seize 持有期故障）、`seize/release`（资源持有与归还）、`batch/unbatch`
+`source/queue/wait/delay/service/sink`、`resource`（含故障/修复）、
+`seize/release`（资源持有与归还）、`batch/unbatch`
 （临时/永久批）、`combine`、`match`（纯同步或按属性配对）、
 `selectOutput/hold`（运行时条件，支持 `==`/`!=`）、`exit`、`enter`、
 `timeMeasureStart/End`、`assembler`、`moveTo`（tripTime/速度位移）；
 实体属性（source `state` 声明）驱动条件路由、优先级排队与抢占
 （`outTimeout`/`outPreempted`）。**process 库 23 块全部有内核语义**
 （完整 node/path 空间建模为后续项）。组合模型见 `examples/des_shop.lp`。
+
+流程契约：普通输出端口不允许隐式扇出（编译期 `LP5007`），复制实体使用
+显式 `split`（副本为独立实体，arrivals/departures/in-system 计数一致；
+副本继承原实体的统计资格，`--warmup N` 按外部 Source arrivals 判定，
+不受副本数量影响）。资源池故障为整池忙时故障/修复时钟：`service` 消费者
+在服任务被中断并在修复后抢占式重启；`seize`/`assembler` 消费者在故障期间
+不放行新授权、已持有单元不中断（AnyLogic "No preemption" 默认），单元级
+故障时钟为后续工作；池进入 idle 时未发生的故障时钟停止，但**已经发生的
+故障必须完成 repair**（释放最后一个单元不会跳过维修，等待者直到 repair
+事件真正触发才恢复）。**"业务结束"** 定义为：没有任何 Source 将来还能产生
+外部 arrival（自身 `maxArrivals` 耗尽、`manual`/`maxArrivals=0`、采样器停止
+产生有效正间隔、或全局 arrivals 上限已达成）且没有有效 pending Source
+arrival、系统内实体归零；达到全局上限时其余 Source 已预调度的 arrival 会
+被立即取消，不会推进时钟。业务真正结束后，尾部不再影响业务的维护事件被
+清理，horizon 停在精确的业务结束时刻（generation 校验只是第二层防御，
+不能阻止事件被弹出前 run_until 已发生的时钟推进——取消事件本身才是）。
+实时流式执行区分 `executionMode`：
+`fast`（默认，无 wall-clock 休眠、遥测帧预算限流且**预算含最终状态帧**，
+最终帧使用精确的最后事件时间）与 `animated`（按 speed 节奏、支持
+pause/step）。
 
 ## 仓库结构
 

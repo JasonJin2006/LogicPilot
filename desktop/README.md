@@ -26,6 +26,22 @@ cargo build --manifest-path desktop/src-tauri/Cargo.toml
 desktop/src-tauri/target/debug/logicpilot-desktop.exe
 ```
 
+`cargo build`/`cargo test` without a staged runtime: tauri-build copies
+`bundle.resources` (the `../../build/desktop-runtime/` tree) at compile time
+and fails when it is absent — e.g. on a fresh checkout. For tests and plain
+builds, merge the test-only config (which empties `bundle.resources`) via the
+`TAURI_CONFIG` environment variable:
+
+```powershell
+$env:TAURI_CONFIG = Get-Content -Raw desktop/src-tauri/tauri.test.conf.json
+cargo test --locked --manifest-path desktop/src-tauri/Cargo.toml
+```
+
+The formal `tauri.conf.json` is untouched: packaging (`pnpm desktop:bundle`)
+still requires the staged runtime, and a bundle attempted without it fails at
+compile time. `tauri.test.conf.json` is a test-only merge patch — never pass
+it to `tauri build`.
+
 ## Self-contained bundle runtime
 
 The distributable does not use a machine-wide Node installation or repository

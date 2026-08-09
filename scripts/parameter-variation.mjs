@@ -23,20 +23,54 @@ async function lpcli(lpcliPath, args) {
   });
 }
 
-export function axisValues(axis) {
+// Shared axis validation for grid and Monte Carlo sampling: an axis either
+// lists explicit values or declares a [min, max] range with an optional
+// positive step, and (for point generation) names the model parameter it
+// overrides. One code path for both samplers so they accept the same shapes.
+export function validateAxis(axis, { requireVariable = false } = {}) {
+  if (axis === null || typeof axis !== 'object' || Array.isArray(axis)) {
+    throw new Error('each axis must be an object with a variable and values or a min/max range');
+  }
+  if (axis.name !== undefined &&
+      (typeof axis.name !== 'string' || axis.name.trim() === '')) {
+    throw new Error('axis name must be a non-empty string');
+  }
+  const label = axis.name ?? axis.variable ?? '<unnamed>';
+  if (axis.variable !== undefined) {
+    if (typeof axis.variable !== 'string' ||
+        !/^[A-Za-z_][A-Za-z0-9_]*$/.test(axis.variable)) {
+      throw new Error(`axis '${label}' variable must be a valid identifier`);
+    }
+  } else if (requireVariable) {
+    throw new Error(`axis '${label}' is missing its variable (the model parameter it overrides)`);
+  }
   if (Array.isArray(axis.values)) {
     if (axis.values.length === 0 ||
         !axis.values.every((value) => typeof value === 'number' && Number.isFinite(value))) {
-      throw new Error(`axis '${axis.name}' values must be a non-empty number list`);
+      throw new Error(`axis '${label}' values must be a non-empty list of finite numbers`);
     }
+    return;
+  }
+  const { min, max, step } = axis;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max < min) {
+    throw new Error(`axis '${label}' requires a range with finite min <= max`);
+  }
+  if (step !== undefined && (!Number.isFinite(step) || step <= 0)) {
+    throw new Error(`axis '${label}' step must be a positive finite number`);
+  }
+}
+
+export function axisValues(axis) {
+  validateAxis(axis);
+  if (Array.isArray(axis.values)) {
     return axis.values.map((value) => Number(value.toPrecision(15)));
   }
   const { min, max, step } = axis;
-  if (![min, max, step].every(Number.isFinite) || step <= 0 || max < min) {
-    throw new Error(`invalid axis '${axis.name}' range/step`);
+  if (!Number.isFinite(step) || step <= 0) {
+    throw new Error(`axis '${axis.name ?? axis.variable}' step is required for grid sampling`);
   }
   const count = Math.floor((max - min) / step + 1e-9) + 1;
-  if (count < 1 || count > 100000) throw new Error(`axis '${axis.name}' is too large`);
+  if (count < 1 || count > 100000) throw new Error(`axis '${axis.name ?? axis.variable}' is too large`);
   return Array.from({ length: count }, (_, index) => {
     const value = min + index * step;
     return Number(value.toPrecision(15));
@@ -44,6 +78,8 @@ export function axisValues(axis) {
 }
 
 export function cartesianPoints(axes) {
+  if (!Array.isArray(axes)) throw new Error('axes must be a list');
+  for (const axis of axes) validateAxis(axis, { requireVariable: true });
   let points = [{}];
   for (const axis of axes) {
     const next = [];
@@ -58,15 +94,19 @@ export function cartesianPoints(axes) {
   return points;
 }
 
-// Deterministic Monte Carlo sampling over the axes (mulberry32 LCG). Each
-// point draws a uniform value per axis; when the axis declares a step the
-// value snaps to the nearest step and is clamped to [min, max].
+// Deterministic Monte Carlo sampling over the axes (mulberry32 generator).
+// Each point draws a uniform value per axis; when the axis declares a step
+// the value snaps to the nearest step and is clamped to [min, max].
 export function sampleMonteCarlo(axes, samples, seed = 1) {
+  if (!Array.isArray(axes)) throw new Error('axes must be a list');
+  for (const axis of axes) validateAxis(axis, { requireVariable: true });
   if (!Number.isSafeInteger(samples) || samples < 1 || samples > 100000) {
     throw new Error('samples must be an integer in [1, 100000]');
   }
-  if (!Number.isSafeInteger(seed) || seed < 0) {
-    throw new Error('seed must be a non-negative integer');
+  // The sampler state is a 32-bit-state PRNG: seeds outside [0, 2^32-1]
+  // would silently collide after truncation, so they are rejected up front.
+  if (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xFFFFFFFF) {
+    throw new Error('seed must be an integer in [0, 4294967295] (the sampling state is 32-bit)');
   }
   let state = seed >>> 0;
   const random = () => {
@@ -86,9 +126,6 @@ export function sampleMonteCarlo(axes, samples, seed = 1) {
         continue;
       }
       const { min, max, step } = axis;
-      if (![min, max].every(Number.isFinite) || max < min) {
-        throw new Error(`invalid axis '${axis.name}' range`);
-      }
       let value = min + random() * (max - min);
       if (Number.isFinite(step) && step > 0) {
         value = min + Math.round((value - min) / step) * step;

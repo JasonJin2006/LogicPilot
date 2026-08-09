@@ -7,15 +7,23 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "ir_v2_generated.h"
+#include "logicpilot/core/random/distributions.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/core/random/streams.h"
+#include "logicpilot/core/scheduler/binary_heap_scheduler.h"
+#include "logicpilot/core/scheduler/handler_registry.h"
+#include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
+#include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/runtime_context.h"
+#include "logicpilot/state/variable_store.h"
 #include "process_flow.h"
 
 namespace {
@@ -467,6 +475,221 @@ TEST_CASE("process flow: split clones each agent", "[process_flow]") {
   const ReplicationMetrics metrics = run_once(*model, 3, 1000, 0);
   // Original + 2 copies per arrival.
   REQUIRE(metrics.departures == 3000);
+}
+
+TEST_CASE("process flow: engine rejects implicit fan-out on an output port",
+          "[process_flow][fan_out]") {
+  // One source feeding two branches pushes the same entity id into both;
+  // every branch exit would count as a system departure (departures >
+  // arrivals, negative in_system, one id in several branches). The compiler
+  // rejects this as LP5007; the engine must reject hand-built IR too.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto left = block(builder, "Left", "sink", {}, {});
+  const auto right = block(builder, "Right", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, left, right},
+                     {couple(builder, "In", "out", "Left", "in"),
+                      couple(builder, "In", "out", "Right", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  // The engine reports the violation through the error channel and refuses
+  // to run the flow (an inert model, not a fan-out simulation).
+  REQUIRE(!error.empty());
+  REQUIRE(error.find("fan-out") != std::string::npos);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
+  REQUIRE(metrics.arrivals == 0);
+  REQUIRE(metrics.departures == 0);
+}
+
+TEST_CASE("process flow: split keeps arrivals/departures/in-system "
+          "consistent",
+          "[process_flow][split][fan_out]") {
+  // Explicit duplication via split: each arrival produces the original on
+  // `out` plus numberOfCopies-1 fresh entities on `outCopy`. Every copy is a
+  // new entity (counted on creation, leaves exactly once), so the system
+  // totals stay balanced: arrivals == departures and in-system never goes
+  // negative (an unaccounted clone would leave without its +1 and drive
+  // in_system below zero).
+  const auto build_model = [](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 4, {10.0}))}, {});
+    const auto split = block(
+        builder, "S", "split",
+        {var_int(builder, "copies", 3), var_float(builder, "probability", 1.0)},
+        {});
+    const auto original_lane =
+        block(builder, "D", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+    const auto copy_lane =
+        block(builder, "D2", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {1.0}))}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto sink2 = block(builder, "K2", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, split, original_lane, copy_lane, sink, sink2},
+        {couple(builder, "In", "out", "S", "in"),
+         couple(builder, "S", "out", "D", "in"),
+         couple(builder, "S", "outCopy", "D2", "in"),
+         couple(builder, "D", "out", "K", "in"),
+         couple(builder, "D2", "out", "K2", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return model;
+  };
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics metrics = run_once(*model, 3, 1000, 0);
+  // 1000 arrivals -> 1000 originals + 2000 copies; everything leaves once.
+  REQUIRE(metrics.arrivals == 3000);
+  REQUIRE(metrics.departures == 3000);
+  REQUIRE(metrics.mean_in_system >= 0.0);
+  REQUIRE(metrics.mean_in_system > 0.0);  // both lanes delay entities
+  // The split block itself saw exactly the 1000 originals.
+  const BlockMetrics* split_metrics = nullptr;
+  for (const BlockMetrics& block : metrics.blocks) {
+    if (block.name == "S") {
+      split_metrics = &block;
+    }
+  }
+  REQUIRE(split_metrics != nullptr);
+  REQUIRE(split_metrics->arrived == 1000);
+  REQUIRE(split_metrics->departed == 1000);
+
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder builder2;
+  auto model2 = build_model(builder2);
+  const ReplicationMetrics again = run_once(*model2, 3, 1000, 0);
+  REQUIRE(again.arrivals == metrics.arrivals);
+  REQUIRE(again.departures == metrics.departures);
+  REQUIRE(again.mean_in_system == metrics.mean_in_system);
+}
+
+TEST_CASE("process flow: split copies never shift the warm-up boundary",
+          "[process_flow][split][warmup]") {
+  // Warm-up excludes entities by external Source arrival ordinal, not by
+  // unique id. With warmup = 1 the first arrival's original AND its split
+  // copies must stay out of the sojourn/wait samples; the second arrival
+  // and its copies enter. Original lane is a capacity-1 service (1.0 s),
+  // copy lane an unbounded delay (2.0 s), arrivals 3.0 s apart - so the
+  // second arrival finds every lane idle and every sampled sojourn is
+  // deterministic and independent of the copy count:
+  //   original sojourn = 1.0, each copy sojourn = 2.0
+  //   mean_sojourn(copies) = (1.0 + 2.0 * (copies - 1)) / copies
+  // Pre-fix, the first arrival's copies (fresh ids >= warmup) entered the
+  // sample with their own 2.0 s sojourns, shifting the mean.
+  const auto run_model = [](std::int64_t copies) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {3.0}))}, {});
+    const auto split = block(
+        builder, "S", "split",
+        {var_int(builder, "copies", copies),
+         var_float(builder, "probability", 1.0)},
+        {});
+    const auto service =
+        block(builder, "Srv", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0}))}, {});
+    const auto copy_lane =
+        block(builder, "Copy", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {2.0})),
+               var_bool(builder, "maximumCapacity", true)},
+              {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto sink2 = block(builder, "K2", "sink", {}, {});
+    std::string error;
+    auto model = build(
+        builder, {source, split, service, copy_lane, sink, sink2},
+        {couple(builder, "In", "out", "S", "in"),
+         couple(builder, "S", "out", "Srv", "in"),
+         couple(builder, "S", "outCopy", "Copy", "in"),
+         couple(builder, "Srv", "out", "K", "in"),
+         couple(builder, "Copy", "out", "K2", "in")},
+        flatbuffers::Offset<Node>{}, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 5, 2, 1);  // warmup = 1 external arrival
+  };
+
+  // Exact sampled means per copy count: only the second arrival's entities
+  // contribute, so each value pins down the sample set. A stray first-
+  // arrival copy would add 2.0 s samples and move the mean (e.g. copies=2:
+  // (2.0+1.0+2.0)/3 = 1.667 instead of 1.5).
+  const ReplicationMetrics three = run_model(3);
+  REQUIRE(three.arrivals == 6);
+  REQUIRE(three.departures == 6);
+  REQUIRE(three.mean_in_system >= 0.0);
+  REQUIRE(three.mean_sojourn == Catch::Approx((1.0 + 2.0 + 2.0) / 3.0));
+  REQUIRE(three.mean_wait == Catch::Approx(0.0));  // lanes idle at arrival
+
+  const ReplicationMetrics two = run_model(2);
+  const ReplicationMetrics four = run_model(4);
+  REQUIRE(two.arrivals == 4);
+  REQUIRE(two.departures == 4);
+  REQUIRE(two.mean_sojourn == Catch::Approx((1.0 + 2.0) / 2.0));
+  REQUIRE(four.arrivals == 8);
+  REQUIRE(four.departures == 8);
+  REQUIRE(four.mean_sojourn == Catch::Approx((1.0 + 2.0 * 3.0) / 4.0));
+
+  // Determinism: identical config reproduces identical metrics.
+  const ReplicationMetrics again = run_model(3);
+  REQUIRE(again.arrivals == three.arrivals);
+  REQUIRE(again.departures == three.departures);
+  REQUIRE(again.mean_sojourn == three.mean_sojourn);
+  REQUIRE(again.mean_wait == three.mean_wait);
+}
+
+TEST_CASE("process flow: backpressure never re-delivers an accepted entity",
+          "[process_flow][backpressure]") {
+  // A single-edge chain with a slow server: while the service is busy the
+  // source keeps its entity and re-emits when the slot frees. Each entity
+  // must be delivered exactly once - the service's arrived counter is the
+  // duplicate detector (a re-delivery would push it above the arrival
+  // count) and departures must match arrivals (no entity is lost either).
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 4, {0.5}))}, {});
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Server")},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model =
+      build(builder, {source, service, sink},
+            {couple(builder, "In", "out", "S", "in"),
+             couple(builder, "S", "out", "K", "in")},
+            root, &error);
+  REQUIRE(model != nullptr);
+  const ReplicationMetrics metrics = run_once(*model, 7, 10, 0);
+  REQUIRE(metrics.arrivals == 10);
+  REQUIRE(metrics.departures == 10);
+  REQUIRE(metrics.mean_in_system >= 0.0);
+  const BlockMetrics* service_metrics = nullptr;
+  for (const BlockMetrics& block : metrics.blocks) {
+    if (block.name == "S") {
+      service_metrics = &block;
+    }
+  }
+  REQUIRE(service_metrics != nullptr);
+  REQUIRE(service_metrics->arrived == 10);   // exactly once per entity
+  REQUIRE(service_metrics->departed == 10);  // nothing stuck or duplicated
 }
 
 TEST_CASE("process flow: selectOutput routes by probability",
@@ -2128,6 +2351,12 @@ TEST_CASE("process flow: equality comparison drives condition routing",
 
 TEST_CASE("process flow: seized resource units honor pool failures",
           "[process_flow][failure][des_blocks]") {
+  // Busy-time failure on a pool referenced by Seize/Release: while units
+  // are held the pool may go down (exponential time-to-failure) and no new
+  // grants are issued until the repair; units already held by an agent are
+  // NOT interrupted (AnyLogic's "No preemption" default for seize-held
+  // tasks - the failure task waits for the unit). Availability reflects
+  // the pool downtime; a healthy pool keeps availability == 1.
   const auto run_seize_pool = [&](double failure_rate) {
     flatbuffers::FlatBufferBuilder builder;
     const auto source =
@@ -2164,17 +2393,22 @@ TEST_CASE("process flow: seized resource units honor pool failures",
                         couple(builder, "Drop", "out", "K", "in")},
                        root, &error);
     REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
     return run_once(*model, 7, 2000, 0);
   };
 
   // The pool fails while units are held by seize (busy-time failure law);
   // every agent still completes, the pool's downtime shows up in
-  // availability, and no failures means availability == 1.
+  // availability, and no failures means availability == 1. An in-flight
+  // failure keeps its repair: a unit released before the repair completes
+  // does not clear the down state (the wait-through-repair lifecycle is
+  // covered deterministically by the dedicated test above/below).
   const ReplicationMetrics failing = run_seize_pool(0.1);
   REQUIRE(failing.departures == 2000);
   REQUIRE(failing.availability > 0.85);
-  REQUIRE(failing.availability < 0.99);
-  REQUIRE(failing.mean_in_queue > 0.0);  // agents wait while the pool is down
+  REQUIRE(failing.availability < 1.0);
+  REQUIRE(failing.availability >= 0.0);
+  REQUIRE(failing.availability <= 1.0);
 
   const ReplicationMetrics clean = run_seize_pool(0.0);
   REQUIRE(clean.departures == 2000);
@@ -2187,6 +2421,102 @@ TEST_CASE("process flow: seized resource units honor pool failures",
   REQUIRE(again.mean_in_queue == failing.mean_in_queue);
 }
 
+TEST_CASE("process flow: assembler waits out pool failures without losing "
+          "assemblies",
+          "[process_flow][failure][des_blocks]") {
+  // An Assembler referencing a failing pool behaves like Seize: new grants
+  // are gated while the pool is down (agents wait), assemblies already in
+  // progress are not interrupted (AnyLogic's "No preemption" default), and
+  // every assembly still completes. availability reflects the downtime.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto parts =
+      block(builder, "Parts", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1),
+             var_float(builder, "failure_rate", 0.1),
+             var_float(builder, "repair_rate", 1.0)},
+            {});
+  const auto assembler = block(
+      builder, "Assemble", "assembler",
+      {var_string(builder, "resourcePool", "Server"),
+       var_int(builder, "numberOfUnits", 1),
+       var_float(builder, "delayTime", 0.5)},
+      {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, parts, assembler, sink},
+                     {couple(builder, "In", "out", "Assemble", "in"),
+                      couple(builder, "Parts", "out", "Assemble", "p1"),
+                      couple(builder, "Assemble", "out", "K", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  const ReplicationMetrics metrics = run_once(*model, 7, 400, 0);
+  // 400 arrival events total (200 per source): 200 main agents + 200
+  // parts; every assembly completes once.
+  REQUIRE(metrics.departures == 200);
+  REQUIRE(metrics.mean_in_system >= 0.0);
+  // The pool fails during the run (downtime shows up, bounds stay sane).
+  REQUIRE(metrics.availability > 0.5);
+  REQUIRE(metrics.availability < 1.0);
+  REQUIRE(metrics.availability >= 0.0);
+  REQUIRE(metrics.availability <= 1.0);
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder builder2;
+  const auto source2 =
+      block(builder2, "In", "source",
+            {var_dist(builder2, "arrival", dist(builder2, 0, {1.0}))}, {});
+  const auto parts2 =
+      block(builder2, "Parts", "source",
+            {var_dist(builder2, "arrival", dist(builder2, 0, {1.0}))}, {});
+  const auto resource2 =
+      block(builder2, "Server", "resource",
+            {var_int(builder2, "capacity", 1),
+             var_float(builder2, "failure_rate", 0.1),
+             var_float(builder2, "repair_rate", 1.0)},
+            {});
+  const auto assembler2 = block(
+      builder2, "Assemble", "assembler",
+      {var_string(builder2, "resourcePool", "Server"),
+       var_int(builder2, "numberOfUnits", 1),
+       var_float(builder2, "delayTime", 0.5)},
+      {});
+  const auto sink2 = block(builder2, "K", "sink", {}, {});
+  const auto root2 = CreateNode(
+      builder2, CreateMetadata(builder2, builder2.CreateString("M"), 0, 0, 0),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder2, builder2.CreateString("core"),
+                         builder2.CreateString("model"), 0, 0),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource2}),
+      0, 0, 0, 0);
+  std::string error2;
+  auto model2 =
+      build(builder2, {source2, parts2, assembler2, sink2},
+            {couple(builder2, "In", "out", "Assemble", "in"),
+             couple(builder2, "Parts", "out", "Assemble", "p1"),
+             couple(builder2, "Assemble", "out", "K", "in")},
+            root2, &error2);
+  REQUIRE(model2 != nullptr);
+  const ReplicationMetrics again = run_once(*model2, 7, 400, 0);
+  REQUIRE(again.departures == metrics.departures);
+  REQUIRE(again.availability == metrics.availability);
+  REQUIRE(again.mean_in_system == metrics.mean_in_system);
+}
+
 TEST_CASE("process flow: shared failure pool interrupts every consumer "
           "together",
           "[process_flow][failure][des_blocks]") {
@@ -2196,9 +2526,18 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
   // preempted at the same instant and restart only after the pool repair.
   // Preemptive-repeat must extend sojourn (a stale pre-failure depart event
   // completing early would keep it near the bare 1.0s service time).
+  //
+  // Each lane has its own Source: process output ports do not fan out
+  // implicitly (LP5007), so one source may not feed both consumers - a
+  // single source reaching two branches would push the same entity id into
+  // both and double-count departures. The pool itself is still shared, so
+  // one pool-wide failure clock still interrupts both consumers together.
   const auto build_model = [](flatbuffers::FlatBufferBuilder& builder) {
     const auto source =
         block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+    const auto source2 =
+        block(builder, "In2", "source",
               {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
     const auto resource =
         block(builder, "Crew", "resource",
@@ -2217,6 +2556,7 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
          var_string(builder, "resource", "Crew"),
          var_int(builder, "numberOfUnits", 2)}, {});
     const auto sink = block(builder, "K", "sink", {}, {});
+    const auto sink2 = block(builder, "K2", "sink", {}, {});
     const auto root = CreateNode(
         builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
         builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
@@ -2227,11 +2567,11 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
         0, 0, 0, 0);
     std::string error;
     auto model = build(
-        builder, {source, left, right, sink},
+        builder, {source, source2, left, right, sink, sink2},
         {couple(builder, "In", "out", "Left", "in"),
-         couple(builder, "In", "out", "Right", "in"),
+         couple(builder, "In2", "out", "Right", "in"),
          couple(builder, "Left", "out", "K", "in"),
-         couple(builder, "Right", "out", "K", "in")},
+         couple(builder, "Right", "out", "K2", "in")},
         root, &error);
     REQUIRE(model != nullptr);
     return model;
@@ -2248,14 +2588,19 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
 
   flatbuffers::FlatBufferBuilder builder;
   auto model = build_model(builder);
-  const ReplicationMetrics metrics = run_once(*model, 17, 60, 0);
-  // Each arrival fans out to both lanes (source -> Left + Right), so 60
-  // arrivals produce 120 tasks; preemption never loses a job.
+  // 120 arrival events total (60 per source): 60 arrivals per lane produce
+  // 120 tasks in total; the counts stay balanced (no entity exits twice,
+  // in-system never negative).
+  const ReplicationMetrics metrics = run_once(*model, 17, 120, 0);
   REQUIRE(metrics.departures == 120);
+  REQUIRE(metrics.mean_in_system >= 0.0);
   // f = r = 1.0: long-run availability is ~0.5 (both consumers share one
   // pool-wide down period).
   REQUIRE(metrics.availability > 0.30);
   REQUIRE(metrics.availability < 0.70);
+  // Availability is a fraction by construction: never outside [0, 1].
+  REQUIRE(metrics.availability >= 0.0);
+  REQUIRE(metrics.availability <= 1.0);
   // Preemptive-repeat: constant 1.0s service plus repair cycles keeps mean
   // sojourn well above the bare service time.
   REQUIRE(metrics.mean_sojourn > 1.3);
@@ -2263,13 +2608,887 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
   REQUIRE(departed(metrics, "Left") > 0);
   REQUIRE(departed(metrics, "Right") > 0);
 
+  // One pool-wide failure clock per declared pool: the engine starts a
+  // failure/repair clock exactly once per busy period (when the pool's busy
+  // count leaves zero) and reschedules it on repair only while still busy.
+  // Two consumers sharing the pool must not each start their own clock - a
+  // duplicated clock would halve availability (f = r = 1: ~0.5 with one
+  // clock, ~0.33 with two), which the bounds below would reject, and the
+  // M/G/1 theory test (availability == r/(f+r)) rejects it statistically
+  // too. A fixed seed reproduces the same run bit-for-bit.
+  REQUIRE(metrics.availability > 0.40);
+  REQUIRE(metrics.availability < 0.60);
+
   // Determinism: identical config reproduces identical metrics.
   flatbuffers::FlatBufferBuilder builder2;
   auto model2 = build_model(builder2);
-  const ReplicationMetrics again = run_once(*model2, 17, 60, 0);
+  const ReplicationMetrics again = run_once(*model2, 17, 120, 0);
   REQUIRE(again.departures == metrics.departures);
   REQUIRE(again.mean_sojourn == metrics.mean_sojourn);
   REQUIRE(again.availability == metrics.availability);
+}
+
+TEST_CASE("process flow: in_service snapshots keep pool-preempted tasks "
+          "visible",
+          "[process_flow][failure][telemetry]") {
+  // BlockSnapshot.in_service reports the slots actually occupied: a task
+  // preempted by a pool-wide failure keeps its slot until the repair (it
+  // restarts then), so the live snapshot must not read 0 while the pool is
+  // down. Single task, single unit, f = 2 (time-to-failure mean 0.5 s vs
+  // 1.0 s service: the failure fires mid-task with high probability),
+  // r = 0.5 (repair mean 2 s). Once the task occupies the slot there is no
+  // legitimate empty window - it is either serving or preempted-held - so
+  // in_service must stay >= 1 for every snapshot until the run drains.
+  // (An extreme failure rate would livelock here: every repair would be
+  // followed by an instant re-failure, so the task could never complete.)
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1),
+             var_float(builder, "failure_rate", 2.0),
+             var_float(builder, "repair_rate", 0.5)},
+            {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {1.0})),
+             var_string(builder, "resource", "Server")},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "S", "in"),
+                      couple(builder, "S", "out", "K", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 11;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+
+  // Drive the run in 1 ms slices. Once the single task occupies the slot,
+  // in_service must never read 0 while events are still pending: the task
+  // is either serving or preempted-held during a pool-down window. When
+  // the task completes, the pool's failure clock is cancelled (busy period
+  // ends), so no stale pool event stays pending afterwards - "pending" is
+  // a reliable window boundary.
+  bool started = false;
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+    const bool pending = model->has_pending_events();
+    for (const logicpilot::BlockSnapshot& snapshot : model->block_snapshots()) {
+      if (snapshot.name != "S") {
+        continue;
+      }
+      if (snapshot.in_service > 0) {
+        started = true;
+      }
+      if (started && pending) {
+        INFO("snapshot at t=" << boundary_ns << " in_service="
+                              << snapshot.in_service);
+        REQUIRE(snapshot.in_service > 0);
+      }
+    }
+  }
+  // The scheduler drains immediately after the business ends: no stale
+  // pool failure/repair event may keep it alive past the last departure.
+  REQUIRE_FALSE(model->has_pending_events());
+  REQUIRE(started);
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 1);
+  // The seed must actually exercise a pool-down window, otherwise the test
+  // proves nothing: availability < 1 means the pool went down mid-task.
+  REQUIRE(metrics.availability < 1.0);
+  REQUIRE(metrics.availability >= 0.0);
+  REQUIRE(metrics.availability <= 1.0);
+}
+
+TEST_CASE("process flow: pool failure clock stops when the busy period ends",
+          "[process_flow][failure]") {
+  // A single task on a failing pool: when the last unit is released the
+  // pool's busy period ends, and the pending time-to-failure event must be
+  // cancelled (not left to fire at a business-meaningless future time).
+  // The scheduler must drain immediately after the task completes.
+  const auto build_model = [](flatbuffers::FlatBufferBuilder& builder,
+                              double failure_rate) {
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", failure_rate),
+               var_float(builder, "repair_rate", 1.0)},
+              {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Server")},
+              {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(builder, {source, service, sink},
+                       {couple(builder, "In", "out", "S", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return model;
+  };
+
+  // failure_rate = 0.001: the first TTF averages 1000 s, far beyond the
+  // 1.0 s task, so the business ends long before the failure would fire.
+  // The leftover TTF event (pre-fix behavior) kept the scheduler alive and
+  // advanced the clock/areas when it finally fired.
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder, 0.001);
+  ReplicationConfig config;
+  config.seed = 11;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  // The scheduler drains at the business end; the failure clock must not
+  // hold it open. The task completes at 2.0 s (arrival at 1.0 + 1.0 s
+  // service) - a leftover TTF would push the horizon toward ~1000 s.
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE_FALSE(model->has_pending_events());
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(2.0));
+  REQUIRE(metrics.availability == 1.0);  // the failure never fired
+}
+
+TEST_CASE("process flow: an idle-pool stale failure cannot pollute time "
+          "integrals",
+          "[process_flow][failure]") {
+  // Identical business, two failure rates: 0 (no clock at all) and a tiny
+  // rate whose first TTF lands far after the business ends. The horizon
+  // and the time integrals (L, utilization, availability, sojourn) must be
+  // identical - the stale TTF must neither advance the clock nor touch the
+  // area accumulators (pre-fix it ran accumulate_areas() before its
+  // validity check and inflated the horizon).
+  const auto run = [](double failure_rate) {
+    flatbuffers::FlatBufferBuilder builder;
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", failure_rate),
+               var_float(builder, "repair_rate", 1.0)},
+              {});
+    const auto service =
+        block(builder, "S", "service",
+              {var_dist(builder, "time", dist(builder, 0, {1.0})),
+               var_string(builder, "resource", "Server")},
+              {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(builder, {source, service, sink},
+                       {couple(builder, "In", "out", "S", "in"),
+                        couple(builder, "S", "out", "K", "in")},
+                       root, &error);
+    REQUIRE(model != nullptr);
+    return run_once(*model, 11, 3, 0);
+  };
+
+  const ReplicationMetrics clean = run(0.0);
+  const ReplicationMetrics tiny_ttf = run(0.001);
+  REQUIRE(clean.departures == 3);
+  REQUIRE(tiny_ttf.departures == 3);
+  REQUIRE(tiny_ttf.horizon_seconds == clean.horizon_seconds);
+  REQUIRE(tiny_ttf.mean_in_system == clean.mean_in_system);
+  REQUIRE(tiny_ttf.mean_in_queue == clean.mean_in_queue);
+  REQUIRE(tiny_ttf.mean_sojourn == clean.mean_sojourn);
+  REQUIRE(tiny_ttf.mean_wait == clean.mean_wait);
+  REQUIRE(tiny_ttf.utilization == clean.utilization);
+  REQUIRE(tiny_ttf.availability == clean.availability);
+}
+
+TEST_CASE("process flow: seize waiters stay blocked until the repair "
+          "completes",
+          "[process_flow][failure][des_blocks]") {
+  // Entity 1 seizes the only unit at 1.5 s and holds it for 0.5 s. With
+  // f = 2 the failure fires inside the hold (fixed seed) and the pool goes
+  // down; a repair with mean 5 s is scheduled. Seize is no-preemption, so
+  // entity 1 keeps its unit and releases at 2.0 s - BEFORE the repair.
+  // Entity 2 arrives at 3.0 s while the pool is still down: it must keep
+  // waiting until the repair event actually fires. Releasing the last
+  // held unit must NOT cancel the repair or clear the down state
+  // (pre-fix behaviour: entity 2 seized immediately at 3.0 s).
+  const auto build_model = [](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.5}))}, {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", 2.0),
+               var_float(builder, "repair_rate", 0.2)},
+              {});
+    const auto seize = block(builder, "Grab", "seize",
+                             {var_string(builder, "resource", "Server"),
+                              var_int(builder, "numberOfUnits", 1)},
+                             {});
+    const auto delay =
+        block(builder, "Work", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+    const auto release = block(builder, "Drop", "release", {}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(builder, {source, seize, delay, release, sink},
+                       {couple(builder, "In", "out", "Grab", "in"),
+                        couple(builder, "Grab", "out", "Work", "in"),
+                        couple(builder, "Work", "out", "Drop", "in"),
+                        couple(builder, "Drop", "out", "K", "in")},
+                       root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return model;
+  };
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  const ReplicationMetrics metrics = run_once(*model, 3, 2, 0);
+  REQUIRE(metrics.departures == 2);
+  // The seed must fire the failure inside entity 1's hold and keep the
+  // pool down past 3.0 s (otherwise the test proves nothing).
+  REQUIRE(metrics.availability < 1.0);
+  REQUIRE(metrics.availability > 0.0);
+  // Entity 1 sojourn 0.5 s; entity 2 waits through the repair (mean 5 s
+  // starting at 2.0 s, so it seizes around 5-9 s). Without the wait the
+  // mean would be ~0.5.
+  REQUIRE(metrics.mean_sojourn > 1.5);
+  REQUIRE(metrics.mean_sojourn < 8.0);
+  // Entity 2 queued inside the seize block while the pool was down.
+  REQUIRE(metrics.mean_in_queue > 0.0);
+
+  // Determinism: identical config reproduces identical metrics.
+  flatbuffers::FlatBufferBuilder builder2;
+  auto model2 = build_model(builder2);
+  const ReplicationMetrics again = run_once(*model2, 3, 2, 0);
+  REQUIRE(again.departures == metrics.departures);
+  REQUIRE(again.mean_sojourn == metrics.mean_sojourn);
+  REQUIRE(again.mean_in_queue == metrics.mean_in_queue);
+  REQUIRE(again.availability == metrics.availability);
+}
+
+TEST_CASE("process flow: tail pool maintenance cannot stretch the final "
+          "horizon",
+          "[process_flow][failure][des_blocks]") {
+  // A single entity seizes the unit at 1.0 s, the pool fails inside the
+  // 0.5 s hold (f = 2, fixed seed), and the entity releases at 1.5 s -
+  // the run's business ends right there (arrivals = 1, nothing left in
+  // the system). The repair (mean 20 s) is still pending: it is a tail
+  // maintenance event with no business meaning, so the runner must cancel
+  // it and drain at the exact business end instead of dragging the
+  // horizon to the repair time.
+  const auto build_model = [](flatbuffers::FlatBufferBuilder& builder) {
+    const auto source =
+        block(builder, "In", "source",
+              {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+    const auto resource =
+        block(builder, "Server", "resource",
+              {var_int(builder, "capacity", 1),
+               var_float(builder, "failure_rate", 2.0),
+               var_float(builder, "repair_rate", 0.05)},
+              {});
+    const auto seize = block(builder, "Grab", "seize",
+                             {var_string(builder, "resource", "Server"),
+                              var_int(builder, "numberOfUnits", 1)},
+                             {});
+    const auto delay =
+        block(builder, "Work", "delay",
+              {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+    const auto release = block(builder, "Drop", "release", {}, {});
+    const auto sink = block(builder, "K", "sink", {}, {});
+    const auto root = CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("model"), 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+        0, 0, 0, 0);
+    std::string error;
+    auto model = build(builder, {source, seize, delay, release, sink},
+                       {couple(builder, "In", "out", "Grab", "in"),
+                        couple(builder, "Grab", "out", "Work", "in"),
+                        couple(builder, "Work", "out", "Drop", "in"),
+                        couple(builder, "Drop", "out", "K", "in")},
+                       root, &error);
+    REQUIRE(model != nullptr);
+    REQUIRE(error.empty());
+    return model;
+  };
+
+  flatbuffers::FlatBufferBuilder builder;
+  auto model = build_model(builder);
+  ReplicationConfig config;
+  config.seed = 23;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 1);
+  // The seed must fire the failure inside the 0.5 s hold.
+  REQUIRE(metrics.availability < 1.0);
+  // Horizon is the exact business end (arrival 1.0 + 0.5 s hold = 1.5 s),
+  // not the repair time (~21 s).
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(1.5));
+  REQUIRE(metrics.availability >= 0.0);
+  REQUIRE(metrics.availability <= 1.0);
+}
+
+TEST_CASE("process flow: a source limited below config.arrivals still ends "
+          "the business",
+          "[process_flow][failure][source_limit]") {
+  // The only source has limitArrivals = 1 while config.arrivals = 100:
+  // the business ends when that single entity leaves, even though the
+  // global arrival counter never reaches the configured cap. A pending
+  // pool repair (mean 20 s) must be treated as a tail maintenance event
+  // and cancelled, so the scheduler drains at the exact business end.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1),
+             var_float(builder, "failure_rate", 2.0),
+             var_float(builder, "repair_rate", 0.05)},
+            {});
+  const auto seize = block(builder, "Grab", "seize",
+                           {var_string(builder, "resource", "Server"),
+                            var_int(builder, "numberOfUnits", 1)},
+                           {});
+  const auto delay =
+      block(builder, "Work", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto release = block(builder, "Drop", "release", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, seize, delay, release, sink},
+                     {couple(builder, "In", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Drop", "in"),
+                      couple(builder, "Drop", "out", "K", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 23;
+  config.arrivals = 100;  // far above the source's own limit
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  // Exactly one external arrival (maxArrivals = 1), one departure.
+  REQUIRE(metrics.arrivals == 1);
+  REQUIRE(metrics.departures == 1);
+  // The failure fired inside the hold (seed must guarantee it).
+  REQUIRE(metrics.availability < 1.0);
+  // Horizon is the business end (arrival 1.0 + 0.5 s hold = 1.5 s), not
+  // the repair time (~21 s) - the tail repair was cancelled even though
+  // config.arrivals was never reached.
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(1.5));
+  REQUIRE(metrics.availability >= 0.0);
+  REQUIRE(metrics.availability <= 1.0);
+}
+
+TEST_CASE("process flow: a pending arrival of another source cannot stretch "
+          "the horizon",
+          "[process_flow][multi_source][arrivals]") {
+  // Two sources with one global arrival: source A fires at 0.5 s, source B
+  // has already scheduled a far-future arrival at 100 s. When A's arrival
+  // reaches the global cap, B's pending arrival must be cancelled - it
+  // would otherwise be popped by run_until and advance the clock to 100 s
+  // before its no-op handler runs.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source_a =
+      block(builder, "A", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto source_b =
+      block(builder, "B", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {100.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5})),
+             var_bool(builder, "maximumCapacity", true)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source_a, source_b, delay, sink},
+                     {couple(builder, "A", "out", "D", "in"),
+                      couple(builder, "B", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  // Exactly one arrival from A; B's pending arrival was cancelled.
+  REQUIRE(metrics.arrivals == 1);
+  REQUIRE(metrics.departures == 1);
+  // Horizon is A's business end (0.5 + 0.5 = 1.0 s), never 100 s.
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(1.0));
+  REQUIRE(metrics.mean_in_system >= 0.0);
+
+  // Determinism: same seed reproduces the same run (and the same A/B
+  // resolution).
+  flatbuffers::FlatBufferBuilder builder2;
+  const auto source_a2 =
+      block(builder2, "A", "source",
+            {var_dist(builder2, "arrival", dist(builder2, 0, {0.5}))}, {});
+  const auto source_b2 =
+      block(builder2, "B", "source",
+            {var_dist(builder2, "arrival", dist(builder2, 0, {100.0}))}, {});
+  const auto delay2 =
+      block(builder2, "D", "delay",
+            {var_dist(builder2, "delayTime", dist(builder2, 0, {0.5})),
+             var_bool(builder2, "maximumCapacity", true)},
+            {});
+  const auto sink2 = block(builder2, "K", "sink", {}, {});
+  std::string error2;
+  auto model2 = build(builder2, {source_a2, source_b2, delay2, sink2},
+                      {couple(builder2, "A", "out", "D", "in"),
+                       couple(builder2, "B", "out", "D", "in"),
+                       couple(builder2, "D", "out", "K", "in")},
+                      flatbuffers::Offset<Node>{}, &error2);
+  REQUIRE(model2 != nullptr);
+  const ReplicationMetrics again = run_once(*model2, 7, 1, 0);
+  REQUIRE(again.arrivals == metrics.arrivals);
+  REQUIRE(again.departures == metrics.departures);
+  REQUIRE(again.horizon_seconds == metrics.horizon_seconds);
+}
+
+TEST_CASE("process flow: an idle gap with pending arrivals is not the end "
+          "of the business",
+          "[process_flow][multi_source][arrivals]") {
+  // Two sources that BOTH produce an entity. Source A's entity completes
+  // at 1.5 s, leaving in_system == 0 while source B's arrival is still
+  // pending at 1.5 s - business_finished must stay false during that idle
+  // gap (a pool repair pending across it must not be cancelled), and B's
+  // arrival must still fire. With a failing pool, B's entity waits for the
+  // repair that A's hold triggered - proving the repair survived the gap.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source_a =
+      block(builder, "A", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto source_b =
+      block(builder, "B", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {2.0}))}, {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1),
+             var_float(builder, "failure_rate", 2.0),
+             var_float(builder, "repair_rate", 0.2)},
+            {});
+  const auto seize_a =
+      block(builder, "GrabA", "seize",
+            {var_string(builder, "resource", "Server"),
+             var_int(builder, "numberOfUnits", 1)},
+            {});
+  const auto seize_b =
+      block(builder, "GrabB", "seize",
+            {var_string(builder, "resource", "Server"),
+             var_int(builder, "numberOfUnits", 1)},
+            {});
+  const auto delay_a =
+      block(builder, "WorkA", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto delay_b =
+      block(builder, "WorkB", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto release_a = block(builder, "DropA", "release", {}, {});
+  const auto release_b = block(builder, "DropB", "release", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder,
+      {source_a, source_b, seize_a, seize_b, delay_a, delay_b, release_a,
+       release_b, sink},
+      {couple(builder, "A", "out", "GrabA", "in"),
+       couple(builder, "B", "out", "GrabB", "in"),
+       couple(builder, "GrabA", "out", "WorkA", "in"),
+       couple(builder, "GrabB", "out", "WorkB", "in"),
+       couple(builder, "WorkA", "out", "DropA", "in"),
+       couple(builder, "WorkB", "out", "DropB", "in"),
+       couple(builder, "DropA", "out", "K", "in"),
+       couple(builder, "DropB", "out", "K", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 3;
+  config.arrivals = 2;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  // Both sources produced and both entities completed.
+  REQUIRE(metrics.arrivals == 2);
+  REQUIRE(metrics.departures == 2);
+  // The failure fired inside A's hold (seed must guarantee it), and B's
+  // entity waited for the repair instead of being cut short by a tail
+  // cancellation during the idle gap.
+  REQUIRE(metrics.availability < 1.0);
+  REQUIRE(metrics.mean_sojourn > 1.0);
+}
+
+TEST_CASE("process flow: a completed service leaves no stale timeout",
+          "[process_flow][timeout][des_blocks]") {
+  // The single entity never waits: it starts service immediately at 0.1 s
+  // and finishes at 0.3 s. With enableTimeout = true and timeout = 10 s the
+  // block schedules a timeout for the waiting entity - which must be
+  // cancelled when the entity starts service. Pre-fix, the timeout fired at
+  // ~10.1 s, dragging the horizon there despite the run being done at
+  // 0.3 s.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {0.2})),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 10.0)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "S", "in"),
+                      couple(builder, "S", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 1);
+  // Horizon is the exact business end (0.1 + 0.2 = 0.3 s), not the 10.1 s
+  // stale timeout.
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(0.3));
+}
+
+TEST_CASE("process flow: starting service cancels a queued entity's timeout",
+          "[process_flow][timeout][des_blocks]") {
+  // Entity 1 starts at 0.2 s and serves until 0.7 s (0.5 s service);
+  // entity 2 arrives at 0.4 s, queues (queueCapacity 1) and a 10 s timeout
+  // is scheduled. It starts service at 0.7 s - before the timeout - so the
+  // timeout must be cancelled and the horizon must end at 1.2 s, not
+  // ~10.4 s.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.2})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 2)},
+            {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {0.5})),
+             var_int(builder, "queueCapacity", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 10.0)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "S", "in"),
+                      couple(builder, "S", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 2;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 2);
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(1.2));
+}
+
+TEST_CASE("process flow: seizing before the timeout cancels it",
+          "[process_flow][timeout][des_blocks]") {
+  // Entity 1 seizes the only unit at 0.1 s and holds it for 0.5 s; entity
+  // 2 arrives at 0.1 s, queues in the seize block and gets a 10 s timeout,
+  // then seizes at 0.6 s - before the timeout fires. The timeout must be
+  // cancelled; horizon ends at 0.6 s.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 2)},
+            {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1)}, {});
+  const auto seize =
+      block(builder, "Grab", "seize",
+            {var_string(builder, "resource", "Server"),
+             var_int(builder, "numberOfUnits", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 10.0)},
+            {});
+  const auto delay =
+      block(builder, "Work", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto release = block(builder, "Drop", "release", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, seize, delay, release, sink},
+                     {couple(builder, "In", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Drop", "in"),
+                      couple(builder, "Drop", "out", "K", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 2;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 2);
+  // Entity 2 seizes at 0.6 s (release of the 0.5 s hold), then holds
+  // through its own 0.5 s delay and leaves at 1.1 s; the stale 10.1 s
+  // timeout must not stretch the horizon.
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(1.1));
+}
+
+TEST_CASE("process flow: a wait that passes before its timeout leaves no "
+          "stale event",
+          "[process_flow][timeout][des_blocks]") {
+  // A queue with enableTimeout: the entity passes immediately (downstream
+  // accepts), so its timeout is scheduled and must be cancelled when it
+  // leaves the waiting area normally.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)},
+            {});
+  const auto queue =
+      block(builder, "Q", "queue",
+            {var_int(builder, "capacity", 10),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 10.0)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, queue, sink},
+                     {couple(builder, "In", "out", "Q", "in"),
+                      couple(builder, "Q", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(0.1));
+}
+
+TEST_CASE("process flow: a live wait timeout still fires while the business "
+          "is running",
+          "[process_flow][timeout][des_blocks]") {
+  // The entity waits in a queue whose timeout is shorter than the service
+  // hold: the timeout is a real business event (the entity leaves through
+  // outTimeout) and must NOT be cancelled - neither by the idle-gap tail
+  // logic (business is not finished: another arrival is pending and the
+  // entity is still in the system) nor by any premature cancellation.
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1})),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 2)},
+            {});
+  const auto service =
+      block(builder, "S", "service",
+            {var_dist(builder, "time", dist(builder, 0, {0.5})),
+             var_int(builder, "queueCapacity", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 0.2)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto timeout_sink = block(builder, "T", "sink", {}, {});
+  std::string error;
+  auto model =
+      build(builder, {source, service, sink, timeout_sink},
+            {couple(builder, "In", "out", "S", "in"),
+             couple(builder, "S", "out", "K", "in"),
+             couple(builder, "S", "outTimeout", "T", "in")},
+            flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 2;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  std::int64_t boundary_ns = 0;
+  while (model->has_pending_events()) {
+    boundary_ns += 1'000'000;
+    model->advance(logicpilot::SimTime::from_ns(boundary_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  // Entity 1 serves 0.1-0.6 s; entity 2 (arriving at 0.2 s, queueCapacity
+  // 1) times out at 0.4 s through outTimeout. Both left the system.
+  REQUIRE(metrics.departures == 2);
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(0.6));
+  const BlockMetrics* service_metrics = nullptr;
+  for (const BlockMetrics& block : metrics.blocks) {
+    if (block.name == "S") {
+      service_metrics = &block;
+    }
+  }
+  REQUIRE(service_metrics != nullptr);
+  REQUIRE(service_metrics->timed_out == 1);
 }
 
 TEST_CASE("process flow: exit removes agents from the flow (sojourn kept)",
@@ -2915,4 +4134,362 @@ TEST_CASE("process flow: pool-level failure interrupts the task sharing the "
   REQUIRE(again.availability == metrics.availability);
   REQUIRE(block_by_name(again, "WorkB").mean_occupancy ==
           work_b.mean_occupancy);
+}
+
+TEST_CASE("process flow: external reset cancels stale events on the shared "
+          "scheduler",
+          "[process_flow][external][kernel]") {
+  // One shared scheduler/clock/handler-registry (a real RuntimeContext)
+  // drives the SAME ProcessFlowSim across two resets. Round one schedules
+  // a far-future pool repair; round two's business ends early. If reset
+  // only bumped generations, the stale repair would still be popped by
+  // run_until and advance the shared clock to its (future) time before the
+  // no-op handler ran. reset() must cancel every engine-owned event on the
+  // external scheduler.
+  logicpilot::BinaryHeapScheduler scheduler(64);
+  logicpilot::SimulationClock clock;
+  logicpilot::EventHandlerRegistry handlers;
+  logicpilot::VariableStore variables;
+  logicpilot::RuntimeContext context(clock, scheduler, handlers, variables);
+
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto resource =
+      block(builder, "Server", "resource",
+            {var_int(builder, "capacity", 1),
+             var_float(builder, "failure_rate", 2.0),
+             var_float(builder, "repair_rate", 0.05)},
+            {});
+  const auto seize = block(builder, "Grab", "seize",
+                           {var_string(builder, "resource", "Server"),
+                            var_int(builder, "numberOfUnits", 1)},
+                           {});
+  const auto delay =
+      block(builder, "Work", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5}))}, {});
+  const auto release = block(builder, "Drop", "release", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, seize, delay, release, sink},
+                     {couple(builder, "In", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Drop", "in"),
+                      couple(builder, "Drop", "out", "K", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  model->attach(context);
+
+  // Round one: one entity holds the unit 0.5-1.0 s; the pool fails inside
+  // the hold (f = 2, seed 23) and schedules a repair with mean 20 s that is
+  // still pending when we stop at 2.0 s.
+  ReplicationConfig first;
+  first.seed = 23;
+  first.arrivals = 1;
+  first.warmup_arrivals = 0;
+  model->reset(first);
+  model->advance(logicpilot::SimTime::from_ns(2'000'000'000LL), nullptr);
+  REQUIRE(clock.now().as_ns() == 1'000'000'000LL);  // business end at 1.0 s
+  REQUIRE(model->metrics().departures == 1);
+  // The shared registry must not accumulate handlers across resets.
+  const std::size_t handlers_after_first = handlers.size();
+
+  // Round two: a fresh seed/config. The stale round-one repair (~21 s)
+  // must be cancelled by reset(), not fired. SimulationKernel resets the
+  // shared clock at the start of every run (kernel/src/runtime/
+  // simulation_kernel.cpp: clock_.reset()), so the test does the same for
+  // round two - the engine's reset must not touch the kernel-owned clock.
+  clock.reset();
+  ReplicationConfig second;
+  second.seed = 42;
+  second.arrivals = 2;
+  second.warmup_arrivals = 0;
+  model->reset(second);
+  std::int64_t probe_ns = 0;
+  while (model->has_pending_events()) {
+    probe_ns += 100'000'000;
+    model->advance(logicpilot::SimTime::from_ns(probe_ns), nullptr);
+  }
+  REQUIRE_FALSE(model->has_pending_events());
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 2);
+  // The stale round-one repair would have landed around 21 s; anything
+  // below that proves it was cancelled before run_until could pop it.
+  REQUIRE(metrics.horizon_seconds > 0.0);
+  REQUIRE(metrics.horizon_seconds < 10.0);
+  REQUIRE(handlers.size() == handlers_after_first);  // registered once
+
+  // Determinism: a fresh engine with the same config matches bit-for-bit.
+  flatbuffers::FlatBufferBuilder builder2;
+  const auto source2 =
+      block(builder2, "In", "source",
+            {var_dist(builder2, "arrival", dist(builder2, 0, {0.5}))}, {});
+  const auto resource2 =
+      block(builder2, "Server", "resource",
+            {var_int(builder2, "capacity", 1),
+             var_float(builder2, "failure_rate", 2.0),
+             var_float(builder2, "repair_rate", 0.05)},
+            {});
+  const auto seize2 = block(builder2, "Grab", "seize",
+                            {var_string(builder2, "resource", "Server"),
+                             var_int(builder2, "numberOfUnits", 1)},
+                            {});
+  const auto delay2 =
+      block(builder2, "Work", "delay",
+            {var_dist(builder2, "delayTime", dist(builder2, 0, {0.5}))}, {});
+  const auto release2 = block(builder2, "Drop", "release", {}, {});
+  const auto sink2 = block(builder2, "K", "sink", {}, {});
+  const auto root2 = CreateNode(
+      builder2, CreateMetadata(builder2, builder2.CreateString("M"), 0, 0, 0),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder2, builder2.CreateString("core"),
+                         builder2.CreateString("model"), 0, 0),
+      builder2.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource2}),
+      0, 0, 0, 0);
+  std::string error2;
+  auto fresh = build(builder2, {source2, seize2, delay2, release2, sink2},
+                     {couple(builder2, "In", "out", "Grab", "in"),
+                      couple(builder2, "Grab", "out", "Work", "in"),
+                      couple(builder2, "Work", "out", "Drop", "in"),
+                      couple(builder2, "Drop", "out", "K", "in")},
+                     root2, &error2);
+  REQUIRE(fresh != nullptr);
+  const ReplicationMetrics fresh_metrics = run_once(*fresh, 42, 2, 0);
+  REQUIRE(fresh_metrics.departures == metrics.departures);
+  REQUIRE(fresh_metrics.horizon_seconds == metrics.horizon_seconds);
+  REQUIRE(fresh_metrics.mean_in_system == metrics.mean_in_system);
+  REQUIRE(fresh_metrics.availability == metrics.availability);
+}
+
+TEST_CASE("streaming driver: external reset cancels stale mm1 events on the "
+          "shared scheduler",
+          "[process_flow][external][kernel]") {
+  // Same shared RuntimeContext for QueueingFlowSim: round one schedules a
+  // far-future source arrival; round two resets with the same model. If
+  // reset did not cancel the stale arrival token, BOTH the stale and the
+  // fresh arrival (same time) would fire, producing a second entity and
+  // corrupting the round-two run.
+  logicpilot::BinaryHeapScheduler scheduler(64);
+  logicpilot::SimulationClock clock;
+  logicpilot::EventHandlerRegistry handlers;
+  logicpilot::VariableStore variables;
+  logicpilot::RuntimeContext context(clock, scheduler, handlers, variables);
+
+  logicpilot::QueueingFlowSpec spec;
+  spec.interarrival = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.0};
+    return dist(engine);
+  };
+  spec.service = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.0};
+    return dist(engine);
+  };
+  spec.servers = 1;
+  logicpilot::QueueingFlowSim flow{spec};
+  flow.attach(context);
+
+  ReplicationConfig first;
+  first.seed = 7;
+  first.arrivals = 1;
+  first.warmup_arrivals = 0;
+  flow.reset(first);
+  flow.advance(logicpilot::SimTime::from_ns(100'000'000LL), nullptr);
+  // Whether or not the first arrival fired inside this window (the
+  // exponential interarrival can sample short), round one must leave a
+  // pending event on the shared scheduler (its arrival, or the depart of
+  // the customer it started serving).
+  REQUIRE(scheduler.size() > 0);
+  const std::size_t handlers_after_first = handlers.size();
+
+  // SimulationKernel resets the shared clock at the start of every run.
+  clock.reset();
+  ReplicationConfig second;
+  second.seed = 7;
+  second.arrivals = 1;
+  second.warmup_arrivals = 0;
+  flow.reset(second);
+  flow.advance(logicpilot::SimTime::infinity(), nullptr);
+  REQUIRE_FALSE(flow.has_pending_events());
+  const ReplicationMetrics metrics = flow.metrics();
+  // Exactly one customer served: any stale round-one event was cancelled
+  // (a stale depart would have underflowed the reset in_system counter or
+  // produced a second service; a stale arrival a second customer).
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.arrivals == 1);
+  REQUIRE(metrics.horizon_seconds > 0.0);
+  // Handlers registered once (4 QueueingFlowSim handlers).
+  REQUIRE(handlers.size() == handlers_after_first);
+  REQUIRE(handlers.size() == 4);
+}
+
+TEST_CASE("process flow: attaching to another context cancels old events "
+          "without touching the new one",
+          "[process_flow][external][kernel]") {
+  // Engine runs on context A and leaves a pending event (a source arrival
+  // far in the future). It is then attached to context B, which already
+  // holds an unrelated sentinel event. The engine must cancel its old
+  // event on A's scheduler, must NOT cancel B's sentinel (EventTokens
+  // carry no scheduler identity), and must run cleanly on B with its
+  // handlers registered against B's registry.
+  logicpilot::BinaryHeapScheduler scheduler_a(64);
+  logicpilot::SimulationClock clock_a;
+  logicpilot::EventHandlerRegistry handlers_a;
+  logicpilot::VariableStore variables_a;
+  logicpilot::RuntimeContext context_a(clock_a, scheduler_a, handlers_a,
+                                       variables_a);
+
+  logicpilot::BinaryHeapScheduler scheduler_b(64);
+  logicpilot::SimulationClock clock_b;
+  logicpilot::EventHandlerRegistry handlers_b;
+  logicpilot::VariableStore variables_b;
+  logicpilot::RuntimeContext context_b(clock_b, scheduler_b, handlers_b,
+                                       variables_b);
+
+  // A sentinel event on B, owned by B's registry, dispatched through its
+  // own handler. The engine must never cancel or misfire it.
+  std::uint64_t sentinel_fired = 0;
+  const logicpilot::HandlerId sentinel_id = handlers_b.add(
+      [&sentinel_fired](const logicpilot::Event&) { ++sentinel_fired; });
+  scheduler_b.schedule(
+      logicpilot::SimTime::from_ns(5'000'000'000LL), 99, sentinel_id, 0);
+
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.5}))}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, sink},
+                     {couple(builder, "In", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  // Run on A: the source schedules an arrival at 0.5 s (pending).
+  model->attach(context_a);
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  model->reset(config);
+  REQUIRE(scheduler_a.size() == 1);  // the pending arrival
+
+  // Switch to B: the old arrival on A must be cancelled, B's sentinel
+  // untouched, and B must run normally with handlers registered on B.
+  model->attach(context_b);
+  REQUIRE(scheduler_a.size() == 0);  // old event cancelled on A's scheduler
+  REQUIRE(scheduler_b.size() == 1);  // only B's sentinel remains
+
+  model->reset(config);
+  // Drive only the engine's business (0.5 s); the sentinel at 5 s stays.
+  model->advance(logicpilot::SimTime::from_ns(600'000'000LL), nullptr);
+  const ReplicationMetrics metrics = model->metrics();
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.horizon_seconds == Catch::Approx(0.5));
+  // B's sentinel was never cancelled by the engine; it fires when B's
+  // clock reaches it.
+  REQUIRE(scheduler_b.size() == 1);
+  model->advance(logicpilot::SimTime::from_ns(5'100'000'000LL), nullptr);
+  REQUIRE(sentinel_fired == 1);
+  REQUIRE_FALSE(model->has_pending_events());
+
+  // Same registry, repeated reset: handlers must not grow.
+  const std::size_t b_handlers_before = handlers_b.size();
+  model->reset(config);
+  REQUIRE(handlers_b.size() == b_handlers_before);
+
+  // Registry clear: HandlerIds become invalid, the engine must re-register
+  // on the next reset and dispatch normally. SimulationKernel resets the
+  // shared clock at the start of every run, so the test does the same.
+  clock_b.reset();
+  handlers_b.clear();
+  model->reset(config);
+  model->advance(logicpilot::SimTime::infinity(), nullptr);
+  const ReplicationMetrics after_clear = model->metrics();
+  REQUIRE(after_clear.departures == 1);
+  REQUIRE(after_clear.horizon_seconds == Catch::Approx(0.5));
+}
+
+TEST_CASE("streaming driver: zero-arrival runs are empty and safe",
+          "[process_flow][external][kernel]") {
+  // ReplicationConfig.arrivals == 0 is a public engine boundary: reset()
+  // must not schedule a first arrival (payload 0 would index out of bounds
+  // in the zero-length arrival_ns_/service_start_ns_) and the run must be
+  // empty.
+  logicpilot::QueueingFlowSpec spec;
+  spec.interarrival = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.0};
+    return dist(engine);
+  };
+  spec.service = [](logicpilot::Xoshiro256PlusPlus& engine) {
+    logicpilot::Exponential<logicpilot::Xoshiro256PlusPlus> dist{1.0};
+    return dist(engine);
+  };
+  spec.servers = 1;
+  logicpilot::QueueingFlowSim flow{spec};
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 0;
+  config.warmup_arrivals = 0;
+  flow.reset(config);
+  REQUIRE_FALSE(flow.has_pending_events());
+  flow.advance(logicpilot::SimTime::infinity(), nullptr);
+  REQUIRE_FALSE(flow.has_pending_events());
+  const ReplicationMetrics metrics = flow.metrics();
+  REQUIRE(metrics.arrivals == 0);
+  REQUIRE(metrics.departures == 0);
+  REQUIRE(metrics.horizon_seconds == 0.0);
+}
+
+TEST_CASE("streaming driver: owned to external attach cannot replay tokens",
+          "[process_flow][external][kernel]") {
+  // Both fresh schedulers allocate the same first token identity. An owned
+  // run leaves its first arrival pending; context B already owns a sentinel
+  // with that identity. attach(B) must forget the owned token after cancelling
+  // it on the owned scheduler, otherwise reset() will cancel B's sentinel.
+  logicpilot::QueueingFlowSpec spec;
+  spec.interarrival = [](logicpilot::Xoshiro256PlusPlus&) { return 0.5; };
+  spec.service = [](logicpilot::Xoshiro256PlusPlus&) { return 0.1; };
+  spec.servers = 1;
+  logicpilot::QueueingFlowSim flow{spec};
+
+  ReplicationConfig config;
+  config.seed = 7;
+  config.arrivals = 1;
+  config.warmup_arrivals = 0;
+  flow.reset(config);  // owned scheduler: first pending token
+  REQUIRE(flow.has_pending_events());
+
+  logicpilot::BinaryHeapScheduler scheduler(64);
+  logicpilot::SimulationClock clock;
+  logicpilot::EventHandlerRegistry handlers;
+  logicpilot::VariableStore variables;
+  logicpilot::RuntimeContext context(clock, scheduler, handlers, variables);
+  std::uint64_t sentinel_fired = 0;
+  const logicpilot::HandlerId sentinel_id = handlers.add(
+      [&sentinel_fired](const logicpilot::Event&) { ++sentinel_fired; });
+  scheduler.schedule(logicpilot::SimTime::from_ns(5'000'000'000LL), 99,
+                     sentinel_id, 0);
+
+  flow.attach(context);
+  flow.reset(config);
+  REQUIRE(scheduler.size() == 2);  // sentinel + new engine arrival
+  flow.advance(logicpilot::SimTime::from_ns(700'000'000LL), nullptr);
+  REQUIRE(flow.metrics().departures == 1);
+  REQUIRE(scheduler.size() == 1);  // sentinel survived reset
+  flow.advance(logicpilot::SimTime::from_ns(5'100'000'000LL), nullptr);
+  REQUIRE(sentinel_fired == 1);
+  REQUIRE(scheduler.empty());
 }

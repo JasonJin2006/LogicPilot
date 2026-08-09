@@ -972,6 +972,35 @@ private:
       }
       check_process_coupling(*from->second, *to->second, couple);
     }
+    // LP5007: process output ports do not fan out implicitly. The engine
+    // pushes one entity through a port's edges; delivering the same entity
+    // id to several branches would count every branch exit as a system
+    // departure (departures > arrivals, in_system goes negative, and the
+    // same id lives in several branches at once). Duplicating an entity
+    // requires an explicit split block, whose out/outCopy ports each carry
+    // their own copy.
+    {
+      std::unordered_map<std::string, std::pair<std::string, Span>> first_edge;
+      for (const CoupleDecl& couple : couplings) {
+        if (!stages.count(couple.from_model) || !stages.count(couple.to_model)) {
+          continue;
+        }
+        const std::string port = couple.from_port.empty() ? "out" : couple.from_port;
+        const std::string key = couple.from_model + "." + port;
+        const auto edge = first_edge.find(key);
+        if (edge == first_edge.end()) {
+          first_edge.emplace(key, std::make_pair(couple.to_model, couple.span));
+          continue;
+        }
+        error("LP5007",
+              "process output port '" + key + "' connects to multiple "
+              "downstream blocks ('" + edge->second.first + "' and '" +
+                  couple.to_model +
+                  "'); process output ports do not fan out implicitly - "
+                  "duplicate entities with an explicit split block instead",
+              couple.span);
+      }
+    }
   }
 
   bool resource_declared(const std::string& name) const {

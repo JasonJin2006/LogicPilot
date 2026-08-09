@@ -55,6 +55,9 @@ class ProcessFlowSim : public FlowEngine {
   [[nodiscard]] std::vector<BlockSnapshot> block_snapshots() const override;
   [[nodiscard]] bool has_pending_events() override;
 
+  // Exact current simulation time (nanoseconds) from the engine clock.
+  [[nodiscard]] std::int64_t now_ns() const override;
+
   // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
   // facilities instead of per-engine owned ones.
   void attach(RuntimeContext& context);

@@ -180,6 +180,43 @@ try {
   assert.equal(variation.kind, 'parameter_variation');
   assert.equal(variation.pointCount, 4);
 
+  // Bad variation inputs must produce an understandable 4xx, not a
+  // TypeError/500: an empty Monte Carlo value set used to crash with
+  // `undefined.toPrecision()`.
+  const badVariation = await fetch(`${baseUrl}/api/parameter-variation`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      dsl: readFileSync(join(root, 'examples', 'des-parameter-variation.lp'), 'utf8'),
+      experimentName: 'CapacityStudy',
+      sampling: 'monte_carlo',
+      axes: [{ name: 'x', variable: 'arrival_rate', values: [] }],
+      samples: 4,
+      seed: 1,
+    }),
+  });
+  assert.equal(badVariation.status, 400);
+  const badResult = await badVariation.json();
+  assert.equal(badResult.ok, false);
+  assert.match(badResult.error, /values must be a non-empty/);
+  // A seed outside the 32-bit sampler state is rejected explicitly instead
+  // of silently colliding with its truncated value.
+  const badSeed = await fetch(`${baseUrl}/api/parameter-variation`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      dsl: readFileSync(join(root, 'examples', 'des-parameter-variation.lp'), 'utf8'),
+      experimentName: 'CapacityStudy',
+      sampling: 'monte_carlo',
+      seed: 0x100000000,
+      samples: 2,
+    }),
+  });
+  assert.equal(badSeed.status, 400);
+  const badSeedResult = await badSeed.json();
+  assert.equal(badSeedResult.ok, false);
+  assert.match(badSeedResult.error, /seed must be an integer in \[0, 4294967295\]/);
+
   const queryResponse = await fetch(`${baseUrl}/api/ai-query-metrics`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

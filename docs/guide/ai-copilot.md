@@ -64,6 +64,13 @@ node scripts/ai-model-patch.mjs "replace queue Waiting with delay"
 `axes` 自由值列表（`values: [...]` 取代 range/step）。所有点共享固定种子
 （公共随机数），固定/精度复制策略与置信区间一致。
 
+网格与 Monte Carlo 共用同一套轴校验（`scripts/parameter-variation.mjs`）：
+`values` 必须是非空有限数字列表；`variable` 必须是有效标识符；range 模式
+要求有限 `min <= max`；`step` 若存在必须为正有限数。采样种子必须是
+`[0, 4294967295]` 内的整数（采样状态是 32 位 mulberry32 生成器，更大的
+种子会被静默截断而碰撞）。参数校验失败时 HTTP API 返回带明确消息的 4xx，
+不会把内部 TypeError 暴露成 500。
+
 ## Provider 切换
 
 ```powershell

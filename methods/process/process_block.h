@@ -28,6 +28,12 @@ namespace logicpilot::process {
 // One entity (agent/token) flowing through the process blocks.
 struct Entity {
   std::uint64_t id{0};
+  // 0-based ordinal of the external Source arrival event that created this
+  // entity's lineage (0, 1, 2, ... across all sources, counting arrival
+  // events, not batch members). Split copies inherit their original's
+  // index, so warm-up exclusion is decided by external arrivals only -
+  // internal births (copies) never shift the boundary.
+  std::uint64_t root_arrival_index{0};
   std::int64_t created_ns{0};        // source emission time
   std::int64_t service_start_ns{0};  // last service/delay start
   // Temporary batch contents (Batch with permanent=false; restored by
@@ -65,6 +71,11 @@ class BlockContext {
   // target is unknown or a downstream rejected the entity.
   virtual bool emit_via(const Entity& entity, const char* target_block) = 0;
 
+  // Create a new entity as a copy of `templ` (split copies): assigns a
+  // fresh id and records the copy in the system counts, so each copy leaves
+  // the system exactly once (in-system accounting stays consistent).
+  virtual Entity spawn(const Entity& templ) = 0;
+
   // Schedule this block's depart event for `entity_id` at now + hold_ns.
   virtual void schedule_depart(std::int64_t hold_ns,
                                std::uint64_t entity_id) = 0;
@@ -86,6 +97,12 @@ class BlockContext {
   // fires (exits through outTimeout) or already left (no-op).
   virtual void schedule_timeout(std::int64_t hold_ns,
                                 std::uint64_t entity_id) = 0;
+
+  // Cancel the pending timeout for `entity_id` (the entity left the waiting
+  // area, started service, or was preempted/routed out before its timeout
+  // fired). A stale timeout would otherwise still be popped by the
+  // scheduler and drag the horizon to its future time.
+  virtual void cancel_timeout(std::uint64_t entity_id) = 0;
 
   // Uniform [0,1) draw from the replication RNG (deterministic order).
   virtual double rng01() = 0;
@@ -199,9 +216,12 @@ class ProcessBlock {
   }
 
   // Pool-wide failure notifications (AnyLogic ResourcePool busy-time
-  // failure). The engine owns one failure/repair clock per declared pool;
-  // when the pool goes down it interrupts every in-service task of every
-  // consumer, and on repair it lets them restart (preemptive-repeat).
+  // failure). The engine owns one failure/repair clock per declared pool.
+  // Service consumers interrupt their in-service tasks when the pool goes
+  // down and restart them (preemptive-repeat) on repair; Seize/Assembler
+  // consumers do not implement these handlers - they gate new grants while
+  // the pool is down (AnyLogic's "No preemption" default for seize-held
+  // tasks, where the failure task waits for the unit).
   virtual void on_pool_down(BlockContext&, const std::string&) {}
   virtual void on_pool_up(BlockContext&, const std::string&) {}
 };
@@ -227,7 +247,11 @@ class BufferedBlock : public ProcessBlock {
 
   [[nodiscard]] bool has_in_service() const override { return false; }
   [[nodiscard]] std::size_t buffered() const final { return input_.size(); }
-  [[nodiscard]] bool has_outgoing() const final { return !outgoing_.empty(); }
+  // Not final: port-aware subclasses (GenericBlock's split copies) hold
+  // rejected entities outside `outgoing_` and must count them as pending.
+  [[nodiscard]] virtual bool has_outgoing() const {
+    return !outgoing_.empty();
+  }
   [[nodiscard]] std::uint64_t arrived() const final { return arrived_; }
   [[nodiscard]] std::uint64_t departed() const final { return departed_; }
   [[nodiscard]] std::int64_t busy_units() const override { return 0; }

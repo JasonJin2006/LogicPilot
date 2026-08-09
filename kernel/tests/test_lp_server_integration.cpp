@@ -467,6 +467,519 @@ TEST_CASE("lp-server streams a full mm1 run over WebSocket",
   server.stop();
 }
 
+TEST_CASE("lp-server fast mode: full-speed run with bounded telemetry",
+          "[server][integration][fast]") {
+  // Fast mode is the default (no executionMode in the start message): no
+  // wall-clock pacing, so a 4000-arrival x 3-rep mm1 run that would take
+  // minutes at speed 1.0 in animated mode stays in the seconds range, and
+  // telemetry is bounded by the fast-mode frame budget (48 Counters slices
+  // per replication).
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const auto begin = std::chrono::steady_clock::now();
+  const RunCapture capture = capture_run(
+      client,
+      R"({"cmd":"start","seed":42,"reps":3,"arrivals":4000,"warmup":400,)"
+      R"("confidence":0.9})");
+  const double wall_seconds = std::chrono::duration<double>(
+                                  std::chrono::steady_clock::now() - begin)
+                                  .count();
+
+  REQUIRE(capture.ok);
+  REQUIRE(capture.completed);
+  // Animated mode at speed 1.0 would pace 0.1 s wall per 0.1 s sim slice;
+  // the mm1 horizon is thousands of sim-seconds, i.e. minutes of wall time.
+  // Fast mode must stay well below that.
+  REQUIRE(wall_seconds < 30.0);
+  REQUIRE(capture.tick_count == capture.counters_count);
+  REQUIRE(capture.counters_count > 0);
+  // Per-replication fast-mode frame budget (48 slices) x 3 replications.
+  REQUIRE(capture.counters_count <= 3 * 48);
+  REQUIRE(capture.delta_invariants_hold);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server fast mode: huge sim gaps cannot flood empty frames",
+          "[server][integration][fast][flow]") {
+  // A 1e6 s delay: animated slicing would emit ~1 frame per 0.1 s sim slice
+  // - 10 million empty frames for a handful of entities. Fast mode adapts
+  // the slice size to event density and must stay within its frame budget.
+  const std::string source = R"(model Flow {
+  source S { arrival = rate(0.01) }
+  delay D { delayTime = constant(1000000) maximumCapacity = true }
+  sink K { }
+  couple S.out -> D.in
+  couple D.out -> K.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "flow-gap.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":10,"warmup":0})");
+
+  bool completed = false;
+  std::uint64_t counters_frames = 0;
+  std::int64_t last_sim_ns = INT64_MIN;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;  // skip the control ack text frame
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        // sim_time_ns stays monotonic even with adaptive slices.
+        REQUIRE(frame.sim_time_ns > last_sim_ns);
+        last_sim_ns = frame.sim_time_ns;
+        ++counters_frames;
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for a flow run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  REQUIRE(counters_frames > 0);
+  // The fast-mode frame budget (48 slices, including the final frame)
+  // bounds the telemetry; animated slicing would have emitted ~10 million
+  // frames here.
+  REQUIRE(counters_frames <= 48);
+  // The entities did flow through the delay into the sink.
+  REQUIRE(last_sim_ns > 0);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server fast mode: final flow counters reflect the completed "
+          "run",
+          "[server][integration][fast][flow]") {
+  // Arrivals large enough to exhaust the fast-mode frame budget: the run
+  // drains silently after the budget, then emits one final Counters frame
+  // so the last telemetry shows every entity departed and every buffer
+  // empty - and RunFinished.sim_time_ns matches that final frame.
+  const std::string source = R"(model Flow {
+  source S { arrival = rate(0.5) }
+  delay D { delayTime = constant(0.2) maximumCapacity = true }
+  sink K { }
+  couple S.out -> D.in
+  couple D.out -> K.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "flow-final.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":20000,"warmup":0})");
+
+  bool completed = false;
+  std::uint64_t counters_frames = 0;
+  std::map<std::string, double> last_counters;
+  std::int64_t last_counters_sim_ns = INT64_MIN;
+  std::int64_t run_finished_sim_ns = INT64_MIN;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;  // skip the control ack text frame
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        last_counters = counters_to_map(frame.counters->values());
+        last_counters_sim_ns = frame.sim_time_ns;
+        ++counters_frames;
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        run_finished_sim_ns = frame.sim_time_ns;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for a flow run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  // The budget (48 frames per replication, final frame included) bounds
+  // the telemetry even for a 20000-arrival run.
+  REQUIRE(counters_frames > 0);
+  REQUIRE(counters_frames <= 48);
+  // Final frame: every entity reached the sink, all buffers drained.
+  REQUIRE(last_counters.at("block.S.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.in_service") == 0.0);
+  REQUIRE(last_counters.at("block.K.arrived") == 20000.0);
+  REQUIRE(last_counters.at("block.K.departed") == 20000.0);
+  // RunFinished.sim_time_ns equals the final Counters sim time (the engine's
+  // actual last-event time, not a stale pre-drain boundary).
+  REQUIRE(run_finished_sim_ns > 0);
+  REQUIRE(run_finished_sim_ns == last_counters_sim_ns);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server fast mode: within-budget completion reports the exact "
+          "final sim time",
+          "[server][integration][fast][flow]") {
+  // The run ends inside the frame budget (well under 48 frames), and the
+  // last event does not land on a slice boundary: arrival at 1.0 s, delay
+  // of 0.2 s -> the final event fires at 1.2 s while the adaptive boundary
+  // has already grown to 3.0 s (the first 1 s slice dispatched 1 event, so
+  // the slice doubled). run_until only advances the engine clock to real
+  // event times, so the final Counters and RunFinished must report exactly
+  // 1.2 s - not the 3.0 s sampling boundary.
+  const std::string source = R"(model Flow {
+  source S { arrival = constant(1.0) }
+  delay D { delayTime = constant(0.2) maximumCapacity = true }
+  sink K { }
+  couple S.out -> D.in
+  couple D.out -> K.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "flow-exact-time.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  logicpilot::server::ServerConfig config = make_test_config();  // 1 s slices
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":1,"warmup":0})");
+
+  bool completed = false;
+  std::uint64_t counters_frames = 0;
+  std::map<std::string, double> last_counters;
+  std::int64_t last_counters_sim_ns = INT64_MIN;
+  std::int64_t run_finished_sim_ns = INT64_MIN;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;  // skip the control ack text frame
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        last_counters = counters_to_map(frame.counters->values());
+        last_counters_sim_ns = frame.sim_time_ns;
+        ++counters_frames;
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        run_finished_sim_ns = frame.sim_time_ns;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for a flow run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  // This run must finish inside the budget: the exact-time regression is
+  // about the within-budget completion path, not the drain path.
+  REQUIRE(counters_frames > 0);
+  REQUIRE(counters_frames < 48);
+  // Final frame is terminal: the entity reached the sink, buffers drained.
+  REQUIRE(last_counters.at("block.S.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.in_service") == 0.0);
+  REQUIRE(last_counters.at("block.K.departed") == 1.0);
+  // Exact last-event time: 1.0 s arrival + 0.2 s delay = 1.2 s, not the
+  // grown 3.0 s slice boundary.
+  REQUIRE(last_counters_sim_ns == 1'200'000'000LL);
+  REQUIRE(run_finished_sim_ns == last_counters_sim_ns);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server fast mode: a source limited below the requested "
+          "arrivals completes cleanly",
+          "[server][integration][fast][flow]") {
+  // The DSL source declares limitArrivals = 1 while the start message
+  // requests arrivals = 100. The business ends when that single entity
+  // leaves: fast mode must complete (no endless drain waiting for the 100
+  // requested arrivals), the final Counters must be terminal, and
+  // RunFinished must report the exact business end - not the config's
+  // arrival quota.
+  const std::string source = R"(model Flow {
+  source S { arrival = constant(1.0) limitArrivals = true maxArrivals = 1 }
+  delay D { delayTime = constant(0.2) maximumCapacity = true }
+  sink K { }
+  couple S.out -> D.in
+  couple D.out -> K.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "flow-limited-source.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":100,"warmup":0})");
+
+  bool completed = false;
+  std::uint64_t counters_frames = 0;
+  std::map<std::string, double> last_counters;
+  std::int64_t last_counters_sim_ns = INT64_MIN;
+  std::int64_t run_finished_sim_ns = INT64_MIN;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;  // skip the control ack text frame
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        last_counters = counters_to_map(frame.counters->values());
+        last_counters_sim_ns = frame.sim_time_ns;
+        ++counters_frames;
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        run_finished_sim_ns = frame.sim_time_ns;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for a flow run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  // The run completes promptly (the source is exhausted at maxArrivals =
+  // 1, so the server must not drain toward the requested 100 arrivals).
+  REQUIRE(counters_frames > 0);
+  REQUIRE(counters_frames <= 48);
+  // Final frame is terminal: exactly one entity, all buffers drained.
+  REQUIRE(last_counters.at("block.S.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.buffered") == 0.0);
+  REQUIRE(last_counters.at("block.D.in_service") == 0.0);
+  REQUIRE(last_counters.at("block.K.arrived") == 1.0);
+  REQUIRE(last_counters.at("block.K.departed") == 1.0);
+  // Exact business end: 1.0 s arrival + 0.2 s delay = 1.2 s.
+  REQUIRE(last_counters_sim_ns == 1'200'000'000LL);
+  REQUIRE(run_finished_sim_ns == last_counters_sim_ns);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server fast mode: final mm1 counters show a drained system",
+          "[server][integration][fast]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text(
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":20000,"warmup":0})");
+
+  bool completed = false;
+  std::uint64_t counters_frames = 0;
+  std::map<std::string, double> last_counters;
+  std::int64_t last_counters_sim_ns = INT64_MIN;
+  std::int64_t run_finished_sim_ns = INT64_MIN;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    switch (frame.kind) {
+      case wire::FrameKind_RunStarted:
+        break;
+      case wire::FrameKind_Tick:
+        break;  // mm1 pairs every Counters with a Tick
+      case wire::FrameKind_Counters: {
+        REQUIRE(frame.counters != nullptr);
+        last_counters = counters_to_map(frame.counters->values());
+        last_counters_sim_ns = frame.sim_time_ns;
+        ++counters_frames;
+        break;
+      }
+      case wire::FrameKind_RunFinished:
+        completed = frame.run_finished != nullptr &&
+                    frame.run_finished->status() == wire::RunStatus_Completed;
+        run_finished_sim_ns = frame.sim_time_ns;
+        goto done;
+      default:
+        FAIL("unexpected frame kind for an mm1 run");
+        goto done;
+    }
+  }
+  FAIL("connection closed before RunFinished");
+done:
+  REQUIRE(completed);
+  REQUIRE(counters_frames > 0);
+  REQUIRE(counters_frames <= 48);
+  // The final Counters reflects the drained system: no queue, no busy
+  // server, every arrival departed - not the state before the silent drain.
+  REQUIRE(last_counters.at("queue_length") == 0.0);
+  REQUIRE(last_counters.at("busy") == 0.0);
+  REQUIRE(last_counters.at("departures") == last_counters.at("arrivals"));
+  REQUIRE(run_finished_sim_ns > 0);
+  REQUIRE(run_finished_sim_ns == last_counters_sim_ns);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server stop terminates a fast run promptly",
+          "[server][integration][fast]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text(
+      R"({"cmd":"start","seed":7,"reps":1,"arrivals":20000,"warmup":0})");
+  REQUIRE(read_next_text(client).find("\"ok\":true") != std::string::npos);
+
+  // The fast run completes in milliseconds, so a fixed frame count cannot
+  // prove the worker is still dispatching when stop lands (the run could
+  // finish - and emit RunFinished(Completed) - before the stop command is
+  // processed). Gate the stop on a telemetry proof of mid-flight state: a
+  // Counters frame whose departures are still below the arrival total.
+  bool mid_flight = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_RunStarted ||
+        frame.kind == wire::FrameKind_Tick) {
+      continue;
+    }
+    if (frame.kind == wire::FrameKind_Counters) {
+      REQUIRE(frame.counters != nullptr);
+      if (counters_to_map(frame.counters->values()).at("departures") <
+          20000.0) {
+        mid_flight = true;
+        break;
+      }
+      continue;
+    }
+    FAIL("run finished before the stop could be issued");
+    break;
+  }
+  REQUIRE(mid_flight);
+
+  // Stop must land while the replication is still running (the drain loop
+  // and the slice loop both honor stop_request_).
+  client.send_text(R"({"cmd":"stop"})");
+  REQUIRE(read_next_text(client).find("\"ok\":true") != std::string::npos);
+
+  bool finished = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) {
+      continue;
+    }
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_RunFinished) {
+      REQUIRE(frame.run_finished->status() == wire::RunStatus_Cancelled);
+      finished = true;
+      break;
+    }
+  }
+  REQUIRE(finished);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 namespace {
 
 // Read every binary frame on `client` until RunFinished (or the socket
@@ -594,9 +1107,10 @@ TEST_CASE("lp-server bounds a slow client's write queue by dropping frames",
   }
 
   INFO("dropped frames = " << server.total_dropped_frames());
-  // ~7500 frames for this run; the socket blocks after ~tens, so the cap
-  // must have dropped the overwhelming majority rather than queueing them.
-  REQUIRE(server.total_dropped_frames() > 500);
+  // The run emits ~98 frames (fast-mode telemetry budget); the socket
+  // blocks after a few, so the cap must have dropped the majority rather
+  // than queueing them without bound.
+  REQUIRE(server.total_dropped_frames() > 10);
   // A stuck consumer must not wedge the control plane (speed needs no run).
   const std::string reply =
       server.handle_control(R"({"cmd":"speed","speed":2})");
@@ -700,6 +1214,9 @@ TEST_CASE("lp-server rejects unknown and invalid control messages",
   client.send_text(R"({"cmd":"start","replicationMode":"forever"})");
   REQUIRE(read_next_text(client).find("replicationMode must be") !=
           std::string::npos);
+  client.send_text(R"({"cmd":"start","executionMode":"turbo"})");
+  REQUIRE(read_next_text(client).find("executionMode must be") !=
+          std::string::npos);
 
   client.abort_from_other_thread();
   server.stop();
@@ -784,8 +1301,12 @@ TEST_CASE("lp-server streams generic process flows with per-block counters",
   WsClient client;
   REQUIRE(client.connect(server.port()));
   Watchdog watchdog{client, std::chrono::seconds{60}};
+  // Animated mode with a huge speed: fixed 1 s slices so a slice boundary
+  // reliably catches the entity inside the delay (fast mode would grow the
+  // slices and skip the in-flight sample).
   client.send_text(
-      R"({"cmd":"start","seed":42,"reps":1,"arrivals":20,"warmup":0,"speed":100000})");
+      R"({"cmd":"start","seed":42,"reps":1,"arrivals":20,"warmup":0,)"
+      R"("executionMode":"animated","speed":100000})");
 
   bool completed = false;
   std::map<std::string, double> last_counters;
@@ -890,10 +1411,11 @@ TEST_CASE("lp-server pause/step/resume control flow", "[server][integration]") {
   REQUIRE(client.connect(server.port()));
   Watchdog watchdog{client, std::chrono::seconds{60}};
 
-  // Slow run (near-realtime) so the pause window is meaningful.
+  // Slow run (near-realtime) so the pause window is meaningful: pacing only
+  // happens in animated mode.
   client.send_text(
       R"({"cmd":"start","seed":3,"reps":1,"arrivals":500,"warmup":50,)"
-      R"("speed":2})");
+      R"("executionMode":"animated","speed":2})");
   REQUIRE(read_next_text(client).find("\"ok\":true") != std::string::npos);
 
   // Consume a couple of telemetry frames, then pause.

@@ -39,6 +39,56 @@ assert.notDeepEqual(
   sampled,
 );
 
+// Freeform value sets work in Monte Carlo mode too (with validation).
+const freeform = sampleMonteCarlo([{ name: 'mode', variable: 'mode', values: [2, 4, 8] }], 8, 3);
+assert.equal(freeform.length, 8);
+for (const point of freeform) {
+  assert.ok([2, 4, 8].includes(point.mode));
+}
+assert.deepEqual(
+  sampleMonteCarlo([{ name: 'mode', variable: 'mode', values: [2, 4, 8] }], 8, 3),
+  freeform,
+  'freeform sampling is seeded and reproducible');
+
+// Shared axis validation: grid and Monte Carlo reject the same bad shapes
+// with understandable messages instead of TypeError/undefined crashes.
+const expectAxisError = (axis, pattern) => {
+  assert.throws(() => axisValues(axis), pattern);
+  assert.throws(() => sampleMonteCarlo([axis], 1, 1), pattern);
+  assert.throws(() => cartesianPoints([axis]), pattern);
+};
+expectAxisError({ name: 'x', variable: 'x', values: [] }, /values must be a non-empty/);
+expectAxisError({ name: 'x', variable: 'x', values: [1, 'two'] }, /values must be a non-empty/);
+expectAxisError({ name: 'x', variable: 'x', values: [1, Number.NaN] }, /values must be a non-empty/);
+expectAxisError({ name: 'x', variable: 'x', values: [1, Infinity] }, /values must be a non-empty/);
+// Value expansion itself does not need the variable, but point generation
+// (grid + Monte Carlo) does.
+assert.deepEqual(axisValues({ name: 'x', values: [1, 2] }), [1, 2]);
+assert.throws(() => sampleMonteCarlo([{ name: 'x', values: [1, 2] }], 1, 1), /missing its variable/);
+assert.throws(() => cartesianPoints([{ name: 'x', values: [1, 2] }]), /missing its variable/);
+expectAxisError({ name: 'x', variable: '', min: 0, max: 1 }, /variable must be a valid identifier/);
+expectAxisError({ name: 'x', variable: 'x', min: 2, max: 1 }, /min <= max/);
+expectAxisError({ name: 'x', variable: 'x', min: Number.NaN, max: 1 }, /finite min <= max/);
+expectAxisError({ name: 'x', variable: 'x', min: 0, max: 1, step: -1 }, /step must be a positive/);
+expectAxisError({ name: 'x', variable: 'x', min: 0, max: 1, step: Infinity }, /step must be a positive/);
+expectAxisError(null, /each axis must be an object/);
+assert.throws(() => sampleMonteCarlo('not-an-array', 1, 1), /axes must be a list/);
+assert.throws(() => cartesianPoints({}), /axes must be a list/);
+
+// Seed semantics: the 32-bit sampler state rejects out-of-range seeds
+// instead of silently truncating (seed 2^32 and 2^33 would collide).
+assert.throws(() => sampleMonteCarlo([{ variable: 'x', min: 0, max: 1 }], 1, 0x100000000),
+  /seed must be an integer in \[0, 4294967295\]/);
+assert.throws(() => sampleMonteCarlo([{ variable: 'x', min: 0, max: 1 }], 1, -1),
+  /seed must be an integer in \[0, 4294967295\]/);
+assert.equal(sampleMonteCarlo([{ variable: 'x', min: 0, max: 1 }], 2, 0xFFFFFFFF).length, 2);
+
+// A Monte Carlo axis without a step samples continuously within [min, max].
+const continuous = sampleMonteCarlo([{ variable: 'x', min: 0, max: 1 }], 50, 5);
+for (const point of continuous) {
+  assert.ok(point.x >= 0 && point.x <= 1);
+}
+
 const dsl = readFileSync(new URL('../examples/des-parameter-variation.lp', import.meta.url),
   'utf8');
 const result = await runParameterVariation({

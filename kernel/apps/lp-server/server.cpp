@@ -53,6 +53,35 @@ namespace {
 // Frame-size budget guard for per-tick agent deltas.
 constexpr std::size_t kMaxAgentsPerTick = 1024;
 
+// Fast-mode telemetry pacing (executionMode "fast", the default):
+//   * no wall-clock sleep - replications run at full speed,
+//   * the slice size adapts to event density (sparse slices grow), so a
+//     huge time gap between events cannot produce millions of empty slices,
+//   * a per-replication frame budget bounds the telemetry volume; the
+//     budget INCLUDES the final snapshot frame - once the budget minus one
+//     frames are spent, the rest of the replication runs without emitting
+//     (drain slices still grow, and stop stays responsive between them),
+//     and the final frame is emitted after the drain so the last Counters
+//     always reflects the completed run (final sim time, all entities
+//     departed).
+inline constexpr std::int64_t kFastFrameBudget = 48;
+inline constexpr std::int64_t kFastMinEventsPerSlice = 4;
+inline constexpr std::int64_t kFastMaxSliceNs = 60'000'000'000LL;            // 1 min
+inline constexpr std::int64_t kFastDrainSliceNs = 3'600'000'000'000LL;       // 1 h
+inline constexpr std::int64_t kFastDrainMaxSliceNs = 1'728'000'000'000'000LL;  // 20 d
+
+// Saturated int64 addition for sim-time boundaries: long-running or
+// effectively unbounded models must not overflow the boundary counter.
+std::int64_t saturating_add(std::int64_t a, std::int64_t b) {
+  if (b > 0 && a > INT64_MAX - b) {
+    return INT64_MAX;
+  }
+  if (b < 0 && a < INT64_MIN - b) {
+    return INT64_MIN;
+  }
+  return a + b;
+}
+
 // Minimal base64 decoder for the compile transport: DSL source can contain
 // quotes and newlines that the flat control-plane JSON parser (json_controls)
 // cannot carry, so the client sends it base64-encoded.
@@ -179,6 +208,9 @@ struct SimServer::Impl {
     std::uint64_t arrivals{4000};
     std::uint64_t warmup{400};
     double confidence{0.95};
+    // "animated" paces telemetry by the speed multiplier (pause/step make
+    // sense there); "fast" (default) runs without wall-clock pacing.
+    bool animated{false};
     // Per-run model parameter overrides; 0 / -1 = use the served config.
     double lambda{0.0};
     double mu{0.0};
@@ -305,6 +337,12 @@ struct SimServer::Impl {
           return json_error("replicationMode must be 'fixed' or 'precision'");
         }
         params.precision_reps = mode == "precision";
+      }
+      if (json_string_field(message, "executionMode", mode)) {
+        if (mode != "fast" && mode != "animated") {
+          return json_error("executionMode must be 'fast' or 'animated'");
+        }
+        params.animated = mode == "animated";
       }
       if (json_number_field(message, "minReps", value) && value >= 2.0) {
         params.min_reps = static_cast<std::uint64_t>(value);
@@ -659,13 +697,17 @@ struct SimServer::Impl {
   }
 
   // Pace one replication: process events in emit_step_ns sim slices, emitting
-  // Tick+Counters per slice; wall-clock throttling honors the speed factor.
+  // Tick+Counters per slice. Animated mode paces by the speed multiplier;
+  // fast mode runs at full speed with adaptive slices and a frame budget.
   // Returns false when the run was cancelled via stop.
   bool stream_replication(const RunParams& params, std::uint64_t rep) {
+    const bool animated = params.animated;
     const std::int64_t step_ns = config.emit_step_ns > 0
                                      ? config.emit_step_ns
                                      : 100'000'000;
     std::int64_t boundary_ns = 0;
+    std::int64_t slice_ns = step_ns;
+    std::uint64_t frames = 0;
     auto deadline = std::chrono::steady_clock::now();
     for (;;) {
       // Pause gate (wake on resume / step / stop).
@@ -689,10 +731,38 @@ struct SimServer::Impl {
         }
       }
 
-      boundary_ns += step_ns;
-      runner_.process_until(boundary_ns);
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        // Telemetry budget spent (one frame is reserved for the final
+        // snapshot): drain without emitting, then emit the final Tick +
+        // Counters so the last telemetry reflects the completed run (final
+        // sim time, all departures). Drain slices grow so a huge horizon
+        // stays cheap; stop is honored between slices.
+        std::int64_t drain_ns = kFastDrainSliceNs;
+        while (!runner_.finished()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              return false;
+            }
+          }
+          boundary_ns = saturating_add(boundary_ns, drain_ns);
+          runner_.process_until(boundary_ns);
+          drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
+        }
+        emit_tick();
+        emit_counters(params, rep);
+        ++frames;
+        return true;
+      }
+
+      boundary_ns = saturating_add(boundary_ns, slice_ns);
+      const std::size_t dispatched = runner_.process_until(boundary_ns);
+      if (!animated && dispatched < kFastMinEventsPerSlice) {
+        slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
+      }
       emit_tick();
       emit_counters(params, rep);
+      ++frames;
 
       if (runner_.finished()) {
         return true;
@@ -700,6 +770,9 @@ struct SimServer::Impl {
 
       if (step_once) {
         continue;  // single slice while paused; no wall-clock budget consumed
+      }
+      if (!animated) {
+        continue;  // fast mode: no wall-clock pacing
       }
 
       // Wall-clock pacing: speed x realtime, independent of sim results.
@@ -743,13 +816,18 @@ struct SimServer::Impl {
 
   // Pace one generic process-flow replication: advance the engine in
   // emit_step_ns sim slices, emitting Counters with per-block live state.
-  // Returns false when the run was cancelled via stop.
+  // Animated mode paces by the speed multiplier; fast mode runs at full
+  // speed with adaptive slices and a frame budget. Returns false when the
+  // run was cancelled via stop.
   bool stream_flow_replication(FlowEngine& flow, const RunParams& params,
                                std::uint64_t rep, std::uint64_t run_limit) {
+    const bool animated = params.animated;
     const std::int64_t step_ns = config.emit_step_ns > 0
                                      ? config.emit_step_ns
                                      : 100'000'000;
     std::int64_t boundary_ns = 0;
+    std::int64_t slice_ns = step_ns;
+    std::uint64_t frames = 0;
     auto deadline = std::chrono::steady_clock::now();
     for (;;) {
       bool step_once = false;
@@ -772,14 +850,54 @@ struct SimServer::Impl {
         }
       }
 
-      boundary_ns += step_ns;
-      flow.advance(SimTime::from_ns(boundary_ns), nullptr);
-      emit_flow_counters(flow, boundary_ns, rep, run_limit);
-      if (!flow.has_pending_events()) {
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        // Telemetry budget spent (one frame is reserved for the final
+        // snapshot): drain without emitting, then emit the final Counters
+        // so the last telemetry reflects the completed run (final sim
+        // time, every block in its terminal state). Drain slices grow so
+        // a huge horizon stays cheap; stop is honored between slices.
+        std::int64_t drain_ns = kFastDrainSliceNs;
+        while (flow.has_pending_events()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              return false;
+            }
+          }
+          boundary_ns = saturating_add(boundary_ns, drain_ns);
+          flow.advance(SimTime::from_ns(boundary_ns), nullptr);
+          drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
+        }
+        // The final frame's sim time is the engine's exact clock time
+        // (advanced only to real events), not the drain boundary.
+        emit_flow_counters(flow, flow.now_ns(), rep, run_limit);
+        ++frames;
         return true;
       }
+
+      boundary_ns = saturating_add(boundary_ns, slice_ns);
+      const std::size_t dispatched =
+          flow.advance(SimTime::from_ns(boundary_ns), nullptr);
+      if (!animated && dispatched < kFastMinEventsPerSlice) {
+        slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
+      }
+      if (!flow.has_pending_events()) {
+        // The replication ended inside this slice: the final frame must
+        // carry the engine's exact last-event time, not the slice boundary
+        // (run_until only advances the clock to real event times).
+        emit_flow_counters(flow, flow.now_ns(), rep, run_limit);
+        ++frames;
+        return true;
+      }
+      // Mid-run telemetry: the slice boundary is the documented sampling
+      // boundary.
+      emit_flow_counters(flow, boundary_ns, rep, run_limit);
+      ++frames;
       if (step_once) {
         continue;  // single slice while paused; no wall-clock budget consumed
+      }
+      if (!animated) {
+        continue;  // fast mode: no wall-clock pacing
       }
 
       const double speed = speed_.load(std::memory_order_relaxed);
@@ -801,11 +919,15 @@ struct SimServer::Impl {
     }
   }
 
-  void emit_flow_counters(FlowEngine& flow, std::int64_t boundary_ns,
+  // One Counters frame with per-block live state at `sim_time_ns`: the
+  // slice boundary for mid-run sampling frames, the engine's exact clock
+  // time for final frames (both the budget-drain path and the
+  // within-budget completion path use flow.now_ns()).
+  void emit_flow_counters(FlowEngine& flow, std::int64_t sim_time_ns,
                           std::uint64_t rep, std::uint64_t reps_total) {
     CountersFrame counters;
     counters.seq = ++seq_;
-    counters.sim_time_ns = run_sim_offset_ns_ + boundary_ns;
+    counters.sim_time_ns = run_sim_offset_ns_ + sim_time_ns;
     for (const BlockSnapshot& snapshot : flow.block_snapshots()) {
       const std::string& name = snapshot.name;
       counters.values.push_back(

@@ -11,6 +11,7 @@ const valid: RunOptions = {
   maxReps: 100,
   errorPercent: 5,
   precisionMetric: 'Wq',
+  executionMode: 'fast',
   arrivals: 4000,
   warmup: 400,
   confidence: 0.95,
@@ -20,12 +21,16 @@ const valid: RunOptions = {
 describe('validateRunOptions', () => {
   it('accepts a reproducible replication experiment', () => {
     expect(validateRunOptions(valid)).toBeNull();
+    expect(validateRunOptions({ ...valid, executionMode: 'animated' })).toBeNull();
   });
 
   it('rejects invalid replication and warm-up settings', () => {
     expect(validateRunOptions({ ...valid, reps: 0 })).toMatch(/reps/);
     expect(validateRunOptions({ ...valid, warmup: 4000 })).toMatch(/warmup/);
     expect(validateRunOptions({ ...valid, confidence: 1 })).toMatch(/confidence/);
+    expect(
+      validateRunOptions({ ...valid, executionMode: 'turbo' as RunOptions['executionMode'] }),
+    ).toMatch(/executionMode/);
   });
 
   it('validates precision-driven replication bounds', () => {

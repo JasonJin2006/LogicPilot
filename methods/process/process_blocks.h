@@ -56,12 +56,9 @@ class SourceBlock final : public BufferedBlock {
       return false;
     }
     Entity entity = input_.front();
-    // Atomic broadcast: a source feeding several branches must not deliver
-    // to some and then re-emit the same entity when a later branch frees up
-    // (that would duplicate the entity and can livelock the flow).
-    if (!ctx.downstream_accepts(entity, "out")) {
-      return false;
-    }
+    // A source's "out" port has exactly one downstream (the compiler rejects
+    // fan-out, LP5007), so a plain emit either delivers once or keeps the
+    // entity here until the downstream accepts it - never a duplicate.
     if (!ctx.emit(entity, "out")) {
       return false;
     }
@@ -261,6 +258,11 @@ class WaitBlock final : public BufferedBlock {
     } else {
       input_.pop_front();
     }
+    // The entity left the waiting area normally: its pending timeout must
+    // be cancelled, otherwise it would still fire (advancing the clock to
+    // a business-meaningless future time) after the entity is gone.
+    timed_.erase(entity.id);
+    ctx.cancel_timeout(entity.id);
     ++departed_;
     return true;
   }
@@ -363,7 +365,9 @@ class WaitBlock final : public BufferedBlock {
     }
     Entity ejected = *it;  // copy before erase: the reference dies with it
     input_.erase(it);
-    timed_.erase(ejected.id);
+    if (timed_.erase(ejected.id) != 0) {
+      ctx.cancel_timeout(ejected.id);  // preempted before its timeout fired
+    }
     queued_.erase(ejected.id);
     ++departed_;
     ++preempted_count_;
@@ -608,6 +612,12 @@ class ServiceBlock final : public BufferedBlock {
     }
     Entity entity = input_.front();
     input_.pop_front();
+    // The entity started service (or seized its units): its waiting timeout
+    // must not fire later and drag the horizon to a business-meaningless
+    // future time.
+    if (timed_.erase(entity.id) != 0) {
+      ctx.cancel_timeout(entity.id);
+    }
     entity.service_start_ns = ctx.now().as_ns();
     in_service_.push_back(entity);
     ++units_in_use_;
@@ -742,7 +752,15 @@ class ServiceBlock final : public BufferedBlock {
   }
 
   [[nodiscard]] std::int64_t busy_units() const override {
-    return shared_pool_ ? busy_ * units_per_task_ : busy_;
+    // Live snapshots report the slots actually occupied: every task still
+    // in service, including tasks preempted by a pool failure (they keep
+    // their slot and restart on repair). busy_ tracks only active tasks,
+    // so it must not drive the snapshot - in_service would wrongly read 0
+    // while the pool is down. Utilization's area_busy_ keeps using busy_:
+    // preempted tasks are down time, not busy time.
+    return shared_pool_ ? static_cast<std::int64_t>(in_service_.size()) *
+                              units_per_task_
+                        : static_cast<std::int64_t>(in_service_.size());
   }
   [[nodiscard]] std::int64_t pool_capacity() const override {
     return shared_pool_ ? resource_capacity_ : servers_;
@@ -889,8 +907,9 @@ class EnterBlock final : public BufferedBlock {
 // Assembler (AnyLogic): waits until the main agent (in) and the required
 // number of parts (p1, quantity `quantity125`) are present, then assembles
 // for `delayTime` seconds and outputs the main agent. Multiple assemblies
-// may run concurrently (unbounded delay-like capacity). Resource use during
-// assembly is not modeled yet.
+// may run concurrently (unbounded delay-like capacity). When a resource
+// pool is declared the assembler seizes `units` units for the assembly
+// duration and releases them on completion.
 class AssemblerBlock final : public BufferedBlock {
  public:
   AssemblerBlock(std::string name, std::int64_t delay_ns,
@@ -1137,10 +1156,12 @@ class GenericBlock final : public BufferedBlock {
       input_.pop_front();
       ++departed_;
       for (std::int64_t copy = 1; copy < copies_; ++copy) {
-        Entity clone = entity;
-        clone.id = entity.id * 1000 + static_cast<std::uint64_t>(copy);
+        // Each copy is a new entity (fresh id, counted in the system), so
+        // arrivals/departures/in-system stay consistent; a copy rejected by
+        // its outCopy downstream is retried on the same port later.
+        Entity clone = ctx.spawn(entity);
         if (!ctx.emit(clone, "outCopy")) {
-          outgoing_.push_back(clone);
+          clone_outgoing_.push_back({clone, "outCopy"});
         }
       }
       return true;
@@ -1163,6 +1184,33 @@ class GenericBlock final : public BufferedBlock {
     return true;
   }
 
+  // Port-aware retry for split copies: a copy rejected by its outCopy
+  // downstream must not be re-pushed through "out" (that would deliver the
+  // clone to the original's branch instead of the copy branch).
+  bool retry_outgoing(BlockContext& ctx) override {
+    if (!clone_outgoing_.empty()) {
+      const auto entry = clone_outgoing_.front();
+      if (ctx.emit(entry.first, entry.second.c_str())) {
+        clone_outgoing_.pop_front();
+        return true;
+      }
+      return false;
+    }
+    return BufferedBlock::retry_outgoing(ctx);
+  }
+
+  // The engine wakes upstream blocks when this block frees a slot; a
+  // back-pressured clone sits in clone_outgoing_, so it must count as
+  // pending work too or the split would never be re-pumped.
+  [[nodiscard]] bool has_outgoing() const override {
+    return !clone_outgoing_.empty() || BufferedBlock::has_outgoing();
+  }
+
+  void clear_buffers() override {
+    BufferedBlock::clear_buffers();
+    clone_outgoing_.clear();
+  }
+
  private:
   double probability_{0.5};
   std::int64_t copies_{2};
@@ -1170,6 +1218,7 @@ class GenericBlock final : public BufferedBlock {
   std::string condition_text_;
   std::string blocking_condition_;
   std::unordered_map<std::string, double> numeric_params_;
+  std::deque<std::pair<Entity, std::string>> clone_outgoing_;
 };
 
 // SelectOutput5 (AnyLogic): one input, five outputs. Routing mode from
@@ -1387,6 +1436,11 @@ class SeizeBlock final : public BufferedBlock {
     }
     Entity entity = input_.front();
     input_.pop_front();
+    // The entity seized its units before the timeout fired: cancel the
+    // pending timeout so it cannot drag the horizon forward later.
+    if (timed_.erase(entity.id) != 0) {
+      ctx.cancel_timeout(entity.id);
+    }
     entity.resources[resource_] += quantity_;
     ++departed_;
     if (!ctx.emit(entity, "out")) {
@@ -1479,7 +1533,9 @@ class SeizeBlock final : public BufferedBlock {
     }
     Entity ejected = *it;  // copy before erase: the reference dies with it
     input_.erase(it);
-    timed_.erase(ejected.id);
+    if (timed_.erase(ejected.id) != 0) {
+      ctx.cancel_timeout(ejected.id);  // preempted before its timeout fired
+    }
     queued_.erase(ejected.id);
     ++departed_;
     if (!ctx.emit(ejected, "outPreempted")) {

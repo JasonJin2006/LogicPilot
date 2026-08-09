@@ -10,6 +10,8 @@ import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent, loadRecent, removeRecent } from '../state/recentStore';
 import { useProjectStore } from '../state/projectStore';
+import { useRunStore } from '../state/runStore';
+import { resetVizState, vizState } from '../state/vizState';
 import { logConsoleEvent } from '../state/connectionStore';
 import { saveProject } from '../project/syncEngine';
 import {
@@ -84,6 +86,11 @@ export function AppMenu() {
     loadDocument(document);
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView(null);
+    // A new model means a new run: reset the live telemetry and the token
+    // baseline (the canvas stays mounted, so the reset cannot rely on
+    // component unmount).
+    resetVizState(vizState);
+    useRunStore.getState().reset();
   };
 
   const fileNewProject = () => {

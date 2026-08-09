@@ -28,7 +28,7 @@ import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
 import { useShapeSelection } from '../presentation/selectionStore';
 import { insertBlockAt } from './canvasInsert';
-import { vizState } from '../state/vizState';
+import { departedDelta, vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 
@@ -233,10 +233,13 @@ export function ModelCanvas() {
   const wireStart = useRef<{ x: number; y: number } | null>(null);
 
   // Live flow tokens: circles animated along a coupling when a block's
-  // departed counter advances (generic process-flow telemetry).
+  // departed counter advances (generic process-flow telemetry). The
+  // departed baseline lives in the shared vizState (not a local ref) so a
+  // new run / model switch / reconnect resets it through resetVizState -
+  // the canvas usually stays mounted across runs, so unmount cleanup alone
+  // would leave the old baseline suppressing the next run's tokens.
   const [tokens, setTokens] = useState<FlowToken[]>([]);
   const tokenSeq = useRef(0);
-  const lastDeparted = useRef<Map<string, number>>(new Map());
   const flowNodesRef = useRef(visibleNodes);
   const flowEdgesRef = useRef(visibleEdges);
   flowNodesRef.current = visibleNodes;
@@ -803,18 +806,29 @@ export function ModelCanvas() {
 
   // Spawn flow tokens when a block's departed counter advances and prune
   // expired ones. Reads the latest node/edge layout through refs so the
-  // animation loop can run at display rate without restarting.
+  // animation loop can run at display rate without restarting. The raf
+  // loop is cancelled on unmount; a baseline reset (tokenGeneration bump)
+  // drops in-flight tokens immediately so leftovers from a previous run
+  // never animate across a new one.
   useEffect(() => {
     let raf = 0;
     let lastSpawn = 0;
+    let seenGeneration = vizState.tokenGeneration;
     const tick = (now: number) => {
+      if (vizState.tokenGeneration !== seenGeneration) {
+        // New run / model switch / reconnect: the baseline was reset, so
+        // drop leftover tokens and let the fresh counters spawn from 0.
+        seenGeneration = vizState.tokenGeneration;
+        setTokens([]);
+        lastSpawn = now;
+      }
       if (now - lastSpawn > 80) {
         lastSpawn = now;
         for (const [name, state] of vizState.blocks) {
-          const previous = lastDeparted.current.get(name) ?? 0;
-          if (state.departed <= previous) continue;
-          const delta = Math.min(state.departed - previous, 4);
-          lastDeparted.current.set(name, state.departed);
+          const previous = vizState.lastDeparted.get(name) ?? 0;
+          const delta = departedDelta(previous, state.departed);
+          if (delta === 0) continue;
+          vizState.lastDeparted.set(name, state.departed);
           const fromNode = flowNodesRef.current.find((node) => node.name === name);
           if (!fromNode) continue;
           const outs = flowEdgesRef.current.filter((edge) => edge.from === fromNode.id);

@@ -40,10 +40,29 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
 
   engine_ = Xoshiro256PlusPlus{config.seed};
   if (external_ == nullptr) {
+    // Owned facilities are replaced wholesale: stale events die with the
+    // old scheduler, and handlers are re-registered against the fresh
+    // registry.
     owned_scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
     owned_clock_ = SimulationClock{};
     owned_handlers_ = EventHandlerRegistry{};
+    handlers_owner_ = nullptr;  // re-register against the fresh registry
+  } else {
+    // External (kernel-owned) scheduler survives across resets: cancel
+    // every event this engine still owns, otherwise run_until would pop
+    // the stale events and advance the shared clock before their no-op
+    // handlers run.
+    if (arrive_token_.valid()) {
+      scheduler().cancel(arrive_token_);
+    }
+    for (const EventToken token : server_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
   }
+  arrive_token_ = EventToken{};
+  server_tokens_.assign(spec_.servers < 1 ? 1 : spec_.servers, EventToken{});
 
   queue_.clear();
   servers_.assign(spec_.servers < 1 ? 1 : spec_.servers, Server{});
@@ -78,17 +97,20 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     service_start_ns_[customer] = clock().now().as_ns();
     const std::int64_t service_ns = to_ns(spec_.service(engine_));
     if (!has_failure_) {
-      scheduler().schedule(clock().now() + SimTime::from_ns(service_ns),
-                           kDepartEvent, depart_id_, server);
+      server_tokens_[server] = scheduler().schedule(
+          clock().now() + SimTime::from_ns(service_ns), kDepartEvent,
+          depart_id_, server);
       return;
     }
     const std::int64_t failure_ns = to_ns(spec_.failure(engine_));
     if (failure_ns < service_ns) {
-      scheduler().schedule(clock().now() + SimTime::from_ns(failure_ns),
-                           kFailEvent, fail_id_, server);
+      server_tokens_[server] = scheduler().schedule(
+          clock().now() + SimTime::from_ns(failure_ns), kFailEvent, fail_id_,
+          server);
     } else {
-      scheduler().schedule(clock().now() + SimTime::from_ns(service_ns),
-                           kDepartEvent, depart_id_, server);
+      server_tokens_[server] = scheduler().schedule(
+          clock().now() + SimTime::from_ns(service_ns), kDepartEvent,
+          depart_id_, server);
     }
   };
 
@@ -101,107 +123,125 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     last_ns_ = now_ns;
   };
 
-  // Real handlers (registry ids are stable after this block).
-  depart_id_ = handlers().add(
-      [this, accumulate_area, start_service](const Event& event) {
-    const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock().now().as_ns();
-    accumulate_area(now_ns);
-    Server& s = servers_[server];
-    const std::uint64_t id = s.customer;
-    --in_system_;
-    ++departures_;
-    if (id >= config_.warmup_arrivals) {
-      // Final wait = arrival -> last service start (preemption-aware).
-      wait_times_.push_back(
-          static_cast<double>(service_start_ns_[id] - arrival_ns_[id]) *
-          1e-9);
-      sojourn_sum_ +=
-          static_cast<double>(now_ns - arrival_ns_[id]) * 1e-9;
-      ++sojourn_count_;
-    }
+  // Register the handlers exactly once per (registry identity, epoch): a
+  // replaced owned registry, an attach() to another context's registry, or
+  // a registry clear() (epoch bump) invalidates the HandlerIds, so they
+  // are re-registered before use; repeated resets on the same registry do
+  // not accumulate duplicates.
+  if (handlers_owner_ != &handlers() ||
+      handlers_epoch_ != handlers().epoch()) {
+    depart_id_ = handlers().add(
+        [this, accumulate_area, start_service](const Event& event) {
+      const std::uint64_t server = event.payload;
+      server_tokens_[server] = EventToken{};  // this event was consumed
+      const std::int64_t now_ns = clock().now().as_ns();
+      accumulate_area(now_ns);
+      Server& s = servers_[server];
+      const std::uint64_t id = s.customer;
+      --in_system_;
+      ++departures_;
+      if (id >= config_.warmup_arrivals) {
+        // Final wait = arrival -> last service start (preemption-aware).
+        wait_times_.push_back(
+            static_cast<double>(service_start_ns_[id] - arrival_ns_[id]) *
+            1e-9);
+        sojourn_sum_ +=
+            static_cast<double>(now_ns - arrival_ns_[id]) * 1e-9;
+        ++sojourn_count_;
+      }
 
-    s.state = ServerState::kIdle;
-    --busy_servers_;
-    if (!queue_.empty()) {
-      const std::uint64_t next = queue_.front();
-      queue_.pop_front();
-      --in_queue_;
-      start_service(server, next);
-    }
-  });
-  arrive_id_ = handlers().add(
-      [this, accumulate_area, start_service](const Event& event) {
-    const std::uint64_t id = event.payload;
-    const std::int64_t now_ns = clock().now().as_ns();
-    accumulate_area(now_ns);
-    arrival_ns_[id] = now_ns;
+      s.state = ServerState::kIdle;
+      --busy_servers_;
+      if (!queue_.empty()) {
+        const std::uint64_t next = queue_.front();
+        queue_.pop_front();
+        --in_queue_;
+        start_service(server, next);
+      }
+    });
+    arrive_id_ = handlers().add(
+        [this, accumulate_area, start_service](const Event& event) {
+      const std::uint64_t id = event.payload;
+      arrive_token_ = EventToken{};  // this event was consumed
+      const std::int64_t now_ns = clock().now().as_ns();
+      accumulate_area(now_ns);
+      arrival_ns_[id] = now_ns;
 
-    // Emit the next arrival (source keeps generating until the quota).
-    if (emitted_ < config_.arrivals) {
-      const double gap = spec_.interarrival(engine_);
-      scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
-                           kArriveEvent, arrive_id_, emitted_);
-      ++emitted_;
-    }
+      // Emit the next arrival (source keeps generating until the quota).
+      if (emitted_ < config_.arrivals) {
+        const double gap = spec_.interarrival(engine_);
+        arrive_token_ = scheduler().schedule(
+            clock().now() + SimTime::from_ns(to_ns(gap)), kArriveEvent,
+            arrive_id_, emitted_);
+        ++emitted_;
+      }
 
-    const auto idle_server =
-        std::find_if(servers_.begin(), servers_.end(), [](const Server& s) {
-          return s.state == ServerState::kIdle;
-        });
-    if (idle_server != servers_.end()) {
-      ++in_system_;
-      start_service(
-          static_cast<std::uint64_t>(idle_server - servers_.begin()), id);
-    } else if (spec_.queue_capacity < 0 ||
-               static_cast<std::int64_t>(queue_.size()) <
-                   spec_.queue_capacity) {
-      ++in_system_;
+      const auto idle_server =
+          std::find_if(servers_.begin(), servers_.end(), [](const Server& s) {
+            return s.state == ServerState::kIdle;
+          });
+      if (idle_server != servers_.end()) {
+        ++in_system_;
+        start_service(
+            static_cast<std::uint64_t>(idle_server - servers_.begin()), id);
+      } else if (spec_.queue_capacity < 0 ||
+                 static_cast<std::int64_t>(queue_.size()) <
+                     spec_.queue_capacity) {
+        ++in_system_;
+        ++in_queue_;
+        queue_.push_back(id);
+      } else {
+        ++dropped_;  // finite buffer full: customer lost, never enters system
+      }
+    });
+    fail_id_ = handlers().add([this, accumulate_area](const Event& event) {
+      const std::uint64_t server = event.payload;
+      server_tokens_[server] = EventToken{};  // this event was consumed
+      const std::int64_t now_ns = clock().now().as_ns();
+      accumulate_area(now_ns);
+      Server& s = servers_[server];
+      const std::uint64_t id = s.customer;
+      s.state = ServerState::kDown;
+      --busy_servers_;
+      ++down_servers_;
+      // Preemptive-repeat: the customer in service returns to the queue head
+      // (preempted customers bypass the finite-buffer capacity check).
+      queue_.push_front(id);
       ++in_queue_;
-      queue_.push_back(id);
-    } else {
-      ++dropped_;  // finite buffer full: customer lost, never enters system
-    }
-  });
-  fail_id_ = handlers().add([this, accumulate_area](const Event& event) {
-    const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock().now().as_ns();
-    accumulate_area(now_ns);
-    Server& s = servers_[server];
-    const std::uint64_t id = s.customer;
-    s.state = ServerState::kDown;
-    --busy_servers_;
-    ++down_servers_;
-    // Preemptive-repeat: the customer in service returns to the queue head
-    // (preempted customers bypass the finite-buffer capacity check).
-    queue_.push_front(id);
-    ++in_queue_;
-    const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
-    scheduler().schedule(clock().now() + SimTime::from_ns(repair_ns),
-                         kRepairEvent, repair_id_, server);
-  });
-  repair_id_ = handlers().add(
-      [this, accumulate_area, start_service](const Event& event) {
-    const std::uint64_t server = event.payload;
-    const std::int64_t now_ns = clock().now().as_ns();
-    accumulate_area(now_ns);
-    Server& s = servers_[server];
-    s.state = ServerState::kIdle;
-    --down_servers_;
-    if (!queue_.empty()) {
-      const std::uint64_t next = queue_.front();
-      queue_.pop_front();
-      --in_queue_;
-      start_service(server, next);
-    }
-  });
+      const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
+      server_tokens_[server] = scheduler().schedule(
+          clock().now() + SimTime::from_ns(repair_ns), kRepairEvent,
+          repair_id_, server);
+    });
+    repair_id_ = handlers().add(
+        [this, accumulate_area, start_service](const Event& event) {
+      const std::uint64_t server = event.payload;
+      server_tokens_[server] = EventToken{};  // this event was consumed
+      const std::int64_t now_ns = clock().now().as_ns();
+      accumulate_area(now_ns);
+      Server& s = servers_[server];
+      s.state = ServerState::kIdle;
+      --down_servers_;
+      if (!queue_.empty()) {
+        const std::uint64_t next = queue_.front();
+        queue_.pop_front();
+        --in_queue_;
+        start_service(server, next);
+      }
+    });
+    handlers_owner_ = &handlers();
+    handlers_epoch_ = handlers().epoch();
+  }
 
-  // Seed the first arrival; the handler chain then keeps the source going.
-  emitted_ = 1;
-  scheduler().schedule(
-                       clock().now() +
-                           SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
-                       kArriveEvent, arrive_id_, 0);
+  // Seed the first arrival only when arrivals > 0: arrival_ns_ and
+  // service_start_ns_ are sized by config.arrivals, and payload 0 would
+  // index out of bounds for an empty run.
+  if (config_.arrivals > 0) {
+    emitted_ = 1;
+    arrive_token_ = scheduler().schedule(
+        clock().now() + SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
+        kArriveEvent, arrive_id_, 0);
+  }
 }
 
 std::size_t QueueingFlowSim::advance(SimTime until, TraceRecorder* trace) {
@@ -213,8 +253,40 @@ std::size_t QueueingFlowSim::advance(SimTime until, TraceRecorder* trace) {
   });
 }
 
+std::int64_t QueueingFlowSim::now_ns() const {
+  return clock().now().as_ns();
+}
+
+bool QueueingFlowSim::has_pending_events() {
+  return !scheduler().empty();
+}
+
 void QueueingFlowSim::attach(RuntimeContext& context) {
-  external_ = &context;
+  if (external_ != &context) {
+    // Switching contexts: cancel every event this engine still owns on the
+    // OLD scheduler. EventTokens carry no scheduler identity, so cancelling
+    // them on the new scheduler could hit unrelated events of the new
+    // context.
+    // This also covers owned -> external migration after an owned run. A
+    // never-reset owned engine has no scheduler or tokens to cancel.
+    if (external_ != nullptr || owned_scheduler_ != nullptr) {
+      if (arrive_token_.valid()) {
+        scheduler().cancel(arrive_token_);
+      }
+      for (const EventToken token : server_tokens_) {
+        if (token.valid()) {
+          scheduler().cancel(token);
+        }
+      }
+    }
+    // Cancellation happened against the old scheduler. Forget those tokens
+    // before switching so the next reset cannot replay them against the new
+    // scheduler and accidentally cancel an unrelated colliding token.
+    arrive_token_ = EventToken{};
+    std::fill(server_tokens_.begin(), server_tokens_.end(), EventToken{});
+    external_ = &context;
+    handlers_owner_ = nullptr;  // re-register against the new registry
+  }
 }
 
 IEventScheduler& QueueingFlowSim::scheduler() {

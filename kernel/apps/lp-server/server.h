@@ -13,11 +13,17 @@
 //    "seedMode":"fixed"|"random","reps":r,
 //    "replicationMode":"fixed"|"precision","minReps":n,"maxReps":n,
 //    "errorPercent":p,"precisionMetric":"Wq",
+//    "executionMode":"fast"|"animated",
 //    "arrivals":n,"warmup":n,"confidence":c}
 // are routed through SimServer::handle_control() (thread-safe) and answered
 // with a JSON ack/error text frame. pause/step/speed are thread-safe; the
 // speed multiplier only affects wall-clock pacing, never simulation results
-// (same seed => same frames).
+// (same seed => same frames). executionMode "fast" (the default) runs
+// without wall-clock pacing and bounds telemetry to a frame budget per
+// replication - the budget includes the final snapshot frame, so the last
+// Counters always reflects the completed run (final sim time, terminal
+// block state) and RunFinished.sim_time_ns matches it. "animated" paces by
+// the speed multiplier and keeps pause/resume/step meaningful.
 #pragma once
 
 #include <cstddef>

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -519,6 +520,11 @@ class Engine final : public BlockContext {
       fail(error, "process flow has no source block");
       return;
     }
+    // Pool failure support: Service consumers interrupt their in-service
+    // tasks on pool down and restart them (preemptive-repeat) on repair;
+    // Seize/Assembler consumers gate new grants while the pool is down but
+    // never interrupt units already held (AnyLogic's "No preemption"
+    // default for seize-held tasks - the failure waits for the unit).
     // Port-aware couplings.
     if (!couplings.empty()) {
       for (const ir::v2::Coupling* coupling : couplings) {
@@ -539,6 +545,19 @@ class Engine final : public BlockContext {
                                           : "out";
         const std::string to_port =
             coupling->to_port() != nullptr ? coupling->to_port()->str() : "in";
+        // A process output port has exactly one downstream (fan-out requires
+        // an explicit split block). The compiler rejects fan-out (LP5007);
+        // hand-built IR is rejected here so the same entity id can never be
+        // pushed into several branches (which would double-count departures
+        // and drive in_system negative).
+        for (const Edge& edge : out_edges_[from_it->second]) {
+          if (edge.from_port == from_port) {
+            fail(error, "process output port '" + from + "." + from_port +
+                            "' connects to multiple downstream blocks; "
+                            "fan-out is not implicit - use a split block");
+            return;
+          }
+        }
         out_edges_[from_it->second].push_back(
             {to_it->second, from_port, to_port});
         in_edges_[to_it->second].push_back(from_it->second);
@@ -602,6 +621,9 @@ class Engine final : public BlockContext {
 
   bool has_pending_events() { return !scheduler().empty(); }
 
+  // Exact engine clock time: advanced only to real event times.
+  [[nodiscard]] std::int64_t now_ns() const { return clock().now().as_ns(); }
+
   // Build the spatial graph: nodes in stable order, path edges weighted by
   // Euclidean distance, all-pairs shortest paths (Floyd-Warshall).
   void build_spatial_graph() {
@@ -650,21 +672,57 @@ class Engine final : public BlockContext {
 
   // Kernel-driven mode: schedule into the kernel's clock/scheduler/handler
   // registry instead of per-engine owned facilities (SimulationKernel).
-  void attach(RuntimeContext& context) { external_ = &context; }
+  // Switching to a different context first cancels every event this engine
+  // still owns on the OLD scheduler - EventTokens carry no scheduler
+  // identity, so cancelling them on the new scheduler could hit unrelated
+  // events of the new context.
+  void attach(RuntimeContext& context) {
+    if (external_ != &context) {
+      // This also covers owned -> external migration after an owned run. A
+      // never-reset owned engine has no scheduler or tokens to cancel.
+      if (external_ != nullptr || owned_scheduler_ != nullptr) {
+        cancel_all_pending_events();
+      }
+      // Source tokens are cleared by cancel_all_pending_events(). Clear the
+      // remaining bookkeeping before switching schedulers so reset() cannot
+      // replay old tokens against the new scheduler and cancel unrelated
+      // events whose scheduler-local id/generation happens to collide.
+      depart_tokens_.clear();
+      block_event_tokens_.clear();
+      pool_failure_tokens_.clear();
+      pool_repair_tokens_.clear();
+      external_ = &context;
+      handlers_owner_ = nullptr;  // re-register against the new registry
+    }
+  }
 
   void reset(const ReplicationConfig& config) {
     config_ = config;
     warmup_ = config.warmup_arrivals;
     engine_ = Xoshiro256PlusPlus{config.seed};
     if (external_ == nullptr) {
+      // Owned facilities are replaced wholesale: stale events die with the
+      // old scheduler/registry, so their tokens must NOT be cancelled (the
+      // tokens reference the old scheduler's memory). The handlers are
+      // re-registered against the fresh registry.
       owned_scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
       owned_clock_ = SimulationClock{};
       owned_handlers_ = EventHandlerRegistry{};
+      handlers_owner_ = nullptr;  // re-register against the fresh registry
+    } else {
+      // External (kernel-owned) scheduler/clock/registry are shared and
+      // survive across resets: every event this engine still owns must be
+      // cancelled HERE, otherwise run_until would pop the stale events and
+      // advance the shared clock before their no-op handlers run.
+      cancel_all_pending_events();
     }
     emitted_ = 0;
     arrival_events_ = 0;
     depart_tokens_.clear();
+    block_event_tokens_.clear();
     source_arrival_events_.assign(blocks_.size(), 0);
+    source_arrival_tokens_.assign(blocks_.size(), EventToken{});
+    source_exhausted_.assign(blocks_.size(), false);
     departures_ = 0;
     in_system_ = 0;
     last_ns_ = 0;
@@ -680,7 +738,17 @@ class Engine final : public BlockContext {
     pool_busy_.clear();
     pool_down_.clear();
     pool_down_units_.clear();
-    pool_gen_.clear();
+    // Generations are NOT reset to zero: bumping every declared pool keeps
+    // any maintenance event that somehow survived the cancellation from
+    // matching the new run's generation, so its handler stays inert. This
+    // is a second line of defence only - it cannot undo the clock
+    // advancement run_until performs before dispatching, which is why
+    // reset() cancels the events themselves first.
+    for (const auto& [resource, spec] : resource_pools_) {
+      pool_gen_[resource] += 1;
+    }
+    pool_failure_tokens_.clear();
+    pool_repair_tokens_.clear();
     pool_down_area_.clear();
     pool_busy_area_.clear();
     pool_order_.clear();
@@ -709,6 +777,36 @@ class Engine final : public BlockContext {
       pool_order_.push_back(resource);
       pool_index_[resource] = pool_order_.size() - 1;
     }
+    ensure_handlers_registered();
+    for (const std::size_t source : sources_) {
+      if (blocks_[source]->source_is_manual() ||
+          blocks_[source]->max_arrival_events() == 0 ||
+          arrival_events_ >= config_.arrivals) {
+        source_exhausted_[source] = true;
+        continue;
+      }
+      const double gap = blocks_[source]->sample_first_gap(engine_);
+      if (std::isfinite(gap) && gap >= 0.0) {
+        schedule_source_arrival(
+            source, clock().now() + SimTime::from_ns(to_ns(gap)));
+      } else {
+        // No valid first gap: this source will never produce an arrival.
+        source_exhausted_[source] = true;
+      }
+    }
+  }
+
+  // Handlers are registered exactly once per (registry identity, epoch):
+  // reset() replaces the owned registry, attach() switches to another
+  // context's registry, and a registry clear() bumps its epoch - each of
+  // these invalidates previously obtained HandlerIds, so the handlers are
+  // re-registered against the current registry before use. Repeated resets
+  // against the same registry do not accumulate duplicate handlers.
+  void ensure_handlers_registered() {
+    if (handlers_owner_ == &handlers() &&
+        handlers_epoch_ == handlers().epoch()) {
+      return;
+    }
     depart_handler_ =
         handlers().add([this](const Event& event) { on_depart(event); });
     failure_handler_ =
@@ -723,18 +821,8 @@ class Engine final : public BlockContext {
         handlers().add([this](const Event& event) { on_pool_repair(event); });
     arrive_handler_ =
         handlers().add([this](const Event& event) { on_arrive(event); });
-    for (const std::size_t source : sources_) {
-      if (blocks_[source]->source_is_manual() ||
-          blocks_[source]->max_arrival_events() == 0 ||
-          arrival_events_ >= config_.arrivals) {
-        continue;
-      }
-      const double gap = blocks_[source]->sample_first_gap(engine_);
-      if (std::isfinite(gap) && gap >= 0.0) {
-        scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
-                             kArriveEvent, arrive_handler_, source);
-      }
-    }
+    handlers_owner_ = &handlers();
+    handlers_epoch_ = handlers().epoch();
   }
 
   std::size_t advance(SimTime until, TraceRecorder* trace) {
@@ -743,11 +831,56 @@ class Engine final : public BlockContext {
         trace->record(event.at, event.type, event.payload);
       }
       handlers().dispatch(event);
+      // As soon as the run's business is over (every external arrival
+      // produced, no entity left in the system), cancel any pending pool
+      // maintenance events. run_until advances the clock to every popped
+      // event's time before dispatching, so tail failure/repair events
+      // must be removed from the scheduler HERE - a handler-level check
+      // would come too late and still drag the horizon to the repair
+      // time. A plain idle gap (business not finished) never triggers
+      // this, so an in-flight repair always completes.
+      cancel_tail_maintenance();
     });
+  }
+
+  // Cancel pending pool failure/repair and block-level failure/repair/
+  // timeout events once the model's business has truly terminated. They
+  // carry no business meaning afterwards and must not advance the clock or
+  // the area integrals. With in_system == 0 no waiting entity can own a
+  // valid timeout (timeouts belong to entities still in the waiting area),
+  // so any residual block event here is a stale tail event - but the
+  // cancellation is what prevents run_until from popping it, not the
+  // in_system check.
+  void cancel_tail_maintenance() {
+    if (!business_finished()) {
+      return;
+    }
+    for (const auto& [resource, token] : pool_failure_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    pool_failure_tokens_.clear();
+    for (const auto& [resource, token] : pool_repair_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    pool_repair_tokens_.clear();
+    for (const auto& [key, token] : block_event_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    block_event_tokens_.clear();
   }
 
   ReplicationMetrics metrics() const {
     ReplicationMetrics metrics;
+    // All entity births, including split copies (each copy is a new entity
+    // counted on creation and leaves exactly once, keeping arrivals ==
+    // departures). The external Source arrival count is tracked separately
+    // by arrival_events_ and drives warm-up via Entity.root_arrival_index.
     metrics.arrivals = emitted_;
     metrics.departures = departures_;
     const std::int64_t horizon_ns = clock().now().as_ns();
@@ -877,6 +1010,19 @@ class Engine final : public BlockContext {
     return push_downstream(it->second, entity, "out");
   }
 
+  Entity spawn(const Entity& templ) override {
+    Entity clone = templ;
+    clone.id = emitted_;
+    clone.created_ns = clock().now().as_ns();
+    clone.service_start_ns = clone.created_ns;
+    clone.contents.clear();
+    clone.resources.clear();
+    clone.has_measure = false;
+    ++emitted_;
+    ++in_system_;
+    return clone;
+  }
+
   void schedule_depart(std::int64_t hold_ns, std::uint64_t entity_id) override {
     const EventToken token =
         scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
@@ -898,28 +1044,58 @@ class Engine final : public BlockContext {
 
   void schedule_failure(std::int64_t hold_ns,
                         std::uint64_t entity_id) override {
-    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                         kFailureEvent, failure_handler_,
+    schedule_block_event(kFailureEvent, hold_ns,
                          self_payload(current_, entity_id));
   }
 
   void schedule_repair(std::int64_t hold_ns, std::uint64_t entity_id) override {
-    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                         kRepairEvent, repair_handler_,
+    schedule_block_event(kRepairEvent, hold_ns,
                          self_payload(current_, entity_id));
   }
 
   void schedule_timeout(std::int64_t hold_ns,
                         std::uint64_t entity_id) override {
-    scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                         kTimeoutEvent, timeout_handler_,
+    schedule_block_event(kTimeoutEvent, hold_ns,
                          self_payload(current_, entity_id));
+  }
+
+  void cancel_timeout(std::uint64_t entity_id) override {
+    cancel_block_event(kTimeoutEvent, self_payload(current_, entity_id));
+  }
+
+  // Block-level failure/repair/timeout events share one pending-token map
+  // keyed by (event type, payload), so a timeout can never overwrite or
+  // erase a failure/repair token of the same block/entity and vice versa.
+  // Re-scheduling the same (type, payload) first cancels the old token so a
+  // stale event cannot linger after a re-arm.
+  void schedule_block_event(EventType type, std::int64_t hold_ns,
+                            std::uint64_t payload) {
+    const auto key = std::make_pair(type, payload);
+    const auto existing = block_event_tokens_.find(key);
+    if (existing != block_event_tokens_.end() && existing->second.valid()) {
+      scheduler().cancel(existing->second);
+    }
+    block_event_tokens_[key] = scheduler().schedule(
+        clock().now() + SimTime::from_ns(hold_ns), type,
+        type == kFailureEvent ? failure_handler_
+        : type == kRepairEvent  ? repair_handler_
+                                : timeout_handler_,
+        payload);
+  }
+
+  void cancel_block_event(EventType type, std::uint64_t payload) {
+    const auto key = std::make_pair(type, payload);
+    const auto it = block_event_tokens_.find(key);
+    if (it != block_event_tokens_.end() && it->second.valid()) {
+      scheduler().cancel(it->second);
+    }
+    block_event_tokens_.erase(key);
   }
 
   void leave_system(const Entity& entity) override {
     ++departures_;
     --in_system_;
-    if (entity.id >= warmup_) {
+    if (entity.root_arrival_index >= warmup_) {
       sojourn_sum_ +=
           static_cast<double>(clock().now().as_ns() - entity.created_ns) * 1e-9;
       ++sojourn_count_;
@@ -927,7 +1103,7 @@ class Engine final : public BlockContext {
   }
 
   void record_service_wait(const Entity& entity) override {
-    if (entity.id >= warmup_) {
+    if (entity.root_arrival_index >= warmup_) {
       wait_sum_ +=
           static_cast<double>(entity.service_start_ns - entity.created_ns) *
           1e-9;
@@ -953,6 +1129,12 @@ class Engine final : public BlockContext {
     const std::int64_t before = pool_busy_[resource];
     pool_busy_[resource] = before + quantity;
     if (before == 0 && pool_failure_rate(resource) > 0.0) {
+      // A busy period starts (pool_busy_ 0 -> positive): any pending TTF
+      // from an earlier period is stale, so cancel it and bump the
+      // generation (double invalidation - a cancelled event that already
+      // left the scheduler must still fail its generation check), then arm
+      // the pool's failure clock.
+      cancel_pool_failure(resource);
       pool_gen_[resource] += 1;
       schedule_pool_failure(resource);
     }
@@ -964,6 +1146,26 @@ class Engine final : public BlockContext {
     available_[resource] += quantity;
     const std::int64_t busy = pool_busy_[resource] - quantity;
     pool_busy_[resource] = busy > 0 ? busy : 0;
+    if (busy <= 0 && pool_failure_rate(resource) > 0.0) {
+      if (pool_down_[resource]) {
+        // The pool is down and the repair is still pending: releasing the
+        // last held unit must NOT cancel the repair, clear the down state,
+        // or bump the generation (that would invalidate the pending repair
+        // event, which carries the generation from failure time). Later
+        // requests keep waiting until the repair actually fires. Only a
+        // stray TTF (none should exist while down) is invalidated
+        // defensively - without a generation bump it stays invalid because
+        // no failure clock is armed while down.
+        cancel_pool_failure(resource);
+      } else {
+        // Normal busy period end (pool up): stop the failure clock for the
+        // idle gap - cancel the pending TTF and bump the generation so any
+        // event that already left the scheduler fails its validity check
+        // before touching the clock/areas.
+        cancel_pool_failure(resource);
+        pool_gen_[resource] += 1;
+      }
+    }
     // A freed unit may unblock any Service/Seize/Assembler sharing the pool.
     for (const std::size_t waiter : resource_waiters_) {
       work_.push_back(waiter);
@@ -987,7 +1189,7 @@ class Engine final : public BlockContext {
   }
 
   void record_measure(const Entity& entity, double seconds) override {
-    if (entity.id >= warmup_) {
+    if (entity.root_arrival_index >= warmup_) {
       measure_sum_ += seconds;
       ++measure_count_;
     }
@@ -1025,38 +1227,77 @@ class Engine final : public BlockContext {
 
   void on_arrive(const Event& event) {
     const std::size_t source = static_cast<std::size_t>(event.payload);
+    // Consume this source's pending arrival token (this event was just
+    // popped; the token is cleared before a new one is scheduled below, so
+    // a stale event from a previous generation can never clear a newer
+    // token).
+    source_arrival_tokens_[source] = EventToken{};
     accumulate_areas(clock().now().as_ns());
     const std::int64_t source_limit = blocks_[source]->max_arrival_events();
-    if (arrival_events_ < config_.arrivals &&
-        (source_limit < 0 || source_arrival_events_[source] <
-                                 static_cast<std::uint64_t>(source_limit))) {
-      ++arrival_events_;
-      ++source_arrival_events_[source];
-      const std::int64_t batch = blocks_[source]->agents_per_arrival();
-      for (std::int64_t i = 0; i < batch; ++i) {
-        Entity entity;
-        entity.id = emitted_;
-        entity.created_ns = clock().now().as_ns();
-        entity.service_start_ns = entity.created_ns;
-        entity.attributes = blocks_[source]->attribute_defaults();
-        ++emitted_;
-        ++in_system_;
-        current_ = source;
-        if (!downstream_accepts(entity, "out") ||
-            !push_downstream(source, entity, "out")) {
-          blocks_[source]->receive(entity);
-        }
-        pump(source);
+    if (arrival_events_ >= config_.arrivals) {
+      // Global arrivals cap reached: this is a stale pre-scheduled arrival
+      // from another source's perspective - it must not create entities.
+      // All other pending arrivals are invalid too: cancel them so they
+      // can never advance the clock (they would otherwise be popped by
+      // run_until and push the horizon to their future times).
+      cancel_all_pending_source_arrivals();
+      return;
+    }
+    if (source_limit >= 0 &&
+        source_arrival_events_[source] >=
+            static_cast<std::uint64_t>(source_limit)) {
+      // This source's own limit is reached (stale pre-scheduled event).
+      source_exhausted_[source] = true;
+      return;
+    }
+    ++arrival_events_;
+    ++source_arrival_events_[source];
+    // Warm-up is decided by the external arrival ordinal, so split
+    // copies (which get fresh unique ids but inherit this index) can
+    // never pull entities across the warm-up boundary.
+    const std::uint64_t arrival_index = arrival_events_ - 1;
+    const std::int64_t batch = blocks_[source]->agents_per_arrival();
+    for (std::int64_t i = 0; i < batch; ++i) {
+      Entity entity;
+      entity.id = emitted_;
+      entity.root_arrival_index = arrival_index;
+      entity.created_ns = clock().now().as_ns();
+      entity.service_start_ns = entity.created_ns;
+      entity.attributes = blocks_[source]->attribute_defaults();
+      ++emitted_;
+      ++in_system_;
+      current_ = source;
+      if (!downstream_accepts(entity, "out") ||
+          !push_downstream(source, entity, "out")) {
+        blocks_[source]->receive(entity);
       }
-      if (arrival_events_ < config_.arrivals &&
-          (source_limit < 0 || source_arrival_events_[source] <
-                                   static_cast<std::uint64_t>(source_limit))) {
-        const double gap = blocks_[source]->sample_gap(engine_);
-        if (std::isfinite(gap) && gap > 0.0) {
-          scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(gap)),
-                               kArriveEvent, arrive_handler_, source);
-        }
-      }
+      pump(source);
+    }
+    const bool global_ok = arrival_events_ < config_.arrivals;
+    const bool local_ok =
+        source_limit < 0 ||
+        source_arrival_events_[source] <
+            static_cast<std::uint64_t>(source_limit);
+    if (!global_ok) {
+      // The cap was reached by this arrival: pending arrivals scheduled by
+      // other sources are now invalid - cancel them so the scheduler
+      // drains at the business end.
+      cancel_all_pending_source_arrivals();
+      source_exhausted_[source] = true;
+      return;
+    }
+    if (!local_ok) {
+      source_exhausted_[source] = true;  // own limit reached
+      return;
+    }
+    const double gap = blocks_[source]->sample_gap(engine_);
+    if (std::isfinite(gap) && gap > 0.0) {
+      schedule_source_arrival(
+          source, clock().now() + SimTime::from_ns(to_ns(gap)));
+    } else {
+      // The sampler stopped yielding a positive finite gap: this source
+      // will never produce another arrival.
+      source_exhausted_[source] = true;
     }
   }
 
@@ -1073,6 +1314,7 @@ class Engine final : public BlockContext {
   void on_failure(const Event& event) {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    block_event_tokens_.erase(std::make_pair(kFailureEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_failure(*this, entity_id);
@@ -1082,6 +1324,7 @@ class Engine final : public BlockContext {
   void on_repair(const Event& event) {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    block_event_tokens_.erase(std::make_pair(kRepairEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_repair(*this, entity_id);
@@ -1091,20 +1334,143 @@ class Engine final : public BlockContext {
   void on_timeout(const Event& event) {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
+    block_event_tokens_.erase(std::make_pair(kTimeoutEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_timeout(*this, entity_id);
     pump(block);
   }
 
-  // Pool-wide busy-time failure (AnyLogic ResourcePool): one clock per
-  // declared pool. While any unit is held (by Seize, Service, or Assembler)
-  // the pool alternates up/down with exponential time-to-failure / repair;
-  // while down, no new grants are issued and every consumer's in-service
-  // tasks are interrupted (preemptive-repeat on repair).
+  // Pool-wide busy-time failure (AnyLogic ResourcePool, MVP boundary): one
+  // clock per declared pool, running while any unit is held (by Seize,
+  // Service, or Assembler). While down, no new grants are issued; Service
+  // consumers interrupt their in-service tasks (preemptive-repeat on
+  // repair), while Seize/Assembler consumers keep holding their units
+  // (AnyLogic's "No preemption" default - the failure task waits for the
+  // unit). Per-unit failure clocks are not modeled yet.
   double pool_failure_rate(const std::string& resource) const {
     const auto it = resource_pools_.find(resource);
     return it != resource_pools_.end() ? it->second.failure_rate : 0.0;
+  }
+
+  // True when this source will never produce another external arrival:
+  // manual sources, sources with maxArrivals == 0, sources whose own
+  // arrival limit is reached, the global arrivals cap reached, or the
+  // inter-arrival sampler stopped yielding a positive finite gap.
+  bool source_done(std::size_t source) const {
+    if (source_exhausted_[source]) {
+      return true;
+    }
+    const ProcessBlock& block = *blocks_[source];
+    if (block.source_is_manual() || block.max_arrival_events() == 0) {
+      return true;
+    }
+    if (block.max_arrival_events() > 0 &&
+        source_arrival_events_[source] >=
+            static_cast<std::uint64_t>(block.max_arrival_events())) {
+      return true;
+    }
+    if (arrival_events_ >= config_.arrivals) {
+      return true;
+    }
+    return false;
+  }
+
+  // True when the finite run's business is over: no Source can produce
+  // another external arrival (all are exhausted), no valid pending Source
+  // arrival exists, and no entity remains in the system (so no depart /
+  // timeout / measure business event can be pending). Pool maintenance
+  // events firing after this point are tail events with no business
+  // meaning - they are dropped/cancelled without touching the clock, the
+  // area integrals, or the pool state, so the reported horizon is the
+  // exact business end. This is deliberately NOT pool_busy_ == 0: an
+  // ordinary idle gap between arrivals (a pending arrival token, or a
+  // source that can still fire) must still let an in-flight repair
+  // complete (see the lifecycle tests).
+  bool business_finished() const {
+    if (in_system_ != 0) {
+      return false;
+    }
+    for (const std::size_t source : sources_) {
+      if (source_arrival_tokens_[source].valid()) {
+        return false;  // a future arrival is still pending
+      }
+      if (!source_done(source)) {
+        return false;  // this source can still produce an arrival
+      }
+    }
+    return true;
+  }
+
+  void schedule_source_arrival(std::size_t source, SimTime at) {
+    source_arrival_tokens_[source] =
+        scheduler().schedule(at, kArriveEvent, arrive_handler_, source);
+  }
+
+  void cancel_source_arrival(std::size_t source) {
+    const EventToken token = source_arrival_tokens_[source];
+    if (token.valid()) {
+      scheduler().cancel(token);
+    }
+    source_arrival_tokens_[source] = EventToken{};
+  }
+
+  // Cancel every pending source arrival (used when the global arrivals cap
+  // is reached: events already scheduled by other sources would otherwise
+  // still be popped by run_until, advancing the shared clock before their
+  // no-op handlers run).
+  void cancel_all_pending_source_arrivals() {
+    for (std::size_t i = 0; i < source_arrival_tokens_.size(); ++i) {
+      cancel_source_arrival(i);
+    }
+  }
+
+  // Cancel every event this engine owns in the (possibly shared, external)
+  // scheduler: source arrivals, departures, block-level
+  // failure/repair/timeout, and pool failure/repair. Called by reset() in
+  // external scheduler mode so stale events from a previous replication
+  // can never advance the shared clock (run_until advances the clock
+  // before dispatching, so a handler-level stale check comes too late).
+  void cancel_all_pending_events() {
+    for (std::size_t i = 0; i < source_arrival_tokens_.size(); ++i) {
+      cancel_source_arrival(i);
+    }
+    for (const auto& [payload, token] : depart_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    for (const auto& [key, token] : block_event_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    for (const auto& [resource, token] : pool_failure_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+    for (const auto& [resource, token] : pool_repair_tokens_) {
+      if (token.valid()) {
+        scheduler().cancel(token);
+      }
+    }
+  }
+
+  void cancel_pool_failure(const std::string& resource) {
+    const auto token = pool_failure_tokens_.find(resource);
+    if (token != pool_failure_tokens_.end() && token->second.valid()) {
+      scheduler().cancel(token->second);
+    }
+    pool_failure_tokens_.erase(resource);
+  }
+
+  void cancel_pool_repair(const std::string& resource) {
+    const auto token = pool_repair_tokens_.find(resource);
+    if (token != pool_repair_tokens_.end() && token->second.valid()) {
+      scheduler().cancel(token->second);
+    }
+    pool_repair_tokens_.erase(resource);
   }
 
   void schedule_pool_failure(const std::string& resource) {
@@ -1117,8 +1483,9 @@ class Engine final : public BlockContext {
     const std::uint64_t payload =
         (static_cast<std::uint64_t>(index->second) << 32) |
         (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu);
-    scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(ttf(engine_))),
-                         kPoolFailureEvent, pool_failure_handler_, payload);
+    pool_failure_tokens_[resource] = scheduler().schedule(
+        clock().now() + SimTime::from_ns(to_ns(ttf(engine_))),
+        kPoolFailureEvent, pool_failure_handler_, payload);
   }
 
   void on_pool_failure(const Event& event) {
@@ -1127,42 +1494,77 @@ class Engine final : public BlockContext {
       return;
     }
     const std::string& resource = pool_order_[index];
-    accumulate_areas(clock().now().as_ns());
+    // Validate BEFORE touching the clock/areas: a stale TTF (ended busy
+    // period, or a tail event after the run's business finished) must not
+    // advance horizon or the area integrals. The generation bumps when a
+    // busy period ends and when a new one starts, so both the pool-idle
+    // and the restarted cases fail here.
+    if (business_finished()) {
+      return;  // tail maintenance event after the business ended
+    }
     const std::uint64_t generation = event.payload & 0xFFFFFFFFu;
-    if (generation != static_cast<std::uint64_t>(pool_gen_[resource])) {
+    if (generation !=
+        (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu)) {
       return;  // stale TTF from an ended busy period
     }
+    accumulate_areas(clock().now().as_ns());
     if (pool_busy_[resource] > 0 && !pool_down_[resource]) {
       pool_down_[resource] = true;
       pool_down_units_[resource] =
           std::max<std::int64_t>(pool_busy_[resource], 1);
       const PoolSpec& spec = resource_pools_[resource];
       Exponential<Xoshiro256PlusPlus> repair{spec.repair_rate};
-      // Interrupt every in-service task of every consumer sharing the pool
-      // (they restart when the pool comes back up).
+      // Interrupt the in-service tasks of the pool's Service consumers
+      // (they restart when the pool comes back up); Seize/Assembler
+      // consumers keep holding their units (no-preemption default).
       for (std::size_t i = 0; i < blocks_.size(); ++i) {
         if (blocks_[i]->pool_resource() == resource) {
           current_ = i;
           blocks_[i]->on_pool_down(*this, resource);
         }
       }
-      scheduler().schedule(
+      // The repair event carries the generation at failure time. It is
+      // cancelled/outlived only when the model truly terminates (tail
+      // events are dropped by business_finished()); releasing the last
+      // held unit while down does NOT cancel it - the repair must finish.
+      const std::uint64_t repair_payload =
+          (static_cast<std::uint64_t>(index) << 32) |
+          (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu);
+      pool_repair_tokens_[resource] = scheduler().schedule(
           clock().now() + SimTime::from_ns(to_ns(repair(engine_))),
-          kPoolRepairEvent, pool_repair_handler_,
-          static_cast<std::uint64_t>(index));
+          kPoolRepairEvent, pool_repair_handler_, repair_payload);
     }
+    // The event was consumed: drop the token so a later cancel does not
+    // chase an already-fired event. Stale events above return WITHOUT
+    // touching the token map, so a handler from an old generation can
+    // never erase the current generation's pending token.
+    pool_failure_tokens_.erase(resource);
   }
 
   void on_pool_repair(const Event& event) {
-    const std::size_t index = static_cast<std::size_t>(event.payload);
+    const std::size_t index = static_cast<std::size_t>(event.payload >> 32);
     if (index >= pool_order_.size()) {
       return;
     }
     const std::string& resource = pool_order_[index];
+    // Validate before touching the clock/areas or pool state. The repair
+    // carries the generation at failure time; it only becomes stale when
+    // the model truly terminates (tail event) - releasing the last held
+    // unit while down must NOT invalidate it.
+    if (business_finished()) {
+      return;  // tail maintenance event after the business ended
+    }
+    const std::uint64_t generation = event.payload & 0xFFFFFFFFu;
+    if (generation !=
+        (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu)) {
+      return;  // stale repair (generation moved on)
+    }
     accumulate_areas(clock().now().as_ns());
     pool_down_[resource] = false;
     pool_down_units_.erase(resource);
     if (pool_busy_[resource] > 0 && pool_failure_rate(resource) > 0.0) {
+      // The repair finished while units are held again: restart the
+      // failure clock for this (continuing) busy period.
       schedule_pool_failure(resource);
     }
     // Let preempted consumers restart their tasks (preemptive-repeat).
@@ -1175,6 +1577,7 @@ class Engine final : public BlockContext {
     for (const std::size_t waiter : resource_waiters_) {
       pump(waiter);  // handler wake-up: the worklist needs a pump run
     }
+    pool_repair_tokens_.erase(resource);
   }
 
   static std::uint64_t self_payload(std::size_t block,
@@ -1284,6 +1687,13 @@ class Engine final : public BlockContext {
   std::unordered_map<std::string, bool> pool_down_;
   std::unordered_map<std::string, std::int64_t> pool_down_units_;
   std::unordered_map<std::string, std::int64_t> pool_gen_;
+  // Pending pool failure/repair event tokens per resource. They are
+  // cancelled when the pool's busy period ends (and on reset) so no stale
+  // clock event can fire after the pool went idle; the generation counter
+  // is the second line of defence for events that already left the
+  // scheduler before the cancellation.
+  std::unordered_map<std::string, EventToken> pool_failure_tokens_;
+  std::unordered_map<std::string, EventToken> pool_repair_tokens_;
   std::unordered_map<std::string, double> pool_down_area_;
   std::unordered_map<std::string, double> pool_busy_area_;
   std::unordered_map<std::uint64_t, EventToken> depart_tokens_;
@@ -1302,6 +1712,23 @@ class Engine final : public BlockContext {
   std::uint64_t emitted_{0};
   std::uint64_t arrival_events_{0};
   std::vector<std::uint64_t> source_arrival_events_;
+  // Per-source pending arrival event tokens (indexed like sources_). An
+  // arrival event is either pending (token valid), consumed (cleared by
+  // on_arrive), or cancelled (reset / global-cap reached). source_exhausted_
+  // marks sources that can never produce another external arrival (manual,
+  // maxArrivals == 0, its own limit reached, the global arrivals cap
+  // reached, or the inter-arrival sampler stopped yielding a positive
+  // finite gap). business_finished() uses both: no pending arrival and no
+  // source that could still fire one, together with in_system == 0.
+  std::vector<EventToken> source_arrival_tokens_;
+  std::vector<bool> source_exhausted_;
+  // Pending block-level failure/repair/timeout events, keyed by
+  // (EventType, payload) so different event kinds of the same block/entity
+  // never overwrite or erase each other's tokens. They may outlive a reset
+  // in external scheduler mode, so reset() cancels them like every other
+  // engine-owned event.
+  std::map<std::pair<EventType, std::uint64_t>, EventToken>
+      block_event_tokens_;
   std::uint64_t departures_{0};
   std::int64_t in_system_{0};
   std::int64_t last_ns_{0};
@@ -1317,6 +1744,13 @@ class Engine final : public BlockContext {
   std::size_t current_{0};
   ReplicationConfig config_;
   bool valid_{true};
+  // Handler registration identity: the registry the HandlerIds were
+  // obtained from and its epoch at registration time. A different registry
+  // (attach to another context, or the owned registry replaced by reset())
+  // or a registry clear() (epoch bump) invalidates the HandlerIds, and
+  // ensure_handlers_registered() re-registers.
+  const EventHandlerRegistry* handlers_owner_{nullptr};
+  std::uint64_t handlers_epoch_{0};
 };
 
 }  // namespace
@@ -1382,6 +1816,13 @@ bool ProcessFlowSim::has_pending_events() {
     return false;
   }
   return impl_->engine.has_pending_events();
+}
+
+std::int64_t ProcessFlowSim::now_ns() const {
+  if (impl_ == nullptr) {
+    return 0;
+  }
+  return impl_->engine.now_ns();
 }
 
 ReplicationMetrics ProcessFlowSim::metrics() const {

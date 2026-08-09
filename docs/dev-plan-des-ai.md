@@ -59,7 +59,11 @@ per-replication seeds (the old single-seed loop had zero-width CIs). Fixing the
 shared-pool scenario also uncovered and fixed a pre-existing engine bug: a
 source feeding several branches with backpressure re-emitted buffered entities
 into branches that already accepted them, duplicating entities and livelocking
-the flow; source emission is now atomic (all branches must accept).
+the flow. The root fix is a contract change: process output ports no longer
+fan out implicitly (compile-time `LP5007`; the engine rejects fan-out IR too),
+so a single-edge emission either delivers once or stays buffered - duplication
+is only possible through an explicit `split`, whose copies are independent
+entities with balanced arrivals/departures/in-system accounting.
 
 Progress (2026-08-09, live visualization): generic process flows now stream
 instead of running in batch. FlowEngine exposes per-block snapshots
@@ -72,7 +76,7 @@ test drives a delay flow over WebSocket and asserts the per-block counters and
 a mid-run busy slice.
 
 Progress (2026-08-09, M2/M3 remaining): the rule-based model-patch provider
-now handles structural insertion ("add <kind> <name> between A and B",
+now handles structural insertion ("`add <kind> <name> between A and B`",
 splicing into the existing coupling) and kind replacement with topology
 preservation. ai-explain reads metrics.json and attributes the bottleneck to
 the busiest block / largest queue occupancy per-block, with aggregate
@@ -88,6 +92,49 @@ manual (quickstart / web-ide / dsl / ai-copilot) was synced to the streamed
 live visualization, the 26-block executable palette, pool-wide failures,
 selectOutput5/In/Out, structural AI edits, per-block explanations and
 parameter-variation sampling.
+
+Progress (2026-08-09, hardening round): the gateway now splits execution into
+`executionMode: "fast"` (default: no wall-clock pacing, adaptive slices, a
+per-replication telemetry frame budget whose final frame is the completed-run
+snapshot - a 4000-arrival DES stays second-scale instead of pacing for
+minutes, and the last Counters always reflects the terminal block state at
+the engine's exact last-event time, with RunFinished.sim_time_ns matching
+it; mid-run frames use the slice boundary as the documented sampling
+boundary) and `"animated"` (speed-paced, pause/step meaningful); the IDE
+Run dialog exposes the choice and disables `speed` in fast mode.
+ResourcePool failure support is scoped honestly:
+Service consumers interrupt in-service tasks with preemptive-repeat on
+repair, Seize/Assembler consumers gate new grants while the pool is down
+without interrupting held units (AnyLogic's "No preemption" default), the
+docs/compatibility matrix state the pool-wide-vs-per-unit divergence, and
+the pool's failure/repair clock lives inside a busy period: when the pool
+goes idle a not-yet-happened failure stops counting (pending TTF cancelled),
+but an in-flight failure must complete its repair - releasing the last unit
+neither cancels the repair nor clears the down state, and waiters resume
+only when the repair fires. The run's business end is decided by the Source
+lifecycle (every Source exhausted via its own maxArrivals / manual / zero
+limit / sampler termination / the global arrivals cap, with no valid pending
+Source arrival) plus in_system == 0; reaching the global cap cancels the
+other sources' pending arrivals, and external (kernel-owned) scheduler
+resets cancel every engine-owned pending event (source arrivals, departs,
+block-level failure/repair/timeout - cancelled when an entity leaves the
+waiting area, starts service or is preempted - and pool failure/repair).
+Handlers register once per (registry identity, epoch) and re-register after
+attach() to another context or a registry clear(). Generation checks are
+only a second line of defence and can never undo run_until's clock
+advancement, which is why the events themselves are cancelled. Tail
+maintenance events after the business truly ends are dropped, so
+horizon/time integrals are
+never polluted by future failure times. Flow-token animation resets its departed
+baseline on every new run / model switch / reconnect (the old baseline
+suppressed round-2 tokens), and per-block `in_service` telemetry reports
+slots actually held - including pool-preempted tasks - instead of dipping to
+zero while the pool is down. Warm-up is decided by external Source arrival
+ordinal (`Entity.root_arrival_index`), so split copies inherit their
+original's statistical eligibility and can never shift the boundary.
+Monte Carlo/parameter-variation axes share one validation path (non-empty
+finite values, valid variable identifiers, finite min/max, positive step,
+32-bit mulberry32 seed range) with 4xx API errors instead of TypeError/500.
 
 ### M2 — AI modeling tool loop
 
