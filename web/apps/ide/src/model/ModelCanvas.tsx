@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
-import { Focus, Redo2, RotateCcw, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Focus, Plus, Redo2, RotateCcw, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
@@ -1814,7 +1814,10 @@ export function ModelCanvas() {
         })}
       </div>
       {visibleNodes.length === 0 && (
-        <div className="model-empty">Drag blocks from the palette to build a model.</div>
+        <div className="model-empty">
+          <Plus className="model-empty-plus" size={16} strokeWidth={1.5} aria-hidden="true" />
+          <span>Drag blocks from the palette to build a model.</span>
+        </div>
       )}
       <div className="canvas-tools">
         <button aria-label="Zoom out" title="Zoom out" onClick={() => zoomAtCenter(1 / 1.2)}>
