@@ -10,56 +10,47 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..', '..', '..');
 
 async function loadBuildModel() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
   return module.buildModel;
 }
 
 async function loadRunModelDsl() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
   return module.runModelDsl;
 }
 
 async function loadValidateModelDsl() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
   return module.validateModelDsl;
 }
 
 async function loadProposeModelPatch() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-model-patch.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-model-patch.mjs')).href);
   return module.proposeModelPatch;
 }
 
 async function loadQueryMetrics() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-query-metrics.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-query-metrics.mjs')).href);
   return module.queryMetrics;
 }
 
 async function loadCompareMetrics() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-compare-metrics.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-compare-metrics.mjs')).href);
   return module.compareMetrics;
 }
 
 async function loadAiOptimize() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-optimize.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-optimize.mjs')).href);
   return module.aiOptimize;
 }
 
 async function loadAiExplain() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-explain.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-explain.mjs')).href);
   return module.aiExplain;
 }
 
 async function loadAssistant() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'ai-assistant.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-assistant.mjs')).href);
   return module.runAssistant;
 }
 
@@ -114,8 +105,7 @@ export async function handleAiBuild(req, res) {
     const result = await buildModel({
       prompt,
       contextDsl,
-      maxIterations:
-          Number.isFinite(payload.maxIterations) ? payload.maxIterations : 3,
+      maxIterations: Number.isFinite(payload.maxIterations) ? payload.maxIterations : 3,
       run: payload.run !== false,
       runParams: payload?.experiment,
     });
@@ -137,8 +127,7 @@ export async function handleAiBuild(req, res) {
 }
 
 async function loadParameterVariation() {
-  const module = await import(
-      pathToFileURL(join(root, 'scripts', 'parameter-variation.mjs')).href);
+  const module = await import(pathToFileURL(join(root, 'scripts', 'parameter-variation.mjs')).href);
   return module.runParameterVariation;
 }
 
@@ -304,10 +293,14 @@ export async function handleAiQueryMetrics(req, res) {
   }
   try {
     const queryMetrics = await loadQueryMetrics();
-    send(res, 200, queryMetrics({
-      question: payload?.question,
-      metrics: payload?.metrics,
-    }));
+    send(
+      res,
+      200,
+      queryMetrics({
+        question: payload?.question,
+        metrics: payload?.metrics,
+      }),
+    );
   } catch (error) {
     send(res, 400, { ok: false, error: String(error?.message ?? error) });
   }
@@ -331,11 +324,15 @@ export async function handleAiCompareMetrics(req, res) {
   }
   try {
     const compareMetrics = await loadCompareMetrics();
-    send(res, 200, compareMetrics({
-      before: payload?.before,
-      after: payload?.after,
-      confidence: Number.isFinite(payload?.confidence) ? payload.confidence : 0.95,
-    }));
+    send(
+      res,
+      200,
+      compareMetrics({
+        before: payload?.before,
+        after: payload?.after,
+        confidence: Number.isFinite(payload?.confidence) ? payload.confidence : 0.95,
+      }),
+    );
   } catch (error) {
     send(res, 400, { ok: false, error: String(error?.message ?? error) });
   }
@@ -439,7 +436,11 @@ export async function handleAiAssistant(req, res) {
     send(res, 200, result);
   } catch (error) {
     const message = String(error?.message ?? error);
-    if (/OPENAI_API_KEY|LLM request failed|malformed JSON|schema validation/.test(message)) {
+    if (
+      /OPENAI_API_KEY|LLM request failed|malformed JSON|schema validation|Codex CLI provider/.test(
+        message,
+      )
+    ) {
       send(res, 502, { ok: false, error: message });
       return;
     }

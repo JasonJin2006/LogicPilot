@@ -8,11 +8,11 @@
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-import { runAssistant } from './ai-assistant.mjs';
+import { resolveAssistantProvider, runAssistant } from './ai-assistant.mjs';
 
 export const MM1_BENCHMARK_METRICS = Object.freeze({
   summary: {
-    Wq: { mean: 1.25, stddev: 0.1, ci_low: 1.0, ci_high: 1.5 },
+    Wq: { mean: 4, stddev: 0.1, ci_low: 3.8, ci_high: 4.2 },
     utilization: { mean: 0.8, stddev: 0, ci_low: 0.8, ci_high: 0.8 },
   },
   blocks: [
@@ -22,7 +22,7 @@ export const MM1_BENCHMARK_METRICS = Object.freeze({
       capacity: 1000000,
       arrived_mean: 100,
       departed_mean: 100,
-      mean_occupancy: 4,
+      mean_occupancy: 3.2,
       utilization: 0.8,
       availability: 1,
     },
@@ -93,16 +93,23 @@ export function evaluateMm1Transcript(responses) {
   const ran = calls.some((call) => call.name === 'run_simulation');
   const finished = responses.at(-1)?.done === true;
   const finalMessage = finished ? (responses.at(-1)?.message ?? '') : '';
-  const groundedWq = /(?:^|\D)1\.25(?:\D|$)/.test(finalMessage);
+  const groundedWq = /(?:^|\D)4(?:\.0*)?(?:\D|$)/.test(finalMessage);
   const groundedUtilization =
     /(?:^|\D)0\.8(?:0*)?(?:\D|$)/.test(finalMessage) ||
     /(?:^|\D)80(?:\.0*)?\s*%/.test(finalMessage);
+  const mentionsQueueLength = /(?:\bLq\b|队列平均占用|平均队列长度)/i.test(finalMessage);
+  const groundedQueueLength =
+    !mentionsQueueLength || /(?:^|\D)3\.2(?:0*)?(?:\D|$)/.test(finalMessage);
+  const contradictsEvidence = /(?:不符|不一致|矛盾|does not match|inconsistent|contradict)/i.test(
+    finalMessage,
+  );
   const criteria = {
     oneAtomicCompletePatch: patch.versionCorrect && patch.completeKinds,
     correctMm1Parameters: patch.parametersCorrect,
     correctFlowTopology: patch.topologyCorrect,
     requestedSimulationRun: ran,
     groundedFinalAnswer: finished && groundedWq && groundedUtilization,
+    consistentExplanation: finished && groundedQueueLength && !contradictsEvidence,
   };
   const passed = Object.values(criteria).filter(Boolean).length;
   return {
@@ -160,7 +167,7 @@ function toolResult(call, state) {
       return {
         ok: true,
         status: 'finished',
-        summary: 'benchmark run finished: Wq=1.25, utilization=0.8',
+        summary: 'benchmark run finished: Wq=4.0, Lq=3.2, utilization=0.8',
         metrics: MM1_BENCHMARK_METRICS,
       };
     case 'inspect_run_metrics':
@@ -184,7 +191,17 @@ export async function runMm1Trial({ runStep = runAssistant, maxSteps = 6 } = {})
   const responses = [];
   const state = { modelValid: false, ran: false, firstPatch: null };
   for (let step = 0; step < maxSteps; ++step) {
-    const response = await runStep({ messages, context: BLANK_CONTEXT });
+    let response;
+    try {
+      response = await runStep({ messages, context: BLANK_CONTEXT });
+    } catch (error) {
+      return {
+        ...evaluateMm1Transcript(responses),
+        responses: responses.length,
+        failedStep: step + 1,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
     responses.push(response);
     if (response.done) break;
     if (!Array.isArray(response.toolCalls) || response.toolCalls.length === 0) break;
@@ -216,8 +233,11 @@ function integerArgument(args, name, fallback) {
 
 export async function runBenchmarkCli(args = process.argv.slice(2)) {
   const trials = integerArgument(args, 'trials', 3);
-  if (!process.env.OPENAI_API_KEY) {
-    console.log('AI-ASSISTANT BENCHMARK: SKIP (OPENAI_API_KEY is not configured)');
+  const provider = resolveAssistantProvider();
+  if (provider === 'unconfigured') {
+    console.log(
+      'AI-ASSISTANT BENCHMARK: SKIP (configure OPENAI_API_KEY or LOGICPILOT_AI_PROVIDER=codex)',
+    );
     return { skipped: true, passed: true, trials: 0, passRate: null };
   }
   const results = [];
@@ -229,7 +249,7 @@ export async function runBenchmarkCli(args = process.argv.slice(2)) {
       result = {
         passed: false,
         score: 0,
-        maximumScore: 5,
+        maximumScore: 6,
         criteria: {},
         finalMessage: '',
         error: error instanceof Error ? error.message : String(error),
@@ -246,7 +266,11 @@ export async function runBenchmarkCli(args = process.argv.slice(2)) {
   const summary = {
     skipped: false,
     passed: passRate === 1,
-    model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+    provider,
+    model:
+      provider === 'codex'
+        ? (process.env.LOGICPILOT_CODEX_MODEL ?? 'Codex CLI default')
+        : (process.env.OPENAI_MODEL ?? 'gpt-4o-mini'),
     trials,
     passedTrials,
     passRate,

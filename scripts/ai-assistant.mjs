@@ -10,6 +10,8 @@
 // clear error - the assistant is deliberately NOT emulated with keyword
 // replies.
 
+import { runCodexAssistant } from './codex-assistant-provider.mjs';
+
 // ---------------------------------------------------------------------------
 // Tool registry contract (shared with the client by convention; the server
 // re-validates every tool call the model proposes).
@@ -358,16 +360,30 @@ export function buildSystemPrompt() {
   ].join('\n');
 }
 
+export function resolveAssistantProvider(environment = process.env) {
+  const requested = String(environment.LOGICPILOT_AI_PROVIDER ?? 'auto').toLowerCase();
+  if (!['auto', 'api', 'codex'].includes(requested)) {
+    throw new Error('LOGICPILOT_AI_PROVIDER must be auto, api, or codex');
+  }
+  if (requested === 'codex') return 'codex';
+  if (requested === 'api' || environment.OPENAI_API_KEY) return 'api';
+  return 'unconfigured';
+}
+
 /**
  * One reasoning step. Returns the validated response on success, or throws
  * an Error (caller maps it to a 4xx/5xx response).
  */
 export async function runAssistant({ messages, context, maxResponseBytes = 64 * 1024 }) {
+  const provider = resolveAssistantProvider();
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (provider === 'unconfigured') {
     throw new Error(
-      'assistant requires OPENAI_API_KEY (OPENAI_BASE_URL / OPENAI_MODEL overridable)',
+      'assistant requires OPENAI_API_KEY or LOGICPILOT_AI_PROVIDER=codex with a logged-in Codex CLI',
     );
+  }
+  if (provider === 'api' && !apiKey) {
+    throw new Error('LOGICPILOT_AI_PROVIDER=api requires OPENAI_API_KEY');
   }
   if (!Array.isArray(messages) || messages.length === 0 || messages.length > 32) {
     throw new Error('assistant messages must contain 1..32 entries');
@@ -382,46 +398,80 @@ export async function runAssistant({ messages, context, maxResponseBytes = 64 * 
       throw new Error(`assistant messages[${index}] has an invalid role or content`);
     }
   }
-  const base = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
-
   const system = buildSystemPrompt();
   const contextText = renderContext(context);
   const userContent = [contextText, renderMessages(messages)].filter(Boolean).join('\n\n');
+  if (provider === 'codex') {
+    const parsed = await runCodexAssistant({
+      systemPrompt: system,
+      userContent,
+      maxResponseBytes,
+    });
+    return validateAssistantResponse(parsed);
+  }
+  const base = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
+  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+  const maxTokens = Number(process.env.OPENAI_MAX_TOKENS ?? 4096);
+  if (!Number.isSafeInteger(maxTokens) || maxTokens < 512 || maxTokens > 128 * 1024) {
+    throw new Error('OPENAI_MAX_TOKENS must be an integer between 512 and 131072');
+  }
+  const requestBody = {
+    model,
+    temperature: 0.2,
+    max_tokens: maxTokens,
+    // OpenAI and DeepSeek both implement JSON mode. The prompt already
+    // contains an explicit JSON example, satisfying provider requirements.
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: userContent },
+    ],
+  };
+  // DeepSeek V4 defaults to thinking mode. This endpoint needs a short,
+  // machine-readable routing decision rather than hidden chain-of-thought;
+  // disabling thinking also prevents reasoning tokens from crowding out the
+  // JSON payload. Other OpenAI-compatible providers never receive this field.
+  if (/deepseek/i.test(model) || /api\.deepseek\.com/i.test(base)) {
+    const thinking = process.env.DEEPSEEK_THINKING ?? 'disabled';
+    if (!['enabled', 'disabled'].includes(thinking)) {
+      throw new Error('DEEPSEEK_THINKING must be enabled or disabled');
+    }
+    requestBody.thinking = { type: thinking };
+  }
 
-  const response = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      max_tokens: 2048,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userContent },
-      ],
-    }),
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`LLM request failed (${response.status}): ${body}`);
+  for (let attempt = 0; attempt < 2; ++attempt) {
+    const response = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`LLM request failed (${response.status}): ${body}`);
+    }
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content ?? '';
+    if (content.length > maxResponseBytes) {
+      throw new Error('assistant response exceeded the size limit');
+    }
+    try {
+      // JSON mode should return a bare object; tolerate a fenced block for
+      // less complete OpenAI-compatible gateways. DeepSeek documents rare
+      // empty JSON-mode responses, so retry one malformed/empty response.
+      const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      const parsed = JSON.parse(match ? match[1] : content);
+      return validateAssistantResponse(parsed);
+    } catch (error) {
+      if (attempt === 0 && (content.trim() === '' || error instanceof SyntaxError)) continue;
+      if (error instanceof SyntaxError) {
+        throw new Error('assistant returned malformed JSON (schema validation failed)');
+      }
+      throw error;
+    }
   }
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content ?? '';
-  if (content.length > maxResponseBytes) {
-    throw new Error('assistant response exceeded the size limit');
-  }
-  let parsed;
-  try {
-    // The model is asked for strict JSON; tolerate a fenced block as well.
-    const match = content.match(/```(?:json)?\s*([\s\S]*?)```/);
-    parsed = JSON.parse(match ? match[1] : content);
-  } catch {
-    throw new Error('assistant returned malformed JSON (schema validation failed)');
-  }
-  return validateAssistantResponse(parsed);
+  throw new Error('assistant returned malformed JSON (schema validation failed)');
 }

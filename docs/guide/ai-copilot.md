@@ -82,6 +82,25 @@ $env:OPENAI_MODEL="gpt-..."           # 可选，模型名
 
 命令行的规则与 LLM provider 共用同一个“生成 → 诊断 → 修复 → 运行”闭环。
 
+也可以复用 Codex CLI 已有的 ChatGPT 登录，不需要给 LogicPilot 配置 OpenAI API Key：
+
+```powershell
+codex login status
+$env:LOGICPILOT_AI_PROVIDER="codex"
+$env:LOGICPILOT_CODEX_MODEL="..." # 可选；不设置则使用 Codex CLI 默认模型
+pnpm dev
+```
+
+LogicPilot 通过 `codex exec` 的临时、只读、结构化输出模式调用 CLI；认证完全交给
+Codex 管理，不读取或复制 `~/.codex/auth.json`。API Key 和 Codex 两种模式显式隔离：
+默认 `auto` 在存在 `OPENAI_API_KEY` 时走 API；要使用 ChatGPT 订阅登录，需设置
+`LOGICPILOT_AI_PROVIDER=codex`。可用 `LOGICPILOT_CODEX_PATH` 指定 CLI/`codex.js`，
+`LOGICPILOT_CODEX_TIMEOUT_MS` 调整单步超时。
+
+当前 CLI provider 每个助手推理步骤使用一次冷启动，正确性已纳入相同基准，但延迟
+高于直连 API。后续可换成官方 `codex app-server` 持久连接以获得流式事件和更低延迟，
+而不改变 IDE 内部的 LogicPilot 工具协议。
+
 ## IDE 工具型助手
 
 IDE 通过 `/api/assistant` 请求下一步计划，工具仍在本地、受控地执行。当前工具包括：
@@ -111,8 +130,8 @@ pnpm benchmark:assistant -- --trials 3
 ```
 
 每轮从空白画布开始，要求模型用一次原子补丁建立参数正确、拓扑完整的 M/M/1，
-调用仿真，并在最终回答中引用工具返回的 `Wq=1.25` 和利用率 `0.8`。报告分别评分
-完整补丁、参数、拓扑、运行调用和指标落地；任一轮失败都会返回非零退出码。未配置
+调用仿真，并在最终回答中引用工具返回的 `Wq=4.0` 和利用率 `0.8`。报告分别评分
+完整补丁、参数、拓扑、运行调用、指标落地和解释一致性；任一轮失败都会返回非零退出码。未配置
 `OPENAI_API_KEY` 时命令明确输出 `SKIP`，不会用规则回复冒充真实模型成绩。
 该基准使用固定工具结果隔离 LLM 编排能力；编译器和仿真内核正确性仍由独立的
 端点与原生测试负责，避免随机仿真噪声污染模型评分。

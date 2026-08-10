@@ -4,7 +4,13 @@
 // smoke test when OPENAI_API_KEY is present.
 import assert from 'node:assert/strict';
 
-import { ASSISTANT_TOOLS, buildSystemPrompt, validateAssistantResponse } from './ai-assistant.mjs';
+import {
+  ASSISTANT_TOOLS,
+  buildSystemPrompt,
+  resolveAssistantProvider,
+  runAssistant,
+  validateAssistantResponse,
+} from './ai-assistant.mjs';
 
 // Tool registry contract: the nine controlled tools the client executes.
 const EXPECTED_TOOLS = [
@@ -45,6 +51,13 @@ for (const required of [
 }
 assert.ok(systemPrompt.includes('刚才那个队列'));
 assert.ok(systemPrompt.includes('检查模型'));
+assert.equal(resolveAssistantProvider({ OPENAI_API_KEY: 'configured' }), 'api');
+assert.equal(resolveAssistantProvider({ LOGICPILOT_AI_PROVIDER: 'codex' }), 'codex');
+assert.equal(resolveAssistantProvider({}), 'unconfigured');
+assert.throws(
+  () => resolveAssistantProvider({ LOGICPILOT_AI_PROVIDER: 'unknown' }),
+  /must be auto, api, or codex/,
+);
 
 // A valid response round-trips.
 const valid = validateAssistantResponse({
@@ -124,6 +137,50 @@ const cases = [
 ];
 for (const [input, pattern] of cases) {
   assert.throws(() => validateAssistantResponse(input), pattern);
+}
+
+// Provider compatibility: structured output is requested explicitly, while
+// DeepSeek's default thinking mode is disabled for this routing endpoint.
+const previousFetch = globalThis.fetch;
+const previousEnvironment = Object.fromEntries(
+  [
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'OPENAI_MODEL',
+    'OPENAI_MAX_TOKENS',
+    'DEEPSEEK_THINKING',
+  ].map((name) => [name, process.env[name]]),
+);
+let requestBody;
+globalThis.fetch = async (_url, init) => {
+  requestBody = JSON.parse(init.body);
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      choices: [
+        { message: { content: '{"message":"done","plan":[],"toolCalls":[],"done":true}' } },
+      ],
+    }),
+  };
+};
+process.env.OPENAI_API_KEY = 'test-only';
+process.env.OPENAI_BASE_URL = 'https://api.deepseek.com';
+process.env.OPENAI_MODEL = 'deepseek-v4-flash';
+delete process.env.OPENAI_MAX_TOKENS;
+await runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} });
+assert.deepEqual(requestBody.response_format, { type: 'json_object' });
+assert.deepEqual(requestBody.thinking, { type: 'disabled' });
+assert.equal(requestBody.max_tokens, 4096);
+process.env.DEEPSEEK_THINKING = 'sometimes';
+await assert.rejects(
+  () => runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} }),
+  /must be enabled or disabled/,
+);
+globalThis.fetch = previousFetch;
+for (const [name, value] of Object.entries(previousEnvironment)) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 console.log('AI-ASSISTANT TEST: PASS');

@@ -9,7 +9,7 @@
     "format": "prettier --write \"web/**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"web/**/*.{ts,tsx,json,md}\"",
     "lint": "eslint \"web/**/*.{ts,tsx}\"",
-    "test": "node scripts/test-ai-assistant.mjs && node scripts/test-ai-assistant-benchmark.mjs && pnpm -r run test",
+    "test": "node scripts/test-ai-assistant.mjs && node scripts/test-codex-assistant-provider.mjs && node scripts/test-ai-assistant-benchmark.mjs && pnpm -r run test",
     "benchmark:assistant": "node scripts/benchmark-ai-assistant.mjs",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",

@@ -49,7 +49,7 @@ const happyResponses = [
     toolCalls: [{ id: 'run', name: 'run_simulation', arguments: {} }],
   },
   {
-    message: 'Wq is 1.25 and utilization is 80%.',
+    message: 'Wq is 4.0, Lq is 3.2 and utilization is 80%.',
     done: true,
     toolCalls: [],
   },
@@ -60,6 +60,7 @@ assert.deepEqual(evaluateMm1Transcript(happyResponses).criteria, {
   correctFlowTopology: true,
   requestedSimulationRun: true,
   groundedFinalAnswer: true,
+  consistentExplanation: true,
 });
 assert.equal(evaluateMm1Transcript(happyResponses).passed, true);
 
@@ -74,6 +75,19 @@ const hallucinated = evaluateMm1Transcript([
 assert.equal(hallucinated.criteria.requestedSimulationRun, false);
 assert.equal(hallucinated.criteria.groundedFinalAnswer, false);
 assert.equal(hallucinated.passed, false);
+
+const contradictory = evaluateMm1Transcript([
+  happyResponses[0],
+  happyResponses[1],
+  {
+    message: 'Wq=4.0 and utilization=0.8, but Lq=4 contradicts the returned evidence.',
+    done: true,
+    toolCalls: [],
+  },
+]);
+assert.equal(contradictory.criteria.groundedFinalAnswer, true);
+assert.equal(contradictory.criteria.consistentExplanation, false);
+assert.equal(contradictory.passed, false);
 
 let responseIndex = 0;
 const loopResult = await runMm1Trial({
