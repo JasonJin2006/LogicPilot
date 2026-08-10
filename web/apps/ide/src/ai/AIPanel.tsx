@@ -2,16 +2,19 @@
 // for an existing model, validate/apply/run it, or query the last run's
 // structured metrics. Optimization remains a separate experiment action.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { generateDsl, type ModelPatch } from '@logicpilot/editor';
 import {
   BarChart3,
+  AlertTriangle,
   Bot,
+  Check,
   CheckCircle2,
   ChevronDown,
   Code2,
   Eraser,
   FlaskConical,
+  ListChecks,
   SendHorizontal,
   SlidersHorizontal,
   Sparkles,
@@ -19,6 +22,7 @@ import {
   TerminalSquare,
   UserRound,
   WandSparkles,
+  X,
 } from 'lucide-react';
 import { mergeModelSource } from '../project/project';
 import { saveProject } from '../project/syncEngine';
@@ -46,7 +50,11 @@ import { useAiConversationStore } from './conversationStore';
 import { routeAiIntent, type AiAction } from './intentRouter';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
 import { buildAssistantContext } from './contextBuilder';
-import { runAssistantTurn, type AssistantStepRecord } from './assistantRuntime';
+import {
+  runAssistantTurn,
+  type AssistantPatchApprovalRequest,
+  type AssistantStepRecord,
+} from './assistantRuntime';
 import { createAssistantSession } from './assistantTypes';
 import type { AssistantTurnMessage } from './assistantTypes';
 import { undoAssistantChange } from './assistantTools';
@@ -74,9 +82,15 @@ function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentS
   );
 }
 
+interface PendingAssistantApproval {
+  summary: string;
+  proposal: ModelProposal;
+}
+
 export function AIPanel() {
   const dslRef = useRef<HTMLPreElement>(null);
   const runRef = useRef<HTMLPreElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
@@ -94,7 +108,11 @@ export function AIPanel() {
   // in-flight tool execution inline.
   const sessionRef = useRef(createAssistantSession());
   const abortRef = useRef<AbortController | null>(null);
+  const approvalRef = useRef<{
+    resolve: (approved: boolean) => void;
+  } | null>(null);
   const [liveSteps, setLiveSteps] = useState<AssistantStepRecord[]>([]);
+  const [assistantApproval, setAssistantApproval] = useState<PendingAssistantApproval | null>(null);
   const document = useModelStore((state) => state.document);
   const projectPath = useProjectStore((state) => state.path);
   const projectBundle = useProjectStore((state) => state.bundle);
@@ -119,6 +137,23 @@ export function AIPanel() {
   const clearConversation = useAiConversationStore((state) => state.clear);
   const moveConversation = useAiConversationStore((state) => state.move);
   const proposalStale = proposal !== null && proposal.baseDocument !== document;
+  const settleAssistantApproval = (approved: boolean) => {
+    const pending = approvalRef.current;
+    if (pending === null) return;
+    approvalRef.current = null;
+    setAssistantApproval(null);
+    pending.resolve(approved);
+  };
+  useEffect(
+    () => () => {
+      approvalRef.current?.resolve(false);
+      approvalRef.current = null;
+    },
+    [],
+  );
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [assistantApproval, busy, conversation.length, error, liveSteps]);
   const loadToCanvas = async () => {
     if (proposal?.patch == null) return;
     if (proposal.baseDocument !== useModelStore.getState().document) {
@@ -355,6 +390,22 @@ export function AIPanel() {
       { role: 'assistant' as const, content: turn.assistant },
     ]);
     const config = await getAppConfig();
+    const confirmModelPatch = (request: AssistantPatchApprovalRequest) =>
+      new Promise<boolean>((resolve) => {
+        const currentDocument = useModelStore.getState().document;
+        const nextProposal = createPatchProposal(currentDocument, request.patch);
+        if (!nextProposal.ok || nextProposal.candidateDocument === null) {
+          setError(nextProposal.error ?? 'The proposed model change is invalid.');
+          resolve(false);
+          return;
+        }
+        approvalRef.current?.resolve(false);
+        approvalRef.current = { resolve };
+        setAssistantApproval({
+          summary: request.summary,
+          proposal: nextProposal,
+        });
+      });
     const result = await runAssistantTurn({
       message: request,
       context,
@@ -363,6 +414,7 @@ export function AIPanel() {
       apiBase: config?.apiBase ?? '',
       signal: controller.signal,
       onProgress: setLiveSteps,
+      confirmModelPatch,
     });
     abortRef.current = null;
     setBusy(false);
@@ -389,7 +441,11 @@ export function AIPanel() {
             ? 'Done.'
             : 'The request did not complete.',
       patch: session.lastPatch ?? { version: 1, operations: [] },
-      outcome: result.ok ? 'applied' : 'run_failed',
+      outcome: result.ok
+        ? result.undoTokenId !== undefined
+          ? 'applied'
+          : 'completed'
+        : 'run_failed',
       assistantRecord: {
         steps: result.steps,
         error: result.error,
@@ -403,6 +459,7 @@ export function AIPanel() {
 
   const cancelAssistant = () => {
     abortRef.current?.abort();
+    settleAssistantApproval(false);
   };
 
   // Undo the most recent AI-applied change (one atomic undo step).
@@ -472,11 +529,24 @@ export function AIPanel() {
             </li>
           );
         }
+        if (step.kind === 'approval') {
+          return (
+            <li key={index} className={`ai-step-approval ${step.status ?? 'pending'}`}>
+              <span className="ai-step-state" aria-hidden />
+              {step.label}
+            </li>
+          );
+        }
         if (step.kind === 'tool') {
           return (
-            <li key={index} className="ai-step-tool">
-              <span className="ai-step-spinner" aria-hidden />
-              {step.label}…
+            <li key={index} className={`ai-step-tool ${step.status ?? 'running'}`}>
+              {step.status === 'running' || step.status == null ? (
+                <span className="ai-step-spinner" aria-hidden />
+              ) : (
+                <span className="ai-step-state" aria-hidden />
+              )}
+              {step.label}
+              {step.status === 'running' || step.status == null ? '…' : ''}
             </li>
           );
         }
@@ -496,6 +566,30 @@ export function AIPanel() {
     </ul>
   );
 
+  const renderActivity = (steps: AssistantStepRecord[]) => {
+    const completed = steps.filter(
+      (step) => step.kind === 'tool-result' && step.ok !== false,
+    ).length;
+    const failures = steps.filter((step) => step.kind === 'error').length;
+    return (
+      <details className="ai-activity">
+        <summary>
+          <ListChecks size={12} />
+          {completed > 0 ? `${completed} tool step${completed === 1 ? '' : 's'}` : 'Activity'}
+          {failures > 0 ? ` · ${failures} issue${failures === 1 ? '' : 's'}` : ''}
+          <ChevronDown size={11} />
+        </summary>
+        {renderSteps(steps)}
+      </details>
+    );
+  };
+
+  const outcomeLabel = (outcome: 'applied' | 'completed' | 'run_failed') => {
+    if (outcome === 'applied') return 'Model updated';
+    if (outcome === 'completed') return 'Completed';
+    return 'Needs attention';
+  };
+
   const submitPrompt = () => {
     void sendAssistant();
   };
@@ -503,7 +597,7 @@ export function AIPanel() {
   return (
     <div className="ai-panel">
       <div className="ai-thread" aria-label="AI modeling conversation">
-        {conversation.length === 0 && result === null && (
+        {conversation.length === 0 && result === null && !busy && (
           <div className="ai-welcome">
             <span className="ai-welcome-mark" aria-hidden>
               <Bot size={20} />
@@ -546,12 +640,12 @@ export function AIPanel() {
                 <p>{turn.assistant}</p>
                 {turn.assistantRecord?.steps != null &&
                   turn.assistantRecord.steps.length > 0 &&
-                  renderSteps(turn.assistantRecord.steps)}
+                  renderActivity(turn.assistantRecord.steps)}
                 {turn.assistantRecord?.error != null && (
                   <p className="ai-error">{turn.assistantRecord.error}</p>
                 )}
                 <span className={`ai-outcome ${turn.outcome}`}>
-                  <CheckCircle2 size={11} /> {turn.outcome === 'applied' ? 'Applied' : 'Run failed'}
+                  <CheckCircle2 size={11} /> {outcomeLabel(turn.outcome)}
                 </span>
                 {turn.assistantRecord?.undoable === true &&
                   turn.assistantRecord.undoTokenId != null && (
@@ -587,14 +681,55 @@ export function AIPanel() {
           </div>
         ))}
         {busy && (
-          <div className="ai-thinking" role="status">
-            {liveSteps.length > 0 ? (
-              renderSteps(liveSteps)
-            ) : (
-              <>
-                <span /> <span /> <span />
-                <em>Reading the model and choosing the next action…</em>
-              </>
+          <div className="ai-working-card" aria-live="polite">
+            <div className="ai-working-header">
+              <span className="ai-step-spinner" aria-hidden />
+              <div>
+                <strong>
+                  {assistantApproval === null ? 'Working on your model' : 'Approval needed'}
+                </strong>
+                <small>
+                  {assistantApproval === null
+                    ? 'Inspecting the canvas, compiling and running tools as needed'
+                    : 'The canvas is unchanged until you approve this patch'}
+                </small>
+              </div>
+            </div>
+            {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>Reading the current model…</p>}
+            {assistantApproval !== null && (
+              <section className="ai-approval-card" aria-label="Review proposed model change">
+                <header>
+                  <AlertTriangle size={14} />
+                  <strong>Review model change</strong>
+                </header>
+                <p>{assistantApproval.summary}</p>
+                <div className="ai-approval-meta">
+                  <span>{assistantApproval.proposal.descriptions.length} operations</span>
+                  {assistantApproval.proposal.destructiveOperations > 0 && (
+                    <span className="destructive">
+                      {assistantApproval.proposal.destructiveOperations} destructive
+                    </span>
+                  )}
+                </div>
+                <ul>
+                  {assistantApproval.proposal.descriptions.slice(0, 6).map((description, index) => (
+                    <li key={`${index}:${description}`}>{description}</li>
+                  ))}
+                </ul>
+                {assistantApproval.proposal.descriptions.length > 6 && (
+                  <p className="ai-approval-more">
+                    +{assistantApproval.proposal.descriptions.length - 6} more operations
+                  </p>
+                )}
+                <footer>
+                  <button className="secondary" onClick={() => settleAssistantApproval(false)}>
+                    <X size={13} /> Keep current model
+                  </button>
+                  <button className="primary" onClick={() => settleAssistantApproval(true)}>
+                    <Check size={13} /> Apply and continue
+                  </button>
+                </footer>
+              </section>
             )}
           </div>
         )}
@@ -826,6 +961,7 @@ export function AIPanel() {
             </table>
           </div>
         )}
+        <div ref={threadEndRef} className="ai-thread-end" aria-hidden />
       </div>
       <div className="ai-composer-shell">
         <textarea

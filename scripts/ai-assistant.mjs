@@ -259,7 +259,8 @@ function renderToolResults(results) {
     .map(
       (result) =>
         `tool_call_id: ${result.toolCallId}\nok: ${result.ok}\nresult: ` +
-        JSON.stringify(result.result),
+        JSON.stringify(result.result) +
+        (result.error ? `\nerror: ${result.error}` : ''),
     )
     .join('\n\n');
 }
@@ -311,6 +312,9 @@ export function buildSystemPrompt() {
     '  validation failed, repair the reported problem and retry. Do not modify',
     '  DSL text directly and do not claim an edit succeeded before the tool',
     '  result confirms it.',
+    '- If apply_model_patch returns declined=true, the user chose to keep the',
+    '  current model. Do not retry, diagnose, or propose the same change again',
+    '  in that turn; acknowledge the decision and finish without mutation.',
     '- When building a new DES flow, submit every required block and connection',
     '  in ONE atomic patch. A partial source-only or queue-only model is invalid',
     '  during preflight and wastes a reasoning step.',

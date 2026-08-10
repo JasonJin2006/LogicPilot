@@ -9,7 +9,7 @@ export interface AiConversationTurn {
   user: string;
   assistant: string;
   patch: ModelPatch;
-  outcome: 'applied' | 'run_failed';
+  outcome: 'applied' | 'completed' | 'run_failed';
   /** Assistant Runtime record (optional: legacy turns and one-shot tool
    *  turns do not carry it). */
   assistantRecord?: {

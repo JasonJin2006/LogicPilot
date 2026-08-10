@@ -20,10 +20,12 @@ import type {
 } from './assistantTypes';
 import { createAssistantSession } from './assistantTypes';
 import { useModelStore } from '../state/modelStore';
+import type { ModelPatch } from '@logicpilot/editor';
 
 export const DEFAULT_MAX_ITERATIONS = 8;
 
-export type AssistantStepKind = 'message' | 'plan' | 'tool' | 'tool-result' | 'error';
+export type AssistantStepKind = 'message' | 'plan' | 'approval' | 'tool' | 'tool-result' | 'error';
+export type AssistantStepStatus = 'pending' | 'running' | 'completed' | 'rejected' | 'failed';
 
 export interface AssistantStepRecord {
   kind: AssistantStepKind;
@@ -34,6 +36,13 @@ export interface AssistantStepRecord {
   toolName?: string;
   toolCallId?: string;
   ok?: boolean;
+  status?: AssistantStepStatus;
+}
+
+export interface AssistantPatchApprovalRequest {
+  patch: ModelPatch;
+  summary: string;
+  toolCallId: string;
 }
 
 export interface AssistantRunResult {
@@ -62,6 +71,9 @@ export interface RunAssistantOptions {
   history?: AssistantTurnMessage[];
   /** Receives a fresh snapshot whenever a visible execution step is added. */
   onProgress?: (steps: AssistantStepRecord[]) => void;
+  /** Optional product boundary: pause before a model mutation until the user
+   * explicitly accepts or rejects the validated patch preview. */
+  confirmModelPatch?: (request: AssistantPatchApprovalRequest) => Promise<boolean>;
 }
 
 let undoSequence = 0;
@@ -205,9 +217,15 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
     };
     return id;
   };
-  const record = (step: AssistantStepRecord) => {
+  const publish = () => options.onProgress?.([...steps]);
+  const record = (step: AssistantStepRecord): number => {
     steps.push(step);
-    options.onProgress?.([...steps]);
+    publish();
+    return steps.length - 1;
+  };
+  const updateStep = (index: number, update: Partial<AssistantStepRecord>) => {
+    steps[index] = { ...steps[index]!, ...update };
+    publish();
   };
   // Version guard baseline: the document as of the user's request.
   session.documentSnapshot = useModelStore.getState().document;
@@ -219,6 +237,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
   ];
   let lastMessage = '';
   let cancelled = false;
+  let userDeclinedChange = false;
 
   const executeLoop = async (): Promise<AssistantRunResult> => {
     try {
@@ -232,6 +251,11 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
         record({ kind: 'message', label: response.message });
         for (const step of response.plan) {
           record({ kind: 'plan', label: step.label });
+        }
+        // The first response after a declined patch is an acknowledgement,
+        // never an authorization to try another mutation in the same turn.
+        if (userDeclinedChange) {
+          return { ok: true, message: response.message, steps, cancelled: false };
         }
         if (response.done) {
           return { ok: true, message: response.message, steps, cancelled: false };
@@ -262,11 +286,59 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
             record({ kind: 'error', label: error });
             continue;
           }
-          record({
+          if (tool.name === 'apply_model_patch' && options.confirmModelPatch != null) {
+            const approvalIndex = record({
+              kind: 'approval',
+              label:
+                typeof call.arguments.summary === 'string' && call.arguments.summary.trim() !== ''
+                  ? call.arguments.summary
+                  : 'Review proposed model change',
+              toolName: tool.name,
+              toolCallId: call.id,
+              status: 'pending',
+            });
+            const approved = await options.confirmModelPatch({
+              patch: call.arguments.patch as ModelPatch,
+              summary:
+                typeof call.arguments.summary === 'string'
+                  ? call.arguments.summary
+                  : 'Model change',
+              toolCallId: call.id,
+            });
+            if (!approved) {
+              userDeclinedChange = true;
+              updateStep(approvalIndex, {
+                status: 'rejected',
+                label: options.signal?.aborted ? 'Model change cancelled' : 'Model change declined',
+                ok: false,
+              });
+              if (options.signal?.aborted) {
+                cancelled = true;
+                break;
+              }
+              toolResults.push({
+                toolCallId: call.id,
+                ok: true,
+                result: {
+                  applied: 0,
+                  declined: true,
+                  reason: 'user declined the proposed model change',
+                },
+              });
+              break;
+            }
+            updateStep(approvalIndex, {
+              status: 'completed',
+              label: 'Model change approved',
+              ok: true,
+            });
+          }
+          const toolStepIndex = record({
             kind: 'tool',
             label: toolLabel(tool.name),
             toolName: tool.name,
             toolCallId: call.id,
+            status: 'running',
           });
           try {
             if (tool.name === 'undo_last_ai_change' && appliedTransactionSteps > 0) {
@@ -287,6 +359,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
               result: executed,
             });
             if (toolOk) {
+              updateStep(toolStepIndex, { status: 'completed', ok: true });
               if (tool.name === 'apply_model_patch' && Number(executed.applied ?? 0) > 0) {
                 appliedTransactionSteps += 1;
               } else if (tool.name === 'undo_last_ai_change' && executed.undone === true) {
@@ -300,6 +373,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
                 ok: true,
               });
             } else {
+              updateStep(toolStepIndex, { status: 'failed', ok: false });
               record({
                 kind: 'error',
                 label: `failed: ${String(executed.error ?? 'tool failed')}`,
@@ -310,6 +384,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
             }
           } catch (error) {
             const text = error instanceof Error ? error.message : String(error);
+            updateStep(toolStepIndex, { status: 'failed', ok: false });
             toolResults.push({ toolCallId: call.id, ok: false, result: {}, error: text });
             record({
               kind: 'error',

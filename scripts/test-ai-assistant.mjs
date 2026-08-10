@@ -46,6 +46,7 @@ for (const required of [
   'arrival rate lambda < service rate mu',
   'ONE atomic patch',
   'cite only the metric values returned',
+  'declined=true',
 ]) {
   assert.ok(systemPrompt.includes(required), `system prompt must include ${required}`);
 }
@@ -172,6 +173,26 @@ await runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} 
 assert.deepEqual(requestBody.response_format, { type: 'json_object' });
 assert.deepEqual(requestBody.thinking, { type: 'disabled' });
 assert.equal(requestBody.max_tokens, 4096);
+await runAssistant({
+  messages: [
+    { role: 'user', content: 'change it' },
+    {
+      role: 'assistant',
+      content: 'proposed',
+      toolCalls: [{ id: 'patch-1', name: 'apply_model_patch', arguments: {} }],
+      toolResults: [
+        {
+          toolCallId: 'patch-1',
+          ok: false,
+          result: {},
+          error: 'user declined the proposed model change',
+        },
+      ],
+    },
+  ],
+  context: {},
+});
+assert.ok(requestBody.messages[1].content.includes('error: user declined'));
 process.env.DEEPSEEK_THINKING = 'sometimes';
 await assert.rejects(
   () => runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} }),

@@ -242,6 +242,105 @@ describe('assistant runtime: control flow', () => {
     expect(updates.some((kinds) => kinds.at(-1) === 'tool-result')).toBe(true);
   });
 
+  it('pauses a model patch for approval and reports a declined change to the model', async () => {
+    const { calls } = queueAssistant([
+      {
+        message: 'I prepared a queue.',
+        plan: [],
+        toolCalls: [
+          {
+            id: 'patch-1',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: 'Add waiting queue',
+              patch: {
+                version: 1,
+                operations: [{ op: 'add_block', kind: 'queue', name: 'Waiting' }],
+              },
+            },
+          },
+        ],
+        done: false,
+      },
+      // Providers occasionally acknowledge the decline but omit done=true.
+      // The runtime still treats the user's decision as a clean terminal state.
+      {
+        message: 'I kept the current model unchanged.',
+        plan: [],
+        toolCalls: [{ id: 'retry-1', name: 'inspect_diagnostics', arguments: {} }],
+        done: false,
+      },
+    ]);
+    const approvals: string[] = [];
+    const result = await runAssistantTurn({
+      message: 'add a queue',
+      context: baseContext(),
+      session: createAssistantSession(),
+      confirmModelPatch: async (request) => {
+        approvals.push(request.summary);
+        return false;
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(approvals).toEqual(['Add waiting queue']);
+    expect(useModelStore.getState().document.nodes).toHaveLength(0);
+    expect(calls.filter((call) => !call.url.endsWith('/api/assistant'))).toHaveLength(0);
+    expect(result.steps).toContainEqual(
+      expect.objectContaining({ kind: 'approval', status: 'rejected', ok: false }),
+    );
+    const assistantCalls = calls.filter((call) => call.url.endsWith('/api/assistant'));
+    const feedback = assistantCalls[1]!.body.messages as Array<{
+      toolResults?: Array<{ ok: boolean; result?: { declined?: boolean; reason?: string } }>;
+    }>;
+    expect(feedback[1]!.toolResults?.[0]).toEqual(
+      expect.objectContaining({
+        ok: true,
+        result: expect.objectContaining({
+          declined: true,
+          reason: expect.stringContaining('declined'),
+        }),
+      }),
+    );
+  });
+
+  it('applies an approved patch and marks its running step completed', async () => {
+    queueAssistant([
+      {
+        message: 'I prepared a queue.',
+        plan: [],
+        toolCalls: [
+          {
+            id: 'patch-1',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: 'Add waiting queue',
+              patch: {
+                version: 1,
+                operations: [{ op: 'add_block', kind: 'queue', name: 'Waiting' }],
+              },
+            },
+          },
+        ],
+        done: false,
+      },
+      { message: 'Done.', plan: [], toolCalls: [], done: true },
+    ]);
+    const result = await runAssistantTurn({
+      message: 'add a queue',
+      context: baseContext(),
+      session: createAssistantSession(),
+      confirmModelPatch: async () => true,
+    });
+    expect(result.ok).toBe(true);
+    expect(useModelStore.getState().document.nodes).toHaveLength(1);
+    expect(result.steps).toContainEqual(
+      expect.objectContaining({ kind: 'approval', status: 'completed', ok: true }),
+    );
+    expect(result.steps).toContainEqual(
+      expect.objectContaining({ kind: 'tool', status: 'completed', ok: true }),
+    );
+  });
+
   it('executes proposed tools in order and feeds results back', async () => {
     const { calls } = queueAssistant([
       {
