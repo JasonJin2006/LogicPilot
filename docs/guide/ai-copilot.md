@@ -91,15 +91,18 @@ $env:LOGICPILOT_CODEX_MODEL="..." # 可选；不设置则使用 Codex CLI 默认
 pnpm dev
 ```
 
-LogicPilot 通过 `codex exec` 的临时、只读、结构化输出模式调用 CLI；认证完全交给
-Codex 管理，不读取或复制 `~/.codex/auth.json`。API Key 和 Codex 两种模式显式隔离：
+LogicPilot 通过官方 `codex app-server` 的本地 stdio/JSONL 协议复用一个 CLI 进程；
+每个助手推理步骤使用独立的只读线程和结构化输出约束，步骤结束后删除该临时线程。
+认证完全交给 Codex 管理，不读取或复制 `~/.codex/auth.json`。API Key 和 Codex
+两种模式显式隔离：
 默认 `auto` 在存在 `OPENAI_API_KEY` 时走 API；要使用 ChatGPT 订阅登录，需设置
 `LOGICPILOT_AI_PROVIDER=codex`。可用 `LOGICPILOT_CODEX_PATH` 指定 CLI/`codex.js`，
 `LOGICPILOT_CODEX_TIMEOUT_MS` 调整单步超时。
 
-当前 CLI provider 每个助手推理步骤使用一次冷启动，正确性已纳入相同基准，但延迟
-高于直连 API。后续可换成官方 `codex app-server` 持久连接以获得流式事件和更低延迟，
-而不改变 IDE 内部的 LogicPilot 工具协议。
+持久进程消除了同一轮多步工具调用的重复 CLI 冷启动；LogicPilot 仍自行保存 IDE
+对话和执行工具，Codex 线程之间不会共享隐藏上下文。若需要诊断 app-server 兼容性，
+可以临时设置 `LOGICPILOT_CODEX_TRANSPORT=exec` 回退到逐步 `codex exec`；允许值仅为
+`app-server`（默认）或 `exec`。
 
 ## IDE 工具型助手
 
