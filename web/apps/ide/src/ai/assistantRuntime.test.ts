@@ -881,6 +881,138 @@ describe('assistant tools: model editing', () => {
 });
 
 describe('assistant tools: runs and metrics', () => {
+  it('builds, validates, runs and explains an M/M/1 model from a blank canvas', async () => {
+    const { calls } = queueAssistant([
+      {
+        message: '正在一次性建立完整的 M/M/1 流程。',
+        plan: [
+          { id: 'build', label: '建立 M/M/1 模型' },
+          { id: 'run', label: '运行仿真' },
+          { id: 'explain', label: '解释真实指标' },
+        ],
+        toolCalls: [
+          {
+            id: 'build-mm1',
+            name: 'apply_model_patch',
+            arguments: {
+              summary: '建立稳定的单服务台 M/M/1 队列',
+              patch: {
+                version: 1,
+                operations: [
+                  {
+                    op: 'add_block',
+                    kind: 'resource',
+                    name: 'Server',
+                    x: 240,
+                    y: 40,
+                    params: { capacity: 1 },
+                  },
+                  {
+                    op: 'add_block',
+                    kind: 'source',
+                    name: 'Arrivals',
+                    x: 80,
+                    y: 160,
+                    params: { arrival: 'rate(0.8)' },
+                  },
+                  {
+                    op: 'add_block',
+                    kind: 'queue',
+                    name: 'WaitLine',
+                    x: 240,
+                    y: 160,
+                    params: { capacity: 1000000 },
+                  },
+                  {
+                    op: 'add_block',
+                    kind: 'service',
+                    name: 'Handle',
+                    x: 400,
+                    y: 160,
+                    params: { resource: 'Server', time: 'exponential(1.0)' },
+                  },
+                  { op: 'add_block', kind: 'sink', name: 'Done', x: 560, y: 160 },
+                  { op: 'connect', from: 'Arrivals', to: 'WaitLine' },
+                  { op: 'connect', from: 'WaitLine', to: 'Handle' },
+                  { op: 'connect', from: 'Handle', to: 'Done' },
+                ],
+              },
+            },
+          },
+        ],
+        done: false,
+      },
+      {
+        message: '模型已通过检查，开始运行。',
+        plan: [],
+        toolCalls: [{ id: 'run-mm1', name: 'run_simulation', arguments: {} }],
+        done: false,
+      },
+      {
+        message: '运行完成，读取本次运行的指标。',
+        plan: [],
+        toolCalls: [{ id: 'metrics-mm1', name: 'inspect_run_metrics', arguments: {} }],
+        done: false,
+      },
+      {
+        message: 'M/M/1 已运行完成：平均排队时间 Wq=1.25，服务台利用率=0.8。',
+        plan: [],
+        toolCalls: [],
+        done: true,
+      },
+    ]);
+    const session = createAssistantSession();
+
+    const result = await runAssistantTurn({
+      message: '从空白画布建立一个到达率 0.8、服务率 1.0 的 M/M/1，运行并解释结果',
+      context: baseContext(),
+      session,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('Wq=1.25');
+    expect(result.message).toContain('利用率=0.8');
+    const document = useModelStore.getState().document;
+    expect(document.nodes.map((node) => `${node.kind}:${node.name}`).sort()).toEqual([
+      'queue:WaitLine',
+      'resource:Server',
+      'service:Handle',
+      'sink:Done',
+      'source:Arrivals',
+    ]);
+    expect(document.edges).toHaveLength(3);
+    expect(document.nodes.find((node) => node.name === 'Arrivals')?.params.arrival).toBe(
+      'rate(0.8)',
+    );
+    expect(document.nodes.find((node) => node.name === 'Handle')?.params).toMatchObject({
+      resource: 'Server',
+      time: 'exponential(1.0)',
+    });
+
+    const validateCalls = calls.filter((call) => call.url.endsWith('/api/ai-validate'));
+    const runIndex = calls.findIndex((call) => call.url.endsWith('/api/ai-run'));
+    expect(validateCalls).toHaveLength(2); // auto-compile after patch, then compile before run
+    expect(runIndex).toBeGreaterThan(calls.indexOf(validateCalls[1]!));
+    expect(session.compiled).toBe(true);
+    expect(session.runStatus).toBe('finished');
+    expect(session.runMetrics?.summary?.Wq?.mean).toBe(1.25);
+    expect(
+      result.steps.filter(
+        (step) => step.kind === 'tool-result' && step.toolName === 'apply_model_patch',
+      ),
+    ).toEqual([expect.objectContaining({ ok: true })]);
+    expect(
+      result.steps.filter(
+        (step) => step.kind === 'tool-result' && step.toolName === 'run_simulation',
+      ),
+    ).toEqual([expect.objectContaining({ ok: true })]);
+    expect(
+      result.steps.filter(
+        (step) => step.kind === 'tool-result' && step.toolName === 'inspect_run_metrics',
+      ),
+    ).toEqual([expect.objectContaining({ ok: true })]);
+  });
+
   it('explain-without-metrics fails cleanly instead of inventing numbers', async () => {
     const tool = findAssistantTool('inspect_run_metrics')!;
     const result = await tool.execute(

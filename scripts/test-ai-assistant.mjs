@@ -4,10 +4,7 @@
 // smoke test when OPENAI_API_KEY is present.
 import assert from 'node:assert/strict';
 
-import {
-  ASSISTANT_TOOLS,
-  validateAssistantResponse,
-} from './ai-assistant.mjs';
+import { ASSISTANT_TOOLS, buildSystemPrompt, validateAssistantResponse } from './ai-assistant.mjs';
 
 // Tool registry contract: the nine controlled tools the client executes.
 const EXPECTED_TOOLS = [
@@ -21,14 +18,33 @@ const EXPECTED_TOOLS = [
   'wait_for_run',
   'undo_last_ai_change',
 ];
-assert.deepEqual(
-  ASSISTANT_TOOLS.map((tool) => tool.name).sort(),
-  [...EXPECTED_TOOLS].sort(),
-);
+assert.deepEqual(ASSISTANT_TOOLS.map((tool) => tool.name).sort(), [...EXPECTED_TOOLS].sort());
 for (const tool of ASSISTANT_TOOLS) {
   assert.ok(tool.description.length > 0, `${tool.name} needs a description`);
   assert.ok(tool.parameters && typeof tool.parameters === 'object');
 }
+
+// The prompt is executable contract. Lock down the exact patch vocabulary
+// and first DES benchmark so the model does not have to guess fields or
+// distribution semantics.
+const systemPrompt = buildSystemPrompt();
+for (const required of [
+  'add_block',
+  'update_block',
+  'remove_block',
+  'connect',
+  'disconnect',
+  'rename_model',
+  'arrival":"rate(0.8)',
+  'time":"exponential(1.0)',
+  'arrival rate lambda < service rate mu',
+  'ONE atomic patch',
+  'cite only the metric values returned',
+]) {
+  assert.ok(systemPrompt.includes(required), `system prompt must include ${required}`);
+}
+assert.ok(systemPrompt.includes('刚才那个队列'));
+assert.ok(systemPrompt.includes('检查模型'));
 
 // A valid response round-trips.
 const valid = validateAssistantResponse({
@@ -47,26 +63,64 @@ const cases = [
   [{ message: 42, done: false }, /"message"/],
   [{ message: 'x', done: 'yes' }, /"done"/],
   [{ message: 'x', done: true, toolCalls: [{ id: 'c', name: 'inspect_model' }] }, /arguments/],
-  [{ message: 'x', done: false, toolCalls: [{ id: 'c', name: 'not_a_tool', arguments: {} }] }, /not a known tool/],
-  [{ message: 'x', done: false, toolCalls: [{ id: 'c', name: 7, arguments: {} }] }, /name must be a string/],
+  [
+    { message: 'x', done: false, toolCalls: [{ id: 'c', name: 'not_a_tool', arguments: {} }] },
+    /not a known tool/,
+  ],
+  [
+    { message: 'x', done: false, toolCalls: [{ id: 'c', name: 7, arguments: {} }] },
+    /name must be a string/,
+  ],
   [{ message: 'x', done: false, plan: [{ id: 1 }] }, /plan\[0\]/],
-  [{ message: 'x', done: true, toolCalls: [{ id: 'c', name: 'inspect_model', arguments: {} }] }, /done but still proposes tool calls/],
+  [
+    { message: 'x', done: true, toolCalls: [{ id: 'c', name: 'inspect_model', arguments: {} }] },
+    /done but still proposes tool calls/,
+  ],
   ['not json', /object/],
-  [{ message: 'x', done: false, toolCalls: [
-    { id: 'c', name: 'inspect_model', arguments: { unexpected: true } },
-  ] }, /not allowed/],
-  [{ message: 'x', done: false, toolCalls: [
-    { id: 'c', name: 'apply_model_patch', arguments: { summary: 'x' } },
-  ] }, /patch is required/],
-  [{ message: 'x', done: false, toolCalls: [
-    { id: 'c', name: 'apply_model_patch', arguments: {
-      summary: '', patch: { version: 1, operations: [] },
-    } },
-  ] }, /summary must not be empty/],
-  [{ message: 'x', done: false, toolCalls: [
-    { id: 'same', name: 'inspect_model', arguments: {} },
-    { id: 'same', name: 'inspect_selection', arguments: {} },
-  ] }, /duplicated/],
+  [
+    {
+      message: 'x',
+      done: false,
+      toolCalls: [{ id: 'c', name: 'inspect_model', arguments: { unexpected: true } }],
+    },
+    /not allowed/,
+  ],
+  [
+    {
+      message: 'x',
+      done: false,
+      toolCalls: [{ id: 'c', name: 'apply_model_patch', arguments: { summary: 'x' } }],
+    },
+    /patch is required/,
+  ],
+  [
+    {
+      message: 'x',
+      done: false,
+      toolCalls: [
+        {
+          id: 'c',
+          name: 'apply_model_patch',
+          arguments: {
+            summary: '',
+            patch: { version: 1, operations: [] },
+          },
+        },
+      ],
+    },
+    /summary must not be empty/,
+  ],
+  [
+    {
+      message: 'x',
+      done: false,
+      toolCalls: [
+        { id: 'same', name: 'inspect_model', arguments: {} },
+        { id: 'same', name: 'inspect_selection', arguments: {} },
+      ],
+    },
+    /duplicated/,
+  ],
 ];
 for (const [input, pattern] of cases) {
   assert.throws(() => validateAssistantResponse(input), pattern);

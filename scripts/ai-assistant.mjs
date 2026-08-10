@@ -19,84 +19,89 @@ export const ASSISTANT_TOOLS = Object.freeze([
   {
     name: 'inspect_model',
     description:
-        'Read a compact summary of the current model (blocks, kinds, ' +
-        'parameters, connections, ids) so follow-up edits can reference ' +
-        'exact ids/names.',
+      'Read a compact summary of the current model (blocks, kinds, ' +
+      'parameters, connections, ids) so follow-up edits can reference ' +
+      'exact ids/names.',
     parameters: {},
   },
   {
     name: 'inspect_selection',
     description:
-        'Read the currently selected block on the canvas (id, kind, ' +
-        'name, parameters). No arguments.',
+      'Read the currently selected block on the canvas (id, kind, ' +
+      'name, parameters). No arguments.',
     parameters: {},
   },
   {
     name: 'inspect_diagnostics',
     description:
-        'Read the compile diagnostics of the most recent compile attempt ' +
-        '(empty when the last compile passed or nothing was compiled yet).',
+      'Read the DES preflight and compiler diagnostics of the most recent ' +
+      'compile attempt (empty when the last compile passed or nothing was ' +
+      'compiled yet).',
     parameters: {},
   },
   {
     name: 'inspect_run_metrics',
     description:
-        'Read the metrics of the most recent finished simulation run ' +
-        '(throughput, Wq, W, Lq, utilization, per-block stats). Fails ' +
-        'cleanly when no run has finished.',
+      'Read the metrics of the most recent finished simulation run ' +
+      '(throughput, Wq, W, Lq, utilization, per-block stats). Fails ' +
+      'cleanly when no run has finished.',
     parameters: {},
   },
   {
     name: 'apply_model_patch',
     description:
-        'Apply a structured model patch (add_block / update_block / ' +
-        'remove_block / connect / disconnect / rename_model) as one atomic, ' +
-        'undoable edit. After applying, the model is compiled automatically ' +
-        'and the diagnostics are returned so you can fix compile errors in a ' +
-        'follow-up call. References may be node ids or unique block names.',
+      'Apply a structured model patch (add_block / update_block / ' +
+      'remove_block / connect / disconnect / rename_model) as one atomic, ' +
+      'undoable edit. After applying, DES preflight and compilation run ' +
+      'automatically and diagnostics are returned so you can repair the ' +
+      'model in a follow-up call. References may be node ids or unique ' +
+      'block names. For a new flow, add all blocks and connections in one ' +
+      'patch so preflight never sees a partial topology.',
     parameters: {
       patch: {
         type: 'object',
         required: true,
         description:
-            '{version:1, operations:[{op,kind,name,target,params,...}]}',
+          '{version:1, operations:[ModelPatch operation...]}; exact ' +
+          'operation fields are listed in the system instructions',
       },
       summary: {
         type: 'string',
         required: true,
         description:
-            'One short line describing the change for the user (e.g. "added ' +
-            'queue Q with capacity 20 before service S").',
+          'One short line describing the change for the user (e.g. "added ' +
+          'queue Q with capacity 20 before service S").',
       },
     },
   },
   {
     name: 'compile_model',
     description:
-        'Compile the current model DSL and return diagnostics. Use this ' +
-        'after any change that did not go through apply_model_patch.',
+      'Run local DES preflight, then compile the current model DSL and ' +
+      'return the phase and diagnostics. Use this after any change that ' +
+      'did not go through apply_model_patch.',
     parameters: {},
   },
   {
     name: 'run_simulation',
     description:
-        'Compile (if needed) and run a DES simulation of the current model ' +
-        'with the configured experiment, then return the real metrics. Use ' +
-        'this when the user asks to run / simulate / see results.',
+      'Compile (if needed) and run a DES simulation of the current model ' +
+      'with the configured experiment, then return the real metrics. Use ' +
+      'this when the user asks to run / simulate / see results.',
     parameters: {},
   },
   {
     name: 'wait_for_run',
     description:
-        'Return the status of the last requested run. The IDE runs are ' +
-        'synchronous end-to-end, so this reports the finished result.',
+      'Return the status of the last requested run. The IDE runs are ' +
+      'synchronous end-to-end, so this reports the finished result.',
     parameters: {},
   },
   {
     name: 'undo_last_ai_change',
     description:
-        'Undo the most recent AI-applied model change (one atomic undo ' +
-        'step). Returns the resulting model summary.',
+      'Undo the most recent AI-applied model change (one atomic undo ' +
+      'step). Returns the resulting model summary.',
     parameters: {},
   },
 ]);
@@ -261,7 +266,11 @@ function renderMessages(messages) {
   // messages: [{ role: 'user' | 'assistant', content, toolCalls?, toolResults? }]
   const rendered = [];
   for (const message of messages ?? []) {
-    if (message.role === 'assistant' && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
+    if (
+      message.role === 'assistant' &&
+      Array.isArray(message.toolCalls) &&
+      message.toolCalls.length > 0
+    ) {
       rendered.push(
         `[assistant]\n${message.content}\n\nProposed tool calls:\n` +
           renderToolCalls(message.toolCalls),
@@ -276,7 +285,7 @@ function renderMessages(messages) {
   return rendered.join('\n\n');
 }
 
-function buildSystemPrompt() {
+export function buildSystemPrompt() {
   const toolLines = ASSISTANT_TOOLS.map(
     (tool) =>
       `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
@@ -296,11 +305,43 @@ function buildSystemPrompt() {
     '  clarify instead of guessing.',
     '- For model edits use apply_model_patch with structured operations',
     '  (add_block, update_block, remove_block, connect, disconnect,',
-    '  rename_model). Its result includes compile diagnostics: if compilation',
-    '  failed, call apply_model_patch again (or another tool) to fix the',
-    '  errors. Do not modify DSL text directly.',
-    '- For runs use run_simulation and report the real metrics you receive.',
+    '  rename_model). Its result includes preflight/compiler diagnostics: if',
+    '  validation failed, repair the reported problem and retry. Do not modify',
+    '  DSL text directly and do not claim an edit succeeded before the tool',
+    '  result confirms it.',
+    '- When building a new DES flow, submit every required block and connection',
+    '  in ONE atomic patch. A partial source-only or queue-only model is invalid',
+    '  during preflight and wastes a reasoning step.',
+    '- For runs use run_simulation. If the user asked for results or an',
+    '  explanation, continue after a successful edit, run the model, inspect',
+    '  run metrics when needed, and cite only the metric values returned by',
+    '  those tools. Never turn example numbers below into claimed run results.',
     '- Respond in the same language as the user.',
+    '',
+    'ModelPatch version 1 (use only these exact fields):',
+    '- add_block: {"op":"add_block","kind":string,"name":string,',
+    '  "x"?:number,"y"?:number,"params"?:object}.',
+    '- update_block: {"op":"update_block","target":id-or-name,',
+    '  "name"?:string,"x"?:number,"y"?:number,"params"?:object,',
+    '  "removeParams"?:string[]}.',
+    '- remove_block: {"op":"remove_block","target":id-or-name}.',
+    '- connect: {"op":"connect","from":id-or-name,"to":id-or-name,',
+    '  "fromPort"?:string,"toPort"?:string}. Default ports are out -> in.',
+    '- disconnect: {"op":"disconnect","edge"?:edge-id,"from"?:id-or-name,',
+    '  "to"?:id-or-name,"fromPort"?:string,"toPort"?:string}.',
+    '- rename_model: {"op":"rename_model","name":string}.',
+    '- Core executable DES block kinds are resource, source, queue, service,',
+    '  and sink. Parameter values must be strings, finite numbers or booleans.',
+    '',
+    'Canonical M/M/1 recipe (a modeling example, NOT run evidence):',
+    '- resource Server params {"capacity":1}',
+    '- source Arrivals params {"arrival":"rate(0.8)"}',
+    '- queue WaitLine params {"capacity":1000000}',
+    '- service Handle params',
+    '  {"resource":"Server","time":"exponential(1.0)"}',
+    '- sink Done params {}, connected Arrivals -> WaitLine -> Handle -> Done.',
+    '- For stability require arrival rate lambda < service rate mu. In this',
+    '  DSL exponential(mu) uses the rate mu, not the mean service time.',
     '',
     'Response format (strict JSON, no markdown fences):',
     '{',
@@ -332,8 +373,12 @@ export async function runAssistant({ messages, context, maxResponseBytes = 64 * 
     throw new Error('assistant messages must contain 1..32 entries');
   }
   for (const [index, message] of messages.entries()) {
-    if (!isPlainObject(message) || !['user', 'assistant'].includes(message.role) ||
-        typeof message.content !== 'string' || message.content.length > 64 * 1024) {
+    if (
+      !isPlainObject(message) ||
+      !['user', 'assistant'].includes(message.role) ||
+      typeof message.content !== 'string' ||
+      message.content.length > 64 * 1024
+    ) {
       throw new Error(`assistant messages[${index}] has an invalid role or content`);
     }
   }
