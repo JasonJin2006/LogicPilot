@@ -40,7 +40,12 @@ export interface AssistantSessionState {
   /** DSL of the last compile/run target (kept in sync with edits). */
   dsl: string;
   /** Diagnostics of the most recent compile attempt. */
-  diagnostics: Array<{ code: string; message: string }>;
+  diagnostics: Array<{
+    code: string;
+    message: string;
+    severity?: 'error' | 'warning';
+    source?: 'preflight' | 'compiler';
+  }>;
   /** True when the last compile attempt passed. */
   compiled: boolean;
   /** Status of the most recent run. */

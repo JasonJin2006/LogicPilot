@@ -105,7 +105,7 @@ function blankDocument() {
   return createDocument('M');
 }
 
-function documentWithQueue() {
+function documentWithQueue(): ModelDocument {
   const document = blankDocument();
   return {
     ...document,
@@ -119,6 +119,47 @@ function documentWithQueue() {
         params: { capacity: 10 },
         library: 'process' as const,
       },
+      {
+        id: 'resource-1',
+        kind: 'resource',
+        name: 'Workers',
+        x: -200,
+        y: -100,
+        params: { capacity: 1 },
+        library: 'process' as const,
+      },
+      {
+        id: 'source-1',
+        kind: 'source',
+        name: 'Arrivals',
+        x: -200,
+        y: 0,
+        params: {},
+        library: 'process' as const,
+      },
+      {
+        id: 'service-1',
+        kind: 'service',
+        name: 'Handle',
+        x: 200,
+        y: 0,
+        params: { resource: 'Workers', time: 'exponential(1)' },
+        library: 'process' as const,
+      },
+      {
+        id: 'sink-1',
+        kind: 'sink',
+        name: 'Done',
+        x: 400,
+        y: 0,
+        params: {},
+        library: 'process' as const,
+      },
+    ],
+    edges: [
+      { id: 'edge-1', from: 'source-1', to: 'queue-1' },
+      { id: 'edge-2', from: 'queue-1', to: 'service-1' },
+      { id: 'edge-3', from: 'service-1', to: 'sink-1' },
     ],
   };
 }
@@ -529,7 +570,7 @@ describe('assistant tools: model editing', () => {
     // Auto-compile happened: the apply tool called /api/ai-validate.
     expect(calls.some((call) => call.url.endsWith('/api/ai-validate'))).toBe(true);
     const after = useModelStore.getState().document;
-    expect(after.nodes).toHaveLength(2);
+    expect(after.nodes).toHaveLength(6);
     const queue = after.nodes.find((node) => node.name === 'Q')!;
     expect(queue.params.capacity).toBe(20);
     // The change is one atomic undo step and recorded for undo.
@@ -611,9 +652,9 @@ describe('assistant tools: model editing', () => {
                 arguments: {
                   patch: {
                     version: 1,
-                    operations: [{ op: 'add_block', kind: 'queue', name: 'Broken' }],
+                    operations: [{ op: 'update_block', target: 'Q', params: { capacity: 11 } }],
                   },
-                  summary: 'add queue',
+                  summary: 'change queue capacity',
                 },
               },
             ],
@@ -640,12 +681,107 @@ describe('assistant tools: model editing', () => {
       throw new Error(`unexpected fetch to ${url}`);
     });
     const result = await runAssistantTurn({
-      message: 'add queue',
+      message: 'change queue capacity',
       context: baseContext(),
       session: createAssistantSession(),
     });
     expect(result.ok).toBe(true);
     // The failure was surfaced as an error state, then the model recovered.
+    expect(result.steps.some((step) => step.label.includes('compile failed'))).toBe(true);
+  });
+
+  it('repairs local preflight failures before calling the backend compiler', async () => {
+    const document = documentWithQueue();
+    useModelStore.setState({ document });
+    let assistantCalls = 0;
+    const { calls } = installFetch(async ({ url }, recordedCalls) => {
+      if (url.endsWith('/api/assistant')) {
+        assistantCalls += 1;
+        if (assistantCalls === 1) {
+          return {
+            message: 'removing the source',
+            plan: [],
+            toolCalls: [
+              {
+                id: 'c1',
+                name: 'apply_model_patch',
+                arguments: {
+                  patch: {
+                    version: 1,
+                    operations: [{ op: 'remove_block', target: 'Arrivals' }],
+                  },
+                  summary: 'remove source',
+                },
+              },
+            ],
+            done: false,
+          };
+        }
+        if (assistantCalls === 2) {
+          const messages = recordedCalls.filter((call) => call.url.endsWith('/api/assistant'));
+          const second = messages[1]!.body as { messages: unknown[] };
+          const assistantMessage = second.messages[1] as { toolResults: unknown[] };
+          const results = assistantMessage.toolResults as Array<{
+            result: {
+              compiled?: {
+                ok: boolean;
+                phase: string;
+                diagnostics: Array<{ code: string; source?: string }>;
+              };
+            };
+          }>;
+          const compiled = results[0]!.result.compiled!;
+          expect(compiled.ok).toBe(false);
+          expect(compiled.phase).toBe('preflight');
+          expect(compiled.diagnostics).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ code: 'LP2002', source: 'preflight' }),
+            ]),
+          );
+          expect(recordedCalls.some((call) => call.url.endsWith('/api/ai-validate'))).toBe(false);
+          return {
+            message: 'repairing the source flow',
+            plan: [],
+            toolCalls: [
+              {
+                id: 'c2',
+                name: 'apply_model_patch',
+                arguments: {
+                  patch: {
+                    version: 1,
+                    operations: [
+                      { op: 'add_block', kind: 'source', name: 'RepairedArrivals' },
+                      { op: 'connect', from: 'RepairedArrivals', to: 'Q' },
+                    ],
+                  },
+                  summary: 'restore source and reconnect the flow',
+                },
+              },
+            ],
+            done: false,
+          };
+        }
+        return { message: 'model repaired', plan: [], toolCalls: [], done: true };
+      }
+      if (url.endsWith('/api/ai-validate')) {
+        return { ok: true, diagnostics: [] };
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    const session = createAssistantSession();
+    const result = await runAssistantTurn({
+      message: 'remove the source, then make the model valid again',
+      context: baseContext(),
+      session,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(calls.filter((call) => call.url.endsWith('/api/ai-validate'))).toHaveLength(1);
+    expect(
+      useModelStore.getState().document.nodes.some((node) => node.name === 'RepairedArrivals'),
+    ).toBe(true);
+    expect(session.compiled).toBe(true);
     expect(result.steps.some((step) => step.label.includes('compile failed'))).toBe(true);
   });
 
@@ -714,7 +850,7 @@ describe('assistant tools: model editing', () => {
             arguments: {
               patch: {
                 version: 1,
-                operations: [{ op: 'add_block', kind: 'sink', name: 'Done' }],
+                operations: [{ op: 'add_block', kind: 'sink', name: 'ExtraDone' }],
               },
               summary: 'add sink',
             },
@@ -737,8 +873,8 @@ describe('assistant tools: model editing', () => {
     });
     expect(result.ok).toBe(true);
     const finalDocument = useModelStore.getState().document;
-    expect(finalDocument.nodes.some((node) => node.name === 'Done')).toBe(false);
-    expect(finalDocument.nodes).toHaveLength(1);
+    expect(finalDocument.nodes.some((node) => node.name === 'ExtraDone')).toBe(false);
+    expect(finalDocument.nodes).toHaveLength(document.nodes.length);
     // Undo recompiled the restored model.
     expect(calls.some((call) => call.url.endsWith('/api/ai-validate'))).toBe(true);
   });
@@ -797,6 +933,31 @@ describe('assistant tools: runs and metrics', () => {
     expect(runIndex).toBeGreaterThan(validateIndex);
     expect(session.runStatus).toBe('finished');
     expect(session.runMetrics?.summary?.Wq!.mean).toBe(1.25);
+  });
+
+  it('run_simulation stops at local preflight without compile or run requests', async () => {
+    const valid = documentWithQueue();
+    const document: ModelDocument = {
+      ...valid,
+      nodes: valid.nodes.filter((node) => node.name !== 'Arrivals'),
+      edges: valid.edges.filter((edge) => edge.from !== 'source-1'),
+    };
+    useModelStore.setState({ document });
+    const { calls } = installFetch(async ({ url }) => {
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+    const session = createAssistantSession();
+    const tool = findAssistantTool('run_simulation')!;
+
+    const result = await tool.execute({}, { session, experiment: { seed: 1 } as never });
+
+    expect(result.ok).toBe(false);
+    expect(result.phase).toBe('preflight');
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'LP2002', source: 'preflight' })]),
+    );
+    expect(session.runStatus).toBe('failed');
+    expect(calls).toHaveLength(0);
   });
 
   it('run_simulation reports a failed compile instead of running', async () => {

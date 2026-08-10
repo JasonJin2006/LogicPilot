@@ -16,6 +16,7 @@ import { aiRunDsl, aiValidateDsl, type ExperimentSettings } from './api';
 import type { AssistantSessionState } from './assistantTypes';
 import { summarizeModel } from './contextBuilder';
 import { BLOCK_DEFS, blockPorts, isExecutableProcessKind } from '../model/blockDefs';
+import { validateDesModel } from '../model/modelValidation';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore } from '../state/runStore';
 
@@ -176,13 +177,39 @@ function danglingEdgeCount(document: ModelDocument, nodeId: string): number {
 async function compileCurrent(
   session: AssistantSessionState,
   signal?: AbortSignal,
-): Promise<{ ok: boolean; diagnostics: Array<{ code: string; message: string }> }> {
-  const dsl = generateDsl(useModelStore.getState().document);
+): Promise<{
+  ok: boolean;
+  phase: 'preflight' | 'compiler';
+  diagnostics: Array<{
+    code: string;
+    message: string;
+    severity?: 'error' | 'warning';
+    source?: 'preflight' | 'compiler';
+  }>;
+}> {
+  const document = useModelStore.getState().document;
+  const dsl = generateDsl(document);
   session.dsl = dsl;
+  const preflight = validateDesModel(document).map((diagnostic) => ({
+    code: diagnostic.code,
+    message: diagnostic.message,
+    severity: diagnostic.severity,
+    source: 'preflight' as const,
+  }));
+  if (preflight.some((diagnostic) => diagnostic.severity === 'error')) {
+    session.diagnostics = preflight;
+    session.compiled = false;
+    return { ok: false, phase: 'preflight', diagnostics: preflight };
+  }
+
   const result = await aiValidateDsl(dsl, signal);
-  session.diagnostics = result.diagnostics;
+  // Preserve the backend diagnostic wire shape for existing consumers. The
+  // top-level phase identifies a compiler result; only local diagnostics
+  // need an explicit source marker when they are fed back to the model.
+  const diagnostics = [...preflight, ...result.diagnostics];
+  session.diagnostics = diagnostics;
   session.compiled = result.ok;
-  return result;
+  return { ok: result.ok, phase: 'compiler', diagnostics };
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +243,7 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   },
   {
     name: 'inspect_diagnostics',
-    description: 'Read compile diagnostics of the most recent compile attempt.',
+    description: 'Read preflight and compiler diagnostics of the most recent compile attempt.',
     parameters: {},
     validate: () => null,
     execute: (_args, { session }) => {
@@ -313,12 +340,16 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
   },
   {
     name: 'compile_model',
-    description: 'Compile the current model DSL and return diagnostics.',
+    description: 'Preflight the model, then compile its DSL and return diagnostics.',
     parameters: {},
     validate: () => null,
     execute: async (_args, { session, signal }) => {
       const compiled = await compileCurrent(session, signal);
-      return { ok: compiled.ok, diagnostics: compiled.diagnostics };
+      return {
+        ok: compiled.ok,
+        phase: compiled.phase,
+        diagnostics: compiled.diagnostics,
+      };
     },
   },
   {
@@ -337,6 +368,7 @@ export const ASSISTANT_TOOLS: readonly AssistantTool[] = [
         return {
           ok: false,
           error: 'model does not compile; fix these diagnostics first',
+          phase: compiled.phase,
           diagnostics: compiled.diagnostics,
         };
       }
