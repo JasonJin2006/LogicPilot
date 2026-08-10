@@ -9,6 +9,8 @@ import { defineConfig, type Plugin } from 'vite';
 
 import {
   handleAiAssistant,
+  handleAiProviders,
+  handleAiProviderTest,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -26,6 +28,12 @@ import {
 const aiBuildPlugin = (): Plugin => ({
   name: 'logicpilot-ai-build',
   configureServer(server) {
+    server.middlewares.use('/api/ai-providers/test', (req, res) => {
+      void handleAiProviderTest(req, res);
+    });
+    server.middlewares.use('/api/ai-providers', (req, res) => {
+      void handleAiProviders(req, res);
+    });
     server.middlewares.use('/api/ai-build', (req, res) => {
       void handleAiBuild(req, res);
     });

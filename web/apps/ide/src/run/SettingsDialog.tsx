@@ -3,7 +3,15 @@
 // (opened from the canvas Run button) - a simulation run belongs to a
 // specific model, not to the IDE settings.
 
-import { X } from 'lucide-react';
+import { Check, KeyRound, LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  getAiProviderState,
+  resetAiProvider,
+  saveAiProvider,
+  testAiProvider,
+  type AiProviderState,
+} from '../ai/providerConfig';
 import { useConnectionStore } from '../state/connectionStore';
 import { useThemeStore, type ThemeMode } from '../state/themeStore';
 import { useUiStore } from '../state/uiStore';
@@ -20,6 +28,99 @@ export function SettingsDialog() {
 
   const connected = conn === 'connected';
   const connecting = conn === 'connecting';
+  const [providerState, setProviderState] = useState<AiProviderState | null>(null);
+  const [providerId, setProviderId] = useState('custom');
+  const [protocol, setProtocol] = useState('openai-chat');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [model, setModel] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [providerBusy, setProviderBusy] = useState<'load' | 'save' | 'test' | 'reset' | null>(
+    'load',
+  );
+  const [providerMessage, setProviderMessage] = useState('');
+
+  const applyState = (state: AiProviderState) => {
+    setProviderState(state);
+    setProviderId(state.active.providerId);
+    setProtocol(state.active.protocol);
+    setBaseUrl(state.active.baseUrl);
+    setModel(state.active.model);
+  };
+
+  useEffect(() => {
+    void getAiProviderState()
+      .then(applyState)
+      .catch((error) => setProviderMessage(String(error)))
+      .finally(() => setProviderBusy(null));
+  }, []);
+
+  const selectedProvider = providerState?.providers.find((item) => item.id === providerId);
+  const groupedProviders = useMemo(() => {
+    const groups = new Map<string, AiProviderState['providers']>();
+    for (const item of providerState?.providers ?? [])
+      groups.set(item.group, [...(groups.get(item.group) ?? []), item]);
+    return [...groups.entries()];
+  }, [providerState]);
+
+  const chooseProvider = (id: string) => {
+    const next = providerState?.providers.find((item) => item.id === id);
+    setProviderId(id);
+    if (!next) return;
+    setProtocol(next.protocol);
+    setBaseUrl(next.baseUrl);
+    setModel(next.models[0] ?? '');
+    setApiKey('');
+    setProviderMessage('');
+  };
+
+  const saveProvider = async () => {
+    setProviderBusy('save');
+    setProviderMessage('');
+    try {
+      applyState(
+        await saveAiProvider({
+          providerId,
+          protocol,
+          baseUrl,
+          model,
+          ...(apiKey ? { apiKey } : {}),
+        }),
+      );
+      setApiKey('');
+      setProviderMessage('Saved for this app session.');
+    } catch (error) {
+      setProviderMessage(String(error instanceof Error ? error.message : error));
+    } finally {
+      setProviderBusy(null);
+    }
+  };
+
+  const testProvider = async () => {
+    setProviderBusy('test');
+    setProviderMessage('');
+    try {
+      const result = await testAiProvider();
+      setProviderMessage(`Connection ready — ${result.latencyMs} ms`);
+    } catch (error) {
+      setProviderMessage(String(error instanceof Error ? error.message : error));
+    } finally {
+      setProviderBusy(null);
+    }
+  };
+
+  const resetProvider = async () => {
+    setProviderBusy('reset');
+    setProviderMessage('');
+    try {
+      applyState(await resetAiProvider());
+      setApiKey('');
+      setProviderMessage('Session override cleared.');
+    } catch (error) {
+      setProviderMessage(String(error instanceof Error ? error.message : error));
+    } finally {
+      setProviderBusy(null);
+    }
+  };
 
   return (
     <div className="dialog-backdrop" onClick={closeSettings}>
@@ -49,6 +150,139 @@ export function SettingsDialog() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="dialog-section ai-provider-settings">
+          <div className="provider-heading">
+            <span className="dialog-label">AI provider</span>
+            <span className={`provider-status${providerState?.active.configured ? ' ready' : ''}`}>
+              {providerState?.active.configured ? (
+                <>
+                  <Check size={11} /> Ready
+                </>
+              ) : (
+                'Not configured'
+              )}
+            </span>
+          </div>
+          <div className="provider-grid">
+            <label>
+              <span>Provider</span>
+              <select
+                value={providerId}
+                disabled={providerBusy === 'load'}
+                onChange={(event) => chooseProvider(event.target.value)}
+              >
+                {groupedProviders.map(([group, providers]) => (
+                  <optgroup key={group} label={group}>
+                    {providers.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Protocol</span>
+              <select
+                value={protocol}
+                disabled={selectedProvider?.auth === 'login'}
+                onChange={(event) => setProtocol(event.target.value)}
+              >
+                {providerState?.protocols.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {selectedProvider?.auth === 'login' ? (
+            <div className="provider-login-note">
+              <KeyRound size={15} />
+              <span>
+                Uses your existing Codex login through the local app-server. No API key is required.
+              </span>
+            </div>
+          ) : (
+            <>
+              <label className="provider-field">
+                <span>Base URL</span>
+                <input
+                  value={baseUrl}
+                  onChange={(event) => setBaseUrl(event.target.value)}
+                  spellCheck={false}
+                  placeholder="https://api.example.com/v1"
+                />
+              </label>
+              <div className="provider-grid">
+                <label>
+                  <span>Model</span>
+                  <input
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    list="ai-provider-models"
+                    spellCheck={false}
+                    placeholder="Model ID"
+                  />
+                </label>
+                <label>
+                  <span>API key</span>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(event) => setApiKey(event.target.value)}
+                    autoComplete="off"
+                    placeholder={
+                      providerState?.active.hasApiKey &&
+                      providerState.active.providerId === providerId
+                        ? 'Configured — leave blank to keep'
+                        : selectedProvider?.auth === 'optional'
+                          ? 'Optional for local server'
+                          : 'Stored in this session only'
+                    }
+                  />
+                </label>
+              </div>
+              <datalist id="ai-provider-models">
+                {selectedProvider?.models.map((item) => (
+                  <option key={item} value={item} />
+                ))}
+              </datalist>
+            </>
+          )}
+          <div className="provider-actions">
+            <button className="btn-primary" onClick={saveProvider} disabled={providerBusy !== null}>
+              {providerBusy === 'save' && <LoaderCircle className="spin" size={13} />}Save provider
+            </button>
+            <button
+              onClick={testProvider}
+              disabled={providerBusy !== null || !providerState?.active.configured}
+            >
+              {providerBusy === 'test' && <LoaderCircle className="spin" size={13} />}Test
+              connection
+            </button>
+            <button
+              className="btn-ghost provider-reset"
+              aria-label="Reset provider session"
+              title="Clear session override"
+              onClick={resetProvider}
+              disabled={providerBusy !== null}
+            >
+              <RotateCcw size={13} />
+            </button>
+          </div>
+          {providerMessage && (
+            <p className="provider-message" role="status">
+              {providerMessage}
+            </p>
+          )}
+          <p className="provider-privacy">
+            Keys stay in the local backend process and are never saved to the project or browser.
+            Model IDs are editable, so new and self-hosted models do not require an app update.
+          </p>
         </div>
 
         <div className="dialog-section">

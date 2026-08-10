@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   handleAiAssistant,
+  handleAiProviders,
+  handleAiProviderTest,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -126,6 +128,26 @@ async function main() {
       return;
     }
     const pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    const origin = req.headers.origin;
+    if (pathname.startsWith('/api/') && origin) {
+      let sameOrigin = false;
+      try { sameOrigin = new URL(origin).host === req.headers.host; } catch { sameOrigin = false; }
+      if (!sameOrigin) {
+        res.writeHead(403, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'cross-origin API access denied' }));
+        return;
+      }
+    }
+    if (pathname === '/api/ai-providers/test') {
+      setCors(res);
+      await handleAiProviderTest(req, res);
+      return;
+    }
+    if (pathname === '/api/ai-providers') {
+      setCors(res);
+      await handleAiProviders(req, res);
+      return;
+    }
     if (pathname === '/api/ai-build') {
       setCors(res);
       await handleAiBuild(req, res);

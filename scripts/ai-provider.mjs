@@ -370,8 +370,11 @@ function continuousDsl(prompt) {
 }
 
 // ---------------------------------------------------------------------------
-// LLM provider (OpenAI-compatible), used only when OPENAI_API_KEY is set.
+// LLM provider shared with the IDE assistant provider registry.
 // ---------------------------------------------------------------------------
+
+import { requestProviderText } from './ai-provider-adapters.mjs';
+import { resolveAssistantConfiguration } from './ai-provider-config.mjs';
 
 function extractDsl(content) {
   const match = content.match(/```(?:logicpilot|dsl)?\s*([\s\S]*?)```/);
@@ -379,54 +382,33 @@ function extractDsl(content) {
 }
 
 export async function llmProvider(prompt, diagnostics = [], previousDsl = '', contextDsl = '') {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error('llmProvider requires OPENAI_API_KEY');
+  const config = resolveAssistantConfiguration();
+  if (config.source === 'unconfigured' || config.protocol === 'codex-app-server') {
+    throw new Error('llmProvider requires a configured HTTP AI provider');
   }
-  const base = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
-  const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+  let userContent;
   if (diagnostics.length > 0) {
-    messages.push({
-      role: 'user',
-      content:
-          `The previous attempt failed to compile.\n\nPrevious DSL:\n` +
-          `${previousDsl}\n\nCompiler diagnostics (JSON):\n` +
-          `${JSON.stringify(diagnostics, null, 2)}\n\n` +
-          `Fix the DSL so it compiles.`,
-    });
+    userContent = `The previous attempt failed to compile.\n\nPrevious DSL:\n${previousDsl}\n\nCompiler diagnostics (JSON):\n${JSON.stringify(diagnostics, null, 2)}\n\nFix the DSL so it compiles.`;
   } else if (contextDsl.trim()) {
-    messages.push({
-      role: 'user',
-      content:
-          `${prompt}\n\nCurrent LogicPilot model DSL:\n${contextDsl}\n\n` +
-          'Return the complete updated model while preserving unrelated content.',
-    });
+    userContent = `${prompt}\n\nCurrent LogicPilot model DSL:\n${contextDsl}\n\nReturn the complete updated model while preserving unrelated content.`;
   } else {
-    messages.push({ role: 'user', content: prompt });
+    userContent = prompt;
   }
-
-  const response = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.2,
-    }),
+  const content = await requestProviderText(config, {
+    system: SYSTEM_PROMPT,
+    userContent,
+    maxTokens: Number(process.env.OPENAI_MAX_TOKENS ?? 4096),
+    maxResponseBytes: 2 * 1024 * 1024,
+    jsonOutput: false,
   });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`LLM request failed (${response.status}): ${body}`);
-  }
-  const data = await response.json();
-  const content = data?.choices?.[0]?.message?.content ?? '';
   return extractDsl(content);
 }
 
 export function resolveProvider() {
-  return process.env.OPENAI_API_KEY ? llmProvider : ruleBasedProvider;
+  const config = resolveAssistantConfiguration();
+  return config.source !== 'unconfigured' && config.protocol !== 'codex-app-server' ? llmProvider : ruleBasedProvider;
+}
+
+export function resolveProviderName() {
+  return resolveProvider() === llmProvider ? 'llm' : 'rule-based';
 }

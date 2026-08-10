@@ -11,6 +11,8 @@
 // replies.
 
 import { runCodexAssistant } from './codex-assistant-provider.mjs';
+import { requestProviderText } from './ai-provider-adapters.mjs';
+import { resolveAssistantConfiguration } from './ai-provider-config.mjs';
 
 // ---------------------------------------------------------------------------
 // Tool registry contract (shared with the client by convention; the server
@@ -367,7 +369,7 @@ export function buildSystemPrompt() {
 export function resolveAssistantProvider(environment = process.env) {
   const requested = String(environment.LOGICPILOT_AI_PROVIDER ?? 'auto').toLowerCase();
   if (!['auto', 'api', 'codex'].includes(requested)) {
-    throw new Error('LOGICPILOT_AI_PROVIDER must be auto, api, or codex');
+    throw new Error('LOGICPILOT_AI_PROVIDER must be auto, api, or codex when using the legacy environment contract');
   }
   if (requested === 'codex') return 'codex';
   if (requested === 'api' || environment.OPENAI_API_KEY) return 'api';
@@ -379,15 +381,11 @@ export function resolveAssistantProvider(environment = process.env) {
  * an Error (caller maps it to a 4xx/5xx response).
  */
 export async function runAssistant({ messages, context, maxResponseBytes = 64 * 1024 }) {
-  const provider = resolveAssistantProvider();
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (provider === 'unconfigured') {
+  const config = resolveAssistantConfiguration();
+  if (config.source === 'unconfigured') {
     throw new Error(
-      'assistant requires OPENAI_API_KEY or LOGICPILOT_AI_PROVIDER=codex with a logged-in Codex CLI',
+      'assistant is not configured; choose an AI provider in Settings, set an API key, or use Codex login',
     );
-  }
-  if (provider === 'api' && !apiKey) {
-    throw new Error('LOGICPILOT_AI_PROVIDER=api requires OPENAI_API_KEY');
   }
   if (!Array.isArray(messages) || messages.length === 0 || messages.length > 32) {
     throw new Error('assistant messages must contain 1..32 entries');
@@ -405,63 +403,29 @@ export async function runAssistant({ messages, context, maxResponseBytes = 64 * 
   const system = buildSystemPrompt();
   const contextText = renderContext(context);
   const userContent = [contextText, renderMessages(messages)].filter(Boolean).join('\n\n');
-  if (provider === 'codex') {
+  if (config.protocol === 'codex-app-server') {
     const parsed = await runCodexAssistant({
       systemPrompt: system,
       userContent,
       maxResponseBytes,
+      model: config.model || undefined,
     });
     return validateAssistantResponse(parsed);
   }
-  const base = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
   const maxTokens = Number(process.env.OPENAI_MAX_TOKENS ?? 4096);
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 512 || maxTokens > 128 * 1024) {
     throw new Error('OPENAI_MAX_TOKENS must be an integer between 512 and 131072');
   }
-  const requestBody = {
-    model,
-    temperature: 0.2,
-    max_tokens: maxTokens,
-    // OpenAI and DeepSeek both implement JSON mode. The prompt already
-    // contains an explicit JSON example, satisfying provider requirements.
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: userContent },
-    ],
-  };
-  // DeepSeek V4 defaults to thinking mode. This endpoint needs a short,
-  // machine-readable routing decision rather than hidden chain-of-thought;
-  // disabling thinking also prevents reasoning tokens from crowding out the
-  // JSON payload. Other OpenAI-compatible providers never receive this field.
-  if (/deepseek/i.test(model) || /api\.deepseek\.com/i.test(base)) {
+  if (config.providerId === 'deepseek' || /deepseek/i.test(config.model) || /api\.deepseek\.com/i.test(config.baseUrl)) {
     const thinking = process.env.DEEPSEEK_THINKING ?? 'disabled';
     if (!['enabled', 'disabled'].includes(thinking)) {
       throw new Error('DEEPSEEK_THINKING must be enabled or disabled');
     }
-    requestBody.thinking = { type: thinking };
+    config.thinking = thinking;
   }
 
   for (let attempt = 0; attempt < 2; ++attempt) {
-    const response = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`LLM request failed (${response.status}): ${body}`);
-    }
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content ?? '';
-    if (content.length > maxResponseBytes) {
-      throw new Error('assistant response exceeded the size limit');
-    }
+    const content = await requestProviderText(config, { system, userContent, maxTokens, maxResponseBytes });
     try {
       // JSON mode should return a bare object; tolerate a fenced block for
       // less complete OpenAI-compatible gateways. DeepSeek documents rare

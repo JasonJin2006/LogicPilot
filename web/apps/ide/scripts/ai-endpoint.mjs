@@ -54,6 +54,10 @@ async function loadAssistant() {
   return module.runAssistant;
 }
 
+async function loadProviderConfig() {
+  return import(pathToFileURL(join(root, 'scripts', 'ai-provider-config.mjs')).href);
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
@@ -76,6 +80,45 @@ export function handleConfig(req, res) {
   send(res, 200, {
     wsUrl: process.env.LOGICPILOT_WS_URL ?? 'ws://127.0.0.1:8089/sim',
   });
+}
+
+export async function handleAiProviders(req, res) {
+  const providerConfig = await loadProviderConfig();
+  if (req.method === 'GET') {
+    send(res, 200, providerConfig.getAssistantProviderState());
+    return;
+  }
+  if (req.method === 'DELETE') {
+    providerConfig.clearAssistantProviderSession();
+    send(res, 200, providerConfig.getAssistantProviderState());
+    return;
+  }
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  try {
+    const payload = JSON.parse(await readBody(req));
+    send(res, 200, providerConfig.configureAssistantProvider(payload));
+  } catch (error) {
+    send(res, 400, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+export async function handleAiProviderTest(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  const started = Date.now();
+  try {
+    const runAssistant = await loadAssistant();
+    await runAssistant({ messages: [{ role: 'user', content: 'Reply briefly that the AI connection is ready. Do not call tools.' }], context: null });
+    const { getAssistantProviderState } = await loadProviderConfig();
+    send(res, 200, { ok: true, latencyMs: Date.now() - started, active: getAssistantProviderState().active });
+  } catch (error) {
+    send(res, 502, { ok: false, error: String(error?.message ?? error) });
+  }
 }
 
 export async function handleAiBuild(req, res) {
@@ -437,7 +480,7 @@ export async function handleAiAssistant(req, res) {
   } catch (error) {
     const message = String(error?.message ?? error);
     if (
-      /OPENAI_API_KEY|LLM request failed|malformed JSON|schema validation|Codex CLI provider/.test(
+      /not configured|API key|LLM request failed|malformed JSON|schema validation|Codex CLI provider/.test(
         message,
       )
     ) {

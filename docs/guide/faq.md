@@ -16,6 +16,8 @@ SDK 的 `INCLUDE` / `LIB`，并定位 vcpkg。Release 构建把 preset 改为
 
 ## AI 助手提示没有 API Key
 
+优先打开 **Settings → AI provider** 选择服务商、协议与模型。可以使用云端 API、本地 Ollama / LM Studio / vLLM，或复用 Codex 登录；API Key 只在当前本地后端进程中保存。环境变量方式仍受支持，适合自动化启动。
+
 在线助手需要在启动 Vite 或桌面客户端的同一个环境中设置：
 
 ```powershell

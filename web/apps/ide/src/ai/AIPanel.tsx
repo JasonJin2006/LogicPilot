@@ -423,6 +423,10 @@ export function AIPanel() {
       setError('Assistant step cancelled.');
       return;
     }
+    if (!result.ok && (result.error ?? '').includes('assistant is not configured')) {
+      setError('Choose an AI provider in Settings before using the assistant.');
+      return;
+    }
     if (!result.ok && (result.error ?? '').includes('OPENAI_API_KEY')) {
       setError('Assistant endpoint unavailable (no API key); using quick actions.');
       const decision = routeAiIntent(request, {

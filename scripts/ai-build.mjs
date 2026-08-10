@@ -27,7 +27,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveProvider } from './ai-provider.mjs';
+import { resolveProvider, resolveProviderName } from './ai-provider.mjs';
 import { extendNativeRuntimePath, findLpcli } from './tool-paths.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -383,7 +383,7 @@ export async function buildModel({
       iterations,
       dsl: finalDsl,
       lpcli,
-      provider: process.env.OPENAI_API_KEY ? 'llm' : 'rule-based',
+      provider: resolveProviderName(),
       lastDiagnostics: diagnostics,
       runSummary,
       metrics: runMetrics,
@@ -469,7 +469,7 @@ async function main() {
   }
   console.log(
       `[ai-build] result: ok=${result.ok} iterations=${result.iterations} ` +
-      `(provider=${process.env.OPENAI_API_KEY ? 'llm' : 'rule-based'})`);
+      `(provider=${resolveProviderName()})`);
   if (result.ok) {
     console.log('[ai-build] --- generated DSL ---');
     console.log(result.dsl.trimEnd());

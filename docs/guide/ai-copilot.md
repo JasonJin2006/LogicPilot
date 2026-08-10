@@ -74,6 +74,22 @@ node scripts/ai-model-patch.mjs "replace queue Waiting with delay"
 
 ## Provider 切换
 
+桌面端和 Web IDE 可在 **Settings → AI provider** 中配置。配置采用“Provider 预设 + 协议适配器”两层结构：预设覆盖 OpenAI、Anthropic、Google Gemini、DeepSeek、OpenRouter、xAI、Mistral、Groq、Cerebras、Together、Fireworks、Kimi、Qwen、GLM、SiliconFlow、MiniMax、Ollama、LM Studio、vLLM 和自定义端点；模型 ID 与 Base URL 始终允许手工修改。
+
+当前协议包括 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini `generateContent` 和 Codex `app-server`。OpenAI-compatible 网关若不支持 JSON mode，会自动移除 `response_format` 重试一次。设置页输入的 API Key 只保存在本地 Node 后端进程内，不写入浏览器、工程文件或 Git；关闭后端即清除。Codex 模式复用现有登录，不读取或复制 Codex 凭据文件。
+
+自动化部署仍可使用环境变量；新变量优先，旧的 OpenAI-compatible 变量继续兼容：
+
+```powershell
+$env:LOGICPILOT_AI_PROVIDER="custom"
+$env:LOGICPILOT_AI_PROTOCOL="openai-chat" # 也可为 openai-responses / anthropic-messages / google-gemini
+$env:LOGICPILOT_AI_API_KEY="..."
+$env:LOGICPILOT_AI_BASE_URL="https://.../v1"
+$env:LOGICPILOT_AI_MODEL="..."
+```
+
+兼容变量：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。Codex 仍可设置 `LOGICPILOT_AI_PROVIDER=codex`。
+
 ```powershell
 $env:OPENAI_API_KEY="sk-..."          # 启用 LLM provider
 $env:OPENAI_BASE_URL="https://..."    # 可选，兼容端点
