@@ -420,6 +420,41 @@
   filter: drop-shadow(0 0 4px var(--accent-dim));
 }
 
+.model-block.has-error .model-block-icon,
+.model-block.has-error .model-block-name {
+  color: var(--error);
+}
+
+.model-block.has-warning .model-block-icon,
+.model-block.has-warning .model-block-name {
+  color: var(--warn);
+}
+
+.model-block-diagnostic {
+  position: absolute;
+  top: -7px;
+  left: -8px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  color: currentColor;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.model-block.has-error .model-block-diagnostic {
+  color: var(--error);
+}
+
+.model-block.has-warning .model-block-diagnostic {
+  color: var(--warn);
+}
+
 .model-block-icon {
   position: relative;
   width: 34px;
@@ -1069,6 +1104,30 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--accent-text);
+}
+
+.props-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.props-diagnostics p {
+  margin: 0;
+}
+
+.props-diagnostics .error {
+  color: var(--error);
+}
+
+.props-diagnostics .warning {
+  color: var(--warn);
 }
 
 .props-field {

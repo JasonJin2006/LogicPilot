@@ -4,7 +4,7 @@
 // stay readable (finer when zoomed in); the axes through the origin get
 // arrowheads and numeric ticks. Blocks from the palette drop in world coords.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
 import { Focus, Plus, Redo2, RotateCcw, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
@@ -44,6 +44,7 @@ import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
 import { snapRect, type SnapGuide } from '../presentation/snapping';
 import { graphicIntersectsViewport, worldViewportFromCamera } from '../presentation/viewport';
+import { validateDesModel } from './modelValidation';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -165,11 +166,23 @@ export function ModelCanvas() {
   // builds, hand-edited localStorage) and lack `nodes`/`edges`. The store
   // merge sanitizes it, but keep this belt-and-braces so a single bad shape
   // can never NPE the canvas render path.
-  const document = {
-    name: rawDocument?.name ?? 'Model',
-    nodes: Array.isArray(rawDocument?.nodes) ? rawDocument.nodes : [],
-    edges: Array.isArray(rawDocument?.edges) ? rawDocument.edges : [],
-  };
+  const document = useMemo(
+    () => ({
+      name: rawDocument?.name ?? 'Model',
+      nodes: Array.isArray(rawDocument?.nodes) ? rawDocument.nodes : [],
+      edges: Array.isArray(rawDocument?.edges) ? rawDocument.edges : [],
+    }),
+    [rawDocument],
+  );
+  const modelDiagnostics = useMemo(() => validateDesModel(document), [document]);
+  const diagnosticsByNode = useMemo(() => {
+    const grouped = new Map<string, typeof modelDiagnostics>();
+    for (const diagnostic of modelDiagnostics) {
+      if (!diagnostic.nodeId) continue;
+      grouped.set(diagnostic.nodeId, [...(grouped.get(diagnostic.nodeId) ?? []), diagnostic]);
+    }
+    return grouped;
+  }, [modelDiagnostics]);
   // The canvas can focus on one container Node's subgraph (e.g. process
   // Flow); null = the model root showing everything.
   const focusView = useCanvasView((state) => state.view);
@@ -1702,6 +1715,17 @@ export function ModelCanvas() {
         {controlsView}
         {visibleNodes.map((node) => {
           const nodeLive = live ? vizState.blocks.get(node.name) : undefined;
+          const nodeDiagnostics = diagnosticsByNode.get(node.id) ?? [];
+          const diagnosticClass = nodeDiagnostics.some(
+            (diagnostic) => diagnostic.severity === 'error',
+          )
+            ? ' has-error'
+            : nodeDiagnostics.length > 0
+              ? ' has-warning'
+              : '';
+          const diagnosticTitle = nodeDiagnostics
+            .map((diagnostic) => `${diagnostic.code}: ${diagnostic.message}`)
+            .join('\n');
           if (
             PRESENTATION_KINDS.has(node.kind) ||
             STATECHART_KINDS.has(node.kind) ||
@@ -1743,8 +1767,9 @@ export function ModelCanvas() {
           return (
             <div
               key={node.id}
-              className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+              className={`model-block kind-${node.kind}${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}${diagnosticClass}`}
               style={{ left: node.x, top: node.y }}
+              title={diagnosticTitle || undefined}
               onPointerDown={(event) => onElementPointerDown(event, node)}
               onPointerMove={(event) => onElementPointerMove(event, node)}
               onPointerUp={(event) => onElementPointerUp(event, node)}
@@ -1791,6 +1816,11 @@ export function ModelCanvas() {
                 })}
               </span>
               <span className="model-block-name">{node.name}</span>
+              {nodeDiagnostics.length > 0 && (
+                <span className="model-block-diagnostic" aria-hidden="true">
+                  !
+                </span>
+              )}
               {live && node.kind === 'queue' && queueLength > 0 && (
                 <span className="model-block-badge">{queueLength}</span>
               )}

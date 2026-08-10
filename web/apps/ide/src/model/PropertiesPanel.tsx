@@ -8,8 +8,9 @@ import { useModelStore } from '../state/modelStore';
 import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockDefs';
 import { PresentationInspector } from '../presentation/Inspector';
 import { useShapeSelection } from '../presentation/selectionStore';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { GraphicNode, ModelNode } from '@logicpilot/editor';
+import { validateDesModel } from './modelValidation';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
@@ -190,6 +191,10 @@ export function PropertiesPanel() {
   const [newAttrType, setNewAttrType] = useState('int');
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
+  const nodeDiagnostics = useMemo(
+    () => validateDesModel(document).filter((diagnostic) => diagnostic.nodeId === selectedId),
+    [document, selectedId],
+  );
   if (!node) {
     return (
       <div className="side-panel-body">
@@ -380,6 +385,15 @@ export function PropertiesPanel() {
   return (
     <div className="side-panel-body properties">
       <div className="props-kind">{node.kind}</div>
+      {nodeDiagnostics.length > 0 && (
+        <div className="props-diagnostics" aria-label="Selected block diagnostics">
+          {nodeDiagnostics.map((diagnostic, index) => (
+            <p className={diagnostic.severity} key={`${diagnostic.code}-${index}`}>
+              <strong>{diagnostic.code}</strong> {diagnostic.message}
+            </p>
+          ))}
+        </div>
+      )}
       <label className="props-field">
         <span className="props-field-name">Name</span>
         <input value={node.name} onChange={(event) => renameBlock(node.id, event.target.value)} />

@@ -10,6 +10,7 @@ import { useConnectionStore } from '../state/connectionStore';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
+import { validateDesModel } from '../model/modelValidation';
 
 interface NumberFieldProps {
   label: string;
@@ -47,7 +48,7 @@ export function RunDialog() {
   const step = useConnectionStore((state) => state.step);
   const stop = useConnectionStore((state) => state.stop);
   const runCanvasModel = useConnectionStore((state) => state.runCanvasModel);
-  const nodeCount = useModelStore((state) => state.document.nodes.length);
+  const document = useModelStore((state) => state.document);
   const runOptions = useRunStore((state) => state.runOptions);
   const setRunOptions = useRunStore((state) => state.setRunOptions);
 
@@ -120,6 +121,11 @@ export function RunDialog() {
     speed: parseNum(speed) ?? Number.NaN,
   };
   const validationError = validateRunOptions(draftOptions);
+  const modelDiagnostics = validateDesModel(document);
+  const blockingModelDiagnostics = modelDiagnostics.filter(
+    (diagnostic) => diagnostic.severity === 'error',
+  );
+  const nodeCount = document.nodes.length;
   const buildOptions = (): StartOptions => ({
     seed: parseNum(seed),
     seedMode,
@@ -274,7 +280,9 @@ export function RunDialog() {
           <div className="dialog-actions">
             <button
               className="btn-primary"
-              disabled={!connected || validationError !== null}
+              disabled={
+                !connected || validationError !== null || blockingModelDiagnostics.length > 0
+              }
               onClick={onStart}
             >
               Start
@@ -293,6 +301,21 @@ export function RunDialog() {
             </button>
           </div>
           {validationError !== null && <p className="ai-error">{validationError}</p>}
+          {nodeCount > 0 && modelDiagnostics.length > 0 && (
+            <div className="run-model-diagnostics" aria-label="Model diagnostics">
+              <strong>
+                Model preflight: {blockingModelDiagnostics.length} error(s),{' '}
+                {modelDiagnostics.length - blockingModelDiagnostics.length} warning(s)
+              </strong>
+              <ul>
+                {modelDiagnostics.map((diagnostic, index) => (
+                  <li className={diagnostic.severity} key={`${diagnostic.code}-${index}`}>
+                    <span>{diagnostic.code}</span> {diagnostic.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="dialog-hint">
             {nodeCount > 0
               ? 'Runs the model on the canvas (compiled first); parameters use the model\u2019s own rates.'

@@ -55,6 +55,36 @@
   line-height: 1.6;
 }
 
+.run-model-diagnostics {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.run-model-diagnostics strong {
+  font-weight: 600;
+}
+
+.run-model-diagnostics ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+}
+
+.run-model-diagnostics li.error,
+.run-model-diagnostics li.error span {
+  color: var(--error);
+}
+
+.run-model-diagnostics li.warning,
+.run-model-diagnostics li.warning span {
+  color: var(--warn);
+}
+
 .dialog-section {
   display: flex;
   flex-direction: column;
