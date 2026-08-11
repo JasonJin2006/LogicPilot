@@ -74,7 +74,17 @@ class WsClient {
                 asio::socket_base::receive_buffer_size(4096));
           }
         }
-        asio::connect(ws_.next_layer(), results);
+        if (small_receive_buffer && ws_.next_layer().is_open()) {
+          // The free asio::connect() closes and reopens the socket for each
+          // endpoint, silently discarding the receive-buffer size set above
+          // (Windows then advertises its 64 KiB default window and absorbs
+          // a whole run without stalling). Connect the already-open socket
+          // directly so the tiny window sticks.
+          const tcp::endpoint endpoint = results.begin()->endpoint();
+          ws_.next_layer().connect(endpoint);
+        } else {
+          asio::connect(ws_.next_layer(), results);
+        }
         ws_.handshake("127.0.0.1:" + std::to_string(port), "/sim");
         return true;
       } catch (const std::exception&) {
@@ -1073,6 +1083,10 @@ TEST_CASE("lp-server bounds a slow client's write queue by dropping frames",
           "[server][integration]") {
   logicpilot::server::ServerConfig config = make_test_config();
   config.write_queue_limit = 8;  // tiny cap so drops engage quickly
+  // Pin a small kernel send buffer: the run's ~38 KB of frames fits inside
+  // OS-default send buffers on Windows (autotuned far larger than Linux),
+  // which previously absorbed the whole run and left drops at 0-2.
+  config.send_buffer_size = 2048;
   logicpilot::server::SimServer server{config};
   std::string error;
   REQUIRE(server.start(&error));

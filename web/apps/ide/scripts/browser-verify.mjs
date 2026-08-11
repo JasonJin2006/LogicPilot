@@ -45,8 +45,26 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1520, height: 900 } });
 const consoleErrors = [];
+page.on('response', (resp) => {
+  // CI has no server-side API key: /api/assistant answers 502 and the panel
+  // falls back to quick actions. Allow exactly that request; any other 502
+  // is a real regression and still fails the run.
+  if (resp.status() === 502 && !resp.url().includes('/api/assistant')) {
+    consoleErrors.push(`HTTP ${resp.status()} for ${resp.url()}`);
+  }
+});
 page.on('console', (msg) => {
-  if (msg.type() === 'error') consoleErrors.push(msg.text());
+  if (msg.type() !== 'error') {
+    return;
+  }
+  // Chrome's resource-load error text carries no URL, so the allowed
+  // /api/assistant 502 cannot be filtered by URL here; the response
+  // listener above already rejects every other 502.
+  const text = msg.text();
+  if (text.includes('502') && text.includes('Bad Gateway')) {
+    return;
+  }
+  consoleErrors.push(text);
 });
 page.on('pageerror', (err) => consoleErrors.push(String(err)));
 
@@ -84,9 +102,22 @@ try {
   // Connection + run setup live in the settings dialog (activity bar gear).
   await page.getByRole('button', { name: 'Settings' }).click();
   await page.getByRole('dialog', { name: 'Settings' }).waitFor();
+
+  // Theme switching (light / dark) lives in the Appearance category, which
+  // is the category the dialog opens on.
+  await page.getByRole('button', { name: 'Light' }).click();
+  const lightTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (lightTheme !== 'light') throw new Error(`expected light theme, got ${lightTheme}`);
+  await page.getByRole('button', { name: 'Dark' }).click();
+  const darkTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  if (darkTheme !== 'dark') throw new Error(`expected dark theme, got ${darkTheme}`);
+  log('theme switching: light <-> dark');
+
   // The IDE auto-connects on load (the gateway is up for this test); the
-  // dialog shows Disconnect once connected. Fall back to a manual Connect
-  // if the auto attempt already gave up.
+  // connection status badge and Connect button only render inside the
+  // Simulation category, so switch to it first. Fall back to a manual
+  // Connect if the auto attempt already gave up.
+  await page.locator('.settings-nav button', { hasText: 'Simulation' }).click();
   await page
     .waitForFunction(() => document.querySelector('.conn-connected') !== null, undefined, {
       timeout: 15_000,
@@ -96,15 +127,6 @@ try {
       await page.waitForSelector('.conn-connected', { timeout: 10_000 });
     });
   log('connected to ws://127.0.0.1:8089/sim');
-
-  // Theme switching (light / dark) lives in the same dialog.
-  await page.getByRole('button', { name: 'Light' }).click();
-  const lightTheme = await page.evaluate(() => document.documentElement.dataset.theme);
-  if (lightTheme !== 'light') throw new Error(`expected light theme, got ${lightTheme}`);
-  await page.getByRole('button', { name: 'Dark' }).click();
-  const darkTheme = await page.evaluate(() => document.documentElement.dataset.theme);
-  if (darkTheme !== 'dark') throw new Error(`expected dark theme, got ${darkTheme}`);
-  log('theme switching: light <-> dark');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   // Run parameters + Start live in the canvas Run dialog (per-experiment,
@@ -112,13 +134,22 @@ try {
   // Run lives in the tab bar's contextual action area (icon button).
   await page.getByRole('button', { name: 'Run', exact: true }).click();
   await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  const fillRunField = async (label, value) => {
+    const field = page.locator('label.field', { hasText: label }).locator('input');
+    // Fast (default) mode disables the speed input - speed only paces
+    // animated mode - so skip it instead of fighting the disabled state.
+    if (label === 'speed' && (await field.isDisabled())) {
+      return;
+    }
+    await field.fill(value);
+  };
   for (const [label, value] of [
     ['arrivals', '200'],
     ['warmup', '30'],
     ['speed', '50'],
     ['reps', '1'],
   ]) {
-    await page.locator('label.field', { hasText: label }).locator('input').fill(value);
+    await fillRunField(label, value);
   }
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(
@@ -238,13 +269,15 @@ try {
   await dropBlock('sink', 700, 260);
   const portBox = async (name, port) => {
     const box = await page
-      .locator(`.model-block:has(.model-block-name:text-is("${name}")) .model-port.${port}`)
+      .locator(
+        `.model-block:has(.model-block-name:text-is("${name}")) .model-port[data-port="${port}"]`,
+      )
       .boundingBox();
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   };
   const wire = async (fromName, toName) => {
-    const from = await portBox(fromName, 'port-out');
-    const to = await portBox(toName, 'port-in');
+    const from = await portBox(fromName, 'out');
+    const to = await portBox(toName, 'in');
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(to.x, to.y, { steps: 6 });
@@ -274,7 +307,7 @@ try {
     ['speed', '100'],
     ['reps', '1'],
   ]) {
-    await page.locator('label.field', { hasText: label }).locator('input').fill(value);
+    await fillRunField(label, value);
   }
 
   await page.getByRole('button', { name: 'Start' }).click();
@@ -319,33 +352,85 @@ try {
   }
   log('agent-centric canvas: flat process blocks on the model root');
 
-  // AI panel (right): generate / optimize / explain / trajectory.
+  // AI panel (right): the assistant conversation drives model creation,
+  // edits, runs and explanation through ONE input (no fixed action buttons).
+  // CI has no server-side API key, so /api/assistant reports 502 and the
+  // panel falls back to the quick-action path: the prompt is routed by
+  // intent, a structured ModelPatch proposal appears, and applying it loads
+  // the generated model onto the canvas.
   await page.locator('.tab-label').filter({ hasText: /^AI$/ }).click();
-  await page
-    .locator('.ai-input')
-    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
-  await page.getByRole('button', { name: 'generate + run' }).click();
-  await page.waitForSelector('.ai-result', { timeout: 90_000 });
-  const aiText = await page.locator('.ai-result').textContent();
-  if (!aiText?.includes('compiled in')) {
-    throw new Error('AI panel did not show a compiled model');
-  }
-  log('AI panel generated and ran a model from the prompt');
-  await page.screenshot({ path: join(OUT, '3-ai-model.png') });
-  await page.getByRole('button', { name: 'Load to canvas' }).click();
-  await page.waitForTimeout(300);
-  const canvasBlocks = await page.locator('.model-block').count();
-  if (canvasBlocks < 2) {
-    throw new Error('AI model did not load into the modeling canvas');
-  }
-  log('AI model loaded into the modeling canvas');
+
+  // Start from an empty canvas so the build prompt takes the model-
+  // generation path (the fallback build on a populated canvas would be an
+  // edit request instead).
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
+  await page.getByRole('button', { name: "Don't Save" }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
 
   await page
     .locator('.ai-input')
-    .fill('minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 ' + 'and service 1.0');
-  await page.getByRole('button', { name: 'optimize' }).click();
-  await page.waitForSelector('.ai-scores', { timeout: 90_000 });
-  const optimizeText = await page.locator('.ai-result').textContent();
+    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+  await page.getByRole('button', { name: 'Send to Copilot' }).click();
+  await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
+  const previewText = await page.locator('.ai-patch-preview').textContent();
+  if (!previewText?.includes('Proposed ModelPatch')) {
+    throw new Error('AI panel did not show a model patch proposal');
+  }
+  await page.getByRole('button', { name: 'Apply model patch' }).click();
+  await page.waitForFunction(
+    () => document.querySelectorAll('.model-block').length >= 2,
+    undefined,
+    { timeout: 120_000 },
+  );
+  // The applied run replaces the earlier build-result card; wait for the
+  // applied-run meta instead of racing the stale "compiled in" card.
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.ai-result')
+        ?.textContent?.includes('ran the applied canvas model') ?? false,
+    undefined,
+    { timeout: 120_000 },
+  );
+  const aiResultText = await page.locator('.ai-result').textContent();
+  if (!aiResultText?.includes('ran the applied canvas model')) {
+    throw new Error('AI panel did not run the applied model');
+  }
+  log('AI panel generated, applied and ran a model from the prompt');
+  await page.screenshot({ path: join(OUT, '3-ai-model.png') });
+
+  // Optimization and explanation live in the Tools menu (secondary actions);
+  // both operate on the metrics produced by the applied run. The menu stays
+  // open after a pick, so only open it when it is currently closed.
+  const openTools = async () => {
+    const menu = page.locator('.ai-tools-menu');
+    if ((await menu.getAttribute('open')) === null) {
+      await menu.locator('summary').click();
+    }
+    await page.locator('.ai-tools-popover').waitFor({ timeout: 5_000 });
+  };
+
+  await page
+    .locator('.ai-input')
+    .fill('minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0');
+  await openTools();
+  await page.locator('.ai-tools-popover button', { hasText: 'Optimize model' }).click();
+  // The applied-run result card stays mounted next to the optimize card, so
+  // wait for the optimize summary across ALL result cards.
+  await page.waitForFunction(
+    () =>
+      [...document.querySelectorAll('.ai-result')].some((el) =>
+        el.textContent?.includes('evaluations'),
+      ) ?? false,
+    undefined,
+    { timeout: 90_000 },
+  );
+  const optimizeText = await page
+    .locator('.ai-result')
+    .filter({ hasText: 'best servers=' })
+    .textContent();
   if (!optimizeText?.includes('best servers=')) {
     throw new Error('AI panel did not show an optimization result');
   }
@@ -356,26 +441,42 @@ try {
   log('AI panel optimized a model parameter from the prompt');
   await page.screenshot({ path: join(OUT, '4-ai-optimize.png') });
 
-  await page
-    .locator('.ai-input')
-    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
-  await page.getByRole('button', { name: 'explain' }).click();
+  await page.locator('.ai-input').fill('why is the queue slow?');
+  await openTools();
+  await page.locator('.ai-tools-popover button', { hasText: 'Explain last run' }).click();
   await page.waitForSelector('.ai-findings', { timeout: 90_000 });
-  const explainText = await page.locator('.ai-result').textContent();
-  if (!explainText?.includes('throughput=')) {
+  const explainText = await page
+    .locator('.ai-result')
+    .filter({ hasText: 'busiest=' })
+    .textContent();
+  if (!explainText?.includes('blocks')) {
     throw new Error('AI panel did not show an explanation');
   }
-  log('AI panel explained the model bottleneck from the prompt');
+  log('AI panel explained the model results from the prompt');
+
+  // Continuous-model trajectory: start a fresh project so the decay prompt
+  // again takes the generation path (the "New project" action lives in the
+  // Welcome tab, which opens over the center when nothing is pinned).
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Welcome' }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
 
   await page.locator('.ai-input').fill('build an exponential decay model with rate 0.5');
-  await page.getByRole('button', { name: 'generate + run' }).click();
-  await page.waitForSelector('.ai-trajectory', { timeout: 90_000 });
+  await page.getByRole('button', { name: 'Send to Copilot' }).click();
+  await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
+  await page.getByRole('button', { name: 'Apply model patch' }).click();
+  await page.waitForSelector('.ai-trajectory', { timeout: 120_000 });
   log('AI panel charted a continuous-model trajectory');
   await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
   // View menu: the trailing check mark means "panel open". In the right area
-  // each panel is a tab, so clicking an open one removes just that tab.
-  await page.getByRole('button', { name: 'View' }).click();
+  // each panel is a tab, so clicking an open one removes just that tab. The
+  // canvas toolbar's "Reset view" button shares the name, so match exactly.
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   const aiChecked = await page
     .locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' })
     .evaluate((el) => el.querySelector('.app-menu-entry-check') !== null);
@@ -397,7 +498,7 @@ try {
   if (!rightTabs.includes('Properties')) {
     throw new Error('removing AI should keep the Properties tab');
   }
-  await page.getByRole('button', { name: 'View' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'AI' }).click();
   await page.locator('.area-right .tab', { hasText: 'AI' }).waitFor({ timeout: 5_000 });
   log('View menu removes and re-adds right-area tabs via the check mark');

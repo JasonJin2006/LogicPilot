@@ -423,12 +423,18 @@ export function AIPanel() {
       setError('Assistant step cancelled.');
       return;
     }
-    if (!result.ok && (result.error ?? '').includes('assistant is not configured')) {
-      setError('Choose an AI provider in Settings before using the assistant.');
-      return;
-    }
-    if (!result.ok && (result.error ?? '').includes('OPENAI_API_KEY')) {
-      setError('Assistant endpoint unavailable (no API key); using quick actions.');
+    if (
+      !result.ok &&
+      ((result.error ?? '').includes('assistant is not configured') ||
+        (result.error ?? '').includes('OPENAI_API_KEY'))
+    ) {
+      // Unconfigured (no provider / no key): the endpoint is unavailable,
+      // so keep the panel useful by falling back to the local quick actions
+      // (intent router). Configure a provider in Settings for the full
+      // tool-driven assistant.
+      setError(
+        'Assistant not configured; using quick actions. Configure a provider in Settings for the full assistant.',
+      );
       const decision = routeAiIntent(request, {
         hasModel: current.nodes.length > 0,
         hasMetrics: session.runMetrics != null,

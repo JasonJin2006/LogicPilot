@@ -69,6 +69,13 @@ struct ServerConfig {
   bool generic_model{false};
   // Per-session pending-write bound (see kDefaultWriteQueueLimit).
   std::size_t write_queue_limit{kDefaultWriteQueueLimit};
+  // TCP send buffer inherited by every accepted session; 0 keeps the OS
+  // default. Slow-consumer tests pin a small value so the pending-write cap
+  // engages regardless of the platform's default buffer sizing (Windows
+  // autotunes far larger than Linux, so an OS-default run can fit entirely
+  // in the socket and never drop a frame). Must be set on the listener:
+  // SO_SNDBUF on an already-connected socket is ignored on Windows.
+  std::size_t send_buffer_size{0};
   bool trace{false};  // mirror every outgoing frame as JSON on stdout
 };
 

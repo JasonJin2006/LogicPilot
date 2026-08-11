@@ -7,6 +7,7 @@ import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';
 import { Workspace } from './layout/Workspace';
 import { InfoDialog } from './layout/InfoDialog';
+import { EditableContextMenu } from './layout/EditableContextMenu';
 import { ConfirmDialog } from './layout/ConfirmDialog';
 import { PromptDialog } from './layout/PromptDialog';
 import { NewProjectDialog } from './run/NewProjectDialog';
@@ -85,6 +86,7 @@ export default function App() {
     <>
       <ThemeManager />
       <div className="app">
+        <EditableContextMenu />
         <TopBar />
         <div className="app-body">
           <ActivityBar />

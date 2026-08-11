@@ -1137,6 +1137,15 @@ bool SimServer::start(std::string* error) {
   try {
     d.acceptor_.open(endpoint.protocol());
     d.acceptor_.set_option(asio::socket_base::reuse_address(true));
+    if (d.config.send_buffer_size > 0) {
+      // Accepted TCP sockets inherit the listener's send buffer; setting the
+      // option here (rather than per-session) is the only way it takes
+      // effect on Windows, where SO_SNDBUF on an already-connected socket is
+      // ignored and autotuning overrides the default. Applies to every
+      // session of this server - intended for single-client test servers.
+      d.acceptor_.set_option(asio::socket_base::send_buffer_size(
+          static_cast<int>(d.config.send_buffer_size)));
+    }
     d.acceptor_.bind(endpoint);
     d.acceptor_.listen(asio::socket_base::max_listen_connections);
     d.actual_port_ = d.acceptor_.local_endpoint().port();
