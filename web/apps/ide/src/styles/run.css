@@ -192,6 +192,7 @@
 }
 .provider-grid input,
 .provider-grid select,
+.provider-grid .app-select-trigger,
 .provider-field input {
   width: 100%;
   min-width: 0;

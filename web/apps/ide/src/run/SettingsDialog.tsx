@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { AppSelect } from '../layout/AppSelect';
 import {
   getAiProviderState,
   resetAiProvider,
@@ -233,35 +234,28 @@ export function SettingsDialog() {
                 <div className="provider-grid">
                   <label>
                     <span>Provider</span>
-                    <select
+                    <AppSelect
+                      ariaLabel="Provider"
                       value={providerId}
                       disabled={providerBusy === 'load'}
-                      onChange={(event) => chooseProvider(event.target.value)}
-                    >
-                      {groupedProviders.map(([group, providers]) => (
-                        <optgroup key={group} label={group}>
-                          {providers.map((item) => (
-                            <option key={item.id} value={item.id}>
-                              {item.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                      onChange={chooseProvider}
+                      options={groupedProviders.flatMap(([group, providers]) =>
+                        providers.map((item) => ({ value: item.id, label: item.name, group })),
+                      )}
+                    />
                   </label>
                   <label>
                     <span>Protocol</span>
-                    <select
+                    <AppSelect
+                      ariaLabel="Protocol"
                       value={protocol}
-                      disabled={selectedProvider?.auth === 'login'}
-                      onChange={(event) => setProtocol(event.target.value)}
-                    >
-                      {providerState?.protocols.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
+                      disabled={providerBusy === 'load' || selectedProvider?.auth === 'login'}
+                      onChange={setProtocol}
+                      options={(providerState?.protocols ?? []).map((item) => ({
+                        value: item.id,
+                        label: item.label,
+                      }))}
+                    />
                   </label>
                 </div>
                 {selectedProvider?.auth === 'login' ? (
