@@ -406,6 +406,14 @@ select:hover:not(:disabled) {
   color: var(--accent);
 }
 
+.app-select-empty {
+  padding: 10px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  cursor: var(--cursor-arrow);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--text-muted);

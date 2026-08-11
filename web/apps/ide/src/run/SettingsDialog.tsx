@@ -66,6 +66,7 @@ export function SettingsDialog() {
   }, []);
 
   const selectedProvider = providerState?.providers.find((item) => item.id === providerId);
+  const providerFailed = providerState === null && providerBusy === null;
   const groupedProviders = useMemo(() => {
     const groups = new Map<string, AiProviderState['providers']>();
     for (const item of providerState?.providers ?? [])
@@ -220,12 +221,14 @@ export function SettingsDialog() {
                     <span>Used by the assistant and AI build actions.</span>
                   </div>
                   <span
-                    className={`provider-status${providerState?.active.configured ? ' ready' : ''}`}
+                    className={`provider-status${providerState?.active.configured ? ' ready' : ''}${providerFailed ? ' failed' : ''}`}
                   >
                     {providerState?.active.configured ? (
                       <>
                         <Check size={11} /> Ready
                       </>
+                    ) : providerFailed ? (
+                      'Unavailable'
                     ) : (
                       'Not configured'
                     )}
@@ -237,7 +240,7 @@ export function SettingsDialog() {
                     <AppSelect
                       ariaLabel="Provider"
                       value={providerId}
-                      disabled={providerBusy === 'load'}
+                      disabled={providerBusy === 'load' || providerFailed}
                       onChange={chooseProvider}
                       options={groupedProviders.flatMap(([group, providers]) =>
                         providers.map((item) => ({ value: item.id, label: item.name, group })),
@@ -249,7 +252,7 @@ export function SettingsDialog() {
                     <AppSelect
                       ariaLabel="Protocol"
                       value={protocol}
-                      disabled={providerBusy === 'load' || selectedProvider?.auth === 'login'}
+                      disabled={providerBusy === 'load' || providerFailed || selectedProvider?.auth === 'login'}
                       onChange={setProtocol}
                       options={(providerState?.protocols ?? []).map((item) => ({
                         value: item.id,

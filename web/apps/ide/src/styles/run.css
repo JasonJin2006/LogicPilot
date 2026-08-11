@@ -173,6 +173,9 @@
 .provider-status.ready {
   color: var(--ok);
 }
+.provider-status.failed {
+  color: var(--danger);
+}
 .provider-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

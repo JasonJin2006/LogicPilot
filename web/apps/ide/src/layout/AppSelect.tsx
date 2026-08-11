@@ -119,32 +119,36 @@ export function AppSelect({
       style={position}
       onKeyDown={onKeyDown}
     >
-      {options.map((option) => {
-        const showGroup = option.group !== previousGroup;
-        previousGroup = option.group;
-        const enabledIndex = enabledOptions.findIndex((entry) => entry.value === option.value);
-        return (
-          <div key={option.value}>
-            {showGroup && option.group && <div className="app-select-group">{option.group}</div>}
-            <button
-              type="button"
-              className={`app-select-option${enabledIndex === activeIndex ? ' active' : ''}`}
-              role="option"
-              aria-selected={option.value === value}
-              disabled={option.disabled}
-              onMouseEnter={() => setActiveIndex(enabledIndex)}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-                triggerRef.current?.focus();
-              }}
-            >
-              <span>{option.label}</span>
-              {option.value === value && <Check size={13} />}
-            </button>
-          </div>
-        );
-      })}
+      {options.length === 0 ? (
+        <div className="app-select-empty">No options available</div>
+      ) : (
+        options.map((option) => {
+          const showGroup = option.group !== previousGroup;
+          previousGroup = option.group;
+          const enabledIndex = enabledOptions.findIndex((entry) => entry.value === option.value);
+          return (
+            <div key={option.value}>
+              {showGroup && option.group && <div className="app-select-group">{option.group}</div>}
+              <button
+                type="button"
+                className={`app-select-option${enabledIndex === activeIndex ? ' active' : ''}`}
+                role="option"
+                aria-selected={option.value === value}
+                disabled={option.disabled}
+                onMouseEnter={() => setActiveIndex(enabledIndex)}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                }}
+              >
+                <span>{option.label}</span>
+                {option.value === value && <Check size={13} />}
+              </button>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 
