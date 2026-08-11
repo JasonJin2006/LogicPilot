@@ -132,7 +132,15 @@ async function main() {
     if (pathname.startsWith('/api/') && origin) {
       let sameOrigin = false;
       try { sameOrigin = new URL(origin).host === req.headers.host; } catch { sameOrigin = false; }
-      if (!sameOrigin) {
+      // Tauri desktop WebViews serve the page from a synthetic origin
+      // (tauri://localhost on v1, http(s)://tauri.localhost on v2) and call
+      // the local API cross-origin. Those are first-party and must be
+      // allowed; any other cross-origin caller is still rejected.
+      const tauriOrigin =
+        origin === 'tauri://localhost' ||
+        origin === 'http://tauri.localhost' ||
+        origin === 'https://tauri.localhost';
+      if (!sameOrigin && !tauriOrigin) {
         res.writeHead(403, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'cross-origin API access denied' }));
         return;
