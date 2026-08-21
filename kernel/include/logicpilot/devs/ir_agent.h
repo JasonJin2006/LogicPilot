@@ -31,6 +31,12 @@ struct ModelAgentState {
   std::unordered_map<std::string, IrValue> values;
 };
 
+struct AgentSnapshot {
+  std::uint64_t id{0};
+  Position position{};
+  AgentState state{};
+};
+
 class AgentReplicationModel final : public ReplicationModel {
 public:
   AgentReplicationModel(std::vector<std::uint8_t> v2_bytes, const ir::v2::Node* v2_root);
@@ -44,6 +50,8 @@ public:
   bool reset(const ReplicationConfig& config);
   bool step();
   [[nodiscard]] bool done() const;
+  [[nodiscard]] std::uint64_t tick_count() const;
+  void snapshot_agents(std::vector<AgentSnapshot>& out) const;
   ReplicationMetrics finish(TraceRecorder* trace = nullptr);
 
   // Final positions / state after the last run (test inspection).

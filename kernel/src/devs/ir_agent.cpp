@@ -254,6 +254,24 @@ bool AgentReplicationModel::done() const {
   return session_ == nullptr || session_->tick >= session_->budget;
 }
 
+std::uint64_t AgentReplicationModel::tick_count() const {
+  return session_ != nullptr ? session_->tick : 0;
+}
+
+void AgentReplicationModel::snapshot_agents(std::vector<AgentSnapshot>& out) const {
+  out.clear();
+  if (session_ == nullptr) return;
+  out.reserve(session_->handles.size());
+  for (std::size_t index = 0; index < session_->handles.size(); ++index) {
+    const AgentHandle handle = session_->handles[index];
+    out.push_back(AgentSnapshot{
+        static_cast<std::uint64_t>(index),
+        session_->runtime.store().position(handle.slot),
+        session_->runtime.store().state(handle.slot),
+    });
+  }
+}
+
 ReplicationMetrics AgentReplicationModel::finish(TraceRecorder* trace) {
   ReplicationMetrics metrics;
   if (session_ == nullptr) {

@@ -191,6 +191,8 @@ function applyFrame(frame: WireFrame): void {
       vizState.queueLength = Math.max(0, Math.round(frame.payload.values['queue_length'] ?? 0));
       vizState.throughput = frame.payload.values['throughput'] ?? 0;
       vizState.meanWait = frame.payload.values['mean_wait'] ?? 0;
+      vizState.agentCount = Math.max(0, Math.round(frame.payload.values['agent_count'] ?? 0));
+      vizState.agentTick = Math.max(0, Math.round(frame.payload.values['agent_tick'] ?? 0));
       vizState.blocks = parseBlockCounters(frame.payload.values);
       // Generic Process runs emit Counters frames without MM1 Tick frames.
       // Bump the shared render version for both frame families so badges and

@@ -260,7 +260,7 @@ try {
   const dropBlock = async (kind, x, y) => {
     const item = page
       .locator('.palette-item')
-      .filter({ has: page.locator('.palette-name', { hasText: new RegExp(`^${kind}$`) }) })
+      .filter({ has: page.locator('.palette-name', { hasText: new RegExp(`^${kind}$`, 'i') }) })
       .first();
     await item.scrollIntoViewIfNeeded();
     const itemBox = await item.boundingBox();
@@ -412,6 +412,11 @@ try {
     await fillRunField(label, value);
   }
   const consoleBefore = await page.locator('.console-log').textContent();
+  const finishedBefore = await page.evaluate(
+    () =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length,
+  );
   await page.getByRole('button', { name: 'Start' }).click();
   await page.waitForFunction(
     (before) => document.querySelector('.console-log')?.textContent !== before,
@@ -431,12 +436,77 @@ try {
     throw new Error('generic delay flow did not show live per-block telemetry');
   }
   await page.waitForFunction(
-    () => document.querySelector('.console-log')?.textContent?.includes('finished'),
+    (count) =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length > count,
+    finishedBefore,
     undefined,
     { timeout: 60_000 },
   );
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('generic process flow streamed live delay telemetry');
+
+  // Agent population: the same compile->serve path should emit Tick frames
+  // and keep the population count visible on the agent canvas card.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
+  await page.getByRole('button', { name: "Don't Save" }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  const agentSource = `model Swarm {\n  agent Drone {\n    count = 3\n    state active = true\n    on_tick { flip active }\n    on_tick { bounce }\n  }\n}\n`;
+  await page
+    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .first()
+    .setInputFiles({
+      name: 'agents.lp',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(agentSource),
+    });
+  await page.waitForSelector('.model-canvas:visible', { timeout: 20_000 });
+  if ((await page.locator('.model-canvas:visible .model-block.kind-process').count()) < 1) {
+    throw new Error('agent canvas did not contain an agent population');
+  }
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  await page
+    .locator('label.field')
+    .filter({ hasText: 'execution mode' })
+    .locator('select')
+    .selectOption('animated');
+  for (const [label, value] of [
+    ['arrivals', '4'],
+    ['warmup', '0'],
+    ['speed', '100000'],
+    ['reps', '1'],
+  ]) {
+    await fillRunField(label, value);
+  }
+  const agentConsoleBefore = await page.locator('.console-log').textContent();
+  const agentFinishedBefore = await page.evaluate(
+    () =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length,
+  );
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(
+    (before) => document.querySelector('.console-log')?.textContent !== before,
+    agentConsoleBefore,
+    undefined,
+    { timeout: 20_000 },
+  );
+  await page.waitForSelector('.model-block.kind-process .model-block-badge', {
+    timeout: 20_000,
+  });
+  await page.waitForFunction(
+    (count) =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length > count,
+    agentFinishedBefore,
+    undefined,
+    { timeout: 60_000 },
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  log('agent population streamed Tick/Counters and showed its live badge');
 
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
@@ -450,8 +520,18 @@ try {
   // edit request instead).
   await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
-  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
-  await page.getByRole('button', { name: "Don't Save" }).click();
+  const aiCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+      document.querySelector('.center-empty') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  if ((await aiCloseDialog.count()) > 0) {
+    await aiCloseDialog.waitFor();
+    await page.getByRole('button', { name: "Don't Save" }).click();
+  }
   await page.waitForSelector('.center-empty', { timeout: 5_000 });
   await page.getByRole('button', { name: 'New project' }).click();
   await page.getByRole('dialog', { name: 'New Project' }).waitFor();

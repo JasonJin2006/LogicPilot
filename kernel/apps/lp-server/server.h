@@ -62,9 +62,9 @@ struct ServerConfig {
   // Fixed simulation step between Tick+Counters emissions. Default 100 ms of
   // simulated time => 10 Hz at speed 1.0 (task #7 default cadence).
   std::int64_t emit_step_ns{100'000'000};
-  // Served v2 IR (when --model-file is given). Generic (non-M/M/1) models
-  // run through the batch ProcessFlowSim path and report RunFinished stats
-  // instead of incremental Tick streaming.
+  // Served v2 IR (when --model-file is given or after compile). Generic
+  // Process and Agent models stream Tick/Counters; Atomic and Continuous
+  // models still use the batch summary path.
   std::vector<std::uint8_t> model_bytes;
   bool generic_model{false};
   // Per-session pending-write bound (see kDefaultWriteQueueLimit).

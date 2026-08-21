@@ -37,6 +37,14 @@ describe('parseBlockCounters', () => {
     expect(vizState.blocks.size).toBe(0);
     expect(vizState.tickVersion).toBeGreaterThan(before);
   });
+
+  it('resets non-process agent telemetry with the run state', () => {
+    vizState.agentCount = 12;
+    vizState.agentTick = 4;
+    resetVizState(vizState);
+    expect(vizState.agentCount).toBe(0);
+    expect(vizState.agentTick).toBe(0);
+  });
 });
 
 describe('flow token baseline', () => {

@@ -1401,6 +1401,61 @@ TEST_CASE("lp-server start honors per-run model parameter overrides",
   server.stop();
 }
 
+TEST_CASE("lp-server streams agent population ticks after compile",
+          "[server][integration][agent]") {
+  const std::string source = R"(model Swarm {
+  agent Drone {
+    count = 3
+    state active = true
+    on_tick { flip active }
+    on_tick { bounce }
+  }
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  bool saw_population_tick = false;
+  bool saw_agent_counters = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Tick) {
+      REQUIRE(frame.tick != nullptr);
+      if (frame.tick->deltas() != nullptr && frame.tick->deltas()->size() == 3) {
+        saw_population_tick = true;
+      }
+    } else if (frame.kind == wire::FrameKind_Counters) {
+      const auto counters = counters_to_map(frame.counters->values());
+      if (counters.count("agent_count") != 0 && counters.at("agent_count") == 3.0 &&
+          counters.count("agent_tick") != 0 && counters.at("agent_tick") >= 1.0) {
+        saw_agent_counters = true;
+      }
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(saw_population_tick);
+  REQUIRE(saw_agent_counters);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server stops precision replications after the confidence target",
           "[server][integration][precision]") {
   logicpilot::server::SimServer server{make_test_config()};

@@ -34,7 +34,8 @@ export interface StartOptions {
   warmup?: number;
   confidence?: number;
   speed?: number;
-  // Per-run model parameter overrides (canvas model -> M/M/1 driver).
+  // Per-run overrides for the optimized M/M/c driver; generic compiled
+  // models use the server's currently served IR instead.
   lambda?: number;
   mu?: number;
   servers?: number;

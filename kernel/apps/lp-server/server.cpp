@@ -25,6 +25,7 @@
 
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/flow_engine.h"
 #include "json_controls.h"
@@ -549,10 +550,8 @@ struct SimServer::Impl {
           params.error_percent);
     };
 
-    // Generic-model batch path: models that are not the M/M/1 exponential
-    // family (delay/split/selectOutput flows, agent/atomic/continuous)
-    // cannot stream Tick frames yet, so each replication runs to completion
-    // and the run reports its summary stats via RunFinished.
+    // Generic-model path: ProcessFlowSim and AgentReplicationModel stream
+    // live telemetry; Atomic and Continuous models still report summaries.
     if (config.generic_model && !config.model_bytes.empty()) {
       IrLoadResult loaded = load_model_buffer(config.model_bytes.data(),
                                               config.model_bytes.size());
@@ -576,9 +575,8 @@ struct SimServer::Impl {
         emit(build_run_finished_frame(failed), trace_run_finished(failed));
         return;
       }
-      // Generic process flows (ProcessFlowSim) stream per slice so the IDE
-      // can show live per-block badges and animate tokens; every other
-      // generic model (agent/atomic/continuous) keeps the batch path.
+      // Process flows stream per slice with per-block counters; Agent models
+      // stream Tick/Counters from their fixed-dt incremental lifecycle.
       if (auto* flow = dynamic_cast<FlowEngine*>(model.get()); flow != nullptr) {
         for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
           ReplicationConfig rep_config;
@@ -596,6 +594,31 @@ struct SimServer::Impl {
           if (precision_reached()) {
             break;
           }
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } else if (auto* agents = dynamic_cast<AgentReplicationModel*>(model.get());
+                 agents != nullptr) {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          if (!agents->reset(rep_config) ||
+              !stream_agent_replication(*agents, params, rep, run_limit)) {
+            cancelled = true;
+            break;
+          }
+          const std::uint64_t agent_ticks = agents->tick_count();
+          results.push_back(agents->finish(nullptr));
+          run_sim_offset_ns_ += static_cast<std::int64_t>(
+              static_cast<double>(agent_ticks) * 1e9);
+          if (precision_reached()) break;
           {
             std::lock_guard lock{run_mutex_};
             if (stop_request_) {
@@ -945,6 +968,94 @@ struct SimServer::Impl {
         deadline = now;  // behind schedule: catch up without sleeping
       }
     }
+  }
+
+  bool stream_agent_replication(AgentReplicationModel& agents,
+                                const RunParams& params, std::uint64_t rep,
+                                std::uint64_t run_limit) {
+    const bool animated = params.animated;
+    std::uint64_t frames = 0;
+    auto deadline = std::chrono::steady_clock::now();
+    for (;;) {
+      bool step_once = false;
+      {
+        std::unique_lock lock{run_mutex_};
+        for (;;) {
+          if (stop_request_) return false;
+          if (state_ == RunState::kPaused) {
+            if (pending_step_) {
+              pending_step_ = false;
+              step_once = true;
+              break;
+            }
+            run_cv_.wait(lock);
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        while (!agents.done()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) return false;
+          }
+          agents.step();
+        }
+        emit_agent_frames(agents, rep, run_limit);
+        return true;
+      }
+
+      agents.step();
+      emit_agent_frames(agents, rep, run_limit);
+      ++frames;
+      if (agents.done()) return true;
+      if (step_once || !animated) continue;
+
+      const double speed = speed_.load(std::memory_order_relaxed);
+      deadline += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(1.0 / speed));
+      const auto now = std::chrono::steady_clock::now();
+      if (deadline > now) {
+        std::unique_lock lock{run_mutex_};
+        run_cv_.wait_until(lock, deadline, [&] {
+          return stop_request_ || state_ != RunState::kRunning;
+        });
+      } else {
+        deadline = now;
+      }
+    }
+  }
+
+  void emit_agent_frames(AgentReplicationModel& agents, std::uint64_t rep,
+                         std::uint64_t run_limit) {
+    TickFrame tick;
+    tick.seq = ++seq_;
+    tick.sim_time_ns = run_sim_offset_ns_ +
+                       static_cast<std::int64_t>(agents.tick_count()) * 1'000'000'000LL;
+    std::vector<AgentSnapshot> snapshots;
+    agents.snapshot_agents(snapshots);
+    tick.deltas.reserve(std::min<std::size_t>(snapshots.size(), kMaxAgentsPerTick));
+    for (std::size_t index = 0;
+         index < snapshots.size() && index < kMaxAgentsPerTick; ++index) {
+      const AgentSnapshot& snapshot = snapshots[index];
+      tick.deltas.push_back(
+          {snapshot.id, snapshot.position.x, snapshot.position.y, snapshot.state.bits});
+    }
+    last_frame_sim_ns_ = tick.sim_time_ns;
+    emit(build_tick_frame(tick), trace_tick(tick));
+
+    CountersFrame counters;
+    counters.seq = ++seq_;
+    counters.sim_time_ns = tick.sim_time_ns;
+    counters.values.push_back({"agent_count", static_cast<double>(snapshots.size())});
+    counters.values.push_back({"agent_tick", static_cast<double>(agents.tick_count())});
+    counters.values.push_back({"agent_active", static_cast<double>(snapshots.size())});
+    counters.values.push_back({"rep", static_cast<double>(rep + 1)});
+    counters.values.push_back({"reps", static_cast<double>(run_limit)});
+    last_frame_sim_ns_ = counters.sim_time_ns;
+    emit(build_counters_frame(counters), trace_counters(counters));
   }
 
   // One Counters frame with per-block live state at `sim_time_ns`: the

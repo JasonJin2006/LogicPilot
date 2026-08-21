@@ -1760,6 +1760,11 @@ export function ModelCanvas() {
                 </span>
                 <span className="model-block-name">{node.name}</span>
                 {childCount > 0 && <span className="model-block-count">{childCount}</span>}
+                {live && node.kind === 'agent' && vizState.agentCount > 0 && (
+                  <span className="model-block-badge" title={`tick ${vizState.agentTick}`}>
+                    {vizState.agentCount}
+                  </span>
+                )}
               </div>
             );
           }
