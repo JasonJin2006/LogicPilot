@@ -48,13 +48,13 @@ describe('modelRunParams', () => {
     });
   });
 
-  it('rejects models without exactly one source and service', () => {
+  it('allows generic process topologies to use the compiler-backed gateway path', () => {
     let doc = createDocument();
     doc = addNode(doc, { kind: 'source', name: 'A', x: 0, y: 0, params: { arrival: 'rate(1)' } });
-    expect(modelRunParams(doc).ok).toBe(false);
+    expect(modelRunParams(doc)).toEqual({ ok: true });
   });
 
-  it('rejects non-exponential service times', () => {
+  it('does not reject non-exponential service times before generic compilation', () => {
     let doc = mm1Doc();
     const service = doc.nodes.find((node) => node.kind === 'service')!;
     doc = {
@@ -66,11 +66,10 @@ describe('modelRunParams', () => {
       ),
     };
     const params = modelRunParams(doc);
-    expect(params.ok).toBe(false);
-    expect(params.error).toContain('exponential');
+    expect(params).toEqual({ ok: true });
   });
 
-  it('rejects a service referencing an unknown resource', () => {
+  it('does not reject an unresolved generic resource before compilation', () => {
     let doc = mm1Doc();
     const service = doc.nodes.find((node) => node.kind === 'service')!;
     doc = {
@@ -82,8 +81,7 @@ describe('modelRunParams', () => {
       ),
     };
     const params = modelRunParams(doc);
-    expect(params.ok).toBe(false);
-    expect(params.error).toContain('Missing');
+    expect(params).toEqual({ ok: true });
   });
 
   it('accepts a standalone statechart model without driver params', () => {

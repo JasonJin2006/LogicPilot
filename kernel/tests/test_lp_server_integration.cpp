@@ -538,8 +538,6 @@ TEST_CASE("lp-server fast mode: huge sim gaps cannot flood empty frames",
   REQUIRE(loaded.ok());
 
   logicpilot::server::ServerConfig config = make_test_config();
-  config.generic_model = true;
-  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
   logicpilot::server::SimServer server{config};
   std::string error;
   REQUIRE(server.start(&error));
@@ -570,6 +568,11 @@ TEST_CASE("lp-server fast mode: huge sim gaps cannot flood empty frames",
         ++counters_frames;
         break;
       }
+      case wire::FrameKind_Tick:
+        // Fast mode still emits the Tick+Counters pair for the MM1 driver;
+        // the frame-budget assertion below is about the sampled Counters
+        // stream, not suppressing the paired scene frame.
+        break;
       case wire::FrameKind_RunFinished:
         completed = frame.run_finished != nullptr &&
                     frame.run_finished->status() == wire::RunStatus_Completed;
@@ -1315,6 +1318,10 @@ TEST_CASE("lp-server streams generic process flows with per-block counters",
   WsClient client;
   REQUIRE(client.connect(server.port()));
   Watchdog watchdog{client, std::chrono::seconds{60}};
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  const std::string compile_reply = read_next_text(client);
+  REQUIRE(compile_reply.find("\"ok\": true") != std::string::npos);
   // Animated mode with a huge speed: fixed 1 s slices so a slice boundary
   // reliably catches the entity inside the delay (fast mode would grow the
   // slices and skip the in-flight sample).

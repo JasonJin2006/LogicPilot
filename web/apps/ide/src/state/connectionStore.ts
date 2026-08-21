@@ -192,6 +192,10 @@ function applyFrame(frame: WireFrame): void {
       vizState.throughput = frame.payload.values['throughput'] ?? 0;
       vizState.meanWait = frame.payload.values['mean_wait'] ?? 0;
       vizState.blocks = parseBlockCounters(frame.payload.values);
+      // Generic Process runs emit Counters frames without MM1 Tick frames.
+      // Bump the shared render version for both frame families so badges and
+      // token animations repaint for delay/queue/service flows as well.
+      vizState.tickVersion += 1;
       break;
     }
     case 'run-finished': {
@@ -317,11 +321,9 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
     },
     runCanvasModel: () => {
       const source = generateDsl(useModelStore.getState().document);
-      const sent = client?.compile(source) ?? false;
-      if (!sent) {
-        set((state) => ({ events: appendEvent(state, 'error', 'run canvas: not connected') }));
-        return;
-      }
+      // Register the continuation before sending compile. Local/generic
+      // models can receive the compile reply synchronously enough to beat a
+      // post-send assignment, which would lose the start request entirely.
       pendingRunContinuation = (ok) => {
         if (!ok) {
           return; // diagnostics already echoed to the console
@@ -355,6 +357,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
           repairRate: params.repairRate,
         });
       };
+      const sent = client?.compile(source) ?? false;
+      if (!sent) {
+        pendingRunContinuation = null;
+        set((state) => ({ events: appendEvent(state, 'error', 'run canvas: not connected') }));
+      }
     },
   };
 });

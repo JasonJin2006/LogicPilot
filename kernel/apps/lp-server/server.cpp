@@ -453,6 +453,34 @@ struct SimServer::Impl {
       }
       const dsl::CompileResult compiled =
           dsl::compile_source(base64_decode(source_b64), "<editor>");
+      if (compiled.ok) {
+        IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(),
+                                                compiled.v2_bytes.size());
+        if (!loaded.ok()) {
+          return json_error("compiled model could not be loaded: " + loaded.message);
+        }
+        std::string build_error;
+        if (build_replication_model(loaded.file, &build_error) == nullptr) {
+          return json_error("compiled model could not be built: " + build_error);
+        }
+        std::lock_guard lock{run_mutex_};
+        if (active_run_ || state_ != RunState::kIdle || run_requested_) {
+          return json_error("cannot replace the served model while a run is active");
+        }
+        FlowRunParams flow_params;
+        std::string flow_error;
+        config.model_bytes = loaded.file.v2_bytes;
+        config.generic_model = !extract_flow_params(loaded.file, flow_params,
+                                                    &flow_error);
+        if (!config.generic_model) {
+          config.lambda = flow_params.lambda;
+          config.mu = flow_params.mu;
+          config.servers = flow_params.servers;
+          config.failure_rate = flow_params.failure_rate;
+          config.repair_rate = flow_params.repair_rate;
+        }
+        config.model_name = inspect_model(loaded.file);
+      }
       return dsl::diagnostics_to_json("<editor>", compiled.ok,
                                       compiled.diagnostics);
 #else

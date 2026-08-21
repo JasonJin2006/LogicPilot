@@ -264,7 +264,7 @@ try {
       .first();
     await item.scrollIntoViewIfNeeded();
     const itemBox = await item.boundingBox();
-    const canvasBox = await page.locator('.model-canvas').boundingBox();
+    const canvasBox = await page.locator('.model-canvas:visible').boundingBox();
     await page.mouse.move(itemBox.x + itemBox.width / 2, itemBox.y + itemBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(canvasBox.x + x, canvasBox.y + y, { steps: 6 });
@@ -312,7 +312,7 @@ try {
   for (const [label, value] of [
     ['arrivals', '100'],
     ['warmup', '10'],
-    ['speed', '100'],
+    ['speed', '2'],
     ['reps', '1'],
   ]) {
     await fillRunField(label, value);
@@ -359,6 +359,84 @@ try {
     throw new Error('root canvas should not auto-create a process container');
   }
   log('agent-centric canvas: flat process blocks on the model root');
+
+  // Generic process flow: a source -> delay -> sink topology must use the
+  // ProcessFlowSim stream and repaint a non-MM1 block from Counters frames.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
+  await page.getByRole('button', { name: "Don't Save" }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
+  const genericModelTab = page.locator('.area-center .tab').filter({ hasText: 'Model' });
+  if ((await genericModelTab.count()) > 0) await genericModelTab.click();
+  await page.locator('.model-canvas:visible').waitFor({ timeout: 5_000 });
+  if ((await page.locator('.palette-item').count()) === 0) {
+    await page.getByRole('button', { name: 'Palette' }).click();
+    await page.waitForSelector('.palette-item', { timeout: 5_000 });
+  }
+  await dropBlock('source', 180, 260);
+  await dropBlock('delay', 420, 260);
+  await dropBlock('sink', 660, 260);
+  if ((await page.locator('.model-canvas:visible .model-block').count()) < 3) {
+    throw new Error('generic process canvas did not contain source, delay and sink');
+  }
+  await wire('source', 'delay');
+  await wire('delay', 'sink');
+  await page.locator('.model-block.kind-delay').click();
+  await page.locator('.area-right .tab', { hasText: 'Properties' }).click();
+  await page
+    .locator('.props-field')
+    .filter({ hasText: 'Delay time' })
+    .locator('input')
+    .fill('constant(1)');
+  await page.evaluate(() =>
+    document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null,
+  );
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  await page
+    .locator('label.field')
+    .filter({ hasText: 'execution mode' })
+    .locator('select')
+    .selectOption('animated');
+  for (const [label, value] of [
+    ['arrivals', '40'],
+    ['warmup', '0'],
+    ['speed', '2'],
+    ['reps', '1'],
+  ]) {
+    await fillRunField(label, value);
+  }
+  const consoleBefore = await page.locator('.console-log').textContent();
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(
+    (before) => document.querySelector('.console-log')?.textContent !== before,
+    consoleBefore,
+    undefined,
+    { timeout: 20_000 },
+  );
+  let sawGenericLiveState = false;
+  for (let i = 0; i < 80; i++) {
+    sawGenericLiveState =
+      (await page.locator('.model-block.kind-delay .model-block-badge').count()) > 0 ||
+      (await page.locator('.model-block.kind-delay .model-block-status').count()) > 0;
+    if (sawGenericLiveState) break;
+    await page.waitForTimeout(100);
+  }
+  if (!sawGenericLiveState) {
+    throw new Error('generic delay flow did not show live per-block telemetry');
+  }
+  await page.waitForFunction(
+    () => document.querySelector('.console-log')?.textContent?.includes('finished'),
+    undefined,
+    { timeout: 60_000 },
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  log('generic process flow streamed live delay telemetry');
 
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).

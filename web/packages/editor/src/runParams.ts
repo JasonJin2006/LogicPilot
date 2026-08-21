@@ -1,8 +1,6 @@
-// Live-run parameter extraction (P1-7): the streaming gateway lowers process
-// models to the M/M/1 driver, so a canvas model must be mm1-shaped with
-// exponential arrivals/service times to run live. Maps the block graph onto
-// the driver's (lambda, mu, servers, failure_rate, repair_rate) or returns a
-// human-readable reason the model cannot stream.
+// Live-run parameter extraction: standard M/M/c-shaped process models receive
+// optimized driver parameters; every other process topology is handed to the
+// generic ProcessFlowSim gateway path after DSL compilation.
 
 import type { ModelDocument, ModelNode } from './graph.js';
 
@@ -53,30 +51,22 @@ export function modelRunParams(document: ModelDocument): ModelRunParams {
   }
   const sources = document.nodes.filter((node) => node.kind === 'source');
   const services = document.nodes.filter((node) => node.kind === 'service');
-  if (sources.length !== 1) {
-    return { ok: false, error: `live run needs exactly one source (found ${sources.length})` };
-  }
-  if (services.length !== 1) {
-    return { ok: false, error: `live run needs exactly one service (found ${services.length})` };
-  }
+  // A generic process topology does not need the optimized driver's shape.
+  // Its structural and parameter diagnostics come from the compiler, which
+  // is the authoritative validator for ProcessFlowSim models.
+  if (sources.length !== 1 || services.length !== 1) return { ok: true };
 
   const source = sources[0]!;
   const lambda = parseRate(source.params['arrival']);
   if (lambda === null) {
-    return {
-      ok: false,
-      error: "source 'arrival' must be rate(c)/poisson(c)/exponential(c) for live streaming",
-    };
+    return { ok: true };
   }
 
   const service = services[0]!;
   const time = service.params['time'];
   const mu = parseRate(time);
   if (mu === null) {
-    return {
-      ok: false,
-      error: `service 'time' must be exponential(c) for live streaming (got '${String(time ?? '')}')`,
-    };
+    return { ok: true };
   }
 
   const resourceRef =
@@ -85,7 +75,7 @@ export function modelRunParams(document: ModelDocument): ModelRunParams {
     (node): node is ModelNode => node.kind === 'resource' && node.name === resourceRef,
   );
   if (!resource) {
-    return { ok: false, error: `service references unknown resource '${resourceRef}'` };
+    return { ok: true };
   }
 
   const servers = Math.max(1, Math.floor(toNumber(resource.params['capacity'], 1)));
