@@ -27,7 +27,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
 | 并行执行                     | ✅   | ADR-0009 阶段 A（reps 级线程池）与阶段 B（agent ECS 批量 tick，≥65536 agent 多核自动并行，10 万 agent 逐位确定）已落地；阶段 C（事件级保守并行）延后                                                                                                                              |
 | 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
-| 测试基线                     | ✅   | 389 ctest、corpus 50/50、renderer2d 5 vitest、editor 67 vitest、IDE 206 vitest、interop 74 checks、浏览器 E2E                                                                                                                                                                     |
+| 测试基线                     | ✅   | 390 ctest、corpus 50/50、renderer2d 5 vitest、editor 67 vitest、IDE 206 vitest、interop 74 checks、浏览器 E2E                                                                                                                                                                     |
 
 ## 3. 契约与工程纪律状态
 
@@ -190,7 +190,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    持有/归还、batch/unbatch（permanent/temporary）、combine（in1/in2）、
    match（双流同步 out1/out2）、timeMeasureStart/End（`measure` 指标）；
    内核测试 + `examples/{seize_release,batch_unbatch,combine_time}.lp`
-   lpcli 冒烟全绿；enter/exit/moveTo/assembler 仍为直通占位。
+   lpcli 冒烟全绿；当时的 enter/exit/moveTo/assembler 占位已在后续阶段补齐。
    **实体属性 + 条件路由 ✅ 已完成**（2026-08-06）：source 的
    `state <name> = <值>` 声明实体属性，selectOutput/hold 条件可按属性
    路由（LP5006 同步放行），`examples/attribute_routing.lp` 冒烟全绿；
@@ -218,11 +218,10 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    `examples/seize_failure.lp` 冒烟；故障期已持有 agent 不中断为简化语义。
    **exit/enter ✅ 已完成**（2026-08-06）：exit 从流程移除 agent（sojourn
    保留）；enter 为无输入的入口点（无外部注入 API 时空闲）；
-   `examples/flow_exit.lp` 冒烟；moveTo/assembler 仍为直通占位。
+   `examples/flow_exit.lp` 冒烟；moveTo/assembler 的完整语义见后续验收条目。
    **assembler ✅ 已完成**（2026-08-06）：in+p1 到齐（quantity125）→
    delayTime 装配 → 输出，多装配并行；`examples/assembler_line.lp` 冒烟；
-   装配期资源占用为后续项。process 库仅剩 moveTo 为直通占位（依赖位置
-   模型）。
+   装配期资源占用为后续项；后续条目已补齐装配资源与空间模型。
    **全量验收 ✅ 已完成**（2026-08-06）：22/22 示例全部 lpcli 编译运行
    通过；新增 `examples/des_shop.lp`（属性+优先级队列+seize 池故障+
    batch/unbatch+条件路由+timeMeasure+exit 组合）与内核组合守恒测试
@@ -236,7 +235,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    图操作，IDE modelStore 新增对应动作；editor 54 + IDE 69 vitest 全绿。
    **moveTo ✅ 已完成**（2026-08-07）：tripTime / speed+xYZ（距离/速度）/
    缺省零时跳转；Entity 增加位置字段；`examples/move_route.lp` 冒烟。
-   **process 库 23 块全部有内核语义**（node/path 空间建模为后续项）。
+   **process 库 23 块全部有内核语义**，包含 node/path 空间建模与网络路由。
    **字段访问表达式 ✅ 已完成**（2026-08-07）：文法成员访问
    （`agent1.kind`）+ 编译器 kField + matchCondition LP5006 + 内核
    `agent1.X == agent2.Y` 双作用域求值；corpus 50/50；
@@ -368,8 +367,8 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     Statechart 支持外部设施模式（attach RuntimeContext），批量路径不变；
     单方法 kernel 驱动与批量逐位一致，process+statechart 多方法组合在单次
     运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。后续：agent/SD
-    拆方法库、DSL 状态图语法与跨状态机 Message 耦合、共享变量显式写入、
-    合并 lp-server 流式驱动。
+    拆方法库、DSL 状态图语法与跨状态机 Message 耦合、共享变量显式写入；
+    lp-server 的 Process/Agent/Statechart/Continuous/Atomic 流式驱动已接入。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

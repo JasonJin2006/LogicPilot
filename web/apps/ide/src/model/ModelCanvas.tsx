@@ -1770,6 +1770,11 @@ export function ModelCanvas() {
                     t={vizState.continuousTime.toFixed(2)}
                   </span>
                 )}
+                {live && node.kind === 'atomic' && vizState.atomicStep > 0 && (
+                  <span className="model-block-badge" title={`step ${vizState.atomicStep}`}>
+                    t={vizState.atomicTime.toFixed(2)}
+                  </span>
+                )}
               </div>
             );
           }

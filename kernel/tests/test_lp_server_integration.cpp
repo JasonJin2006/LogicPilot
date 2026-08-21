@@ -1558,6 +1558,56 @@ TEST_CASE("lp-server streams continuous values after compile",
   server.stop();
 }
 
+TEST_CASE("lp-server streams atomic transition counters after compile",
+          "[server][integration][atomic]") {
+  const std::string source = R"(model PulseChain {
+  atomic Pulser {
+    time_advance = constant(1.0)
+    on_timeout { emit pulse }
+  }
+  atomic Sink {
+    state seen = false
+    on_input pulse { seen = true }
+  }
+  couple Pulser.pulse -> Sink.pulse
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  std::map<std::string, double> last_counters;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      last_counters = counters_to_map(frame.counters->values());
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(last_counters.count("atomic.time") == 1);
+  REQUIRE(last_counters.count("atomic.step") == 1);
+  REQUIRE(last_counters.at("atomic.time") == 4.0);
+  REQUIRE(last_counters.at("atomic.step") == 4.0);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server stops precision replications after the confidence target",
           "[server][integration][precision]") {
   logicpilot::server::SimServer server{make_test_config()};

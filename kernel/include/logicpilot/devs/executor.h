@@ -61,6 +61,7 @@ public:
   // terminate deterministically (0 = unlimited, the default).
   void set_internal_budget(std::size_t budget) { internal_budget_ = budget; }
   [[nodiscard]] std::size_t internal_transitions() const { return internal_transitions_; }
+  [[nodiscard]] bool has_pending_events() const { return !scheduler_.empty(); }
   [[nodiscard]] SimulationClock& clock() { return clock_; }
 
 private:

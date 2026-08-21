@@ -210,6 +210,8 @@ function applyFrame(frame: WireFrame): void {
         0,
         Math.round(frame.payload.values['continuous.step'] ?? 0),
       );
+      vizState.atomicTime = Math.max(0, frame.payload.values['atomic.time'] ?? 0);
+      vizState.atomicStep = Math.max(0, Math.round(frame.payload.values['atomic.step'] ?? 0));
       vizState.blocks = parseBlockCounters(frame.payload.values);
       // Generic Process runs emit Counters frames without MM1 Tick frames.
       // Bump the shared render version for both frame families so badges and

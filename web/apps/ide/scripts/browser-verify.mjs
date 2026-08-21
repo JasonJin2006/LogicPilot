@@ -668,6 +668,87 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('continuous model streamed RK4 time telemetry and showed its live badge');
 
+  // Atomic DEVS models use the same telemetry contract: the canvas exposes
+  // the current simulation time and internal-transition count while running.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+      document.querySelector('.center-empty') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  const atomicCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+  if (await atomicCloseDialog.count()) {
+    await page.getByRole('button', { name: "Don't Save" }).click();
+  }
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  const atomicSource = `model PulseChain {
+  atomic Pulser {
+    time_advance = constant(1.0)
+    on_timeout { emit pulse }
+  }
+  atomic Sink {
+    state seen = false
+    on_input pulse { seen = true }
+  }
+  couple Pulser.pulse -> Sink.pulse
+}
+`;
+  await page
+    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .first()
+    .setInputFiles({
+      name: 'pulse_chain.lp',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(atomicSource),
+    });
+  await page.waitForSelector('.model-canvas:visible .model-block.kind-atomic', {
+    timeout: 20_000,
+  });
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  await page
+    .locator('label.field')
+    .filter({ hasText: 'execution mode' })
+    .locator('select')
+    .selectOption('animated');
+  for (const [label, value] of [
+    ['arrivals', '4'],
+    ['warmup', '0'],
+    ['speed', '100000'],
+    ['reps', '1'],
+  ]) {
+    await fillRunField(label, value);
+  }
+  const atomicConsoleBefore = await page.locator('.console-log').textContent();
+  const atomicFinishedBefore = await page.evaluate(
+    () =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length,
+  );
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(
+    (before) => document.querySelector('.console-log')?.textContent !== before,
+    atomicConsoleBefore,
+    undefined,
+    { timeout: 20_000 },
+  );
+  await page.waitForSelector('.model-block.kind-atomic .model-block-badge', {
+    timeout: 20_000,
+  });
+  await page.waitForFunction(
+    (count) =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length > count,
+    atomicFinishedBefore,
+    undefined,
+    { timeout: 60_000 },
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  log('atomic model streamed DEVS transition telemetry and showed its live badge');
+
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
   // CI has no server-side API key, so /api/assistant reports 502 and Agent

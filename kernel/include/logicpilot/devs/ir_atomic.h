@@ -18,8 +18,10 @@
 #include <vector>
 
 #include "logicpilot/core/random/xoshiro256pp.h"
+#include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/devs/atomic_model.h"
 #include "logicpilot/devs/coupled_model.h"
+#include "logicpilot/devs/executor.h"
 #include "logicpilot/devs/replication.h"
 
 namespace logicpilot {
@@ -72,9 +74,16 @@ class DevsReplicationModel final : public ReplicationModel {
  public:
   DevsReplicationModel(std::vector<std::uint8_t> v2_bytes,
                        const ir::v2::Node* v2_root);
+  ~DevsReplicationModel() override;
 
   ReplicationMetrics run(const ReplicationConfig& config,
                          TraceRecorder* trace) override;
+
+  bool reset(const ReplicationConfig& config);
+  std::size_t advance(SimTime until);
+  [[nodiscard]] bool done() const;
+  [[nodiscard]] ReplicationMetrics metrics() const;
+  [[nodiscard]] std::size_t internal_transitions() const;
 
   // The most recently built atomic tree (for state inspection in tests).
   [[nodiscard]] const CoupledModel* last_tree() const { return last_tree_.get(); }
@@ -83,6 +92,11 @@ class DevsReplicationModel final : public ReplicationModel {
   std::vector<std::uint8_t> bytes_;
   const ir::v2::Node* v2_root_{nullptr};
   std::unique_ptr<CoupledModel> last_tree_;
+  std::unique_ptr<BinaryHeapScheduler> scheduler_;
+  std::unique_ptr<SimulationClock> clock_;
+  std::unique_ptr<DevsExecutor> executor_;
+  std::size_t internal_budget_{0};
+  bool active_{false};
 };
 
 }  // namespace logicpilot

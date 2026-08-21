@@ -5,8 +5,8 @@
 // lifecycle so the whole kernel lowers through the MethodRegistry. Phase 1
 // lifecycle semantics: initialize() lowers and validates, the first
 // advance() runs one full replication with driver defaults, shutdown()
-// releases. Incremental stepping lands with the modular block runtimes
-// (Phase 3).
+// releases. Process, Statechart, Continuous, and Atomic adapters also expose
+// incremental lifecycles to the lp-server streaming driver.
 #include <exception>
 #include <memory>
 #include <string>

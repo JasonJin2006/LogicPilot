@@ -180,8 +180,8 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
 - `timeMeasureStart` / `timeMeasureEnd`：成对标记，`measure` 统计（均值）进
   `lpcli run` 输出与 `metrics.json`。
 
-`count` 继续直通计数；`moveTo`/`assembler` 暂为直通占位
-（位置/装配语义为后续工作）。示例：`examples/seize_release.lp`、
+`count` 继续直通计数；`moveTo` 与 `assembler` 已有完整内核语义。示例：
+`examples/seize_release.lp`、
 `examples/batch_unbatch.lp`、`examples/combine_time.lp`。
 
 `exit` 块已实现 AnyLogic 语义：把 agent 从流程中移除（无输出端口），

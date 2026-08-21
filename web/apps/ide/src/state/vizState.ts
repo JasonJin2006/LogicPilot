@@ -44,6 +44,9 @@ export interface VizState {
   continuousValues: Map<string, number>;
   continuousTime: number;
   continuousStep: number;
+  /** Latest DEVS Atomic model simulation time and internal firings. */
+  atomicTime: number;
+  atomicStep: number;
   /** Latest per-block live state keyed by block name (generic flows). */
   blocks: Map<string, BlockLiveState>;
   /** Bumped on every applied Tick so the renderer can detect new data. */
@@ -77,6 +80,8 @@ export function createVizState(): VizState {
     continuousValues: new Map(),
     continuousTime: 0,
     continuousStep: 0,
+    atomicTime: 0,
+    atomicStep: 0,
     blocks: new Map(),
     tickVersion: 0,
     lastDeparted: new Map(),
@@ -99,6 +104,8 @@ export function resetVizState(viz: VizState): void {
   viz.continuousValues = new Map();
   viz.continuousTime = 0;
   viz.continuousStep = 0;
+  viz.atomicTime = 0;
+  viz.atomicStep = 0;
   viz.blocks = new Map();
   viz.tickVersion += 1;
   // Fresh token baseline: the next run's counters start from zero, so the

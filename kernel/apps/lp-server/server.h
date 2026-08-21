@@ -63,8 +63,8 @@ struct ServerConfig {
   // simulated time => 10 Hz at speed 1.0 (task #7 default cadence).
   std::int64_t emit_step_ns{100'000'000};
   // Served v2 IR (when --model-file is given or after compile). Generic
-  // Process, Agent, Statechart, and Continuous models stream live telemetry;
-  // Atomic models still use the batch summary path.
+  // Process, Agent, Statechart, Continuous, and Atomic models stream live
+  // telemetry; unknown future runtimes may still use the batch path.
   std::vector<std::uint8_t> model_bytes;
   bool generic_model{false};
   // Per-session pending-write bound (see kDefaultWriteQueueLimit).

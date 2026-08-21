@@ -46,6 +46,8 @@ describe('parseBlockCounters', () => {
     vizState.continuousValues = new Map([['y', 0.5]]);
     vizState.continuousTime = 1.2;
     vizState.continuousStep = 120;
+    vizState.atomicTime = 4;
+    vizState.atomicStep = 4;
     resetVizState(vizState);
     expect(vizState.agentCount).toBe(0);
     expect(vizState.agentTick).toBe(0);
@@ -54,6 +56,8 @@ describe('parseBlockCounters', () => {
     expect(vizState.continuousValues.size).toBe(0);
     expect(vizState.continuousTime).toBe(0);
     expect(vizState.continuousStep).toBe(0);
+    expect(vizState.atomicTime).toBe(0);
+    expect(vizState.atomicStep).toBe(0);
   });
 });
 

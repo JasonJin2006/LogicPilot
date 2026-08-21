@@ -1,7 +1,7 @@
 # LogicPilot IDE
 
 浏览器前端（Vite 6 + React 19 + TypeScript + zustand）：拖拽建模画布、DSL
-编译诊断、M/M/c WebSocket 实时运行可视化、通用模型批量摘要、AI 建模/优化/归因
+编译诊断、多方法 WebSocket 实时运行可视化、AI 建模/优化/归因
 面板，以及工程保存/打开。
 桌面客户端（Tauri）是同一前端的外壳，见 `desktop/README.md`；用户操作指南见
 `docs/guide/web-ide.md`。

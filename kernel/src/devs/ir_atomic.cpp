@@ -194,31 +194,64 @@ DevsReplicationModel::DevsReplicationModel(std::vector<std::uint8_t> v2_bytes,
   v2_root_ = ir::v2::GetModelFile(bytes_.data())->root();
 }
 
-ReplicationMetrics DevsReplicationModel::run(const ReplicationConfig& config,
-                                             TraceRecorder* trace) {
-  ReplicationMetrics metrics;
-  metrics.arrivals = 0;
+DevsReplicationModel::~DevsReplicationModel() = default;
 
+bool DevsReplicationModel::reset(const ReplicationConfig& config) {
+  active_ = false;
+  executor_.reset();
+  clock_.reset();
+  scheduler_.reset();
+  last_tree_.reset();
   Xoshiro256PlusPlus engine{config.seed};
   last_tree_ = build_atomic_tree_v2(*v2_root_, engine);
   if (last_tree_ == nullptr) {
-    return metrics;
+    return false;
   }
+  scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
+  clock_ = std::make_unique<SimulationClock>();
+  executor_ = std::make_unique<DevsExecutor>(*scheduler_, *clock_);
+  internal_budget_ = static_cast<std::size_t>(config.arrivals);
+  executor_->set_internal_budget(internal_budget_);
+  executor_->load(*last_tree_);
+  active_ = true;
+  return true;
+}
 
-  BinaryHeapScheduler scheduler{64};
-  SimulationClock clock;
-  DevsExecutor executor{scheduler, clock};
-  executor.set_internal_budget(config.arrivals);
-  executor.load(*last_tree_);
-  executor.run(SimTime::infinity());
+std::size_t DevsReplicationModel::advance(SimTime until) {
+  if (!active_ || executor_ == nullptr) return 0;
+  return executor_->run(until);
+}
 
-  metrics.arrivals = executor.internal_transitions();
-  const std::int64_t horizon_ns = clock.now().as_ns();
+bool DevsReplicationModel::done() const {
+  return !active_ || executor_ == nullptr ||
+         !executor_->has_pending_events() ||
+         (internal_budget_ > 0 &&
+          executor_->internal_transitions() >= internal_budget_);
+}
+
+std::size_t DevsReplicationModel::internal_transitions() const {
+  return executor_ == nullptr ? 0 : executor_->internal_transitions();
+}
+
+ReplicationMetrics DevsReplicationModel::metrics() const {
+  ReplicationMetrics metrics;
+  if (executor_ == nullptr || clock_ == nullptr) return metrics;
+  metrics.arrivals = executor_->internal_transitions();
+  const std::int64_t horizon_ns = clock_->now().as_ns();
   metrics.horizon_seconds = static_cast<double>(horizon_ns) * 1e-9;
+  return metrics;
+}
+
+ReplicationMetrics DevsReplicationModel::run(const ReplicationConfig& config,
+                                             TraceRecorder* trace) {
+  if (!reset(config)) return ReplicationMetrics{};
+  advance(SimTime::infinity());
+  ReplicationMetrics metrics = this->metrics();
   if (trace != nullptr) {
-    trace->absorb(static_cast<std::uint64_t>(horizon_ns));
-    trace->absorb(executor.internal_transitions());
+    trace->absorb(static_cast<std::uint64_t>(metrics.horizon_seconds * 1e9));
+    trace->absorb(metrics.arrivals);
   }
+  active_ = false;
   return metrics;
 }
 
