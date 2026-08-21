@@ -84,6 +84,8 @@ M/M/c 指数流程在运行中显示实时队列长度与忙/闲状态点（Tick
 Agent 模型现在按固定 tick 流式发送 Tick/Counters，并在 Agent population 卡片上显示
 实时数量；Atomic 和 Continuous 模型目前完成批量复制后返回统计摘要，不提供
 Pause/Step 粒度的 Tick 流。
+Statechart 模型按时间片流式发送当前活动状态与过渡步数，画布会高亮活动状态；Atomic
+和 Continuous 仍走批量汇总路径。
 
 ## 状态机连线与实时图表
 

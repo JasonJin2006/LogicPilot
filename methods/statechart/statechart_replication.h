@@ -46,6 +46,10 @@ class StatechartReplicationModel final : public ReplicationModel {
   void reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
+  [[nodiscard]] std::string current_state_name() const;
+  [[nodiscard]] std::uint64_t step_count() const;
+  [[nodiscard]] bool done() const;
+  [[nodiscard]] bool has_pending_events();
 
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;

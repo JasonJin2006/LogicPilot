@@ -37,6 +37,9 @@ export interface VizState {
   /** Latest Agent population telemetry (non-Process method runs). */
   agentCount: number;
   agentTick: number;
+  /** Latest Statechart active state and transition count. */
+  activeState: string | null;
+  stateSteps: number;
   /** Latest per-block live state keyed by block name (generic flows). */
   blocks: Map<string, BlockLiveState>;
   /** Bumped on every applied Tick so the renderer can detect new data. */
@@ -65,6 +68,8 @@ export function createVizState(): VizState {
     meanWait: 0,
     agentCount: 0,
     agentTick: 0,
+    activeState: null,
+    stateSteps: 0,
     blocks: new Map(),
     tickVersion: 0,
     lastDeparted: new Map(),
@@ -82,6 +87,8 @@ export function resetVizState(viz: VizState): void {
   viz.meanWait = 0;
   viz.agentCount = 0;
   viz.agentTick = 0;
+  viz.activeState = null;
+  viz.stateSteps = 0;
   viz.blocks = new Map();
   viz.tickVersion += 1;
   // Fresh token baseline: the next run's counters start from zero, so the

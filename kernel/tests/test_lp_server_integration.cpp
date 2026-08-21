@@ -1456,6 +1456,60 @@ TEST_CASE("lp-server streams agent population ticks after compile",
   server.stop();
 }
 
+TEST_CASE("lp-server streams statechart active-state counters after compile",
+          "[server][integration][statechart]") {
+  const std::string source = R"(model Traffic {
+  statechart Light {
+    initial = Red
+    state Red { }
+    state Green { }
+    transition r_g { from = Red; to = Green; triggeredBy = timeout; timeout = 3.0 }
+    transition g_r { from = Green; to = Red; triggeredBy = timeout; timeout = 3.0 }
+  }
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  bool saw_red = false;
+  bool saw_green = false;
+  bool saw_steps = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      const auto counters = counters_to_map(frame.counters->values());
+      saw_red = saw_red || counters.count("state.active.Red") != 0;
+      saw_green = saw_green || counters.count("state.active.Green") != 0;
+      saw_steps = saw_steps ||
+                  (counters.count("state.steps") != 0 &&
+                   counters.at("state.steps") >= 1.0);
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(saw_red);
+  REQUIRE(saw_green);
+  REQUIRE(saw_steps);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server stops precision replications after the confidence target",
           "[server][integration][precision]") {
   logicpilot::server::SimServer server{make_test_config()};

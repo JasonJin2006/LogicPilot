@@ -1486,7 +1486,7 @@ export function ModelCanvas() {
           return (
             <div
               key={node.id}
-              className={`model-sc-shape kind-${node.kind}${selected ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+              className={`model-sc-shape kind-${node.kind}${selected ? ' selected' : ''}${node.kind === 'state' && vizState.activeState === node.name ? ' state-active' : ''}${node.id === draggingId ? ' dragging' : ''}`}
               style={{ left: node.x, top: node.y }}
               onPointerDown={(event) => onElementPointerDown(event, node)}
               onPointerMove={(event) => onElementPointerMove(event, node)}

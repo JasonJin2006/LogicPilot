@@ -525,6 +525,23 @@ ReplicationMetrics StatechartReplicationModel::metrics() const {
   return metrics;
 }
 
+std::string StatechartReplicationModel::current_state_name() const {
+  if (impl_ == nullptr || impl_->machine.current() == kInvalidState) return {};
+  return impl_->definition.state_name(impl_->machine.current());
+}
+
+std::uint64_t StatechartReplicationModel::step_count() const {
+  return impl_ == nullptr ? 0 : impl_->steps_;
+}
+
+bool StatechartReplicationModel::done() const {
+  return impl_ == nullptr || impl_->done_;
+}
+
+bool StatechartReplicationModel::has_pending_events() {
+  return impl_ != nullptr && !impl_->scheduler().empty();
+}
+
 StateId StatechartReplicationModel::last_state() const {
   return impl_ == nullptr ? kInvalidState : impl_->machine.current();
 }

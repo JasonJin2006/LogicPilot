@@ -31,6 +31,7 @@
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
+#include "statechart/statechart_replication.h"
 #include <wire_generated.h>
 
 #ifdef LOGICPILOT_HAS_DSL
@@ -550,8 +551,9 @@ struct SimServer::Impl {
           params.error_percent);
     };
 
-    // Generic-model path: ProcessFlowSim and AgentReplicationModel stream
-    // live telemetry; Atomic and Continuous models still report summaries.
+    // Generic-model path: ProcessFlowSim, AgentReplicationModel, and
+    // StatechartReplicationModel stream live telemetry; Atomic and Continuous
+    // models still report summaries.
     if (config.generic_model && !config.model_bytes.empty()) {
       IrLoadResult loaded = load_model_buffer(config.model_bytes.data(),
                                               config.model_bytes.size());
@@ -576,7 +578,8 @@ struct SimServer::Impl {
         return;
       }
       // Process flows stream per slice with per-block counters; Agent models
-      // stream Tick/Counters from their fixed-dt incremental lifecycle.
+      // stream Tick/Counters from their fixed-dt incremental lifecycle;
+      // Statecharts stream the active state and transition count.
       if (auto* flow = dynamic_cast<FlowEngine*>(model.get()); flow != nullptr) {
         for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
           ReplicationConfig rep_config;
@@ -618,6 +621,31 @@ struct SimServer::Impl {
           results.push_back(agents->finish(nullptr));
           run_sim_offset_ns_ += static_cast<std::int64_t>(
               static_cast<double>(agent_ticks) * 1e9);
+          if (precision_reached()) break;
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } else if (auto* chart =
+                     dynamic_cast<StatechartReplicationModel*>(model.get());
+                 chart != nullptr) {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          chart->reset(rep_config);
+          if (!stream_statechart_replication(*chart, params, rep, run_limit)) {
+            cancelled = true;
+            break;
+          }
+          results.push_back(chart->metrics());
+          run_sim_offset_ns_ += static_cast<std::int64_t>(
+              chart->metrics().horizon_seconds * 1e9);
           if (precision_reached()) break;
           {
             std::lock_guard lock{run_mutex_};
@@ -1028,6 +1056,82 @@ struct SimServer::Impl {
     }
   }
 
+  bool stream_statechart_replication(StatechartReplicationModel& chart,
+                                     const RunParams& params,
+                                     std::uint64_t rep,
+                                     std::uint64_t run_limit) {
+    const bool animated = params.animated;
+    const std::int64_t step_ns = config.emit_step_ns > 0
+                                     ? config.emit_step_ns
+                                     : 100'000'000;
+    std::int64_t boundary_ns = 0;
+    std::int64_t slice_ns = step_ns;
+    std::uint64_t frames = 0;
+    auto deadline = std::chrono::steady_clock::now();
+    for (;;) {
+      bool step_once = false;
+      {
+        std::unique_lock lock{run_mutex_};
+        for (;;) {
+          if (stop_request_) return false;
+          if (state_ == RunState::kPaused) {
+            if (pending_step_) {
+              pending_step_ = false;
+              step_once = true;
+              break;
+            }
+            run_cv_.wait(lock);
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        std::int64_t drain_ns = kFastDrainSliceNs;
+        while (!chart.done()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) return false;
+          }
+          boundary_ns = saturating_add(boundary_ns, drain_ns);
+          const std::size_t dispatched =
+              chart.advance(SimTime::from_ns(boundary_ns), nullptr);
+          if (dispatched == 0) break;
+          drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
+        }
+        emit_statechart_counters(chart, rep, run_limit);
+        return true;
+      }
+
+      boundary_ns = saturating_add(boundary_ns, slice_ns);
+      const std::size_t dispatched =
+          chart.advance(SimTime::from_ns(boundary_ns), nullptr);
+      emit_statechart_counters(chart, rep, run_limit);
+      ++frames;
+      if (chart.done() || !chart.has_pending_events()) return true;
+      if (!animated || step_once) continue;
+
+      if (dispatched < kFastMinEventsPerSlice) {
+        slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
+      }
+      const double speed = speed_.load(std::memory_order_relaxed);
+      deadline += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(
+              static_cast<double>(step_ns) * 1e-9 / speed));
+      const auto now = std::chrono::steady_clock::now();
+      if (deadline > now) {
+        std::unique_lock lock{run_mutex_};
+        run_cv_.wait_until(lock, deadline, [&] {
+          return stop_request_ || state_ != RunState::kRunning;
+        });
+        if (stop_request_) return false;
+      } else {
+        deadline = now;
+      }
+    }
+  }
+
   void emit_agent_frames(AgentReplicationModel& agents, std::uint64_t rep,
                          std::uint64_t run_limit) {
     TickFrame tick;
@@ -1079,6 +1183,28 @@ struct SimServer::Impl {
           {"block." + name + ".departed", static_cast<double>(snapshot.departed)});
     }
     counters.values.push_back({"rep", static_cast<double>(rep)});
+    counters.values.push_back({"reps", static_cast<double>(reps_total)});
+    last_frame_sim_ns_ = counters.sim_time_ns;
+    emit(build_counters_frame(counters), trace_counters(counters));
+  }
+
+  void emit_statechart_counters(StatechartReplicationModel& chart,
+                                std::uint64_t rep,
+                                std::uint64_t reps_total) {
+    CountersFrame counters;
+    counters.seq = ++seq_;
+    const auto metrics = chart.metrics();
+    counters.sim_time_ns = run_sim_offset_ns_ +
+                           static_cast<std::int64_t>(metrics.horizon_seconds * 1e9);
+    const std::string state = chart.current_state_name();
+    if (!state.empty()) {
+      counters.values.push_back({"state.active." + state, 1.0});
+    }
+    counters.values.push_back({"state.steps",
+                               static_cast<double>(chart.step_count())});
+    counters.values.push_back({"state_id",
+                               static_cast<double>(chart.last_state())});
+    counters.values.push_back({"rep", static_cast<double>(rep + 1)});
     counters.values.push_back({"reps", static_cast<double>(reps_total)});
     last_frame_sim_ns_ = counters.sim_time_ns;
     emit(build_counters_frame(counters), trace_counters(counters));

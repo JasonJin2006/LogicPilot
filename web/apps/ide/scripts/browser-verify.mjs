@@ -508,6 +508,90 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('agent population streamed Tick/Counters and showed its live badge');
 
+  // Statechart models stream the active state through Counters; the canvas
+  // must reflect it as a live highlight while the replication is running.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+      document.querySelector('.center-empty') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  const statechartCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+  if (await statechartCloseDialog.count()) {
+    await page.getByRole('button', { name: "Don't Save" }).click();
+  }
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  const statechartSource = `model Traffic {
+  statechart Light {
+    initial = Red
+    state Red { }
+    state Green { }
+    transition r_g { from = Red; to = Green; triggeredBy = timeout; timeout = 3.0 }
+    transition g_r { from = Green; to = Red; triggeredBy = timeout; timeout = 3.0 }
+  }
+}
+`;
+  await page
+    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .first()
+    .setInputFiles({
+      name: 'traffic.lp',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(statechartSource),
+    });
+  await page.waitForSelector('.model-canvas:visible', { timeout: 20_000 });
+  const statechartContainer = page
+    .locator('.model-canvas:visible .model-block.kind-process')
+    .filter({ hasText: 'Light' })
+    .first();
+  await statechartContainer.dblclick();
+  await page.waitForSelector('.canvas-view-pill:visible', { timeout: 5_000 });
+  if ((await page.locator('.model-canvas:visible .model-sc-shape.kind-state').count()) < 2) {
+    throw new Error('statechart canvas did not contain state nodes');
+  }
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  await page
+    .locator('label.field')
+    .filter({ hasText: 'execution mode' })
+    .locator('select')
+    .selectOption('animated');
+  for (const [label, value] of [
+    ['arrivals', '4'],
+    ['warmup', '0'],
+    ['speed', '100000'],
+    ['reps', '1'],
+  ]) {
+    await fillRunField(label, value);
+  }
+  const statechartConsoleBefore = await page.locator('.console-log').textContent();
+  const statechartFinishedBefore = await page.evaluate(
+    () =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length,
+  );
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(
+    (before) => document.querySelector('.console-log')?.textContent !== before,
+    statechartConsoleBefore,
+    undefined,
+    { timeout: 20_000 },
+  );
+  await page.waitForSelector('.model-sc-shape.state-active', { timeout: 20_000 });
+  await page.waitForFunction(
+    (count) =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length > count,
+    statechartFinishedBefore,
+    undefined,
+    { timeout: 60_000 },
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  log('statechart streamed active-state telemetry and highlighted the active state');
+
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
   // CI has no server-side API key, so /api/assistant reports 502 and Agent

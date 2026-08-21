@@ -41,9 +41,13 @@ describe('parseBlockCounters', () => {
   it('resets non-process agent telemetry with the run state', () => {
     vizState.agentCount = 12;
     vizState.agentTick = 4;
+    vizState.activeState = 'Red';
+    vizState.stateSteps = 3;
     resetVizState(vizState);
     expect(vizState.agentCount).toBe(0);
     expect(vizState.agentTick).toBe(0);
+    expect(vizState.activeState).toBeNull();
+    expect(vizState.stateSteps).toBe(0);
   });
 });
 
