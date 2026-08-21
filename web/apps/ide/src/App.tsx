@@ -27,6 +27,7 @@ export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   const runDialogOpen = useUiStore((state) => state.runDialogOpen);
   const activeFile = useUiStore((state) => state.activeFile);
+  const projectPath = useProjectStore((state) => state.path);
   const canvasView = useCanvasView();
 
   // The gateway should just work: auto-connect on startup (the desktop
@@ -50,6 +51,17 @@ export default function App() {
       useLayoutStore.getState().openPanel('center', 'model');
     }
   }, [activeFile]);
+
+  // Desktop projects are edited by both the IDE and external tools. Poll the
+  // lightweight content hashes so conflicts are visible before Save instead
+  // of surprising the user only after a long editing session.
+  useEffect(() => {
+    if (!projectPath) return;
+    const scan = () => void useProjectStore.getState().scanDiskChanges();
+    void scan();
+    const timer = window.setInterval(scan, 2000);
+    return () => window.clearInterval(timer);
+  }, [projectPath]);
 
   // Focusing a container (canvas view) brings the canvas tab to the front,
   // but only while a canvas is actually open - closing a project falls back

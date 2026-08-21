@@ -18,6 +18,7 @@ import {
   FolderPlus,
   Minimize2,
   RefreshCw,
+  TriangleAlert,
 } from 'lucide-react';
 import { sceneContainerFromFile } from '../project/project';
 import { DEFAULT_MODEL_PATH } from '../project/project';
@@ -205,6 +206,7 @@ export function ExplorerPanel() {
   const diskFiles = useProjectStore((state) => state.diskFiles);
   const refreshDiskTree = useProjectStore((state) => state.refreshDiskTree);
   const dirty = useProjectStore((state) => state.dirty);
+  const externalChanges = useProjectStore((state) => state.externalChanges);
   const workspaceOpen = useWorkspaceStore((state) => state.folders.length > 0);
   const workspaceName = useWorkspaceStore((state) => state.name);
   const workspaceFolders = useWorkspaceStore((state) => state.folders);
@@ -500,6 +502,15 @@ export function ExplorerPanel() {
         </span>
         <span className="tree-label">{rootName}</span>
         {dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
+        {externalChanges.length > 0 && (
+          <span
+            className="tree-external-warning"
+            title="Files changed on disk; Save will ask before overwriting"
+            aria-label="Files changed on disk"
+          >
+            <TriangleAlert size={13} />
+          </span>
+        )}
         <span className="tree-actions">
           <button
             type="button"

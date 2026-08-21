@@ -701,6 +701,11 @@
   background: var(--accent);
 }
 
+.tree-external-warning {
+  flex: 0 0 auto;
+  color: var(--warning, #d99b35);
+}
+
 /* Explorer toolbar: new file/folder, refresh, collapse all on the root row. */
 .tree-actions {
   display: flex;
@@ -839,7 +844,9 @@
   background: color-mix(in srgb, var(--surface-1) 96%, transparent);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  box-shadow: 0 12px 36px rgb(0 0 0 / 0.32), 0 2px 8px rgb(0 0 0 / 0.2);
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 0.32),
+    0 2px 8px rgb(0 0 0 / 0.2);
   backdrop-filter: blur(12px);
   cursor: var(--cursor-arrow);
   animation: context-menu-in 90ms ease-out;
