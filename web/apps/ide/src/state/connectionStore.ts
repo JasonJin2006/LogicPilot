@@ -198,6 +198,18 @@ function applyFrame(frame: WireFrame): void {
       );
       vizState.activeState = activeState ? activeState[0].slice('state.active.'.length) : null;
       vizState.stateSteps = Math.max(0, Math.round(frame.payload.values['state.steps'] ?? 0));
+      const continuousValues = new Map<string, number>();
+      for (const [key, value] of Object.entries(frame.payload.values)) {
+        if (key.startsWith('continuous.value.')) {
+          continuousValues.set(key.slice('continuous.value.'.length), value);
+        }
+      }
+      vizState.continuousValues = continuousValues;
+      vizState.continuousTime = Math.max(0, frame.payload.values['continuous.time'] ?? 0);
+      vizState.continuousStep = Math.max(
+        0,
+        Math.round(frame.payload.values['continuous.step'] ?? 0),
+      );
       vizState.blocks = parseBlockCounters(frame.payload.values);
       // Generic Process runs emit Counters frames without MM1 Tick frames.
       // Bump the shared render version for both frame families so badges and

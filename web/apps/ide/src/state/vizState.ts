@@ -40,6 +40,10 @@ export interface VizState {
   /** Latest Statechart active state and transition count. */
   activeState: string | null;
   stateSteps: number;
+  /** Latest sampled Continuous model values and simulation time. */
+  continuousValues: Map<string, number>;
+  continuousTime: number;
+  continuousStep: number;
   /** Latest per-block live state keyed by block name (generic flows). */
   blocks: Map<string, BlockLiveState>;
   /** Bumped on every applied Tick so the renderer can detect new data. */
@@ -70,6 +74,9 @@ export function createVizState(): VizState {
     agentTick: 0,
     activeState: null,
     stateSteps: 0,
+    continuousValues: new Map(),
+    continuousTime: 0,
+    continuousStep: 0,
     blocks: new Map(),
     tickVersion: 0,
     lastDeparted: new Map(),
@@ -89,6 +96,9 @@ export function resetVizState(viz: VizState): void {
   viz.agentTick = 0;
   viz.activeState = null;
   viz.stateSteps = 0;
+  viz.continuousValues = new Map();
+  viz.continuousTime = 0;
+  viz.continuousStep = 0;
   viz.blocks = new Map();
   viz.tickVersion += 1;
   // Fresh token baseline: the next run's counters start from zero, so the

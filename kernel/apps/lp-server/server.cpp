@@ -28,6 +28,7 @@
 #include "logicpilot/devs/ir_agent.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/flow_engine.h"
+#include "logicpilot/devs/continuous.h"
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
@@ -49,9 +50,10 @@ using tcp = asio::ip::tcp;
 namespace logicpilot::server {
 namespace {
 
-// Emit cadence: one Tick+Counters pair per ServerConfig::emit_step_ns of
-// simulated time (default 100 ms => 10 Hz at speed 1.0). Speed scales
-// wall-clock pacing only.
+// Emit cadence: one telemetry sample per ServerConfig::emit_step_ns of
+// simulated time (default 100 ms => 10 Hz at speed 1.0). Process/Agent
+// samples may be Tick+Counters pairs; Statechart/Continuous use Counters.
+// Speed scales wall-clock pacing only.
 // Frame-size budget guard for per-tick agent deltas.
 constexpr std::size_t kMaxAgentsPerTick = 1024;
 
@@ -552,8 +554,8 @@ struct SimServer::Impl {
     };
 
     // Generic-model path: ProcessFlowSim, AgentReplicationModel, and
-    // StatechartReplicationModel stream live telemetry; Atomic and Continuous
-    // models still report summaries.
+    // StatechartReplicationModel and ContinuousReplicationModel stream live
+    // telemetry; Atomic models still report summaries.
     if (config.generic_model && !config.model_bytes.empty()) {
       IrLoadResult loaded = load_model_buffer(config.model_bytes.data(),
                                               config.model_bytes.size());
@@ -579,7 +581,8 @@ struct SimServer::Impl {
       }
       // Process flows stream per slice with per-block counters; Agent models
       // stream Tick/Counters from their fixed-dt incremental lifecycle;
-      // Statecharts stream the active state and transition count.
+      // Statecharts stream the active state and transition count; Continuous
+      // models stream sampled RK4 values.
       if (auto* flow = dynamic_cast<FlowEngine*>(model.get()); flow != nullptr) {
         for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
           ReplicationConfig rep_config;
@@ -646,6 +649,32 @@ struct SimServer::Impl {
           results.push_back(chart->metrics());
           run_sim_offset_ns_ += static_cast<std::int64_t>(
               chart->metrics().horizon_seconds * 1e9);
+          if (precision_reached()) break;
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } else if (auto* continuous =
+                     dynamic_cast<ContinuousReplicationModel*>(model.get());
+                 continuous != nullptr) {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          if (!continuous->reset(rep_config) ||
+              !stream_continuous_replication(*continuous, params, rep,
+                                             run_limit)) {
+            cancelled = true;
+            break;
+          }
+          results.push_back(continuous->finish(nullptr));
+          run_sim_offset_ns_ += static_cast<std::int64_t>(
+              continuous->sim_time_seconds() * 1e9);
           if (precision_reached()) break;
           {
             std::lock_guard lock{run_mutex_};
@@ -1132,6 +1161,78 @@ struct SimServer::Impl {
     }
   }
 
+  bool stream_continuous_replication(ContinuousReplicationModel& continuous,
+                                     const RunParams& params,
+                                     std::uint64_t rep,
+                                     std::uint64_t run_limit) {
+    const bool animated = params.animated;
+    const std::int64_t step_ns = config.emit_step_ns > 0
+                                     ? config.emit_step_ns
+                                     : 100'000'000;
+    const std::uint64_t steps_per_frame = std::max<std::uint64_t>(
+        1, (static_cast<std::uint64_t>(step_ns) +
+            static_cast<std::uint64_t>(ContinuousReplicationModel::kStepNs) -
+            1) /
+               static_cast<std::uint64_t>(ContinuousReplicationModel::kStepNs));
+    std::uint64_t frames = 0;
+    auto deadline = std::chrono::steady_clock::now();
+    for (;;) {
+      bool step_once = false;
+      {
+        std::unique_lock lock{run_mutex_};
+        for (;;) {
+          if (stop_request_) return false;
+          if (state_ == RunState::kPaused) {
+            if (pending_step_) {
+              pending_step_ = false;
+              step_once = true;
+              break;
+            }
+            run_cv_.wait(lock);
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        while (!continuous.done()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) return false;
+          }
+          continuous.step();
+        }
+        emit_continuous_counters(continuous, rep, run_limit);
+        return true;
+      }
+
+      for (std::uint64_t step = 0;
+           step < steps_per_frame && !continuous.done(); ++step) {
+        continuous.step();
+      }
+      emit_continuous_counters(continuous, rep, run_limit);
+      ++frames;
+      if (continuous.done()) return true;
+      if (step_once || !animated) continue;
+
+      const double speed = speed_.load(std::memory_order_relaxed);
+      deadline += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(
+              static_cast<double>(step_ns) * 1e-9 / speed));
+      const auto now = std::chrono::steady_clock::now();
+      if (deadline > now) {
+        std::unique_lock lock{run_mutex_};
+        run_cv_.wait_until(lock, deadline, [&] {
+          return stop_request_ || state_ != RunState::kRunning;
+        });
+        if (stop_request_) return false;
+      } else {
+        deadline = now;
+      }
+    }
+  }
+
   void emit_agent_frames(AgentReplicationModel& agents, std::uint64_t rep,
                          std::uint64_t run_limit) {
     TickFrame tick;
@@ -1204,6 +1305,31 @@ struct SimServer::Impl {
                                static_cast<double>(chart.step_count())});
     counters.values.push_back({"state_id",
                                static_cast<double>(chart.last_state())});
+    counters.values.push_back({"rep", static_cast<double>(rep + 1)});
+    counters.values.push_back({"reps", static_cast<double>(reps_total)});
+    last_frame_sim_ns_ = counters.sim_time_ns;
+    emit(build_counters_frame(counters), trace_counters(counters));
+  }
+
+  void emit_continuous_counters(ContinuousReplicationModel& continuous,
+                                std::uint64_t rep,
+                                std::uint64_t reps_total) {
+    CountersFrame counters;
+    counters.seq = ++seq_;
+    counters.sim_time_ns = run_sim_offset_ns_ +
+                           static_cast<std::int64_t>(
+                               continuous.sim_time_seconds() * 1e9);
+    counters.values.push_back({"continuous.time",
+                               continuous.sim_time_seconds()});
+    counters.values.push_back({"continuous.step",
+                               static_cast<double>(continuous.step_count())});
+    const auto state = continuous.last_state();
+    for (const std::string& variable : continuous.variables()) {
+      const auto it = state.find(variable);
+      if (it != state.end()) {
+        counters.values.push_back({"continuous.value." + variable, it->second});
+      }
+    }
     counters.values.push_back({"rep", static_cast<double>(rep + 1)});
     counters.values.push_back({"reps", static_cast<double>(reps_total)});
     last_frame_sim_ns_ = counters.sim_time_ns;
@@ -1306,22 +1432,23 @@ void Session::enqueue(OutMessage message) {
   // Bound memory for slow/stuck clients: drop the oldest pending frames. The
   // in-flight frame lives in in_flight_ (popped by do_write), so dropping the
   // queue front can never orphan the buffer the current async_write uses.
-  // Drop whole Tick+Counters steps: removing only one frame of a step breaks
-  // the strict Tick/Counters alternation the wire contract and the browser
-  // renderer rely on (a slow client would observe two Counters in a row).
+  // Drop whole telemetry samples: for Process/Agent streams this removes a
+  // paired Tick+Counters step; for Statechart/Continuous streams the next
+  // Counters sample is dropped as well so the queue sheds work in bounded
+  // chunks without treating adjacent Counters as a protocol error.
   while (write_queue_.size() > server_.config.write_queue_limit) {
     const OutMessage dropped = std::move(write_queue_.front());
     write_queue_.pop_front();
     ++dropped_frames_;
     wire::FrameKind dropped_kind;
-    const bool dropped_flow =
+    const bool dropped_telemetry =
         dropped.binary && frame_kind(dropped.binary_data, dropped_kind) &&
         (dropped_kind == wire::FrameKind_Tick ||
          dropped_kind == wire::FrameKind_Counters);
     // A Tick and its paired Counters must leave together. When the front is a
     // Counters its Tick was already written to the client, so the following
     // Tick goes too - otherwise the client would see two Ticks in a row.
-    if (dropped_flow && !write_queue_.empty() &&
+    if (dropped_telemetry && !write_queue_.empty() &&
         write_queue_.front().binary) {
       wire::FrameKind next_kind;
       if (frame_kind(write_queue_.front().binary_data, next_kind) &&

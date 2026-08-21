@@ -382,7 +382,8 @@ bool ContinuousReplicationModel::reset(const ReplicationConfig& config) {
 bool ContinuousReplicationModel::step() {
   if (done())
     return false;
-  constexpr double kDt = 0.01;
+  constexpr double kDt =
+      static_cast<double>(ContinuousReplicationModel::kStepNs) * 1e-9;
   const auto lookup = [&](const std::string& name) -> double {
     if (name == "t")
       return current_t_;
@@ -443,7 +444,8 @@ ReplicationMetrics ContinuousReplicationModel::finish(TraceRecorder* trace) {
   ReplicationMetrics metrics;
   if (!active_ || odes_.empty())
     return metrics;
-  constexpr double kDt = 0.01;
+  constexpr double kDt =
+      static_cast<double>(ContinuousReplicationModel::kStepNs) * 1e-9;
   metrics.arrivals = step_index_;
   const std::int64_t horizon_ns =
       static_cast<std::int64_t>(static_cast<double>(step_index_) * kDt * 1e9);

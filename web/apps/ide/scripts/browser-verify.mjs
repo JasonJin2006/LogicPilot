@@ -592,6 +592,82 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('statechart streamed active-state telemetry and highlighted the active state');
 
+  // Continuous models stream RK4 time/value samples through Counters; the
+  // root container card must expose the current simulation time as a badge.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+      document.querySelector('.center-empty') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  const continuousCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+  if (await continuousCloseDialog.count()) {
+    await page.getByRole('button', { name: "Don't Save" }).click();
+  }
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  const continuousSource = `model Decay {
+  continuous Dynamics {
+    state y: float = 1.0
+    d y/dt = -y
+  }
+}
+`;
+  await page
+    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .first()
+    .setInputFiles({
+      name: 'decay.lp',
+      mimeType: 'text/plain',
+      buffer: Buffer.from(continuousSource),
+    });
+  await page.waitForSelector('.model-canvas:visible .model-block.kind-continuous', {
+    timeout: 20_000,
+  });
+  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Run' }).waitFor();
+  await page
+    .locator('label.field')
+    .filter({ hasText: 'execution mode' })
+    .locator('select')
+    .selectOption('animated');
+  for (const [label, value] of [
+    ['arrivals', '20'],
+    ['warmup', '0'],
+    ['speed', '100000'],
+    ['reps', '1'],
+  ]) {
+    await fillRunField(label, value);
+  }
+  const continuousConsoleBefore = await page.locator('.console-log').textContent();
+  const continuousFinishedBefore = await page.evaluate(
+    () =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length,
+  );
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.waitForFunction(
+    (before) => document.querySelector('.console-log')?.textContent !== before,
+    continuousConsoleBefore,
+    undefined,
+    { timeout: 20_000 },
+  );
+  await page.waitForSelector('.model-block.kind-continuous .model-block-badge', {
+    timeout: 20_000,
+  });
+  await page.waitForFunction(
+    (count) =>
+      (document.querySelector('.console-log')?.textContent?.match(/run run-\d+ finished/g) ?? [])
+        .length > count,
+    continuousFinishedBefore,
+    undefined,
+    { timeout: 60_000 },
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  log('continuous model streamed RK4 time telemetry and showed its live badge');
+
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
   // CI has no server-side API key, so /api/assistant reports 502 and Agent

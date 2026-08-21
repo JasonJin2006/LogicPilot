@@ -82,10 +82,11 @@ M/M/c 指数流程在运行中显示实时队列长度与忙/闲状态点（Tick
 也通过 ProcessFlowSim 分片流式执行：每个块实时显示缓冲徽标与忙/闲状态点，
 实体沿 coupling 连线以令牌动画流动（新一轮运行/切换模型/重连时动画基线自动重置）。
 Agent 模型现在按固定 tick 流式发送 Tick/Counters，并在 Agent population 卡片上显示
-实时数量；Atomic 和 Continuous 模型目前完成批量复制后返回统计摘要，不提供
-Pause/Step 粒度的 Tick 流。
+实时数量；Continuous 模型按 RK4 时间片流式发送时间、步数和状态变量值，连续模型卡片
+显示当前仿真时间；Atomic 模型仍在完成批量复制后返回统计摘要，不提供 Pause/Step 粒度
+的流式遥测。
 Statechart 模型按时间片流式发送当前活动状态与过渡步数，画布会高亮活动状态；Atomic
-和 Continuous 仍走批量汇总路径。
+仍走批量汇总路径。
 
 ## 状态机连线与实时图表
 

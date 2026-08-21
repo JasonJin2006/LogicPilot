@@ -82,6 +82,9 @@ private:
 
 class ContinuousReplicationModel final : public ReplicationModel {
 public:
+  // Fixed RK4 integration interval used by the v2 continuous runtime.
+  inline static constexpr std::int64_t kStepNs = 10'000'000;
+
   // v2-native: semantics {sd, equation} node.
   ContinuousReplicationModel(std::vector<std::uint8_t> v2_bytes, const ir::v2::Node* v2_root);
 
@@ -90,6 +93,8 @@ public:
   bool reset(const ReplicationConfig& config);
   bool step();
   [[nodiscard]] bool done() const;
+  [[nodiscard]] std::uint64_t step_count() const { return step_index_; }
+  [[nodiscard]] double sim_time_seconds() const { return current_t_; }
   ReplicationMetrics finish(TraceRecorder* trace = nullptr);
 
   // Final integrated state (test inspection).

@@ -3,8 +3,8 @@
 // One SimServer owns:
 //   * a Boost.Beast WebSocket listener (default ws://127.0.0.1:<port>/sim),
 //     any number of concurrent subscriber sessions,
-//   * a simulation worker thread driving the streaming M/M/1 replication
-//     (sim_runner.h) with wall-clock pacing (default 10 Hz emit rate),
+//   * a simulation worker thread driving the built-in and served model
+//     replications (sim_runner.h) with wall-clock pacing (default 10 Hz),
 //   * a broadcast hub: the worker builds wire.fbs frames and fans them out
 //     to every connected session through strand-serialized async writes.
 //
@@ -59,12 +59,12 @@ struct ServerConfig {
   double failure_rate{0.0};
   double repair_rate{1.0};
   double speed{1.0};  // wall-clock pacing multiplier (1.0 = realtime)
-  // Fixed simulation step between Tick+Counters emissions. Default 100 ms of
+  // Fixed simulation step between telemetry emissions. Default 100 ms of
   // simulated time => 10 Hz at speed 1.0 (task #7 default cadence).
   std::int64_t emit_step_ns{100'000'000};
   // Served v2 IR (when --model-file is given or after compile). Generic
-  // Process, Agent, and Statechart models stream live telemetry; Atomic and
-  // Continuous models still use the batch summary path.
+  // Process, Agent, Statechart, and Continuous models stream live telemetry;
+  // Atomic models still use the batch summary path.
   std::vector<std::uint8_t> model_bytes;
   bool generic_model{false};
   // Per-session pending-write bound (see kDefaultWriteQueueLimit).

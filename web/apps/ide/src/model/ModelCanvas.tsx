@@ -1743,7 +1743,7 @@ export function ModelCanvas() {
             return (
               <div
                 key={node.id}
-                className={`model-block kind-process${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
+                className={`model-block kind-process kind-${node.kind}${node.id === selectedId ? ' selected' : ''}${node.id === draggingId ? ' dragging' : ''}`}
                 style={{ left: node.x, top: node.y }}
                 onPointerDown={(event) => onElementPointerDown(event, node)}
                 onPointerMove={(event) => onElementPointerMove(event, node)}
@@ -1763,6 +1763,11 @@ export function ModelCanvas() {
                 {live && node.kind === 'agent' && vizState.agentCount > 0 && (
                   <span className="model-block-badge" title={`tick ${vizState.agentTick}`}>
                     {vizState.agentCount}
+                  </span>
+                )}
+                {live && node.kind === 'continuous' && vizState.continuousStep > 0 && (
+                  <span className="model-block-badge" title={`step ${vizState.continuousStep}`}>
+                    t={vizState.continuousTime.toFixed(2)}
                   </span>
                 )}
               </div>

@@ -149,7 +149,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    测试）；`@logicpilot/editor` 新增 `modelRunParams`（画布块图 → M/M/1 驱动
    参数或拒绝原因）；DSL 编辑区新增 Run（编译通过后自动 start）；运行中画布
    块实时显示队列长度徽标与 service 忙/闲/宕机状态点。browser-verify 覆盖
-   完整闭环。**泛型 ProcessFlowSim streaming 已完成**：任意 process 拓扑按端口感知路由和工作队列分片推进，lp-server 输出 per-block Counters，IDE 显示实时徽标和令牌动画，并有延迟流程集成验收；Agent/Atomic/Continuous 仍走批量摘要路径。
+   完整闭环。**泛型 ProcessFlowSim streaming 已完成**：任意 process 拓扑按端口感知路由和工作队列分片推进，lp-server 输出 per-block Counters，IDE 显示实时徽标和令牌动画，并有延迟流程集成验收；Agent/Statechart/Continuous 也已接入分片遥测，Atomic 仍走批量摘要路径。
    **编辑器补强 ✅ 已完成**（2026-08-05）：撤销/重做（600ms 合并窗口，
    Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；
    Project 面板显示模型摘要 + "New model"。

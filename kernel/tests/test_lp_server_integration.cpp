@@ -1510,6 +1510,54 @@ TEST_CASE("lp-server streams statechart active-state counters after compile",
   server.stop();
 }
 
+TEST_CASE("lp-server streams continuous values after compile",
+          "[server][integration][continuous]") {
+  const std::string source = R"(model Decay {
+  continuous Dynamics {
+    state y: float = 1.0
+    d y/dt = -y
+  }
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":20,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  std::map<std::string, double> last_counters;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      last_counters = counters_to_map(frame.counters->values());
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(last_counters.count("continuous.time") == 1);
+  REQUIRE(last_counters.count("continuous.step") == 1);
+  REQUIRE(last_counters.count("continuous.value.y") == 1);
+  REQUIRE(last_counters.at("continuous.time") == 0.2);
+  REQUIRE(last_counters.at("continuous.step") == 20.0);
+  REQUIRE(last_counters.at("continuous.value.y") < 1.0);
+  REQUIRE(last_counters.at("continuous.value.y") > 0.7);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server stops precision replications after the confidence target",
           "[server][integration][precision]") {
   logicpilot::server::SimServer server{make_test_config()};
