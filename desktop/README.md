@@ -63,6 +63,7 @@ compile/run; it also verifies every manifest size/hash. Build the NSIS installer
 with `pnpm desktop:bundle` after the Release sidecars exist.
 
 Environment overrides (development/debugging only):
+
 - `LOGICPILOT_ROOT` — resource/repository root (auto-detected beside an
   installed executable or by walking upward in a development build).
 - `LOGICPILOT_NODE` — Node binary (defaults to bundled Node, then system Node
@@ -72,3 +73,14 @@ Environment overrides (development/debugging only):
 
 The app server prints `LOGICPILOT_PORT <http>` / `LOGICPILOT_WS_PORT <ws>` on
 stdout; it shuts its gateway down when the desktop process exits.
+
+## Local API security boundary
+
+The Node app server binds only to `127.0.0.1`. Its HTTP API is a local desktop
+control surface, not an authenticated multi-user backend: any process that can
+reach the loopback port should be treated as trusted. Requests are bounded by
+a 16 MiB body limit, a 120 second timeout and four concurrent API operations;
+additional provider-specific limits may be stricter. Do not expose the app
+server through a LAN bind, reverse proxy or port forward without adding
+authentication, origin/CSRF protection, rate limiting and SSRF controls for
+custom AI endpoints.

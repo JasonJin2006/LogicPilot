@@ -6,11 +6,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDocument, type ModelDocument } from '@logicpilot/editor';
+import { createProject } from '../project/project';
 import { runAssistantTurn } from './assistantRuntime';
+import { createAssistantKernel } from './assistantKernel';
 import { createAssistantSession, type AssistantContext } from './assistantTypes';
-import { findAssistantTool, undoAssistantChange } from './assistantTools';
+import { findAssistantTool } from './assistantTools';
+import { undoAssistantChange } from './capabilities/logicpilot-modeling/runtime';
 import { buildAssistantContext } from './contextBuilder';
 import { useModelStore } from '../state/modelStore';
+import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
 import { useAiConversationStore } from './conversationStore';
 
 interface MockCall {
@@ -174,7 +179,20 @@ beforeEach(() => {
     canRedo: false,
     lastCommitAt: 0,
   });
+  useProjectStore.setState({
+    bundle: createProject('Test'),
+    path: null,
+    diskFiles: null,
+    diskHashes: null,
+    dirty: false,
+  });
+  useWorkspaceStore.getState().openVirtual('Test');
   useAiConversationStore.setState({ histories: {} });
+});
+
+afterEach(() => {
+  useProjectStore.getState().clearProject();
+  useWorkspaceStore.getState().closeWorkspace();
 });
 
 afterEach(() => {
@@ -370,6 +388,40 @@ describe('assistant runtime: control flow', () => {
     const results = assistantMessage.toolResults as Array<{ toolCallId: string; ok: boolean }>;
     expect(results.map((entry) => entry.toolCallId)).toEqual(['c1', 'c2']);
     expect(results.every((entry) => entry.ok)).toBe(true);
+    expect(
+      result.modelMessages?.find((message) => message.toolResults !== undefined)?.toolResults,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolCallId: 'c1', ok: true }),
+        expect.objectContaining({ toolCallId: 'c2', ok: true }),
+      ]),
+    );
+  });
+
+  it('runs read-only inspection calls in a parallel group while committing results in model order', async () => {
+    queueAssistant([
+      {
+        message: 'inspect both',
+        plan: [],
+        toolCalls: [
+          { id: 'inspect-1', name: 'inspect_model', arguments: {} },
+          { id: 'inspect-2', name: 'inspect_selection', arguments: {} },
+        ],
+        done: false,
+      },
+      { message: 'done', plan: [], toolCalls: [], done: true },
+    ]);
+    const result = await runAssistantTurn({
+      message: 'inspect the model and selection',
+      context: baseContext(),
+      session: createAssistantSession(),
+    });
+    expect(result.ok).toBe(true);
+    const toolMessage = result.modelMessages?.find((message) => message.toolResults !== undefined);
+    expect(toolMessage?.toolResults?.map((entry) => entry.toolCallId)).toEqual([
+      'inspect-1',
+      'inspect-2',
+    ]);
   });
 
   it('stops after the maximum number of iterations', async () => {
@@ -378,6 +430,18 @@ describe('assistant runtime: control flow', () => {
         message: 'keep going',
         plan: [],
         toolCalls: [{ id: 'c1', name: 'inspect_model', arguments: {} }],
+        done: false,
+      },
+      {
+        message: 'keep checking diagnostics',
+        plan: [],
+        toolCalls: [{ id: 'c2', name: 'inspect_diagnostics', arguments: {} }],
+        done: false,
+      },
+      {
+        message: 'keep checking metrics',
+        plan: [],
+        toolCalls: [{ id: 'c3', name: 'inspect_run_metrics', arguments: {} }],
         done: false,
       },
     ]);
@@ -390,6 +454,124 @@ describe('assistant runtime: control flow', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('loop limit');
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('suppresses an identical tool call when no state changed', async () => {
+    const { fetchMock } = queueAssistant([
+      {
+        message: '你好！请告诉我你需要什么帮助。',
+        plan: [{ id: 's1', label: 'checking model' }],
+        toolCalls: [{ id: 'c1', name: 'inspect_model', arguments: {} }],
+        done: false,
+      },
+      {
+        message: '你好！请告诉我你需要什么帮助。',
+        plan: [],
+        toolCalls: [{ id: 'c2', name: 'inspect_model', arguments: {} }],
+        done: false,
+      },
+      {
+        message: '你好！请告诉我你需要什么帮助。',
+        plan: [],
+        toolCalls: [],
+        done: true,
+      },
+    ]);
+    const result = await runAssistantTurn({
+      message: '你好',
+      context: baseContext(),
+      session: createAssistantSession(),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain('你好');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.steps.some((step) => step.kind === 'error')).toBe(false);
+  });
+
+  it('resumes an unfinished turn from a versioned checkpoint', async () => {
+    const checkpointKernel = createAssistantKernel();
+    checkpointKernel.beginTurn({ role: 'user', content: 'resume this task' });
+    const checkpoints: unknown[] = [];
+    const { fetchMock } = queueAssistant([
+      { message: 'resumed and complete', plan: [], toolCalls: [], done: true },
+    ]);
+    const result = await runAssistantTurn({
+      message: 'ignored while resuming',
+      context: baseContext(),
+      session: createAssistantSession(),
+      checkpoint: checkpointKernel.checkpoint(),
+      onCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.message).toBe('resumed and complete');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(checkpoints.length).toBeGreaterThan(0);
+  });
+
+  it('retries transient assistant endpoint failures before surfacing an error', async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+        if (!String(input).endsWith('/api/assistant'))
+          throw new Error(`unexpected fetch to ${input}`);
+        attempts += 1;
+        if (attempts === 1) {
+          return {
+            ok: false,
+            status: 503,
+            json: async () => ({ error: 'temporary provider outage' }),
+          } as Response;
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ message: 'recovered', plan: [], toolCalls: [], done: true }),
+        } as Response;
+      }),
+    );
+    const result = await runAssistantTurn({
+      message: 'retry this',
+      context: baseContext(),
+      session: createAssistantSession(),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.message).toBe('recovered');
+    expect(attempts).toBe(2);
+  });
+
+  it('consumes assistant SSE text deltas before the final structured response', async () => {
+    const chunks: string[] = [];
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"text","delta":"streamed "}\n\n'));
+        controller.enqueue(encoder.encode('data: {"type":"text","delta":"reply"}\n\n'));
+        controller.enqueue(
+          encoder.encode(
+            'data: {"type":"done","response":{"message":"streamed reply","plan":[],"toolCalls":[],"done":true}}\n\n',
+          ),
+        );
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+        expect(String(input)).toContain('/api/assistant/stream');
+        return { ok: true, status: 200, body } as Response;
+      }),
+    );
+    const result = await runAssistantTurn({
+      message: 'stream it',
+      context: baseContext(),
+      session: createAssistantSession(),
+      onToken: (chunk) => {
+        if (chunk.type === 'text') chunks.push(chunk.delta);
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(chunks.join('')).toBe('streamed reply');
   });
 
   it('cancels cleanly when the signal aborts', async () => {
@@ -547,6 +729,27 @@ describe('assistant runtime: control flow', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('without a final answer');
   });
+
+  it('rejects a final answer that misreports completed run metrics', async () => {
+    queueAssistant([
+      { message: 'Wq=2.827, utilization=79.3%', plan: [], toolCalls: [], done: true },
+    ]);
+    const session = createAssistantSession();
+    session.runStatus = 'finished';
+    session.runMetrics = {
+      summary: {
+        Wq: { mean: 3.615 },
+        utilization: { mean: 0.793 },
+      },
+    } as never;
+    const result = await runAssistantTurn({
+      message: 'Explain the latest results and report Wq',
+      context: baseContext(),
+      session,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('grounded metric validation');
+  });
 });
 
 describe('assistant tools: validation', () => {
@@ -632,6 +835,25 @@ describe('assistant tools: validation', () => {
 });
 
 describe('assistant tools: model editing', () => {
+  it('refuses model mutations when no project is open', async () => {
+    useProjectStore.getState().clearProject();
+    useWorkspaceStore.getState().closeWorkspace();
+    const tool = findAssistantTool('apply_model_patch')!;
+    const result = await tool.execute(
+      {
+        patch: {
+          version: 1,
+          operations: [{ op: 'add_block', kind: 'queue', name: 'ScratchOnly' }],
+        },
+        summary: 'add a queue',
+      },
+      { session: createAssistantSession(), experiment: { seed: 1 } as never },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('当前未打开工作区');
+    expect(useModelStore.getState().document.nodes).toHaveLength(0);
+  });
+
   it('applies a structured patch and auto-compiles', async () => {
     const document = documentWithQueue();
     useModelStore.setState({ document, canUndo: false, past: [] });
@@ -676,6 +898,9 @@ describe('assistant tools: model editing', () => {
     expect(useModelStore.getState().canUndo).toBe(true);
     expect(session.lastPatch).not.toBeNull();
     expect(session.lastChangeSummary).toBe('raise queue capacity to 20 and add a source');
+    const syncedBundle = useProjectStore.getState().bundle;
+    expect(syncedBundle?.files['model/main.lp']).toContain('queue Q');
+    expect(syncedBundle?.files['model/main.lp']).toContain('source In');
   });
 
   it('resolves references by unique name', async () => {
@@ -1135,6 +1360,91 @@ describe('assistant tools: runs and metrics', () => {
     expect(result.ok).toBe(true);
     const metrics = result.metrics as { summary: Record<string, { mean: number }> };
     expect(metrics.summary.Wq!.mean).toBe(1.25);
+  });
+
+  it('runs parameter studies and grounded explanations as first-class assistant tools', async () => {
+    const session = createAssistantSession();
+    session.dsl = 'model M { use process }';
+    session.runMetrics = {
+      summary: { Wq: { mean: 1.25, stddev: 0, ci_low: 1.25, ci_high: 1.25 } },
+      blocks: [],
+    };
+    session.previousRunMetrics = session.runMetrics;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.endsWith('/api/parameter-variation')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ kind: 'parameter_variation', pointCount: 2, iterations: [] }),
+          } as Response;
+        }
+        if (url.endsWith('/api/ai-query-metrics')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              kind: 'metric-query',
+              findings: ['Wq is grounded'],
+              evidence: {},
+            }),
+          } as Response;
+        }
+        if (url.endsWith('/api/ai-optimize')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              kind: 'optimize',
+              evaluations: [{ value: 1 }],
+              best: { value: 1, score: 0.5 },
+            }),
+          } as Response;
+        }
+        if (url.endsWith('/api/ai-compare-metrics')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              kind: 'metric-comparison',
+              findings: ['improved'],
+              summary: {},
+              blocks: [],
+              statistical: [],
+            }),
+          } as Response;
+        }
+        throw new Error(`unexpected fetch to ${url}`);
+      }),
+    );
+    const study = await findAssistantTool('run_parameter_study')!.execute(
+      {},
+      {
+        session,
+        experiment: { arrivals: 100, warmup: 10 } as never,
+      },
+    );
+    expect(study.pointCount).toBe(2);
+    const explanation = await findAssistantTool('explain_results')!.execute(
+      { question: 'why?' },
+      {
+        session,
+        experiment: { arrivals: 100, warmup: 10 } as never,
+      },
+    );
+    expect(explanation.findings).toEqual(['Wq is grounded']);
+    const optimized = await findAssistantTool('optimize_model')!.execute(
+      { prompt: 'minimize Wq' },
+      { session, experiment: { arrivals: 100, warmup: 10 } as never },
+    );
+    expect(optimized.evaluations).toHaveLength(1);
+    const comparison = await findAssistantTool('compare_runs')!.execute(
+      {},
+      { session, experiment: { arrivals: 100, warmup: 10 } as never },
+    );
+    expect(comparison.findings).toEqual(['improved']);
   });
 
   it('run_simulation compiles first and returns real metrics', async () => {

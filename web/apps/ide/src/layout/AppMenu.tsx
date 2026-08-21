@@ -10,12 +10,15 @@ import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent, loadRecent, removeRecent } from '../state/recentStore';
 import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
+import { parseWorkspaceFile, workspaceToJson } from '../state/workspaceFile';
 import { useRunStore } from '../state/runStore';
 import { resetVizState, vizState } from '../state/vizState';
 import { logConsoleEvent } from '../state/connectionStore';
 import { saveProject } from '../project/syncEngine';
 import {
   bundleToJson,
+  createProjectBundle,
   initializeProject,
   parseProjectBundle,
   projectToDiskFiles,
@@ -25,7 +28,9 @@ import { openProjectFromFile } from '../project/openProject';
 import {
   isTauri,
   pickProjectFolder,
+  readProjectFile,
   readProjectDir,
+  readProjectHashes,
   readProjectTree,
   writeProjectFiles,
 } from '../state/tauriFs';
@@ -55,6 +60,7 @@ export function AppMenu() {
   const [recentTick, setRecentTick] = useState(0);
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const workspaceFileRef = useRef<HTMLInputElement>(null);
 
   const modelDoc = useModelStore((state) => state.document);
   const selectedId = useModelStore((state) => state.selectedId);
@@ -74,9 +80,9 @@ export function AppMenu() {
   const openNewProject = useUiStore((state) => state.openNewProject);
   const openFiles = useUiStore((state) => state.openFiles);
   const openBundle = useProjectStore((state) => state.openBundle);
-  const bundle = useProjectStore((state) => state.bundle);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
+  const workspaceOpen = useWorkspaceStore((state) => state.folders.length > 0);
 
   const selected = (modelDoc?.nodes ?? []).find((node) => node.id === selectedId) ?? null;
   const close = () => setOpen(null);
@@ -99,6 +105,86 @@ export function AppMenu() {
   };
   const fileOpen = () => {
     fileRef.current?.click();
+    close();
+  };
+  const fileOpenWorkspace = () => {
+    workspaceFileRef.current?.click();
+    close();
+  };
+  const fileAddFolder = async () => {
+    const dir = await pickProjectFolder();
+    if (!dir) return;
+    const workspace = useWorkspaceStore.getState();
+    if (!workspace.isOpen()) workspace.openFolder(dir);
+    else workspace.addFolder(dir);
+    const tree = await readProjectTree(dir);
+    if (tree.ok && tree.files) workspace.setFolderFiles(dir, tree.files);
+    close();
+  };
+  const fileSaveWorkspaceAs = () => {
+    const state = useWorkspaceStore.getState();
+    if (state.folders.length === 0) return;
+    const blob = new Blob([workspaceToJson(state.folders, state.name ?? 'LogicPilot Workspace')], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${state.name ?? 'logicpilot'}.lpworkspace`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    close();
+  };
+  const onWorkspaceChosen = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const parsed = parseWorkspaceFile(await file.text());
+    if (!parsed.ok || parsed.workspace.folders.length === 0) {
+      openInfo('Open workspace failed', parsed.ok ? 'workspace has no folders' : parsed.error);
+      return;
+    }
+    const first = parsed.workspace.folders[0]!;
+    const workspace = useWorkspaceStore.getState();
+    workspace.openFolder(first.path, first.name);
+    for (const folder of parsed.workspace.folders.slice(1))
+      workspace.addFolder(folder.path, folder.name);
+    for (const folder of parsed.workspace.folders) {
+      if (folder.path === '') continue;
+      const tree = await readProjectTree(folder.path);
+      if (tree.ok && tree.files) workspace.setFolderFiles(folder.path, tree.files);
+    }
+    workspace.setWorkspaceFile(file.name);
+    if (first.path === '') {
+      useProjectStore.getState().clearProject();
+      close();
+      return;
+    }
+    const result = await readProjectDir(first.path);
+    if (result.ok && result.manifestJson && result.files) {
+      const envelope = {
+        schema: 'logicpilot.project',
+        format: 'bundle' as const,
+        version: 1,
+        manifest: JSON.parse(result.manifestJson) as Record<string, unknown>,
+        files: result.files,
+      };
+      const loaded = parseProjectBundle(JSON.stringify(envelope));
+      if (loaded.ok) {
+        const document = projectToDocument(loaded.bundle!);
+        if (document.ok) {
+          openBundle(loaded.bundle!);
+          setPath(first.path);
+          openDocument(document.document!);
+          markClean();
+        }
+      }
+    } else {
+      useProjectStore.getState().clearProject();
+      setPath(first.path);
+      const tree = await readProjectTree(first.path);
+      if (tree.ok && tree.files) useProjectStore.getState().setDiskFiles(tree.files);
+    }
     close();
   };
   const fileOpenProjectFolder = async () => {
@@ -126,16 +212,18 @@ export function AppMenu() {
       }
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(dir);
+      useWorkspaceStore.getState().openFolder(dir);
       const tree = await readProjectTree(dir);
       if (tree.ok && tree.files) {
         useProjectStore.getState().setDiskFiles(tree.files);
+        useWorkspaceStore.getState().setFolderFiles(dir, tree.files);
       }
       await useProjectStore.getState().refreshDiskHashes();
       useUiStore.getState().closeAllFiles();
       useCanvasView.getState().resetCanvasViews();
       logConsoleEvent(
         'warn',
-        'LP5100: folder is not a LogicPilot project - editing files only until Save initializes it',
+        'LP5100: opened a workspace folder without logicpilot.json - the first Save will initialize the LogicPilot project',
       );
       close();
       return;
@@ -160,9 +248,11 @@ export function AppMenu() {
       }
       openBundle(parsedBundle.bundle!);
       setPath(dir);
+      useWorkspaceStore.getState().openFolder(dir, parsedBundle.bundle!.manifest.name);
       const tree = await readProjectTree(dir);
       if (tree.ok && tree.files) {
         useProjectStore.getState().setDiskFiles(tree.files);
+        useWorkspaceStore.getState().setFolderFiles(dir, tree.files);
       }
       await useProjectStore.getState().refreshDiskHashes();
       openDocument(loaded.document!);
@@ -186,11 +276,14 @@ export function AppMenu() {
   const fileSave = async () => {
     const projectPath = useProjectStore.getState().path;
     let current = useProjectStore.getState().bundle;
-    let model = modelDoc;
+    const draftDirty = useProjectStore.getState().dirty;
+    // Read the live store at action time. The menu can remain mounted while a
+    // canvas drag updates the model, so a render-captured document can lag
+    // behind the document the user is saving.
+    let model = useModelStore.getState().document;
     if (!current && projectPath) {
       // A folder opened without logicpilot.json: initialize the project from
       // the in-editor model/main.lp (or the file on disk) on first save.
-      const { readProjectFile } = await import('../state/tauriFs');
       const editedMain = useUiStore.getState().diskFiles['model/main.lp'];
       let mainContent = editedMain;
       if (mainContent === undefined) {
@@ -203,7 +296,19 @@ export function AppMenu() {
       const initialized = initializeProject(mainContent, folderName);
       model = initialized.document;
       const base = initialized.bundle;
-      current = base;
+      if (draftDirty) {
+        // A plain workspace may have been edited by the AI before the first
+        // Save. Prefer the live canvas over stale disk contents, while
+        // retaining unrelated files from the folder initialization.
+        const liveDocument = useModelStore.getState().document;
+        const draftBundle = createProjectBundle(liveDocument);
+        draftBundle.manifest.name = folderName;
+        draftBundle.files = { ...base.files, ...draftBundle.files };
+        model = liveDocument;
+        current = draftBundle;
+      } else {
+        current = base;
+      }
       useProjectStore.getState().openBundle(base);
     }
     const name = model.name || 'Model';
@@ -226,7 +331,6 @@ export function AppMenu() {
     if (projectPath) {
       // Detect external edits since the project was opened (LP5xxx): never
       // silently overwrite a file that changed on disk.
-      const { readProjectHashes } = await import('../state/tauriFs');
       const baseline = useProjectStore.getState().diskHashes;
       const currentHashes = await readProjectHashes(projectPath);
       if (currentHashes.ok && currentHashes.hashes && baseline) {
@@ -286,6 +390,7 @@ export function AppMenu() {
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(null);
       useProjectStore.getState().setDiskFiles(null);
+      useWorkspaceStore.getState().closeWorkspace();
       // Back to the welcome tab when it is open, else a blank center.
       if (useLayoutStore.getState().areas.center.panels.includes('welcome')) {
         useLayoutStore.getState().setActive('center', 'welcome');
@@ -454,11 +559,17 @@ export function AppMenu() {
         ...(isTauri()
           ? [
               {
-                label: 'Open Project Folder...',
+                label: 'Open Folder...',
                 action: () => void fileOpenProjectFolder(),
+              },
+              {
+                label: 'Add Folder to Workspace...',
+                action: () => void fileAddFolder(),
               },
             ]
           : []),
+        { label: 'Open Workspace from File...', action: fileOpenWorkspace },
+        { label: 'Save Workspace As...', disabled: !workspaceOpen, action: fileSaveWorkspaceAs },
         { kind: 'separator' },
         { kind: 'sectionLabel', label: 'Open Recent' },
         ...(recent.length > 0
@@ -473,6 +584,7 @@ export function AppMenu() {
                     const loaded = projectToDocument(parsedBundle.bundle!);
                     if (loaded.ok) {
                       openBundle(parsedBundle.bundle!);
+                      useWorkspaceStore.getState().openVirtual(parsedBundle.bundle!.manifest.name);
                       openDocument(loaded.document!);
                       markClean();
                     } else {
@@ -482,6 +594,8 @@ export function AppMenu() {
                 } else if (model.dsl) {
                   const parsed = parseDsl(model.dsl);
                   if (parsed.ok) {
+                    useProjectStore.getState().clearProject();
+                    useWorkspaceStore.getState().openVirtual(parsed.document.name);
                     openDocument(parsed.document);
                     markClean();
                   } else {
@@ -502,7 +616,7 @@ export function AppMenu() {
         { label: 'Save', shortcut: 'Ctrl+S', action: fileSave },
         { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: fileSave },
         { kind: 'separator' },
-        { label: 'Close', disabled: !bundle, action: fileClose },
+        { label: 'Close Workspace', disabled: !workspaceOpen, action: fileClose },
         { kind: 'separator' },
         { label: 'Exit', action: exitApp },
       ],
@@ -582,8 +696,7 @@ export function AppMenu() {
                 const dir = useProjectStore.getState().path;
                 const diskFiles = useProjectStore.getState().diskFiles;
                 if (dir && diskFiles?.includes('model/main.lp')) {
-                  void import('../state/tauriFs').then(async ({ readProjectFile }) => {
-                    const read = await readProjectFile(dir, 'model/main.lp');
+                  void readProjectFile(dir, 'model/main.lp').then((read) => {
                     if (read.ok && read.content !== undefined) {
                       useUiStore.getState().openDiskFile('model/main.lp', read.content);
                     }
@@ -694,6 +807,13 @@ export function AppMenu() {
         </div>
       ))}
       <input ref={fileRef} type="file" accept=".lpproj,.lp,.json" hidden onChange={onFileChosen} />
+      <input
+        ref={workspaceFileRef}
+        type="file"
+        accept=".lpworkspace,.json"
+        hidden
+        onChange={(event) => void onWorkspaceChosen(event)}
+      />
     </nav>
   );
 }

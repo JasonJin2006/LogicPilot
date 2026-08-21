@@ -57,7 +57,7 @@ IDE 启动时自动连接网关（桌面客户端自动拉起 lp-server；浏览
 pnpm --filter @logicpilot/ide build     # tsc --noEmit + vite build
 pnpm --filter @logicpilot/ide typecheck # 仅 tsc --noEmit
 pnpm test                               # workspace：editor / renderer2d / protocol vitest
-node web/apps/ide/scripts/browser-verify.mjs  # 浏览器 E2E（需网关）
+pnpm test:browser                         # 启动网关/Vite 并运行完整浏览器 E2E
 ```
 
 ## 备注

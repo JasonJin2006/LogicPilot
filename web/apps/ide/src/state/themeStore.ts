@@ -5,6 +5,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { getPersistStorage } from './persistStorage';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
@@ -38,8 +39,7 @@ export const useThemeStore = create<ThemeState>()(
     {
       name: 'logicpilot.theme',
       version: 1,
-      storage:
-        typeof localStorage !== 'undefined' ? createJSONStorage(() => localStorage) : undefined,
+      storage: createJSONStorage(() => getPersistStorage()),
     },
   ),
 );

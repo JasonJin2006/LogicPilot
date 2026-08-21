@@ -131,13 +131,15 @@ assert.deepEqual(targeted.patch.operations, [
 const followup = await proposeModelPatch({
   prompt: 'make it 4 instead',
   model,
-  history: [{
-    user: 'set Nurses server capacity to 3',
-    patch: {
-      version: 1,
-      operations: [{ op: 'update_block', target: 'r1', params: { capacity: 3 } }],
+  history: [
+    {
+      user: 'set Nurses server capacity to 3',
+      patch: {
+        version: 1,
+        operations: [{ op: 'update_block', target: 'r1', params: { capacity: 3 } }],
+      },
     },
-  }],
+  ],
 });
 assert.deepEqual(followup.patch.operations, [
   { op: 'update_block', target: 'r1', params: { capacity: 4 } },
@@ -149,20 +151,24 @@ const connectFollowup = await proposeModelPatch({
     ...model,
     nodes: [...model.nodes, { id: 'overflow-id', kind: 'sink', name: 'Overflow', params: {} }],
   },
-  history: [{
-    user: 'add sink Overflow',
-    patch: { version: 1, operations: [{ op: 'add_block', kind: 'sink', name: 'Overflow' }] },
-  }],
+  history: [
+    {
+      user: 'add sink Overflow',
+      patch: { version: 1, operations: [{ op: 'add_block', kind: 'sink', name: 'Overflow' }] },
+    },
+  ],
 });
 assert.deepEqual(connectFollowup.patch.operations, [
   { op: 'connect', from: 'overflow-id', to: 'k1' },
 ]);
 
 assert.throws(
-    () => validateModelPatch({
+  () =>
+    validateModelPatch({
       version: 1,
       operations: [{ op: 'update_block', target: 'q1', params: { capacity: { unsafe: true } } }],
     }),
-    /malformed update_block/);
+  /malformed update_block/,
+);
 
 console.log('AI-MODEL-PATCH TEST: PASS');

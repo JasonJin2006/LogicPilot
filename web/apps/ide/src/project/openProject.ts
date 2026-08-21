@@ -4,6 +4,7 @@
 import { generateDsl, parseDsl } from '@logicpilot/editor';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
 import { useUiStore } from '../state/uiStore';
 import { addRecent } from '../state/recentStore';
 import { loadModelDocument } from '../state/projectSync';
@@ -29,6 +30,7 @@ export async function openProjectFromFile(file: File): Promise<void> {
     // path / Explorer tree so Save does not target the old folder.
     useProjectStore.getState().clearProject();
     useProjectStore.getState().openBundle(parsedBundle.bundle!);
+    useWorkspaceStore.getState().openVirtual(parsedBundle.bundle!.manifest.name);
     loadModelDocument(loaded.document!);
     useProjectStore.getState().markClean();
     addRecent({ name: loaded.document!.name, bundle: text, at: Date.now() });
@@ -72,13 +74,14 @@ export async function openProjectFromFile(file: File): Promise<void> {
         );
         return;
       }
-      useProjectStore.getState().clearProject();
-      loadModelDocument(parsed as never);
-      useProjectStore.getState().markClean();
       const parsedName =
         typeof (parsed as { name?: unknown }).name === 'string'
           ? (parsed as { name: string }).name
           : useModelStore.getState().document.name || 'Model';
+      useProjectStore.getState().clearProject();
+      useWorkspaceStore.getState().openVirtual(parsedName);
+      loadModelDocument(parsed as never);
+      useProjectStore.getState().markClean();
       addRecent({ name: parsedName, dsl: generateDsl(parsed as never), at: Date.now() });
     } catch (error) {
       openInfo('Open failed', String(error));
@@ -89,6 +92,7 @@ export async function openProjectFromFile(file: File): Promise<void> {
   useProjectStore.getState().clearProject();
   const parsed = parseDsl(text);
   if (parsed.ok) {
+    useWorkspaceStore.getState().openVirtual(parsed.document.name);
     loadModelDocument(parsed.document);
     useProjectStore.getState().markClean();
     addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });

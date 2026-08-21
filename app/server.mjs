@@ -14,8 +14,12 @@ import { fileURLToPath } from 'node:url';
 
 import {
   handleAiAssistant,
+  handleAiAssistantStream,
+  handleAiProviderModels,
   handleAiProviders,
   handleAiProviderTest,
+  handleMcpCall,
+  handleMcpCapabilities,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -27,14 +31,14 @@ import {
   handleAiValidate,
   handleConfig,
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
-import {
-  extendNativeRuntimePath,
-  findLpServer,
-} from '../scripts/tool-paths.mjs';
+import { createApiRequestPolicy } from './request-policy.mjs';
+import { extendNativeRuntimePath, findLpServer } from '../scripts/tool-paths.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..');
 const DIST = join(root, 'web', 'apps', 'ide', 'dist');
+const LOOPBACK_HOST = '127.0.0.1';
+const runWithApiPolicy = createApiRequestPolicy();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -72,14 +76,15 @@ function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'content-type');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('X-LogicPilot-Local-Only', 'true');
 }
 
 async function startGateway() {
   const exe = findLpServer();
   if (!exe) {
-    throw new Error(
-      'lp-server not found (set LP_SERVER or build the kernel)',
-    );
+    throw new Error('lp-server not found (set LP_SERVER or build the kernel)');
   }
   const port = await freePort();
   ensureMinGwinPath(exe);
@@ -131,7 +136,11 @@ async function main() {
     const origin = req.headers.origin;
     if (pathname.startsWith('/api/') && origin) {
       let sameOrigin = false;
-      try { sameOrigin = new URL(origin).host === req.headers.host; } catch { sameOrigin = false; }
+      try {
+        sameOrigin = new URL(origin).host === req.headers.host;
+      } catch {
+        sameOrigin = false;
+      }
       // Tauri desktop WebViews serve the page from a synthetic origin
       // (tauri://localhost on v1, http(s)://tauri.localhost on v2) and call
       // the local API cross-origin. Those are first-party and must be
@@ -148,67 +157,87 @@ async function main() {
     }
     if (pathname === '/api/ai-providers/test') {
       setCors(res);
-      await handleAiProviderTest(req, res);
+      await runWithApiPolicy(req, res, () => handleAiProviderTest(req, res));
+      return;
+    }
+    if (pathname === '/api/ai-providers/models') {
+      setCors(res);
+      await runWithApiPolicy(req, res, () => handleAiProviderModels(req, res));
       return;
     }
     if (pathname === '/api/ai-providers') {
       setCors(res);
-      await handleAiProviders(req, res);
+      await runWithApiPolicy(req, res, () => handleAiProviders(req, res));
+      return;
+    }
+    if (pathname === '/api/mcp/capabilities') {
+      setCors(res);
+      await runWithApiPolicy(req, res, () => handleMcpCapabilities(req, res));
+      return;
+    }
+    if (pathname === '/api/mcp/call') {
+      setCors(res);
+      await runWithApiPolicy(req, res, () => handleMcpCall(req, res));
       return;
     }
     if (pathname === '/api/ai-build') {
       setCors(res);
-      await handleAiBuild(req, res);
+      await runWithApiPolicy(req, res, () => handleAiBuild(req, res));
       return;
     }
     if (pathname === '/api/ai-optimize') {
       setCors(res);
-      await handleAiOptimize(req, res);
+      await runWithApiPolicy(req, res, () => handleAiOptimize(req, res));
       return;
     }
     if (pathname === '/api/ai-run') {
       setCors(res);
-      await handleAiRun(req, res);
+      await runWithApiPolicy(req, res, () => handleAiRun(req, res));
       return;
     }
     if (pathname === '/api/parameter-variation') {
       setCors(res);
-      await handleParameterVariation(req, res);
+      await runWithApiPolicy(req, res, () => handleParameterVariation(req, res));
       return;
     }
     if (pathname === '/api/ai-validate') {
       setCors(res);
-      await handleAiValidate(req, res);
+      await runWithApiPolicy(req, res, () => handleAiValidate(req, res));
       return;
     }
     if (pathname === '/api/ai-patch') {
       setCors(res);
-      await handleAiPatch(req, res);
+      await runWithApiPolicy(req, res, () => handleAiPatch(req, res));
       return;
     }
     if (pathname === '/api/ai-query-metrics') {
       setCors(res);
-      await handleAiQueryMetrics(req, res);
+      await runWithApiPolicy(req, res, () => handleAiQueryMetrics(req, res));
       return;
     }
     if (pathname === '/api/ai-compare-metrics') {
       setCors(res);
-      await handleAiCompareMetrics(req, res);
+      await runWithApiPolicy(req, res, () => handleAiCompareMetrics(req, res));
       return;
     }
     if (pathname === '/api/ai-explain') {
       setCors(res);
-      await handleAiExplain(req, res);
+      await runWithApiPolicy(req, res, () => handleAiExplain(req, res));
       return;
     }
     if (pathname === '/api/assistant') {
       setCors(res);
-      await handleAiAssistant(req, res);
+      await runWithApiPolicy(req, res, () => handleAiAssistant(req, res));
+      return;
+    }
+    if (pathname === '/api/assistant/stream') {
+      setCors(res);
+      await runWithApiPolicy(req, res, () => handleAiAssistantStream(req, res));
       return;
     }
     if (pathname === '/api/config') {
       setCors(res);
-      handleConfig(req, res);
+      await runWithApiPolicy(req, res, () => handleConfig(req, res));
       return;
     }
     if (await serveStatic(pathname, res)) {
@@ -219,10 +248,15 @@ async function main() {
   });
 
   const httpPort = await freePort();
-  server.listen(httpPort, '127.0.0.1', () => {
+  server.requestTimeout = 120_000;
+  server.headersTimeout = 15_000;
+  server.keepAliveTimeout = 5_000;
+  server.listen(httpPort, LOOPBACK_HOST, () => {
     console.log(`LOGICPILOT_PORT ${httpPort}`);
     console.log(`LOGICPILOT_WS_PORT ${gateway.port}`);
-    console.log(`LogicPilot app server: http://127.0.0.1:${httpPort}  gateway ws://127.0.0.1:${gateway.port}/sim`);
+    console.log(
+      `LogicPilot app server: http://127.0.0.1:${httpPort}  gateway ws://127.0.0.1:${gateway.port}/sim`,
+    );
   });
 
   const shutdown = () => {

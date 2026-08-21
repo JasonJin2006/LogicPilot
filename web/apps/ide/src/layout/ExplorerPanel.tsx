@@ -1,4 +1,4 @@
-// Side panel (Explorer view): the project's file tree. With an on-disk
+// Side panel (Explorer view): the active workspace file tree. With an on-disk
 // project the tree mirrors the real folder contents exactly; in-memory
 // bundles show the bundle files. Right-click on a folder creates a file, on
 // a file renames or deletes it - all edits update the bundle in place (the
@@ -24,6 +24,7 @@ import { DEFAULT_MODEL_PATH } from '../project/project';
 import { openProjectFromFile } from '../project/openProject';
 import { useCanvasView } from '../state/canvasView';
 import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
 import { useUiStore } from '../state/uiStore';
 import {
   createDirectory,
@@ -204,6 +205,10 @@ export function ExplorerPanel() {
   const diskFiles = useProjectStore((state) => state.diskFiles);
   const refreshDiskTree = useProjectStore((state) => state.refreshDiskTree);
   const dirty = useProjectStore((state) => state.dirty);
+  const workspaceOpen = useWorkspaceStore((state) => state.folders.length > 0);
+  const workspaceName = useWorkspaceStore((state) => state.name);
+  const workspaceFolders = useWorkspaceStore((state) => state.folders);
+  const filesByFolder = useWorkspaceStore((state) => state.filesByFolder);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openInfo = useUiStore((state) => state.openInfo);
@@ -218,7 +223,7 @@ export function ExplorerPanel() {
   const isDisk = projectPath !== null && diskFiles !== null;
 
   // No project and no folder open: an empty panel with a single action.
-  if (!bundle && !diskFiles) {
+  if (!bundle && !diskFiles && !workspaceOpen) {
     return (
       <div className="side-panel-body explorer-panel">
         <div className="explorer-empty">
@@ -227,7 +232,7 @@ export function ExplorerPanel() {
             className="explorer-empty-open"
             onClick={() => fileInputRef.current?.click()}
           >
-            Open Project...
+            Open Project File...
           </button>
           <input
             ref={fileInputRef}
@@ -251,13 +256,17 @@ export function ExplorerPanel() {
   // (code editing works; Save initializes the project).
   const rootName = bundle
     ? bundle.manifest.name
-    : (projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'Folder');
+    : (workspaceName ?? projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'Workspace');
   // With an on-disk project the Explorer is a real workspace file browser
   // (the disk tree, including derived folders); otherwise it shows the
   // in-memory bundle files.
   const sourceFolders = diskFiles
     ? treeFromPaths(diskFiles)
     : treeFromPaths(Object.keys(bundle?.files ?? {}));
+  const additionalRoots = workspaceFolders.slice(1).map((folder) => ({
+    ...folder,
+    entries: treeFromPaths(filesByFolder[folder.path] ?? []),
+  }));
 
   const newFile = (dir: string) => {
     openPrompt({
@@ -408,7 +417,7 @@ export function ExplorerPanel() {
   };
 
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
-    if (!bundle) {
+    if (!workspaceOpen) {
       return;
     }
     const row = (event.target as Element).closest('.tree-row');
@@ -419,7 +428,7 @@ export function ExplorerPanel() {
     const dir = row.getAttribute('data-dir');
     const actions: ContextAction[] = [];
     if (path !== null && path !== undefined) {
-      const source = bundle.files[path];
+      const source = bundle?.files[path];
       const scene = source !== undefined ? sceneContainerFromFile(path, source) : null;
       if (scene) {
         actions.push({
@@ -490,7 +499,7 @@ export function ExplorerPanel() {
           {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}
         </span>
         <span className="tree-label">{rootName}</span>
-        {bundle && dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
+        {dirty && <span className="tree-dirty-dot" title="unsaved changes" />}
         <span className="tree-actions">
           <button
             type="button"
@@ -559,6 +568,37 @@ export function ExplorerPanel() {
           />
         ),
       )}
+      {additionalRoots.map((root) => (
+        <div key={root.path}>
+          <div className="tree-row tree-root" data-dir={root.path}>
+            <span className="tree-glyph">
+              <Folder size={13} />
+            </span>
+            <span className="tree-label">{root.name}</span>
+          </div>
+          {root.entries.map((entry) =>
+            isFolder(entry) ? (
+              <FolderRow
+                key={`${root.path}:${entry.path}`}
+                folder={entry}
+                indent={1}
+                dataDir={undefined}
+                collapsed={collapsed}
+                activePath={activePath}
+                onToggle={toggleFolder}
+              />
+            ) : (
+              <FileRow
+                key={`${root.path}:${entry.path}`}
+                file={entry}
+                indent={1}
+                dataPath={undefined}
+                active={false}
+              />
+            ),
+          )}
+        </div>
+      ))}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />
       )}

@@ -57,6 +57,37 @@ export function resetAiProvider(): Promise<AiProviderState> {
   return endpoint('/api/ai-providers', { method: 'DELETE' });
 }
 
-export function testAiProvider(): Promise<{ ok: true; latencyMs: number }> {
-  return endpoint('/api/ai-providers/test', { method: 'POST' });
+export function testAiProvider(input?: {
+  providerId: string;
+  protocol: string;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}): Promise<{ ok: true; latencyMs: number }> {
+  return endpoint('/api/ai-providers/test', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    ...(input ? { body: JSON.stringify(input) } : {}),
+  });
+}
+
+export interface AiProviderModelsResult {
+  ok: true;
+  providerId: string;
+  protocol: string;
+  models: string[];
+}
+
+export function listAiProviderModels(input?: {
+  providerId: string;
+  protocol: string;
+  baseUrl: string;
+  model?: string;
+  apiKey?: string;
+}): Promise<AiProviderModelsResult> {
+  return endpoint('/api/ai-providers/models', {
+    method: input ? 'POST' : 'GET',
+    headers: input ? { 'content-type': 'application/json' } : undefined,
+    ...(input ? { body: JSON.stringify(input) } : {}),
+  });
 }

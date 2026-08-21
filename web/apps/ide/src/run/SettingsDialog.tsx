@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Palette,
   RadioTower,
+  RefreshCw,
   RotateCcw,
   X,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppSelect } from '../layout/AppSelect';
 import {
   getAiProviderState,
+  listAiProviderModels,
   resetAiProvider,
   saveAiProvider,
   testAiProvider,
@@ -45,10 +47,11 @@ export function SettingsDialog() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [providerBusy, setProviderBusy] = useState<'load' | 'save' | 'test' | 'reset' | null>(
-    'load',
-  );
+  const [providerBusy, setProviderBusy] = useState<
+    'load' | 'save' | 'test' | 'models' | 'reset' | null
+  >('load');
   const [providerMessage, setProviderMessage] = useState('');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
   const applyState = (state: AiProviderState) => {
     setProviderState(state);
@@ -56,6 +59,9 @@ export function SettingsDialog() {
     setProtocol(state.active.protocol);
     setBaseUrl(state.active.baseUrl);
     setModel(state.active.model);
+    setAvailableModels(
+      state.providers.find((item) => item.id === state.active.providerId)?.models ?? [],
+    );
   };
 
   useEffect(() => {
@@ -66,6 +72,23 @@ export function SettingsDialog() {
   }, []);
 
   const selectedProvider = providerState?.providers.find((item) => item.id === providerId);
+  const activeDraftHasKey =
+    providerState?.active.providerId === providerId && providerState.active.hasApiKey;
+  const canTestProvider =
+    providerState !== null &&
+    (selectedProvider?.auth === 'login' ||
+      (baseUrl.trim() !== '' &&
+        model.trim() !== '' &&
+        (selectedProvider?.auth === 'optional' || apiKey.trim() !== '' || activeDraftHasKey)));
+  const canDiscoverModels =
+    providerState !== null &&
+    selectedProvider?.auth !== 'login' &&
+    baseUrl.trim() !== '' &&
+    (selectedProvider?.auth === 'optional' || apiKey.trim() !== '' || activeDraftHasKey);
+  const modelOptions = useMemo(
+    () => [...new Set([...(selectedProvider?.models ?? []), ...availableModels])],
+    [availableModels, selectedProvider],
+  );
   const providerFailed = providerState === null && providerBusy === null;
   const groupedProviders = useMemo(() => {
     const groups = new Map<string, AiProviderState['providers']>();
@@ -81,8 +104,30 @@ export function SettingsDialog() {
     setProtocol(next.protocol);
     setBaseUrl(next.baseUrl);
     setModel(next.models[0] ?? '');
+    setAvailableModels(next.models);
     setApiKey('');
     setProviderMessage('');
+  };
+
+  const refreshModels = async () => {
+    setProviderBusy('models');
+    setProviderMessage('');
+    try {
+      const result = await listAiProviderModels({
+        providerId,
+        protocol,
+        baseUrl,
+        ...(model ? { model } : {}),
+        ...(apiKey ? { apiKey } : {}),
+      });
+      setAvailableModels(result.models);
+      if (!result.models.includes(model.trim()) && result.models[0]) setModel(result.models[0]);
+      setProviderMessage(`Found ${result.models.length} models from the provider.`);
+    } catch (error) {
+      setProviderMessage(String(error instanceof Error ? error.message : error));
+    } finally {
+      setProviderBusy(null);
+    }
   };
 
   const saveProvider = async () => {
@@ -111,7 +156,13 @@ export function SettingsDialog() {
     setProviderBusy('test');
     setProviderMessage('');
     try {
-      const result = await testAiProvider();
+      const result = await testAiProvider({
+        providerId,
+        protocol,
+        baseUrl,
+        model,
+        ...(apiKey ? { apiKey } : {}),
+      });
       setProviderMessage(`Connection ready — ${result.latencyMs} ms`);
     } catch (error) {
       setProviderMessage(String(error instanceof Error ? error.message : error));
@@ -252,7 +303,11 @@ export function SettingsDialog() {
                     <AppSelect
                       ariaLabel="Protocol"
                       value={protocol}
-                      disabled={providerBusy === 'load' || providerFailed || selectedProvider?.auth === 'login'}
+                      disabled={
+                        providerBusy === 'load' ||
+                        providerFailed ||
+                        selectedProvider?.auth === 'login'
+                      }
                       onChange={setProtocol}
                       options={(providerState?.protocols ?? []).map((item) => ({
                         value: item.id,
@@ -283,13 +338,33 @@ export function SettingsDialog() {
                     <div className="provider-grid">
                       <label>
                         <span>Model</span>
-                        <input
-                          value={model}
-                          onChange={(event) => setModel(event.target.value)}
-                          list="ai-provider-models"
-                          spellCheck={false}
-                          placeholder="Model ID"
-                        />
+                        <div className="provider-model-input">
+                          <input
+                            value={model}
+                            onChange={(event) => setModel(event.target.value)}
+                            list="ai-provider-models"
+                            spellCheck={false}
+                            placeholder="Model ID"
+                          />
+                          <button
+                            type="button"
+                            className="provider-model-refresh"
+                            onClick={refreshModels}
+                            disabled={providerBusy !== null || !canDiscoverModels}
+                            aria-label="Fetch available models"
+                            title="Fetch available models"
+                          >
+                            <RefreshCw
+                              className={providerBusy === 'models' ? 'spin' : ''}
+                              size={13}
+                            />
+                          </button>
+                        </div>
+                        <small className="provider-model-hint">
+                          {modelOptions.length > 0
+                            ? `${modelOptions.length} preset/discovered model${modelOptions.length === 1 ? '' : 's'}`
+                            : 'Fetch models from this provider or enter an ID'}
+                        </small>
                       </label>
                       <label>
                         <span>API key</span>
@@ -310,7 +385,7 @@ export function SettingsDialog() {
                       </label>
                     </div>
                     <datalist id="ai-provider-models">
-                      {selectedProvider?.models.map((item) => (
+                      {modelOptions.map((item) => (
                         <option key={item} value={item} />
                       ))}
                     </datalist>
@@ -327,7 +402,7 @@ export function SettingsDialog() {
                   </button>
                   <button
                     onClick={testProvider}
-                    disabled={providerBusy !== null || !providerState?.active.configured}
+                    disabled={providerBusy !== null || !canTestProvider}
                   >
                     {providerBusy === 'test' && <LoaderCircle className="spin" size={13} />}Test
                     connection

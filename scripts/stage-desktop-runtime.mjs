@@ -73,11 +73,16 @@ const lpserver = requireFile(
 
 const requiredFiles = [
   'app/server.mjs',
+  'app/request-policy.mjs',
   'scripts/ai-build.mjs',
   'scripts/ai-provider.mjs',
   'scripts/ai-provider-config.mjs',
   'scripts/ai-provider-adapters.mjs',
   'scripts/ai-assistant.mjs',
+  'scripts/agent-profiles.mjs',
+  'scripts/agent-skills.mjs',
+  'scripts/mcp-client.mjs',
+  'scripts/mcp-runtime.mjs',
   'scripts/codex-assistant-provider.mjs',
   'scripts/ai-optimize.mjs',
   'scripts/ai-explain.mjs',

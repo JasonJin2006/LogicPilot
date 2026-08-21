@@ -88,6 +88,14 @@ $env:LOGICPILOT_AI_BASE_URL="https://.../v1"
 $env:LOGICPILOT_AI_MODEL="..."
 ```
 
+本地 Ollama 不需要 API Key：
+
+```powershell
+$env:LOGICPILOT_AI_PROVIDER="ollama"
+$env:LOGICPILOT_AI_BASE_URL="http://127.0.0.1:11434/v1"
+$env:LOGICPILOT_AI_MODEL="qwen2.5-coder:latest"
+```
+
 兼容变量：`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。Codex 仍可设置 `LOGICPILOT_AI_PROVIDER=codex`。
 
 ```powershell
@@ -121,6 +129,72 @@ LogicPilot 通过官方 `codex app-server` 的本地 stdio/JSONL 协议复用一
 `app-server`（默认）或 `exec`。
 
 ## IDE 工具型助手
+
+### 工作区边界
+
+LogicPilot 使用 VS Code 式工作区语义：工作区是一个或多个文件夹，
+`logicpilot.json` / `.lpproj` 只是工作区中的模型项目文件，不是 AI 写入权限的唯一依据。
+
+- 没有工作区：画布是临时 scratch，AI 只能回答和检查，不能修改模型。
+- 已打开普通文件夹：这是可写工作区，即使还没有 `logicpilot.json`，AI 也可以创建模型；首次保存会初始化项目文件。
+- 已打开 LogicPilot 项目：AI 修改当前模型，修改进入 dirty 状态，用户保存后才写入磁盘。
+
+File 菜单提供 `Open Folder...`、`Open Workspace from File...`、`Save Workspace As...`
+和 `Close Workspace`。工作区文件使用 `.lpworkspace` 扩展名，保存的是工作区根目录，
+不包含 API Key、模型内容或运行结果。
+
+### 源代码编辑能力
+
+默认情况下 Agent 只使用结构化 ModelPatch。需要修改 DSL、presentation 或 experiment
+源文件时，可在 `Configure` 中显式开启 **Source editing**。该能力仅允许 Workspace
+下的 `model/`、`presentation/` 和 `experiments/` 源文件，并要求 checksum + oldText
+精确匹配后再审批；IR、build、results 和 Workspace 外部文件不会被修改。源文件变更会
+重新同步模型并进入 dirty 状态，编译失败或取消时由事务层回滚。
+
+### 通用 Agent 与能力挂载
+
+AI 输入框采用 Agent 工作台布局：`+` 用于插入上下文，Agent/Ask/Plan 用于切换
+对话模式，权限可选 Full access、Workspace、Read only，模型和工具配置集中在输入框右侧，
+麦克风按钮用于浏览器语音输入。输入 `/` 可选择 `/build`、`/optimize`、`/sweep`、
+`/explain`、`/clear`；输入 `@` 可附加 `@model`、`@selection`、`@diagnostics` 或 `@run`。
+
+IDE 的 Agent 不是建模专用循环。通用 Agent 只负责 session、turn/step、LLM 请求、工具调度、
+取消、重试、事件和检查点；专业能力由宿主按 Profile 挂载：
+
+```text
+General Agent Core
+        ↓ capability registry
+logicpilot-modeling / filesystem / web / MCP / future skills
+        ↓ host context
+canvas / selection / diagnostics / run metrics
+```
+
+当前实现提供 `general` 与 `logicpilot-modeling` 两个 Profile，以及
+`AgentCapabilityRegistry`、`AgentSkillRegistry` 和 `AgentMcpRegistry` 契约。
+IDE 工作区显式挂载 `logicpilot-modeling`，所以模型检查、ModelPatch、编译和仿真都是能力包提供的
+工具，而不是 Agent 内核的分支。没有挂载能力时，General Agent 可以直接回答普通对话，不会被迫调用
+模型检查工具。
+
+没有配置 Provider 时，Agent 模式的模型构建请求会回退到本地确定性 rule-based 快速路径；
+连续多步助手、Ask/Plan 模式和真实 LLM 工具调用仍需要在 Settings 中配置 Provider。
+
+工具调用结果按通用事件协议记录；同一状态下的完全重复调用会被 Runtime 抑制，避免本地模型在只读
+检查上活锁。后续 Skill 将以可渐进加载的说明、脚本和资源提供工作流，MCP 则把外部 Prompts、Resources
+和 Tools 统一适配到 capability registry。
+
+内置和项目 Skill 使用 `SKILL.md`：服务端按请求的 Skill id 加载，单个文件限制 128 KiB，最多发现
+64 个 Skill；项目目录支持 `.agents/skills`、`.github/skills`、`.claude/skills`，用户目录使用同名
+Skill 根目录。Skill 只贡献说明和工作流，不直接执行工具，工具仍必须经过 Agent Tool Runtime。
+
+MCP Host 当前支持本地 stdio JSON-RPC 服务器。通过 `LOGICPILOT_MCP_SERVERS` 配置 JSON 数组：
+
+```powershell
+$env:LOGICPILOT_MCP_SERVERS='[{"id":"my-tools","transport":"stdio","command":"npx","args":["-y","my-mcp-server"]}]'
+```
+
+服务端启动后会执行 initialize 协商，并发现 `tools/list`、`resources/list` 和 `prompts/list`；工具以
+`mcp.<server>.<tool>` 命名空间挂载，非只读工具需要 IDE 的通用审批。MCP 进程不由模型启动，且由本地
+Host 统一负责超时、退出和 JSON-RPC 错误处理。
 
 IDE 通过 `/api/assistant` 请求下一步计划，工具仍在本地、受控地执行。当前工具包括：
 
@@ -161,6 +235,45 @@ pnpm benchmark:assistant -- --trials 3
 端点与原生测试负责，避免随机仿真噪声污染模型评分。
 
 ## Web / 桌面面板
+
+### Assistant Kernel
+
+助手运行时采用 `web/apps/ide/src/ai/assistantKernel.ts` 的轻量事件内核。一次用户请求是一个
+`turn`，每次模型请求和工具处理是一个 `step`。内核按顺序记录 `turn/start`、`step/start`、
+`assistant/message`、`tool/call`、`tool/result`、`step/end` 和 `turn/end`，下一次请求的消息由
+事件投影生成，不再由循环临时拼接数组。
+
+工具调用和结果必须按调用 id 配对；取消或审批拒绝导致未执行的调用会记录标准化的失败结果，
+因此后续步骤和重放不会出现悬空 tool call。客户端对 408、425、429、500、502、503、504
+以及传输错误进行有限、可取消的重试，模型输出格式错误不会重试或伪造结果。
+
+只读检查工具可以在同一个 step 内有界并行执行，结果仍按模型声明顺序写回 transcript；模型
+修改、编译、仿真和撤销保持串行屏障。历史超过请求预算时，内核生成确定性的 context checkpoint，
+保留最近消息和完整的工具调用/结果对，不会通过简单截断制造悬空调用。
+
+该内核借鉴 deepseek-harness 的 turn/step、事件投影、工具结果配对和请求恢复原则，但不引入
+Cordis 依赖；LogicPilot 的 ModelPatch 审批、编辑器状态和仿真工具仍由本地 IDE 工具层负责。
+
+当前回合的 Kernel 事件会随项目范围的 AI 对话记录保存；重新打开同一项目时，优先从事件日志
+重新投影模型历史，旧版本只保存普通文本的对话仍保留兼容回退。
+
+支持流式响应的 OpenAI-compatible Provider（包括 Ollama）通过 `/api/assistant/stream` 转发
+SSE 文本和 reasoning delta，面板会实时显示模型文本；Anthropic、Gemini、Responses 或不支持
+SSE 的自定义网关自动回退到完整响应。最终的结构化 assistant response 仍必须通过同一套 schema
+校验，流式过程不会绕过工具审批或 ModelPatch 验证。
+
+支持原生工具调用的 Provider 会直接提交工具 schema，并把 Chat/Responses、Anthropic、Gemini
+和 Ollama 的函数调用归一化为同一套 `AssistantToolCall`；不支持原生工具的自定义端点继续使用
+严格 JSON 回退。ModelPatch、AI build 和助手运行时共用 Provider 注册表，不再分别读取旧的
+`OPENAI_*` 配置。
+
+对 OpenAI-compatible native tool 路由，后续 step 会将 assistant tool call 和 tool result
+转换为原生 `assistant.tool_calls` / `tool` 消息；旧兼容网关仍使用文本投影。这样多步模型编辑
+不会把工具结果误当成普通用户文本。
+
+主助手还可直接调用 `run_parameter_study`、`optimize_model`、`explain_results` 和
+`compare_runs`。优化会携带当前模型 DSL，结果解释和运行对比只引用真实工具返回的指标，
+不会把示例数字当成仿真证据。
 
 IDE 右侧 **AI** 面板是连续对话入口，自动选择建模、运行、优化或解释路径；高级
 快速操作仍保留在输入区的折叠菜单中。轨迹曲线、参数搜索和指标比较继续使用相同

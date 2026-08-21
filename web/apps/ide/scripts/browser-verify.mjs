@@ -197,7 +197,12 @@ try {
   await page.getByRole('button', { name: 'File', exact: true }).click();
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 5_000 }).catch(() => null),
-    page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Save' }).first().click(),
+    page
+      .locator('.app-menu-dropdown .app-menu-entry')
+      .filter({
+        has: page.locator('.app-menu-entry-label').filter({ hasText: /^Save$/ }),
+      })
+      .click(),
   ]);
   if (download) {
     await download.cancel().catch(() => {});
@@ -206,8 +211,11 @@ try {
   await page.locator('.area-left .tree-row[data-path="model/main.lp"]').click();
   await page.waitForSelector('.dsl-textarea', { timeout: 5_000 });
   const dslText = await page.locator('.dsl-textarea').inputValue();
-  if (!dslText.includes('source')) {
-    throw new Error('DSL file editor did not show the flat main.lp');
+  if (
+    !dslText.includes('model ') ||
+    (!dslText.includes('source') && !dslText.includes('instance '))
+  ) {
+    throw new Error('DSL file editor did not show the project main.lp/scene reference');
   }
   log('canvas model saved; main.lp opened as a file tab');
   await page.locator('.dsl-textarea').fill(dslText + '\nbogusBlock Mystery { }\n');
@@ -354,10 +362,9 @@ try {
 
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
-  // CI has no server-side API key, so /api/assistant reports 502 and the
-  // panel falls back to the quick-action path: the prompt is routed by
-  // intent, a structured ModelPatch proposal appears, and applying it loads
-  // the generated model onto the canvas.
+  // CI has no server-side API key, so /api/assistant reports 502 and Agent
+  // mode falls back to the deterministic quick-action path. The workspace
+  // still has to be open because model mutations are workspace-scoped.
   await page.locator('.tab-label').filter({ hasText: /^AI$/ }).click();
 
   // Start from an empty canvas so the build prompt takes the model-
@@ -368,6 +375,10 @@ try {
   await page.getByRole('dialog', { name: 'Close project' }).waitFor();
   await page.getByRole('button', { name: "Don't Save" }).click();
   await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  await page.getByRole('button', { name: 'New project' }).click();
+  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
 
   await page
     .locator('.ai-input')
@@ -388,9 +399,8 @@ try {
   // applied-run meta instead of racing the stale "compiled in" card.
   await page.waitForFunction(
     () =>
-      document
-        .querySelector('.ai-result')
-        ?.textContent?.includes('ran the applied canvas model') ?? false,
+      document.querySelector('.ai-result')?.textContent?.includes('ran the applied canvas model') ??
+      false,
     undefined,
     { timeout: 120_000 },
   );
@@ -401,22 +411,13 @@ try {
   log('AI panel generated, applied and ran a model from the prompt');
   await page.screenshot({ path: join(OUT, '3-ai-model.png') });
 
-  // Optimization and explanation live in the Tools menu (secondary actions);
-  // both operate on the metrics produced by the applied run. The menu stays
-  // open after a pick, so only open it when it is currently closed.
-  const openTools = async () => {
-    const menu = page.locator('.ai-tools-menu');
-    if ((await menu.getAttribute('open')) === null) {
-      await menu.locator('summary').click();
-    }
-    await page.locator('.ai-tools-popover').waitFor({ timeout: 5_000 });
-  };
-
+  // Analysis actions are slash commands in the current assistant composer.
   await page
     .locator('.ai-input')
-    .fill('minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0');
-  await openTools();
-  await page.locator('.ai-tools-popover button', { hasText: 'Optimize model' }).click();
+    .fill(
+      '/optimize minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0',
+    );
+  await page.getByRole('button', { name: 'Send to Copilot' }).click();
   // The applied-run result card stays mounted next to the optimize card, so
   // wait for the optimize summary across ALL result cards.
   await page.waitForFunction(
@@ -441,9 +442,8 @@ try {
   log('AI panel optimized a model parameter from the prompt');
   await page.screenshot({ path: join(OUT, '4-ai-optimize.png') });
 
-  await page.locator('.ai-input').fill('why is the queue slow?');
-  await openTools();
-  await page.locator('.ai-tools-popover button', { hasText: 'Explain last run' }).click();
+  await page.locator('.ai-input').fill('/explain why is the queue slow?');
+  await page.getByRole('button', { name: 'Send to Copilot' }).click();
   await page.waitForSelector('.ai-findings', { timeout: 90_000 });
   const explainText = await page
     .locator('.ai-result')

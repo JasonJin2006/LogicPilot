@@ -5,6 +5,8 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { API_MAX_BODY_BYTES } from '../../../../app/request-policy.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
 // scripts/ -> ide -> apps -> web -> repo root.
 const root = join(here, '..', '..', '..', '..');
@@ -54,24 +56,76 @@ async function loadAssistant() {
   return module.runAssistant;
 }
 
+async function loadAssistantConnectionTest() {
+  const module = await import(pathToFileURL(join(root, 'scripts', 'ai-assistant.mjs')).href);
+  return module.testAssistantConnection;
+}
+
+async function loadAssistantProtocol() {
+  return import(pathToFileURL(join(root, 'scripts', 'ai-assistant.mjs')).href);
+}
+
 async function loadProviderConfig() {
   return import(pathToFileURL(join(root, 'scripts', 'ai-provider-config.mjs')).href);
+}
+
+async function loadProviderAdapters() {
+  return import(pathToFileURL(join(root, 'scripts', 'ai-provider-adapters.mjs')).href);
+}
+
+async function loadMcpRuntime() {
+  return import(pathToFileURL(join(root, 'scripts', 'mcp-runtime.mjs')).href);
 }
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let size = 0;
+    let settled = false;
     req.on('data', (chunk) => {
+      size += Buffer.byteLength(chunk);
+      if (size > API_MAX_BODY_BYTES && !settled) {
+        settled = true;
+        req.removeAllListeners('data');
+        req.resume();
+        const error = new Error(`request body exceeds ${API_MAX_BODY_BYTES} bytes`);
+        error.status = 413;
+        reject(error);
+        return;
+      }
+      if (settled) return;
       body += chunk;
     });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
+    req.on('end', () => {
+      if (!settled) resolve(body);
+    });
+    req.on('error', (error) => {
+      if (!settled) reject(error);
+    });
   });
 }
 
 function send(res, status, payload) {
-  res.writeHead(status, { 'content-type': 'application/json' });
+  if (res.headersSent || res.writableEnded) return;
+  res.writeHead(status, {
+    'cache-control': 'no-store',
+    'content-type': 'application/json',
+    'x-content-type-options': 'nosniff',
+  });
   res.end(JSON.stringify(payload));
+}
+
+function sendSse(res, event) {
+  if (res.writableEnded) return;
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function sendBodyError(res, error) {
+  const status = error?.status === 413 ? 413 : 400;
+  send(res, status, {
+    ok: false,
+    error: status === 413 ? error.message : 'invalid JSON body',
+  });
 }
 
 // Gateway discovery: the desktop app server injects the lp-server port via
@@ -105,6 +159,55 @@ export async function handleAiProviders(req, res) {
   }
 }
 
+/** Discover the provider's current model catalog using server-side secrets. */
+export async function handleAiProviderModels(req, res) {
+  if (!['GET', 'POST'].includes(req.method)) {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  try {
+    let input;
+    if (req.method === 'POST') {
+      const raw = await readBody(req);
+      if (raw.length > 64 * 1024) {
+        send(res, 413, { ok: false, error: 'provider configuration is too large' });
+        return;
+      }
+      try {
+        input = raw.trim() === '' ? undefined : JSON.parse(raw);
+      } catch (error) {
+        sendBodyError(res, error);
+        return;
+      }
+    }
+    const providerConfig = await loadProviderConfig();
+    const config =
+      input === undefined
+        ? providerConfig.resolveAssistantConfiguration()
+        : providerConfig.resolveAssistantConfigurationForModelList(input);
+    if (config.source === 'unconfigured') {
+      send(res, 400, { ok: false, error: 'AI provider is not configured' });
+      return;
+    }
+    const { listProviderModels } = await loadProviderAdapters();
+    const models = await listProviderModels(config);
+    send(res, 200, {
+      ok: true,
+      providerId: config.providerId,
+      protocol: config.protocol,
+      models,
+    });
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    const status = /MODEL_LIST_UNSUPPORTED|not configured|required|unsupported AI protocol/i.test(
+      message,
+    )
+      ? 400
+      : 502;
+    send(res, status, { ok: false, error: message });
+  }
+}
+
 export async function handleAiProviderTest(req, res) {
   if (req.method !== 'POST') {
     send(res, 405, { ok: false, error: 'method not allowed' });
@@ -112,10 +215,63 @@ export async function handleAiProviderTest(req, res) {
   }
   const started = Date.now();
   try {
-    const runAssistant = await loadAssistant();
-    await runAssistant({ messages: [{ role: 'user', content: 'Reply briefly that the AI connection is ready. Do not call tools.' }], context: null });
+    const raw = await readBody(req);
+    let payload = {};
+    if (raw.trim() !== '') {
+      try {
+        payload = JSON.parse(raw);
+      } catch (error) {
+        sendBodyError(res, error);
+        return;
+      }
+    }
+    const testAssistantConnection = await loadAssistantConnectionTest();
+    const hasDraft =
+      payload !== null && typeof payload === 'object' && Object.keys(payload).length > 0;
+    await testAssistantConnection(hasDraft ? { provider: payload } : {});
     const { getAssistantProviderState } = await loadProviderConfig();
-    send(res, 200, { ok: true, latencyMs: Date.now() - started, active: getAssistantProviderState().active });
+    send(res, 200, {
+      ok: true,
+      latencyMs: Date.now() - started,
+      active: getAssistantProviderState().active,
+    });
+  } catch (error) {
+    send(res, 502, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+export async function handleMcpCapabilities(req, res) {
+  if (req.method !== 'GET') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  try {
+    const { discoverMcpCapabilities } = await loadMcpRuntime();
+    send(res, 200, { ok: true, servers: await discoverMcpCapabilities() });
+  } catch (error) {
+    send(res, 502, { ok: false, error: String(error?.message ?? error) });
+  }
+}
+
+export async function handleMcpCall(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  try {
+    const payload = JSON.parse(await readBody(req));
+    if (
+      typeof payload?.serverId !== 'string' ||
+      typeof payload?.name !== 'string' ||
+      payload.serverId.trim() === '' ||
+      payload.name.trim() === ''
+    ) {
+      send(res, 400, { ok: false, error: 'serverId and name are required' });
+      return;
+    }
+    const { callMcpTool } = await loadMcpRuntime();
+    const result = await callMcpTool(payload.serverId, payload.name, payload.arguments ?? {});
+    send(res, 200, { ok: true, result });
   } catch (error) {
     send(res, 502, { ok: false, error: String(error?.message ?? error) });
   }
@@ -129,8 +285,8 @@ export async function handleAiBuild(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const prompt = String(payload?.prompt ?? '').trim();
@@ -182,8 +338,8 @@ export async function handleAiRun(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const dsl = String(payload?.dsl ?? '');
@@ -227,8 +383,8 @@ export async function handleParameterVariation(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const dsl = String(payload?.dsl ?? '');
@@ -267,8 +423,8 @@ export async function handleAiValidate(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const dsl = String(payload?.dsl ?? '');
@@ -296,8 +452,8 @@ export async function handleAiPatch(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const prompt = String(payload?.prompt ?? '').trim();
@@ -326,8 +482,8 @@ export async function handleAiQueryMetrics(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   if (JSON.stringify(payload?.metrics ?? null).length > 8 * 1024 * 1024) {
@@ -357,8 +513,8 @@ export async function handleAiCompareMetrics(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   if (JSON.stringify([payload?.before ?? null, payload?.after ?? null]).length > 16 * 1024 * 1024) {
@@ -389,8 +545,8 @@ export async function handleAiOptimize(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const prompt = String(payload?.prompt ?? '').trim();
@@ -400,7 +556,7 @@ export async function handleAiOptimize(req, res) {
   }
   try {
     const aiOptimize = await loadAiOptimize();
-    const result = await aiOptimize({ prompt });
+    const result = await aiOptimize({ prompt, contextDsl: String(payload?.contextDsl ?? '') });
     send(res, 200, result);
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });
@@ -415,8 +571,8 @@ export async function handleAiExplain(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const prompt = String(payload?.prompt ?? '').trim();
@@ -446,8 +602,8 @@ export async function handleAiAssistant(req, res) {
   let payload;
   try {
     payload = JSON.parse(await readBody(req));
-  } catch {
-    send(res, 400, { ok: false, error: 'invalid JSON body' });
+  } catch (error) {
+    sendBodyError(res, error);
     return;
   }
   const messages = Array.isArray(payload?.messages) ? payload.messages : [];
@@ -468,14 +624,34 @@ export async function handleAiAssistant(req, res) {
     send(res, 400, { ok: false, error: 'invalid assistant messages' });
     return;
   }
+  const { normalizeAssistantMessageToolCallIds, validateAssistantMessages } =
+    await loadAssistantProtocol();
+  const normalizedMessages = normalizeAssistantMessageToolCallIds(messages);
+  const messageProblem = validateAssistantMessages(normalizedMessages);
+  if (messageProblem) {
+    send(res, 400, { ok: false, error: messageProblem });
+    return;
+  }
   const context = payload?.context ?? null;
-  if (JSON.stringify({ messages, context }).length > 2 * 1024 * 1024) {
+  const capabilities = Array.isArray(payload?.capabilities) ? payload.capabilities : undefined;
+  const skills = Array.isArray(payload?.skills) ? payload.skills : undefined;
+  if (JSON.stringify({ messages: normalizedMessages, context }).length > 2 * 1024 * 1024) {
     send(res, 413, { ok: false, error: 'assistant payload is too large' });
     return;
   }
+  const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
   try {
+    req.on('aborted', onAbort);
+    res.on('close', onAbort);
     const runAssistant = await loadAssistant();
-    const result = await runAssistant({ messages, context });
+    const result = await runAssistant({
+      messages: normalizedMessages,
+      context,
+      capabilities,
+      skills,
+      signal: abortController.signal,
+    });
     send(res, 200, result);
   } catch (error) {
     const message = String(error?.message ?? error);
@@ -488,5 +664,64 @@ export async function handleAiAssistant(req, res) {
       return;
     }
     send(res, 500, { ok: false, error: message });
+  } finally {
+    req.removeListener('aborted', onAbort);
+  }
+}
+
+/** Stream one assistant step as text/reasoning deltas, then emit its final response. */
+export async function handleAiAssistantStream(req, res) {
+  if (req.method !== 'POST') {
+    send(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch (error) {
+    sendBodyError(res, error);
+    return;
+  }
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  const { normalizeAssistantMessageToolCallIds, validateAssistantMessages } =
+    await loadAssistantProtocol();
+  const normalizedMessages = normalizeAssistantMessageToolCallIds(messages);
+  const messageProblem = validateAssistantMessages(normalizedMessages);
+  if (messageProblem) {
+    send(res, 400, { ok: false, error: messageProblem });
+    return;
+  }
+  const context = payload?.context ?? null;
+  const capabilities = Array.isArray(payload?.capabilities) ? payload.capabilities : undefined;
+  const skills = Array.isArray(payload?.skills) ? payload.skills : undefined;
+  if (JSON.stringify({ messages: normalizedMessages, context }).length > 2 * 1024 * 1024) {
+    send(res, 413, { ok: false, error: 'assistant payload is too large' });
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/event-stream',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+  });
+  const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  try {
+    req.on('aborted', onAbort);
+    res.on('close', onAbort);
+    const runAssistant = await loadAssistant();
+    const result = await runAssistant({
+      messages: normalizedMessages,
+      context,
+      capabilities,
+      skills,
+      signal: abortController.signal,
+      onChunk: (chunk) => sendSse(res, chunk),
+    });
+    sendSse(res, { type: 'done', response: result });
+  } catch (error) {
+    sendSse(res, { type: 'error', error: String(error?.message ?? error) });
+  } finally {
+    req.removeListener('aborted', onAbort);
+    res.end();
   }
 }

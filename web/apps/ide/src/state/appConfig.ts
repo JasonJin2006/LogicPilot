@@ -19,9 +19,14 @@ export async function getAppConfig(): Promise<AppConfig | null> {
       const { invoke } = await import('@tauri-apps/api/core');
       const config = (await invoke('app_config')) as { api_base: string; ws_url: string };
       cached = { apiBase: config.api_base, wsUrl: config.ws_url };
+      return cached;
     } catch {
-      cached = null;
+      // The Tauri command can briefly race the app-server bootstrap. Do not
+      // cache this transient failure; the next retry must be allowed to
+      // resolve the injected gateway port.
+      return null;
     }
   }
+  cached = null;
   return cached;
 }

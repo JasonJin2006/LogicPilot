@@ -23,16 +23,21 @@ const root = join(here, '..', '..', '..', '..');
 const binDir = process.argv[2] ?? join(root, 'build', 'interop', 'interop-out');
 
 // The buffers are produced by the C++ schema_interop_writer
-// (scripts/run-schema-interop.ps1). Without them there is nothing to verify;
-// skip loudly so `pnpm test` stays usable in toolchain-less jobs, while the
-// kernel CI job's "Schema interop" step enforces the real check.
-if (!existsSync(join(binDir, 'model_v2.bin')) ||
-    !existsSync(join(binDir, 'counters_frame.bin'))) {
-  console.warn(
-    `[verify-interop] SKIP: C++ interop artifacts not found in ${binDir}. ` +
-      'Run pwsh scripts/run-schema-interop.ps1 first.',
-  );
-  process.exit(0);
+// (scripts/run-schema-interop.ps1). Missing buffers are a test failure by
+// default: silently skipping a frozen-contract check makes a green test run
+// misleading. Jobs that intentionally run without the C++ writer (the web
+// only CI job) must opt in explicitly.
+if (!existsSync(join(binDir, 'model_v2.bin')) || !existsSync(join(binDir, 'counters_frame.bin'))) {
+  const allowMissing = process.env.LOGICPILOT_ALLOW_MISSING_INTEROP === '1';
+  const message =
+    `[verify-interop] C++ interop artifacts not found in ${binDir}. ` +
+    'Run pwsh scripts/run-schema-interop.ps1 first.';
+  if (allowMissing) {
+    console.warn(`SKIP (explicitly allowed): ${message}`);
+    process.exit(0);
+  }
+  console.error(`FAIL: ${message}`);
+  process.exit(1);
 }
 
 const { ByteBuffer } = await import('flatbuffers');
@@ -66,8 +71,8 @@ function check(label, actual, expected) {
     Array.isArray(e) && Array.isArray(a)
       ? JSON.stringify(a) === JSON.stringify(e)
       : typeof e === 'number' && typeof a === 'number'
-      ? Math.abs(a - e) < 1e-9
-      : a === e;
+        ? Math.abs(a - e) < 1e-9
+        : a === e;
   const fmt = (v) => JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? x.toString() : x));
   if (!ok) {
     failures += 1;
@@ -130,25 +135,22 @@ check('v2 Server state[0] type', server2?.state(0)?.type(), VarType.Bool);
 check('v2 Server state[0] value', server2?.state(0)?.boolValue(), false);
 check('v2 Server ports', server2?.portsLength(), 2);
 check('v2 Server port[0]', server2?.ports(0)?.name(), 'job_in');
-check('v2 Server port[0] dir', server2?.ports(0)?.direction(),
-      PortDirection.Input);
+check('v2 Server port[0] dir', server2?.ports(0)?.direction(), PortDirection.Input);
 check('v2 Server port[1]', server2?.ports(1)?.name(), 'job_out');
-check('v2 Server port[1] dir', server2?.ports(1)?.direction(),
-      PortDirection.Output);
+check('v2 Server port[1] dir', server2?.ports(1)?.direction(), PortDirection.Output);
 const statechart2 = server2?.behavior();
 check('v2 statechart initial', statechart2?.initial(), 'active');
 check('v2 statechart states', statechart2?.statesLength(), 1);
 check('v2 statechart transitions', statechart2?.transitionsLength(), 2);
-check('v2 transition[0] trigger', statechart2?.transitions(0)?.trigger(),
-      TriggerKind.Message);
-check('v2 transition[0] port', statechart2?.transitions(0)?.messagePort(),
-      'job_in');
-check('v2 transition[1] trigger', statechart2?.transitions(1)?.trigger(),
-      TriggerKind.Timeout);
-check('v2 transition[1] ta kind',
-      statechart2?.transitions(1)?.timeoutDistribution()?.kind(), 3);
-check('v2 transition[1] ta rate',
-      statechart2?.transitions(1)?.timeoutDistribution()?.params(0), 3.0);
+check('v2 transition[0] trigger', statechart2?.transitions(0)?.trigger(), TriggerKind.Message);
+check('v2 transition[0] port', statechart2?.transitions(0)?.messagePort(), 'job_in');
+check('v2 transition[1] trigger', statechart2?.transitions(1)?.trigger(), TriggerKind.Timeout);
+check('v2 transition[1] ta kind', statechart2?.transitions(1)?.timeoutDistribution()?.kind(), 3);
+check(
+  'v2 transition[1] ta rate',
+  statechart2?.transitions(1)?.timeoutDistribution()?.params(0),
+  3.0,
+);
 
 // child 1: process flow (source/queue/service blocks + couplings)
 const flow2 = root2?.children(1);
@@ -156,33 +158,27 @@ check('v2 child[1] library', flow2?.semantics()?.library(), 'process');
 check('v2 child[1] block', flow2?.semantics()?.block(), 'flow');
 check('v2 child[1] name', flow2?.metadata()?.name(), 'Arrivals');
 check('v2 flow children', flow2?.childrenLength(), 3);
-check('v2 flow source block', flow2?.children(0)?.semantics()?.block(),
-      'source');
-check('v2 flow source name', flow2?.children(0)?.metadata()?.name(),
-      'Clients');
-check('v2 source arrival kind',
-      flow2?.children(0)?.params(0)?.distribution()?.kind(), 4);
-check('v2 source arrival rate',
-      flow2?.children(0)?.params(0)?.distribution()?.params(0), 2.0);
-check('v2 flow queue block', flow2?.children(1)?.semantics()?.block(),
-      'queue');
+check('v2 flow source block', flow2?.children(0)?.semantics()?.block(), 'source');
+check('v2 flow source name', flow2?.children(0)?.metadata()?.name(), 'Clients');
+check('v2 source arrival kind', flow2?.children(0)?.params(0)?.distribution()?.kind(), 4);
+check('v2 source arrival rate', flow2?.children(0)?.params(0)?.distribution()?.params(0), 2.0);
+check('v2 flow queue block', flow2?.children(1)?.semantics()?.block(), 'queue');
 check('v2 queue capacity', flow2?.children(1)?.params(0)?.intValue(), 0);
-check('v2 flow service block', flow2?.children(2)?.semantics()?.block(),
-      'service');
-check('v2 service rate kind',
-      flow2?.children(2)?.params(0)?.distribution()?.kind(), 3);
-check('v2 service resource', flow2?.children(2)?.params(1)?.stringValue(),
-      'Server');
+check('v2 flow service block', flow2?.children(2)?.semantics()?.block(), 'service');
+check('v2 service rate kind', flow2?.children(2)?.params(0)?.distribution()?.kind(), 3);
+check('v2 service resource', flow2?.children(2)?.params(1)?.stringValue(), 'Server');
 check('v2 service servers', flow2?.children(2)?.params(2)?.intValue(), 1);
 check('v2 flow couplings', flow2?.couplingsLength(), 2);
-check('v2 coupling[0]',
-      [flow2?.couplings(0)?.fromModel(), flow2?.couplings(0)?.toModel()]
-          .join('->'),
-      'Clients->WaitLine');
-check('v2 coupling[1]',
-      [flow2?.couplings(1)?.fromModel(), flow2?.couplings(1)?.toModel()]
-          .join('->'),
-      'WaitLine->Server');
+check(
+  'v2 coupling[0]',
+  [flow2?.couplings(0)?.fromModel(), flow2?.couplings(0)?.toModel()].join('->'),
+  'Clients->WaitLine',
+);
+check(
+  'v2 coupling[1]',
+  [flow2?.couplings(1)?.fromModel(), flow2?.couplings(1)?.toModel()].join('->'),
+  'WaitLine->Server',
+);
 
 // child 2: ABM agent (behavior bindings)
 const agent2 = root2?.children(2);
@@ -191,16 +187,16 @@ check('v2 child[2] block', agent2?.semantics()?.block(), 'agent');
 check('v2 child[2] name', agent2?.metadata()?.name(), 'Observer');
 check('v2 agent behaviors', agent2?.behaviorsLength(), 1);
 check('v2 behavior trigger', agent2?.behaviors(0)?.trigger(), 'on_tick');
-check('v2 behavior handler', agent2?.behaviors(0)?.handlerRef(),
-      'agent.observer.collect');
+check('v2 behavior handler', agent2?.behaviors(0)?.handlerRef(), 'agent.observer.collect');
 check('v2 agent extensions', agent2?.extensionsLength(), 1);
-check('v2 extension type', agent2?.extensions(0)?.typeUri(),
-      'urn:logicpilot:test:interop');
+check('v2 extension type', agent2?.extensions(0)?.typeUri(), 'urn:logicpilot:test:interop');
 check('v2 extension schema version', agent2?.extensions(0)?.schemaVersion(), 1);
-check('v2 extension encoding', agent2?.extensions(0)?.encoding(),
-      'application/octet-stream');
-check('v2 extension bytes', Array.from(agent2?.extensions(0)?.dataArray() ?? []),
-      [0x4c, 0x50, 0x32]);
+check('v2 extension encoding', agent2?.extensions(0)?.encoding(), 'application/octet-stream');
+check(
+  'v2 extension bytes',
+  Array.from(agent2?.extensions(0)?.dataArray() ?? []),
+  [0x4c, 0x50, 0x32],
+);
 
 // Experiment contract: a C++-authored multi-axis variation is readable by
 // the generated TypeScript bindings without JSON side-channel assumptions.

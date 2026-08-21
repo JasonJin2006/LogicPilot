@@ -27,12 +27,25 @@ export interface AssistantPlanStep {
   label: string;
 }
 
+/** Provider-neutral token accounting for one assistant step. */
+export interface AssistantUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+}
+
 /** One reasoning step returned by /api/assistant (schema-validated). */
 export interface AssistantStepResponse {
   message: string;
   plan: AssistantPlanStep[];
   toolCalls: AssistantToolCall[];
   done: boolean;
+  /** Optional provider reasoning metadata; not required for tool execution. */
+  reasoning?: string;
+  usage?: AssistantUsage;
+  /** Provider-native reasoning items needed by Responses-style follow-ups. */
+  providerItems?: Array<Record<string, unknown>>;
 }
 
 /** Persistent AI session state the runtime keeps between turns. */
@@ -52,6 +65,8 @@ export interface AssistantSessionState {
   runStatus: 'idle' | 'running' | 'finished' | 'failed' | 'none';
   /** Metrics of the most recent finished run (real, from the run tool). */
   runMetrics: AiMetrics | null;
+  /** Metrics immediately before the most recent finished run. */
+  previousRunMetrics: AiMetrics | null;
   /** Human-readable summary of the last finished run. */
   runSummary: string;
   /** Document identity snapshot for the version-conflict guard. */
@@ -77,6 +92,7 @@ export function createAssistantSession(): AssistantSessionState {
     compiled: false,
     runStatus: 'none',
     runMetrics: null,
+    previousRunMetrics: null,
     runSummary: '',
     documentSnapshot: null,
     lastPatch: null,
@@ -88,6 +104,8 @@ export function createAssistantSession(): AssistantSessionState {
 /** Bounded context snapshot sent with every reasoning step. */
 export interface AssistantContext {
   project: string;
+  /** Absolute workspace root used for project skill discovery. */
+  workspaceRoot?: string;
   modelSummary: string;
   selection: string;
   dsl: string;
@@ -102,4 +120,5 @@ export interface AssistantTurnMessage {
   content: string;
   toolCalls?: AssistantToolCall[];
   toolResults?: AssistantToolResult[];
+  providerItems?: Array<Record<string, unknown>>;
 }

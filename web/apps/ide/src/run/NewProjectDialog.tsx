@@ -9,6 +9,7 @@ import { X } from 'lucide-react';
 import { createProject, projectToDocument, projectToDiskFiles } from '../project/project';
 import { loadModelDocument } from '../state/projectSync';
 import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
 import { createProjectDir, isTauri, pickProjectFolder } from '../state/tauriFs';
 import { useUiStore } from '../state/uiStore';
 
@@ -18,6 +19,8 @@ export function NewProjectDialog() {
   const openBundle = useProjectStore((state) => state.openBundle);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);
+  const openFolderWorkspace = useWorkspaceStore((state) => state.openFolder);
+  const openVirtualWorkspace = useWorkspaceStore((state) => state.openVirtual);
   const openInfo = useUiStore((state) => state.openInfo);
   const [name, setName] = useState('Untitled');
   const [seed, setSeed] = useState('42');
@@ -61,6 +64,8 @@ export function NewProjectDialog() {
     }
     openBundle(bundle);
     setPath(projectPath);
+    if (projectPath !== null) openFolderWorkspace(projectPath, projectName);
+    else openVirtualWorkspace(projectName);
     if (projectPath !== null) {
       // Materialized on disk: read the fresh folder tree + fingerprints so
       // the Explorer and Save-conflict baseline match the new project.

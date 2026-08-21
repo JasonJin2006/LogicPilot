@@ -4,8 +4,9 @@
 // See docs/specs/ide-layout.md.
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_LAYOUT, PANELS, type AreaId, type PanelId } from '../layout/panels';
+import { getPersistStorage } from './persistStorage';
 
 export interface AreaState {
   size: number; // left/right width, bottom height (px)
@@ -167,6 +168,7 @@ export const useLayoutStore = create<LayoutState>()(
       name: 'logicpilot.layout',
       version: 2,
       merge: mergePersistedLayout,
+      storage: createJSONStorage(() => getPersistStorage()),
     },
   ),
 );

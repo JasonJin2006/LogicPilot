@@ -137,6 +137,16 @@ export interface MetricQueryResult {
     largestQueue: string | null;
     largestMeanOccupancy: number | null;
     blockCount: number;
+    blockFindings?: Array<{
+      name: string;
+      kind: string;
+      utilization: number;
+      availability: number;
+      meanOccupancy: number;
+      timedOut: number;
+      preempted: number;
+    }>;
+    causalChain?: string[];
   };
 }
 
@@ -271,8 +281,8 @@ export async function runParameterVariation(
   return data;
 }
 
-export function aiOptimize(prompt: string): Promise<OptimizeResult> {
-  return post('/api/ai-optimize', prompt);
+export function aiOptimize(prompt: string, contextDsl = ''): Promise<OptimizeResult> {
+  return post('/api/ai-optimize', prompt, { contextDsl });
 }
 
 export function aiExplain(prompt: string): Promise<ExplainResult> {
@@ -282,12 +292,13 @@ export function aiExplain(prompt: string): Promise<ExplainResult> {
 export async function aiQueryMetrics(
   question: string,
   metrics: NonNullable<AiResult['metrics']>,
+  model?: ModelDocument,
 ): Promise<MetricQueryResult> {
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-query-metrics`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ question, metrics }),
+    body: JSON.stringify({ question, metrics, model }),
   });
   const data = (await response.json()) as MetricQueryResult & { error?: string };
   if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);

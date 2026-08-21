@@ -94,24 +94,7 @@ jobs:
       - name: Browser end-to-end gateway and IDE flow (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: |
-          set -euo pipefail
-          ./build/linux-clang-dev/kernel/lpcli serve examples/mm1.lp --port 8089 > /tmp/logicpilot-gateway.log 2>&1 &
-          gateway_pid=$!
-          pnpm --filter @logicpilot/ide dev --host 127.0.0.1 > /tmp/logicpilot-vite.log 2>&1 &
-          vite_pid=$!
-          cleanup() {
-            kill "$vite_pid" "$gateway_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          for attempt in {1..60}; do
-            if curl --fail --silent http://127.0.0.1:5173 >/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          curl --fail http://127.0.0.1:5173 >/dev/null
-          pnpm --filter @logicpilot/ide verify:browser
+        run: pnpm test:browser -- --lpcli ./build/linux-clang-dev/kernel/apps/lpcli/lpcli
 
   web:
     name: web (pnpm)
@@ -150,6 +133,10 @@ jobs:
         # renderer2d vitest cases are the TS-side regression defense for the F2
         # wire contract; @logicpilot/protocol's verify-interop needs the C++
         # schema_interop_writer artifacts and therefore runs in the kernel job.
+        # The explicit opt-out keeps this web-only job independent from the
+        # C++ writer while the protocol package fails closed everywhere else.
+        env:
+          LOGICPILOT_ALLOW_MISSING_INTEROP: '1'
         run: pnpm test
 
       - name: Docs build (VitePress user manual)

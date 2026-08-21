@@ -5,23 +5,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { generateDsl, type ModelPatch } from '@logicpilot/editor';
 import {
-  BarChart3,
   AlertTriangle,
+  Archive,
+  ArrowLeft,
   Bot,
   Check,
   CheckCircle2,
   ChevronDown,
   Code2,
+  Copy,
   Eraser,
-  FlaskConical,
   ListChecks,
+  Mic,
+  Plus,
+  Pin,
+  RotateCcw,
   SendHorizontal,
-  SlidersHorizontal,
+  Settings2,
+  ShieldCheck,
   Sparkles,
   Square,
   TerminalSquare,
   UserRound,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import { mergeModelSource } from '../project/project';
@@ -46,24 +51,34 @@ import type {
   ParameterVariationResult,
 } from './api';
 import { OptimizeChart, TrajectoryChart } from './charts';
-import { useAiConversationStore } from './conversationStore';
-import { routeAiIntent, type AiAction } from './intentRouter';
+import { aiSessionScope, useAiConversationStore } from './conversationStore';
+import type { AiSession } from './conversationStore';
+import { LOGICPILOT_MODELING_PROFILE } from './agentProfiles';
+import { LOGICPILOT_MODELING_READONLY_CAPABILITY } from './agentCapabilities';
+import { createMcpTools, discoverMcpCapabilities } from './mcpClient';
+import type { AssistantTool } from './capabilities/logicpilot-modeling/tools';
+import { createAssistantKernel } from './assistantKernel';
+import type { AiAction } from './intentRouter';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
 import { buildAssistantContext } from './contextBuilder';
 import {
   runAssistantTurn,
   type AssistantPatchApprovalRequest,
+  type AssistantToolApprovalRequest,
   type AssistantStepRecord,
 } from './assistantRuntime';
 import { createAssistantSession } from './assistantTypes';
 import type { AssistantTurnMessage } from './assistantTypes';
-import { undoAssistantChange } from './assistantTools';
+import { undoAssistantChange } from './capabilities/logicpilot-modeling/runtime';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
+import { useWorkspaceStore } from '../state/workspaceStore';
 import { useRunStore } from '../state/runStore';
+import { useUiStore } from '../state/uiStore';
 import { ScrollArea } from '../components/ScrollArea';
 import { useCanvasView } from '../state/canvasView';
 import { getAppConfig } from '../state/appConfig';
+import { getAiProviderState } from './providerConfig';
 
 function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentSettings): boolean {
   return (
@@ -87,11 +102,87 @@ interface PendingAssistantApproval {
   proposal: ModelProposal;
 }
 
+interface PendingToolApproval {
+  toolName: string;
+  summary: string;
+  arguments: Record<string, unknown>;
+}
+
+type AgentMode = 'Agent' | 'Ask' | 'Plan';
+type PermissionMode = 'Full access' | 'Workspace' | 'Read only';
+type VoiceState = 'idle' | 'listening' | 'transcribing' | 'error';
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0?: { transcript: string };
+}
+
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onstart: () => void;
+  onresult: (event: SpeechRecognitionEventLike) => void;
+  onend: () => void;
+  onerror: (event: { error?: string }) => void;
+  start: () => void;
+  stop: () => void;
+}
+
+/** Streaming providers often emit the wire JSON before the final parsed
+ * response arrives. Keep that protocol transcript out of the conversation
+ * surface; the structured tool activity is rendered separately. */
+function visibleLiveResponse(value: string): string {
+  const text = value.trim();
+  if (text === '') return '';
+  if (/^(?:```(?:json)?\s*)?\s*\{/i.test(text)) return '';
+  if (/tool_call_id\s*:|proposed tool calls:|"toolCalls"\s*:/i.test(text)) {
+    const marker = text.search(
+      /\n\s*(?:```(?:json)?\s*)?\{\s*["']?(?:message|plan|toolCalls|done)/i,
+    );
+    return marker > 0 ? text.slice(0, marker).trim() : '';
+  }
+  return text;
+}
+
+function relativeSessionTime(value: string): string {
+  const age = Math.max(0, Date.now() - Date.parse(value));
+  const minutes = Math.floor(age / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+// Each WebView/window gets its own fallback scope when no workspace is open.
+// Workspace-backed sessions use the workspace path instead.
+const WINDOW_SESSION_ID =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `window-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 export function AIPanel() {
   const dslRef = useRef<HTMLPreElement>(null);
   const runRef = useRef<HTMLPreElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState('');
+  const [agentMode, setAgentMode] = useState<AgentMode>('Agent');
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('Workspace');
+  const [toolsEnabled, setToolsEnabled] = useState(true);
+  const [sourceEditingEnabled, setSourceEditingEnabled] = useState(false);
+  const [modelLabel, setModelLabel] = useState('Auto');
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [voiceError, setVoiceError] = useState('');
+  const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const activeSessionRef = useRef<string | null>(null);
+  const activeSessionScopeRef = useRef<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<AiResult | null>(null);
   const [proposal, setProposal] = useState<ModelProposal | null>(null);
@@ -106,16 +197,21 @@ export function AIPanel() {
   // Assistant Runtime state: the persistent session (dsl/diagnostics/run
   // metrics/undo bookkeeping) survives across turns; live steps render the
   // in-flight tool execution inline.
-  const sessionRef = useRef(createAssistantSession());
+  const sessionCacheRef = useRef(new Map<string, ReturnType<typeof createAssistantSession>>());
   const abortRef = useRef<AbortController | null>(null);
   const approvalRef = useRef<{
     resolve: (approved: boolean) => void;
   } | null>(null);
   const [liveSteps, setLiveSteps] = useState<AssistantStepRecord[]>([]);
+  const [liveResponse, setLiveResponse] = useState('');
   const [assistantApproval, setAssistantApproval] = useState<PendingAssistantApproval | null>(null);
+  const toolApprovalRef = useRef<{ resolve: (approved: boolean) => void } | null>(null);
+  const [toolApproval, setToolApproval] = useState<PendingToolApproval | null>(null);
   const document = useModelStore((state) => state.document);
   const projectPath = useProjectStore((state) => state.path);
   const projectBundle = useProjectStore((state) => state.bundle);
+  const workspaceOpen = useWorkspaceStore((state) => state.folders.length > 0);
+  const workspaceName = useWorkspaceStore((state) => state.name);
   const runOptions = useRunStore((state) => state.runOptions);
   const experimentSettings = {
     seed: runOptions.seed,
@@ -130,13 +226,58 @@ export function AIPanel() {
     warmup: runOptions.warmup,
     confidence: runOptions.confidence,
   };
-  const conversationScope = projectPath ?? `model:${document.name}`;
+  const workspaceScope = projectPath
+    ? `workspace:${projectPath}`
+    : workspaceName
+      ? `workspace:${workspaceName}`
+      : `window:${WINDOW_SESSION_ID}`;
   const histories = useAiConversationStore((state) => state.histories);
+  const checkpoints = useAiConversationStore((state) => state.checkpoints);
+  const sessions = useAiConversationStore((state) => state.sessions);
+  const createSession = useAiConversationStore((state) => state.createSession);
+  const archiveSession = useAiConversationStore((state) => state.archiveSession);
+  const pinSession = useAiConversationStore((state) => state.pinSession);
+  const updateSessionPermission = useAiConversationStore((state) => state.updateSessionPermission);
+  const activeSession =
+    activeSessionId === null
+      ? undefined
+      : sessions.find((session) => session.id === activeSessionId);
+  const conversationScope =
+    activeSessionId === null
+      ? workspaceScope
+      : aiSessionScope(
+          activeSessionScopeRef.current ?? activeSession?.scope ?? workspaceScope,
+          activeSessionId,
+        );
   const conversation = histories[conversationScope] ?? [];
+  const sessionItems = sessions
+    .filter((session) => !session.archived)
+    .slice()
+    .sort(
+      (left, right) =>
+        Number(right.pinned) - Number(left.pinned) || right.updatedAt.localeCompare(left.updatedAt),
+    );
+  const commandSuggestions = prompt.startsWith('/')
+    ? ['/build', '/optimize', '/sweep', '/explain', '/clear'].filter((command) =>
+        command.startsWith(prompt.trim().split(/\s+/)[0] ?? ''),
+      )
+    : [];
+  const mentionSuggestions = /(?:^|\s)@[^\s]*$/.test(prompt)
+    ? ['@model', '@selection', '@diagnostics', '@run']
+    : [];
   const appendConversation = useAiConversationStore((state) => state.append);
+  const saveCheckpoint = useAiConversationStore((state) => state.saveCheckpoint);
+  const clearCheckpoint = useAiConversationStore((state) => state.clearCheckpoint);
   const clearConversation = useAiConversationStore((state) => state.clear);
   const moveConversation = useAiConversationStore((state) => state.move);
   const proposalStale = proposal !== null && proposal.baseDocument !== document;
+  const sessionForScope = (scope: string) => {
+    const existing = sessionCacheRef.current.get(scope);
+    if (existing) return existing;
+    const created = createAssistantSession();
+    sessionCacheRef.current.set(scope, created);
+    return created;
+  };
   const settleAssistantApproval = (approved: boolean) => {
     const pending = approvalRef.current;
     if (pending === null) return;
@@ -144,18 +285,54 @@ export function AIPanel() {
     setAssistantApproval(null);
     pending.resolve(approved);
   };
+  const settleToolApproval = (approved: boolean) => {
+    const pending = toolApprovalRef.current;
+    if (pending === null) return;
+    toolApprovalRef.current = null;
+    setToolApproval(null);
+    pending.resolve(approved);
+  };
   useEffect(
     () => () => {
       approvalRef.current?.resolve(false);
       approvalRef.current = null;
+      toolApprovalRef.current?.resolve(false);
+      toolApprovalRef.current = null;
+      voiceRecognitionRef.current?.stop();
+      voiceRecognitionRef.current = null;
     },
     [],
   );
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ block: 'end' });
-  }, [assistantApproval, busy, conversation.length, error, liveSteps]);
+  }, [assistantApproval, busy, conversation.length, error, liveSteps, toolApproval]);
+  useEffect(() => {
+    let disposed = false;
+    const refresh = () => {
+      void getAiProviderState()
+        .then((state) => {
+          if (disposed) return;
+          const provider = state.active.providerId || 'Auto';
+          setModelLabel(state.active.model?.trim() || provider);
+        })
+        .catch(() => {
+          if (!disposed) setModelLabel('Auto');
+        });
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 2500);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, []);
   const loadToCanvas = async () => {
     if (proposal?.patch == null) return;
+    if (!useWorkspaceStore.getState().isOpen()) {
+      appendWorkspaceCapabilityNotice(proposalPrompt || 'Apply the proposed model change.');
+      setProposal(null);
+      return;
+    }
     if (proposal.baseDocument !== useModelStore.getState().document) {
       setError('The model changed after this proposal was generated. Generate a fresh patch.');
       return;
@@ -166,9 +343,10 @@ export function AIPanel() {
       setError(applied.diagnostics.map((entry) => entry.message).join('; '));
       return;
     }
+    useProjectStore.getState().markDirty();
     const acceptedPatch = proposal.patch;
     const acceptedDescription = proposal.descriptions.join('; ');
-    const nextScope = projectPath ?? `model:${applied.document.name}`;
+    const nextScope = conversationScope;
     // Accepting an AI change is a modeling action: take the user straight to
     // the resulting root canvas instead of leaving a successful model hidden
     // behind an empty center area.
@@ -222,8 +400,15 @@ export function AIPanel() {
   };
 
   const run = async (kind: AiAction, requestPrompt = prompt) => {
+    // Read the store at action time. The AI panel remains mounted while the
+    // user closes and creates projects, so the render-captured workspace flag
+    // can otherwise reject a valid request from a newly opened workspace.
+    if (!useWorkspaceStore.getState().isOpen()) {
+      appendWorkspaceCapabilityNotice(requestPrompt);
+      return;
+    }
     // Analysis tools also see metrics produced by assistant-driven runs.
-    const completedMetrics = result?.metrics ?? sessionRef.current.runMetrics;
+    const completedMetrics = result?.metrics ?? sessionForScope(conversationScope).runMetrics;
     setBusy(true);
     setError('');
     // A model-generation request replaces the primary result. Analysis tools
@@ -266,12 +451,20 @@ export function AIPanel() {
           }),
         );
       } else if (kind === 'optimize') {
-        setOptimized(await aiOptimize(requestPrompt));
+        setOptimized(
+          await aiOptimize(requestPrompt, generateDsl(useModelStore.getState().document)),
+        );
       } else if (kind === 'explain') {
         if (completedMetrics == null) {
           setError('Run and apply a model before asking a result question.');
         } else {
-          setExplained(await aiQueryMetrics(requestPrompt, completedMetrics));
+          setExplained(
+            await aiQueryMetrics(
+              requestPrompt,
+              completedMetrics,
+              useModelStore.getState().document,
+            ),
+          );
         }
       } else {
         const current = useModelStore.getState().document;
@@ -359,16 +552,95 @@ export function AIPanel() {
     void run(action, requestPrompt);
   };
 
+  const enterSession = (session: AiSession) => {
+    activeSessionRef.current = session.id;
+    activeSessionScopeRef.current = session.scope;
+    setActiveSessionId(session.id);
+    setPermissionMode(session.permission);
+  };
+
+  const startSession = (title: string) => {
+    const id = createSession(workspaceScope, title);
+    activeSessionRef.current = id;
+    activeSessionScopeRef.current = workspaceScope;
+    setActiveSessionId(id);
+    return id;
+  };
+
+  const leaveSession = () => {
+    activeSessionRef.current = null;
+    activeSessionScopeRef.current = null;
+    setActiveSessionId(null);
+    setPrompt('');
+  };
+
+  const changePermissionMode = (mode: PermissionMode) => {
+    setPermissionMode(mode);
+    if (activeSessionRef.current !== null) updateSessionPermission(activeSessionRef.current, mode);
+  };
+
+  const currentAssistantScope = () =>
+    activeSessionRef.current === null
+      ? workspaceScope
+      : aiSessionScope(activeSessionScopeRef.current ?? workspaceScope, activeSessionRef.current);
+  const workspacePermissionAllowed =
+    permissionMode !== 'Workspace' ||
+    activeSessionScopeRef.current === null ||
+    activeSessionScopeRef.current === workspaceScope;
+
+  const appendWorkspaceCapabilityNotice = (requestPrompt: string) => {
+    if (activeSessionRef.current === null) startSession(requestPrompt);
+    appendConversation(currentAssistantScope(), {
+      user: requestPrompt,
+      assistant:
+        '我可以继续和你对话。当前窗口还没有打开 Workspace，所以暂时不能创建、修改、编译或运行模型。请先打开一个文件夹或创建 Workspace，然后我就能继续处理刚才的请求。',
+      patch: { version: 1, operations: [] },
+      outcome: 'completed',
+    });
+  };
+
   // Assistant Runtime: one continuous conversation turn with inline tool
-  // execution. Falls back to the intent-router one-shot path when the
-  // assistant endpoint is unavailable (e.g. no server-side API key).
-  const sendAssistant = async () => {
-    const request = prompt.trim();
-    if (request === '' || busy) {
+  // execution. Agent-mode model building falls back to the deterministic
+  // rule-based path when no server-side provider is configured, so the local
+  // desktop/CI experience remains useful without network credentials.
+  const sendAssistant = async (resume = false, explicitRequest?: string) => {
+    const request = resume
+      ? 'Resume the unfinished Agent turn.'
+      : (explicitRequest ?? prompt.trim());
+    if ((!resume && request === '') || busy) {
       return;
     }
-    const session = sessionRef.current;
+    let scope = conversationScope;
+    if (!resume && activeSessionRef.current === null) {
+      const id = startSession(request);
+      scope = aiSessionScope(workspaceScope, id);
+    }
+    const pendingCheckpoint = checkpoints[scope];
+    const checkpointMessages = pendingCheckpoint
+      ? createAssistantKernel([], pendingCheckpoint.snapshot.events).deriveCurrentTurnMessages()
+      : [];
+    const resumedMessage = checkpointMessages
+      .slice()
+      .reverse()
+      .find((message: AssistantTurnMessage) => message.role === 'user')?.content;
+    const resumedRequest = resume
+      ? (resumedMessage ?? 'Resume the unfinished Agent turn.')
+      : request;
+    if (resume && pendingCheckpoint === undefined) return;
+    const session = sessionForScope(scope);
     const current = useModelStore.getState().document;
+    if (session.documentSnapshot !== null && session.documentSnapshot !== current) {
+      // A manual edit, project switch, or session switch invalidates every
+      // derived runtime value. Never send an old DSL/diagnostics/metrics set
+      // alongside a new document snapshot.
+      session.dsl = generateDsl(current);
+      session.diagnostics = [];
+      session.compiled = false;
+      session.runStatus = 'none';
+      session.runMetrics = null;
+      session.previousRunMetrics = null;
+      session.runSummary = '';
+    }
     session.documentSnapshot = current;
     if (session.dsl === '') {
       session.dsl = generateDsl(current);
@@ -377,19 +649,44 @@ export function AIPanel() {
     setError('');
     setBusy(true);
     setLiveSteps([]);
+    setLiveResponse('');
     const controller = new AbortController();
     abortRef.current = controller;
     const context = buildAssistantContext({
-      projectName: projectPath ?? document.name,
+      projectName: workspaceOpen
+        ? (workspaceName ?? projectPath ?? document.name)
+        : '当前未打开工作区。你仍然可以正常对话；创建或修改模型前请先打开工作区。',
       document: current,
+      workspaceRoot: projectPath ?? undefined,
       selectedId: useModelStore.getState().selectedId,
       session,
     });
-    const history: AssistantTurnMessage[] = conversation.slice(-6).flatMap((turn) => [
-      { role: 'user' as const, content: turn.user },
-      { role: 'assistant' as const, content: turn.assistant },
-    ]);
+    const turns = histories[scope] ?? [];
+    const persistedEvents = turns.flatMap((turn) => turn.kernelEvents ?? []);
+    const history: AssistantTurnMessage[] = resume
+      ? []
+      : persistedEvents.length > 0
+        ? createAssistantKernel([], persistedEvents).deriveMessages(32)
+        : turns
+            .flatMap(
+              (turn) =>
+                turn.modelMessages ?? [
+                  { role: 'user' as const, content: turn.user },
+                  { role: 'assistant' as const, content: turn.assistant },
+                ],
+            )
+            .slice(-32);
     const config = await getAppConfig();
+    let additionalTools: AssistantTool[] = [];
+    try {
+      additionalTools = createMcpTools(await discoverMcpCapabilities(controller.signal));
+      if (permissionMode === 'Read only' || agentMode !== 'Agent' || !workspacePermissionAllowed) {
+        additionalTools = additionalTools.filter((tool) => tool.requiresApproval !== true);
+      }
+    } catch {
+      // MCP is optional; a stopped or unconfigured server must not disable the
+      // built-in LogicPilot capability.
+    }
     const confirmModelPatch = (request: AssistantPatchApprovalRequest) =>
       new Promise<boolean>((resolve) => {
         const currentDocument = useModelStore.getState().document;
@@ -406,19 +703,53 @@ export function AIPanel() {
           proposal: nextProposal,
         });
       });
+    const confirmToolCall = (request: AssistantToolApprovalRequest) =>
+      new Promise<boolean>((resolve) => {
+        toolApprovalRef.current?.resolve(false);
+        toolApprovalRef.current = { resolve };
+        setToolApproval({
+          toolName: request.toolName,
+          summary: request.summary,
+          arguments: request.arguments,
+        });
+      });
     const result = await runAssistantTurn({
-      message: request,
+      message: resumedRequest,
       context,
       session,
       history,
       apiBase: config?.apiBase ?? '',
+      capabilities: [
+        ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
+          ? permissionMode === 'Read only' || agentMode !== 'Agent'
+            ? [LOGICPILOT_MODELING_READONLY_CAPABILITY.id]
+            : LOGICPILOT_MODELING_PROFILE.capabilityIds
+          : []),
+        ...(workspaceOpen &&
+        workspacePermissionAllowed &&
+        sourceEditingEnabled &&
+        agentMode === 'Agent' &&
+        permissionMode !== 'Read only'
+          ? ['logicpilot-source-editing']
+          : []),
+        ...(additionalTools.length > 0 ? ['mcp'] : []),
+      ],
+      skills: [...(LOGICPILOT_MODELING_PROFILE.skillIds ?? []), '__workspace__'],
+      additionalTools,
+      checkpoint: resume ? pendingCheckpoint : undefined,
+      onCheckpoint: (checkpoint) => saveCheckpoint(scope, checkpoint),
       signal: controller.signal,
       onProgress: setLiveSteps,
+      onToken: (chunk) => {
+        if (chunk.type === 'text') setLiveResponse((current) => current + chunk.delta);
+      },
       confirmModelPatch,
+      confirmToolCall,
     });
     abortRef.current = null;
     setBusy(false);
     setLiveSteps([]);
+    if (!result.cancelled) clearCheckpoint(scope);
     if (result.cancelled) {
       setError('Assistant step cancelled.');
       return;
@@ -428,34 +759,37 @@ export function AIPanel() {
       ((result.error ?? '').includes('assistant is not configured') ||
         (result.error ?? '').includes('OPENAI_API_KEY'))
     ) {
-      // Unconfigured (no provider / no key): the endpoint is unavailable,
-      // so keep the panel useful by falling back to the local quick actions
-      // (intent router). Configure a provider in Settings for the full
-      // tool-driven assistant.
-      setError(
-        'Assistant not configured; using quick actions. Configure a provider in Settings for the full assistant.',
-      );
-      const decision = routeAiIntent(request, {
-        hasModel: current.nodes.length > 0,
-        hasMetrics: session.runMetrics != null,
+      if (agentMode === 'Agent') {
+        await run('build', resumedRequest);
+        return;
+      }
+      appendConversation(scope, {
+        user: resumedRequest,
+        assistant:
+          '请先在 Settings → AI & Models 中配置一个 AI provider 和模型。配置完成后我才能继续这次对话；当前不会执行任何建模操作。',
+        patch: { version: 1, operations: [] },
+        outcome: 'run_failed',
+        assistantRecord: { steps: result.steps, error: result.error },
       });
-      dispatchAction(decision.action, decision.cleanedPrompt);
       return;
     }
-    appendConversation(conversationScope, {
-      user: request,
-      assistant:
-        result.message !== ''
+    appendConversation(scope, {
+      user: resumedRequest,
+      assistant: result.declined
+        ? 'Change declined. The canvas was left unchanged.'
+        : result.message !== ''
           ? result.message
           : result.ok
             ? 'Done.'
             : 'The request did not complete.',
       patch: session.lastPatch ?? { version: 1, operations: [] },
-      outcome: result.ok
-        ? result.undoTokenId !== undefined
-          ? 'applied'
-          : 'completed'
-        : 'run_failed',
+      outcome: result.declined
+        ? 'declined'
+        : result.ok
+          ? result.undoTokenId !== undefined
+            ? 'applied'
+            : 'completed'
+          : 'run_failed',
       assistantRecord: {
         steps: result.steps,
         error: result.error,
@@ -464,17 +798,20 @@ export function AIPanel() {
         undoTokenId: result.undoTokenId,
         changeSummary: session.lastChangeSummary,
       },
+      modelMessages: result.modelMessages,
+      kernelEvents: result.kernelEvents,
     });
   };
 
   const cancelAssistant = () => {
     abortRef.current?.abort();
     settleAssistantApproval(false);
+    settleToolApproval(false);
   };
 
   // Undo the most recent AI-applied change (one atomic undo step).
   const undoLastChange = (tokenId: string) => {
-    const session = sessionRef.current;
+    const session = sessionForScope(conversationScope);
     const undone = undoAssistantChange(session, tokenId);
     if (!undone.ok) {
       setError(undone.error ?? 'This AI change can no longer be undone safely.');
@@ -528,6 +865,7 @@ export function AIPanel() {
           return (
             <li key={index} className="ai-step-message">
               {step.label}
+              {step.detail != null && <small className="ai-step-detail">{step.detail}</small>}
             </li>
           );
         }
@@ -594,28 +932,197 @@ export function AIPanel() {
     );
   };
 
-  const outcomeLabel = (outcome: 'applied' | 'completed' | 'run_failed') => {
+  const outcomeLabel = (outcome: 'applied' | 'completed' | 'run_failed' | 'declined') => {
     if (outcome === 'applied') return 'Model updated';
     if (outcome === 'completed') return 'Completed';
+    if (outcome === 'declined') return 'Change declined';
     return 'Needs attention';
   };
 
   const submitPrompt = () => {
+    const value = prompt.trim();
+    const [command, ...rest] = value.split(/\s+/);
+    const commandPrompt = rest.join(' ').trim();
+    if (command === '/clear') {
+      clearConversation(conversationScope);
+      setError('');
+      setPrompt('');
+      return;
+    }
+    if (command === '/optimize') {
+      dispatchAction('optimize', commandPrompt);
+      return;
+    }
+    if (command === '/sweep') {
+      dispatchAction('variation', commandPrompt);
+      return;
+    }
+    if (command === '/explain') {
+      dispatchAction('explain', commandPrompt);
+      return;
+    }
+    if (command === '/build') {
+      setPrompt('');
+      void sendAssistant(false, commandPrompt || 'Build the requested model.');
+      return;
+    }
     void sendAssistant();
+  };
+
+  const retryTurn = (turn: (typeof conversation)[number]) => {
+    if (busy) return;
+    setPrompt(turn.user);
+    void sendAssistant(false, turn.user);
+  };
+
+  const copyAssistantMessage = async (message: string) => {
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch {
+      setError('Copy is unavailable in this runtime.');
+    }
+  };
+
+  const chooseComposerToken = (token: string) => {
+    setPrompt((current) => {
+      const base = current.replace(/(?:^|\s)[/@][^\s]*$/, '').trimEnd();
+      return `${base}${base === '' ? '' : ' '}${token} `;
+    });
+  };
+
+  const startVoiceInput = () => {
+    if (voiceState === 'listening' || voiceState === 'transcribing') {
+      voiceRecognitionRef.current?.stop();
+      return;
+    }
+    const speechWindow = window as typeof window & {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceError('Voice input is not available in this desktop runtime.');
+      setVoiceState('error');
+      window.setTimeout(() => setVoiceState('idle'), 3000);
+      return;
+    }
+    const recognition = new Recognition();
+    voiceRecognitionRef.current = recognition;
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onstart = () => {
+      setVoiceError('');
+      setVoiceState('listening');
+    };
+    recognition.onresult = (event) => {
+      let finalText = '';
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result?.[0]?.transcript ?? '';
+        if (result?.isFinal) finalText += transcript;
+        // Non-final fragments stay inside the speech recognizer until a
+        // final transcript is produced; they do not alter the composer UI.
+      }
+      if (finalText.trim() !== '') {
+        setVoiceState('transcribing');
+        window.setTimeout(() => {
+          setPrompt(
+            (current) => `${current}${current.trim() === '' ? '' : ' '}${finalText.trim()}`,
+          );
+          setVoiceState('idle');
+        }, 280);
+      }
+    };
+    recognition.onerror = (event) => {
+      setVoiceError(
+        event.error === 'not-allowed'
+          ? 'Microphone permission was denied.'
+          : 'Voice recognition failed.',
+      );
+      setVoiceState('error');
+      voiceRecognitionRef.current = null;
+      window.setTimeout(() => setVoiceState('idle'), 3000);
+    };
+    recognition.onend = () => {
+      voiceRecognitionRef.current = null;
+      setVoiceState((current) => (current === 'listening' ? 'idle' : current));
+    };
+    try {
+      recognition.start();
+    } catch {
+      setVoiceError('Voice recognition could not be started.');
+      setVoiceState('error');
+      voiceRecognitionRef.current = null;
+      window.setTimeout(() => setVoiceState('idle'), 3000);
+    }
   };
 
   return (
     <div className="ai-panel">
       <div className="ai-thread" aria-label="AI modeling conversation">
-        {conversation.length === 0 && result === null && !busy && (
+        {activeSessionId !== null && (
+          <div className="ai-session-header">
+            <button
+              type="button"
+              aria-label="Back to sessions"
+              title="Back to sessions"
+              onClick={leaveSession}
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <strong>
+              {sessionItems.find((session) => session.id === activeSessionId)?.title ?? 'Session'}
+            </strong>
+          </div>
+        )}
+        {activeSessionId === null && sessionItems.length > 0 && (
+          <section className="ai-sessions" aria-label="Sessions">
+            <div className="ai-sessions-title">Sessions</div>
+            {sessionItems.map((session) => (
+              <div className="ai-session-row" key={session.id}>
+                <button
+                  type="button"
+                  className="ai-session-open"
+                  onClick={() => enterSession(session)}
+                >
+                  <span className="ai-session-dot" aria-hidden />
+                  <span className="ai-session-copy">
+                    <strong>{session.title}</strong>
+                    <small>{relativeSessionTime(session.updatedAt)}</small>
+                  </span>
+                </button>
+                <span className="ai-session-actions">
+                  <button
+                    type="button"
+                    aria-label="Archive session"
+                    title="Archive"
+                    onClick={() => archiveSession(session.id)}
+                  >
+                    <Archive size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={session.pinned ? 'Unpin session' : 'Pin session'}
+                    title={session.pinned ? 'Unpin' : 'Pin'}
+                    onClick={() => pinSession(session.id, !session.pinned)}
+                  >
+                    <Pin size={13} />
+                  </button>
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
+        {activeSessionId === null && conversation.length === 0 && result === null && !busy && (
           <div className="ai-welcome">
             <span className="ai-welcome-mark" aria-hidden>
               <Bot size={20} />
             </span>
             <h2>Build models by describing them</h2>
             <p>
-              I can create a DES flow, change the current canvas, run experiments, and explain the
-              results without taking you out of the editor.
+              I can create and edit simulation models, run experiments, and explain grounded results
+              without taking you out of the editor.
             </p>
             <div className="ai-suggestions" aria-label="Suggested prompts">
               {[
@@ -630,66 +1137,103 @@ export function AIPanel() {
             </div>
           </div>
         )}
-        {conversation.slice(-6).map((turn) => (
-          <div className="ai-turn" key={turn.id}>
-            <div className="ai-message user">
-              <span className="ai-message-avatar" aria-hidden>
-                <UserRound size={13} />
-              </span>
-              <div>
-                <strong>You</strong>
-                <p>{turn.user}</p>
-              </div>
-            </div>
-            <div className="ai-message assistant">
-              <span className="ai-message-avatar" aria-hidden>
-                <Sparkles size={13} />
-              </span>
-              <div>
-                <strong>Copilot</strong>
-                <p>{turn.assistant}</p>
-                {turn.assistantRecord?.steps != null &&
-                  turn.assistantRecord.steps.length > 0 &&
-                  renderActivity(turn.assistantRecord.steps)}
-                {turn.assistantRecord?.error != null && (
-                  <p className="ai-error">{turn.assistantRecord.error}</p>
-                )}
-                <span className={`ai-outcome ${turn.outcome}`}>
-                  <CheckCircle2 size={11} /> {outcomeLabel(turn.outcome)}
+        {activeSessionId !== null &&
+          conversation.slice(-6).map((turn, turnIndex) => (
+            <div className="ai-turn" key={turn.id}>
+              <div className="ai-message user">
+                <span className="ai-message-avatar" aria-hidden>
+                  <UserRound size={13} />
                 </span>
-                {turn.assistantRecord?.undoable === true &&
-                  turn.assistantRecord.undoTokenId != null && (
-                    <span className="ai-turn-actions">
-                      {turn.patch != null && turn.patch.operations.length > 0 && (
-                        <details className="ai-changes">
-                          <summary title="View the changes made by this turn">
-                            View changes <ChevronDown size={11} />
-                          </summary>
-                          <ul className="ai-findings">
-                            {patchSummaryLines(turn.patch).map((line, index) => (
-                              <li key={`${index}:${line}`}>{line}</li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
+                <div>
+                  <strong>You</strong>
+                  <p>{turn.user}</p>
+                </div>
+              </div>
+              <div className="ai-message assistant">
+                <span className="ai-message-avatar" aria-hidden>
+                  <Sparkles size={13} />
+                </span>
+                <div>
+                  <strong>Copilot</strong>
+                  <p>{turn.assistant}</p>
+                  {turnIndex === conversation.slice(-6).length - 1 && (
+                    <div className="ai-message-actions">
                       <button
-                        className="ai-undo"
-                        disabled={
-                          busy ||
-                          sessionRef.current.activeUndo?.id !== turn.assistantRecord.undoTokenId ||
-                          sessionRef.current.activeUndo?.after !== document
-                        }
-                        onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
-                        title="Undo the last AI-applied change"
+                        type="button"
+                        aria-label="Retry latest response"
+                        title="Retry"
+                        disabled={busy}
+                        onClick={() => retryTurn(turn)}
                       >
-                        Undo
+                        <RotateCcw size={13} />
                       </button>
-                    </span>
+                      <button
+                        type="button"
+                        aria-label="Copy response"
+                        title="Copy"
+                        onClick={() => void copyAssistantMessage(turn.assistant)}
+                      >
+                        <Copy size={13} />
+                      </button>
+                    </div>
                   )}
+                  {turn.assistantRecord?.steps != null &&
+                    turn.assistantRecord.steps.length > 0 &&
+                    renderActivity(turn.assistantRecord.steps)}
+                  {turn.assistantRecord?.error != null && (
+                    <p className="ai-error">{turn.assistantRecord.error}</p>
+                  )}
+                  <span className={`ai-outcome ${turn.outcome}`}>
+                    <CheckCircle2 size={11} /> {outcomeLabel(turn.outcome)}
+                  </span>
+                  {turn.assistantRecord?.undoable === true &&
+                    turn.assistantRecord.undoTokenId != null && (
+                      <span className="ai-turn-actions">
+                        {turn.patch != null && turn.patch.operations.length > 0 && (
+                          <details className="ai-changes">
+                            <summary title="View the changes made by this turn">
+                              View changes <ChevronDown size={11} />
+                            </summary>
+                            <ul className="ai-findings">
+                              {patchSummaryLines(turn.patch).map((line, index) => (
+                                <li key={`${index}:${line}`}>{line}</li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
+                        <button
+                          className="ai-undo"
+                          disabled={
+                            busy ||
+                            sessionForScope(conversationScope).activeUndo?.id !==
+                              turn.assistantRecord.undoTokenId ||
+                            sessionForScope(conversationScope).activeUndo?.after !== document
+                          }
+                          onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
+                          title="Undo the last AI-applied change"
+                        >
+                          Undo
+                        </button>
+                      </span>
+                    )}
+                </div>
               </div>
             </div>
+          ))}
+        {!busy && checkpoints[conversationScope] !== undefined && (
+          <div className="ai-checkpoint-card" role="status">
+            <div>
+              <strong>Unfinished Agent turn</strong>
+              <small>You can resume the last checkpoint or discard it.</small>
+            </div>
+            <button className="secondary" onClick={() => void sendAssistant(true)}>
+              Resume
+            </button>
+            <button className="btn-ghost" onClick={() => clearCheckpoint(conversationScope)}>
+              Discard
+            </button>
           </div>
-        ))}
+        )}
         {busy && (
           <div className="ai-working-card" aria-live="polite">
             <div className="ai-working-header">
@@ -706,6 +1250,9 @@ export function AIPanel() {
               </div>
             </div>
             {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>Reading the current model…</p>}
+            {visibleLiveResponse(liveResponse) !== '' && (
+              <p className="ai-live-response">{visibleLiveResponse(liveResponse)}</p>
+            )}
             {assistantApproval !== null && (
               <section className="ai-approval-card" aria-label="Review proposed model change">
                 <header>
@@ -722,21 +1269,35 @@ export function AIPanel() {
                   )}
                 </div>
                 <ul>
-                  {assistantApproval.proposal.descriptions.slice(0, 6).map((description, index) => (
+                  {assistantApproval.proposal.descriptions.map((description, index) => (
                     <li key={`${index}:${description}`}>{description}</li>
                   ))}
                 </ul>
-                {assistantApproval.proposal.descriptions.length > 6 && (
-                  <p className="ai-approval-more">
-                    +{assistantApproval.proposal.descriptions.length - 6} more operations
-                  </p>
-                )}
                 <footer>
                   <button className="secondary" onClick={() => settleAssistantApproval(false)}>
                     <X size={13} /> Keep current model
                   </button>
                   <button className="primary" onClick={() => settleAssistantApproval(true)}>
                     <Check size={13} /> Apply and continue
+                  </button>
+                </footer>
+              </section>
+            )}
+            {toolApproval !== null && (
+              <section className="ai-approval-card" aria-label="Approve tool call">
+                <header>
+                  <AlertTriangle size={14} />
+                  <strong>Approve tool call</strong>
+                </header>
+                <p>{toolApproval.summary}</p>
+                <code>{toolApproval.toolName}</code>
+                <pre>{JSON.stringify(toolApproval.arguments, null, 2)}</pre>
+                <footer>
+                  <button className="secondary" onClick={() => settleToolApproval(false)}>
+                    <X size={13} /> Deny
+                  </button>
+                  <button className="primary" onClick={() => settleToolApproval(true)}>
+                    <Check size={13} /> Allow
                   </button>
                 </footer>
               </section>
@@ -937,6 +1498,35 @@ export function AIPanel() {
                 ? `, largest queue=${explained.evidence.largestQueue}`
                 : ''}
             </p>
+            {explained.evidence.blockFindings != null &&
+              explained.evidence.blockFindings.length > 0 && (
+                <table className="ai-scores" aria-label="Per-block evidence">
+                  <thead>
+                    <tr>
+                      <th>Block</th>
+                      <th>Util.</th>
+                      <th>Availability</th>
+                      <th>Mean size</th>
+                      <th>Timeouts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {explained.evidence.blockFindings.map((block) => (
+                      <tr key={`${block.kind}:${block.name}`}>
+                        <td>{block.name}</td>
+                        <td>{(block.utilization * 100).toFixed(1)}%</td>
+                        <td>{(block.availability * 100).toFixed(1)}%</td>
+                        <td>{block.meanOccupancy.toFixed(3)}</td>
+                        <td>{block.timedOut.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            {explained.evidence.causalChain != null &&
+              explained.evidence.causalChain.length > 1 && (
+                <p className="ai-meta">causal path: {explained.evidence.causalChain.join(' → ')}</p>
+              )}
           </div>
         )}
         {comparison !== null && (
@@ -973,93 +1563,250 @@ export function AIPanel() {
         )}
         <div ref={threadEndRef} className="ai-thread-end" aria-hidden />
       </div>
-      <div className="ai-composer-shell">
-        <textarea
-          className="ai-input"
-          value={prompt}
-          disabled={busy}
-          rows={3}
-          placeholder={
-            document.nodes.length > 0
-              ? 'Ask Copilot to change, run, or explain this model…'
-              : 'Describe the system you want to simulate…'
-          }
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (!busy && prompt.trim() !== '') submitPrompt();
+      <div className="ai-composer-area">
+        <div className="ai-composer-shell">
+          {(commandSuggestions.length > 0 || mentionSuggestions.length > 0) && (
+            <div
+              className="ai-composer-suggestions"
+              role="listbox"
+              aria-label="Composer suggestions"
+            >
+              {(commandSuggestions.length > 0 ? commandSuggestions : mentionSuggestions).map(
+                (item) => (
+                  <button key={item} type="button" onClick={() => chooseComposerToken(item)}>
+                    <code>{item}</code>
+                    <span>
+                      {item === '/build'
+                        ? 'Build or edit the current model'
+                        : item === '/optimize'
+                          ? 'Search for a better parameter value'
+                          : item === '/sweep'
+                            ? 'Run a parameter study'
+                            : item === '/explain'
+                              ? 'Explain the latest run'
+                              : item === '/clear'
+                                ? 'Clear this conversation'
+                                : 'Attach this workspace context'}
+                    </span>
+                  </button>
+                ),
+              )}
+            </div>
+          )}
+          <textarea
+            className="ai-input"
+            value={prompt}
+            disabled={busy}
+            rows={3}
+            placeholder={
+              document.nodes.length > 0
+                ? 'Ask Copilot to change, run, or explain this model…'
+                : 'Describe the system you want to simulate…'
             }
-          }}
-        />
-        <div className="ai-composer-actions">
-          <details className="ai-tools-menu">
-            <summary title="More AI actions">
-              <WandSparkles size={14} />
-              <span>Tools</span>
-              <ChevronDown size={12} />
-            </summary>
-            <div className="ai-tools-popover">
-              <button disabled={busy} onClick={() => dispatchAction('optimize')}>
-                <SlidersHorizontal size={14} />
-                <span>
-                  <strong>Optimize model</strong>
-                  <small>Search for a better parameter value</small>
-                </span>
-              </button>
-              <button disabled={busy} onClick={() => dispatchAction('variation')}>
-                <FlaskConical size={14} />
-                <span>
-                  <strong>Parameter study</strong>
-                  <small>Compare a range of scenarios</small>
-                </span>
-              </button>
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (!busy && prompt.trim() !== '') submitPrompt();
+              }
+            }}
+          />
+          <div className="ai-composer-actions">
+            <details className="ai-composer-add">
+              <summary aria-label="Add context or command" title="Add context or command">
+                <Plus size={16} />
+              </summary>
+              <div className="ai-tools-popover ai-add-popover">
+                <button type="button" onClick={() => chooseComposerToken('@model')}>
+                  <span>
+                    <strong>@model</strong>
+                    <small>Attach the current model</small>
+                  </span>
+                </button>
+                <button type="button" onClick={() => chooseComposerToken('@selection')}>
+                  <span>
+                    <strong>@selection</strong>
+                    <small>Attach the selected block</small>
+                  </span>
+                </button>
+                <button type="button" onClick={() => chooseComposerToken('/explain')}>
+                  <span>
+                    <strong>/explain</strong>
+                    <small>Explain the latest run</small>
+                  </span>
+                </button>
+              </div>
+            </details>
+            <details className="ai-composer-select">
+              <summary title="Agent mode">
+                <Code2 size={14} />
+                <span>{agentMode}</span>
+                <ChevronDown size={11} />
+              </summary>
+              <div className="ai-tools-popover ai-select-popover">
+                {(['Agent', 'Ask', 'Plan'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={agentMode === mode ? 'selected' : ''}
+                    onClick={() => setAgentMode(mode)}
+                  >
+                    <strong>{mode}</strong>
+                    <small>
+                      {mode === 'Agent'
+                        ? 'Build, edit, run and explain'
+                        : mode === 'Ask'
+                          ? 'Answer without changing the workspace'
+                          : 'Prepare a plan before execution'}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </details>
+            <details className="ai-composer-select ai-model-select">
+              <summary title="Switch model">
+                <span>{modelLabel}</span>
+                <ChevronDown size={11} />
+              </summary>
+              <div className="ai-tools-popover ai-select-popover">
+                <button type="button" onClick={() => useUiStore.getState().openSettings()}>
+                  <strong>{modelLabel}</strong>
+                  <small>Open Settings → AI &amp; Models to switch provider or model</small>
+                </button>
+                <button type="button" onClick={() => setModelLabel('Auto')}>
+                  <strong>Auto</strong>
+                  <small>Use the configured provider</small>
+                </button>
+              </div>
+            </details>
+            <details className="ai-composer-select ai-configure-tools">
+              <summary title="Configure tools">
+                <Settings2 size={14} />
+                <span>Configure</span>
+              </summary>
+              <div className="ai-tools-popover ai-select-popover">
+                <button
+                  type="button"
+                  className="ai-tool-toggle"
+                  onClick={() => setToolsEnabled((enabled) => !enabled)}
+                >
+                  <span>
+                    <strong>LogicPilot modeling</strong>
+                    <small>Inspect, edit, compile and simulate</small>
+                  </span>
+                  <span className={`ai-toggle ${toolsEnabled ? 'on' : ''}`} aria-hidden>
+                    <i />
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="ai-tool-toggle"
+                  onClick={() => setSourceEditingEnabled((enabled) => !enabled)}
+                >
+                  <span>
+                    <strong>Source editing</strong>
+                    <small>Read and patch bounded workspace source files</small>
+                  </span>
+                  <span className={`ai-toggle ${sourceEditingEnabled ? 'on' : ''}`} aria-hidden>
+                    <i />
+                  </span>
+                </button>
+                <p className="ai-tools-note">
+                  MCP tools are discovered automatically when configured.
+                </p>
+              </div>
+            </details>
+            {conversation.length > 0 && (
               <button
-                disabled={busy || (result?.metrics ?? sessionRef.current.runMetrics) == null}
-                onClick={() => dispatchAction('explain')}
+                className="ai-icon-button"
+                aria-label="Clear conversation"
+                title="Clear conversation"
+                disabled={busy}
+                onClick={() => {
+                  clearConversation(conversationScope);
+                  setError('');
+                }}
               >
-                <BarChart3 size={14} />
-                <span>
-                  <strong>Explain last run</strong>
-                  <small>Ask questions about current metrics</small>
-                </span>
+                <Eraser size={14} />
               </button>
+            )}
+            {document.nodes.length > 0 && (
+              <span className="ai-context-pill">{document.nodes.length} blocks</span>
+            )}
+            <button
+              className={`ai-voice-button ${voiceState}`}
+              aria-label={
+                voiceState === 'listening'
+                  ? 'Stop listening'
+                  : voiceState === 'transcribing'
+                    ? 'Transcribing voice input'
+                    : 'Voice input'
+              }
+              title={
+                voiceState === 'listening'
+                  ? 'Listening… click to stop'
+                  : voiceState === 'transcribing'
+                    ? 'Transcribing…'
+                    : voiceState === 'error'
+                      ? voiceError
+                      : 'Voice input'
+              }
+              disabled={busy && voiceState === 'idle'}
+              onClick={startVoiceInput}
+            >
+              <Mic size={14} />
+            </button>
+            {busy ? (
+              <button
+                className="ai-send"
+                aria-label="Stop assistant"
+                title="Stop"
+                onClick={cancelAssistant}
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                className="ai-send"
+                aria-label="Send to Copilot"
+                title="Send (Enter)"
+                disabled={prompt.trim() === ''}
+                onClick={submitPrompt}
+              >
+                <SendHorizontal size={15} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="ai-composer-status">
+          <button type="button" className="ai-status-button" title="Local runtime">
+            <span className="ai-status-dot" /> Local <ChevronDown size={10} />
+          </button>
+          <details className="ai-status-permission">
+            <summary title="Permission mode">
+              <ShieldCheck size={12} /> {permissionMode} <ChevronDown size={10} />
+            </summary>
+            <div className="ai-tools-popover ai-select-popover">
+              {(['Full access', 'Workspace', 'Read only'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={permissionMode === mode ? 'selected' : ''}
+                  onClick={() => changePermissionMode(mode)}
+                >
+                  <strong>{mode}</strong>
+                  <small>
+                    {mode === 'Full access'
+                      ? 'Allow host actions'
+                      : mode === 'Workspace'
+                        ? 'Restrict changes to this workspace'
+                        : 'Inspect and answer only'}
+                  </small>
+                </button>
+              ))}
             </div>
           </details>
-          {conversation.length > 0 && (
-            <button
-              className="ai-icon-button"
-              aria-label="Clear conversation"
-              title="Clear conversation"
-              disabled={busy}
-              onClick={() => clearConversation(conversationScope)}
-            >
-              <Eraser size={14} />
-            </button>
-          )}
-          {document.nodes.length > 0 && (
-            <span className="ai-context-pill">{document.nodes.length} blocks</span>
-          )}
-          {busy ? (
-            <button
-              className="ai-send"
-              aria-label="Stop assistant"
-              title="Stop"
-              onClick={cancelAssistant}
-            >
-              <Square size={14} />
-            </button>
-          ) : (
-            <button
-              className="ai-send"
-              aria-label="Send to Copilot"
-              title="Send (Enter)"
-              disabled={prompt.trim() === ''}
-              onClick={submitPrompt}
-            >
-              <SendHorizontal size={15} />
-            </button>
-          )}
+          {agentMode === 'Plan' && <span className="ai-status-hint">Plan mode</span>}
         </div>
       </div>
     </div>

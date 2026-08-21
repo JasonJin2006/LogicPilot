@@ -1,13 +1,12 @@
-// The project currently open in the IDE (a *.lpproj bundle) plus its dirty
-// state. The bundle is set when a project is created/saved/opened and cleared
-// on legacy opens; it is session-only, so every launch starts with no open
-// project and previous projects are reopened via Open / Open Recent. `dirty`
-// tracks whether the canvas has diverged from the last saved bundle (the
-// Explorer shows a dot). The Explorer panel renders its file tree from the
-// bundle (docs/specs/project-format-v2.md).
+// The active LogicPilot model inside the current workspace plus its dirty
+// state. A workspace may be a plain folder before it contains logicpilot.json;
+// in that case bundle remains null until the first Save initializes it.
+// `dirty` tracks whether the canvas has diverged from the last saved bundle
+// (or from the folder's initial state).
 
 import { create } from 'zustand';
 import type { ProjectBundle } from '../project/project';
+import { readProjectHashes, readProjectTree } from './tauriFs';
 
 interface ProjectState {
   bundle: ProjectBundle | null;
@@ -51,7 +50,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
     if (!dir) {
       return;
     }
-    const { readProjectHashes } = await import('../state/tauriFs');
     const result = await readProjectHashes(dir);
     if (result.ok && result.hashes) {
       useProjectStore.getState().setDiskHashes(result.hashes);
@@ -62,7 +60,6 @@ export const useProjectStore = create<ProjectState>()((set) => ({
     if (!dir) {
       return;
     }
-    const { readProjectHashes, readProjectTree } = await import('../state/tauriFs');
     const tree = await readProjectTree(dir);
     if (tree.ok && tree.files) {
       useProjectStore.getState().setDiskFiles(tree.files);

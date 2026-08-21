@@ -77,9 +77,9 @@ const MAX_EVENTS = 200;
 // default. Falls back to DEFAULT_URL when the endpoint is unavailable.
 async function resolveGatewayConfig(): Promise<void> {
   if (configResolved) return;
-  configResolved = true;
   const desktop = await getAppConfig();
   if (desktop?.wsUrl) {
+    configResolved = true;
     useConnectionStore.setState({ url: desktop.wsUrl });
     return;
   }
@@ -88,7 +88,9 @@ async function resolveGatewayConfig(): Promise<void> {
     if (response.ok) {
       const config = (await response.json()) as { wsUrl?: string };
       if (config.wsUrl) {
+        configResolved = true;
         useConnectionStore.setState({ url: config.wsUrl });
+        return;
       }
     }
   } catch {
@@ -229,10 +231,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
             events: appendEvent(state, 'ack', message),
           };
         }),
-      onStateChange: (conn) => set({ conn }),
+      onStateChange: (conn) =>
+        set((state) => ({ conn, error: conn === 'connected' ? '' : state.error })),
       onError: (message) =>
         set((state) => ({
-          error: message,
+          error: silent ? state.error : message,
           // Retries are silent: the gateway is expected to still be booting
           // on the first few attempts, and the console should not spam.
           events: silent ? state.events : appendEvent(state, 'error', message),
@@ -257,7 +260,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
     },
     autoConnect: () => {
       stopAutoConnect();
-      connectNow(false);
+      // The desktop app server and gateway start together. The first
+      // connection may still target the default URL before app_config has
+      // resolved the injected gateway port, so keep bootstrap failures out
+      // of the user console; manual Connect remains visible and explicit.
+      connectNow(true);
       // Keep retrying while the desktop gateway boots; stop once connected
       // (or after the budget is spent) so a dead endpoint does not spam.
       retryTimer = window.setInterval(() => {

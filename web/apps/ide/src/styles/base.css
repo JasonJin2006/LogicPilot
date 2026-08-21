@@ -129,7 +129,11 @@ button:disabled,
    the native Windows rendering); the themed arrow would otherwise inherit
    into form fields. */
 input[type='text'],
+input:not([type]),
 input[type='search'],
+input[type='email'],
+input[type='url'],
+input[type='tel'],
 input[type='number'],
 input[type='password'],
 textarea,

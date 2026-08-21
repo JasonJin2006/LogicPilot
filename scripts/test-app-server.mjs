@@ -8,11 +8,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  findLpcli,
-  findLpServer,
-  logicPilotRoot,
-} from './tool-paths.mjs';
+import { findLpcli, findLpServer, logicPilotRoot } from './tool-paths.mjs';
 
 const root = logicPilotRoot();
 
@@ -108,13 +104,19 @@ try {
   const config = await configResponse.json();
   assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim$/);
 
+  const oversizedRequest = await fetch(`${baseUrl}/api/ai-build`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: 'x'.repeat(17 * 1024 * 1024) }),
+  });
+  assert.equal(oversizedRequest.status, 413);
+  assert.match((await oversizedRequest.json()).error, /request body exceeds/);
+
   const buildResponse = await fetch(`${baseUrl}/api/ai-build`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      prompt:
-          'build an M/M/1 queue model with arrival rate 0.8 and service ' +
-          'rate 1.0',
+      prompt: 'build an M/M/1 queue model with arrival rate 0.8 and service ' + 'rate 1.0',
       run: true,
     }),
   });
@@ -242,34 +244,42 @@ try {
   // own parent-process watchdog and exits when the parent dies.
   {
     let gatewayPid = 0;
-    const crashChild = spawn(
-        process.execPath, [join(root, 'app', 'server.mjs')],
-        {
-          cwd: root,
-          env: serverEnv,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true,
-        },
-    );
+    const crashChild = spawn(process.execPath, [join(root, 'app', 'server.mjs')], {
+      cwd: root,
+      env: serverEnv,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     let crashStderr = '';
-    crashChild.stderr.on('data', (chunk) => { crashStderr += chunk.toString(); });
+    crashChild.stderr.on('data', (chunk) => {
+      crashStderr += chunk.toString();
+    });
     try {
       const crashPort = await waitForPort(
-          crashChild, (pid) => { gatewayPid = pid; }, 20_000);
+        crashChild,
+        (pid) => {
+          gatewayPid = pid;
+        },
+        20_000,
+      );
       assert.ok(gatewayPid > 0, 'app server must report the gateway pid');
       const crashBase = `http://127.0.0.1:${crashPort}`;
       const alive = await fetch(`${crashBase}/api/config`)
-          .then((response) => response.ok)
-          .catch(() => false);
+        .then((response) => response.ok)
+        .catch(() => false);
       assert.ok(alive, 'gateway must be serving before the crash');
-      crashChild.kill('SIGKILL');  // no graceful shutdown path runs
+      crashChild.kill('SIGKILL'); // no graceful shutdown path runs
       const exited = await waitForProcessExit(gatewayPid, 10_000);
       assert.ok(exited, `gateway pid ${gatewayPid} survived its parent's crash`);
     } catch (error) {
       if (crashStderr.trim()) process.stderr.write(crashStderr);
       throw error;
     } finally {
-      try { crashChild.kill(); } catch { /* already gone */ }
+      try {
+        crashChild.kill();
+      } catch {
+        /* already gone */
+      }
     }
   }
 

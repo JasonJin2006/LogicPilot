@@ -39,14 +39,15 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
   Console）。
 - 撤销/重做：`Ctrl/Cmd+Z`、`Ctrl/Cmd+Shift+Z`；Project 面板可新建模型。
 
-> 注意：模型与工程是**会话态**——客户端每次启动都从空白状态开始，不会
-> 恢复上次打开的工程；继续之前的工程请用 **File > Open Recent** 或
-> **File > Open...** 重新打开。
+> 注意：启动时不会自动恢复上次打开的工程。浏览器模式的工程先保存在内存中，
+> **File > Save** 会导出 `.lpproj`；桌面模式可以打开真实文件夹，把项目和
+> workspace 文件写入磁盘。继续之前的工程请用 **File > Open Recent**、
+> **File > Open...** 或打开 workspace 文件。
 
 ## 工程保存 / 打开
 
 工程是工作单元（`*.lpproj` 单文件打包，格式见[工程格式 v2](../specs/project-format-v2)）：
-- **File > New Project...**（Ctrl+N）：输入工程名与所在文件夹，桌面客户端会在该文件夹生成 `工程名/` 目录（`logicpilot.json`、`model/main.lp`、`presentation/main.canvas.json`、`build/`、`results/`）；浏览器模式随时可用（内存工程）。编辑后 Explorer 根部显示脏点，Save 直接写回工程目录
+- **File > New Project...**（Ctrl+N）：输入工程名与所在文件夹，桌面客户端会在该文件夹生成 `工程名/` 目录（`logicpilot.json`、`model/main.lp`、`presentation/main.canvas.json`、`build/`、`results/`）；浏览器模式创建内存工程并在 Save 时导出 `.lpproj`。编辑后 Explorer 根部显示脏点，桌面模式的 Save 写回工程目录。
 - **File > Save**：把画布模型（含坐标/连线/参数）与生成的 DSL 一起存成
   `*.lpproj`，重新打开时布局完整还原。
 - **File > Open... / Open Recent**：打开 `*.lpproj` 工程；旧 `.lp` / `.json`
@@ -98,7 +99,7 @@ explain 按钮。
 - **View changes** 展示本轮结构化 `ModelPatch`；**Undo** 只撤销对应的 AI 事务。
   如果模型之后被手动修改，按钮会禁用，避免误撤用户编辑。
 - 会话按工程和模型隔离并保存；发送时仅附带有限的最近对话。
-- 未配置 Provider 时提示前往 Settings；不会用规则回复冒充真实 AI 助手。
+- 未配置 Provider 时，Agent 模式的模型构建会回退到确定性的 rule-based 快速路径；连续对话、Ask/Plan 和真实 LLM 工具调用仍需前往 Settings 配置 Provider。
 
 示例：“添加一个容量为 20 的 Queue 并连接到 Service”“运行 5 次复制并解释
 等待时间”“把服务器容量从 1 调到 4，比较修改前后的指标”。配置与协议详见

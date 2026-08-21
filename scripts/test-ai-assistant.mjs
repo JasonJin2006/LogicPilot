@@ -7,10 +7,17 @@ import assert from 'node:assert/strict';
 import {
   ASSISTANT_TOOLS,
   buildSystemPrompt,
+  parseAssistantResponseContent,
+  visibleAssistantMessage,
   resolveAssistantProvider,
   runAssistant,
+  validateAssistantMessages,
   validateAssistantResponse,
 } from './ai-assistant.mjs';
+import {
+  clearAssistantProviderSession,
+  configureAssistantProvider,
+} from './ai-provider-config.mjs';
 
 // Tool registry contract: the nine controlled tools the client executes.
 const EXPECTED_TOOLS = [
@@ -18,17 +25,47 @@ const EXPECTED_TOOLS = [
   'inspect_selection',
   'inspect_diagnostics',
   'inspect_run_metrics',
+  'run_parameter_study',
+  'explain_results',
+  'optimize_model',
+  'compare_runs',
   'apply_model_patch',
   'compile_model',
   'run_simulation',
   'wait_for_run',
   'undo_last_ai_change',
+  'read_workspace_file',
+  'apply_source_patch',
 ];
 assert.deepEqual(ASSISTANT_TOOLS.map((tool) => tool.name).sort(), [...EXPECTED_TOOLS].sort());
 for (const tool of ASSISTANT_TOOLS) {
   assert.ok(tool.description.length > 0, `${tool.name} needs a description`);
   assert.ok(tool.parameters && typeof tool.parameters === 'object');
 }
+
+assert.equal(validateAssistantMessages([{ role: 'user', content: 'inspect' }]), null);
+assert.equal(
+  validateAssistantMessages([
+    {
+      role: 'assistant',
+      content: 'calling',
+      toolCalls: [{ id: 'call-1', name: 'inspect_model', arguments: {} }],
+      toolResults: [{ toolCallId: 'call-1', ok: true, result: { nodes: 0 } }],
+    },
+  ]),
+  null,
+);
+assert.match(
+  validateAssistantMessages([
+    {
+      role: 'assistant',
+      content: 'bad',
+      toolCalls: [{ id: 'call-1', name: 'inspect_model', arguments: {} }],
+      toolResults: [{ toolCallId: 'missing', ok: false, result: {} }],
+    },
+  ]),
+  /unmatched tool result/,
+);
 
 // The prompt is executable contract. Lock down the exact patch vocabulary
 // and first DES benchmark so the model does not have to guess fields or
@@ -52,6 +89,34 @@ for (const required of [
 }
 assert.ok(systemPrompt.includes('刚才那个队列'));
 assert.ok(systemPrompt.includes('检查模型'));
+const generalPrompt = buildSystemPrompt({ capabilities: [] });
+assert.match(generalPrompt, /general-purpose AI agent/);
+assert.doesNotMatch(generalPrompt, /inspect_model/);
+assert.match(
+  buildSystemPrompt({ capabilities: ['logicpilot-modeling'], skills: ['logicpilot-modeling-basics'] }),
+  /Skill: logicpilot-modeling-basics/,
+);
+const readonlyPrompt = buildSystemPrompt({ capabilities: ['logicpilot-modeling-readonly'] });
+assert.match(readonlyPrompt, /read-only/);
+assert.match(readonlyPrompt, /inspect_model/);
+assert.doesNotMatch(readonlyPrompt, /apply_model_patch/);
+const mcpTool = {
+  name: 'mcp.fixture.echo',
+  description: 'Echo from MCP',
+  parameters: { text: { type: 'string', required: true } },
+};
+assert.doesNotThrow(() =>
+  validateAssistantResponse(
+    {
+      message: 'calling MCP',
+      plan: [],
+      toolCalls: [{ id: 'mcp-1', name: mcpTool.name, arguments: { text: 'hello' } }],
+      done: false,
+    },
+    new Set([mcpTool.name]),
+    [...ASSISTANT_TOOLS, mcpTool],
+  ),
+);
 assert.equal(resolveAssistantProvider({ OPENAI_API_KEY: 'configured' }), 'api');
 assert.equal(resolveAssistantProvider({ LOGICPILOT_AI_PROVIDER: 'codex' }), 'codex');
 assert.equal(resolveAssistantProvider({}), 'unconfigured');
@@ -70,6 +135,25 @@ const valid = validateAssistantResponse({
 assert.equal(valid.message, '检查模型');
 assert.equal(valid.toolCalls.length, 1);
 assert.equal(valid.toolCalls[0].name, 'inspect_model');
+
+// Local gateways sometimes emit a readable transcript instead of strict JSON
+// after a tool result. It must still become a structured, validated step.
+const transcript = parseAssistantResponseContent(
+  'I found a compile issue.\n\nProposed tool calls:\n' +
+    'tool_call_id: call-2\nname: inspect_diagnostics\narguments: {}\n\n[tool results]',
+);
+assert.equal(transcript.done, false);
+assert.deepEqual(transcript.toolCalls, [
+  { id: 'call-2', name: 'inspect_diagnostics', arguments: {} },
+]);
+const plainText = parseAssistantResponseContent('The model is ready.');
+assert.deepEqual(plainText, { message: 'The model is ready.', plan: [], toolCalls: [], done: true });
+assert.equal(
+  visibleAssistantMessage(
+    '{"message":"开始构建呼叫中心模型。","plan":[],"toolCalls":[{"id":"c1"}],"done":false}',
+  ),
+  '开始构建呼叫中心模型。',
+);
 
 // Malformed responses are rejected with readable errors, never crashes.
 const cases = [
@@ -106,6 +190,14 @@ const cases = [
       toolCalls: [{ id: 'c', name: 'apply_model_patch', arguments: { summary: 'x' } }],
     },
     /patch is required/,
+  ],
+  [
+    {
+      message: 'x',
+      done: false,
+      toolCalls: [{ id: 'c', name: 'run_parameter_study', arguments: { arrivals: 'many' } }],
+    },
+    /must be a finite number/,
   ],
   [
     {
@@ -174,6 +266,13 @@ assert.deepEqual(requestBody.response_format, { type: 'json_object' });
 assert.deepEqual(requestBody.thinking, { type: 'disabled' });
 assert.equal(requestBody.max_tokens, 4096);
 await runAssistant({
+  messages: [{ role: 'user', content: '你好' }],
+  context: {},
+  capabilities: [],
+});
+assert.equal(requestBody.tools, undefined);
+assert.match(requestBody.messages[0].content, /general-purpose AI agent/);
+await runAssistant({
   messages: [
     { role: 'user', content: 'change it' },
     {
@@ -198,6 +297,59 @@ await assert.rejects(
   () => runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} }),
   /must be enabled or disabled/,
 );
+let schemaAttempts = 0;
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    choices: [
+      {
+        message: {
+          content:
+            schemaAttempts++ === 0
+              ? '{"message":"retry me"}'
+              : '{"message":"recovered","plan":[],"toolCalls":[],"done":true}',
+        },
+      },
+    ],
+  }),
+});
+delete process.env.DEEPSEEK_THINKING;
+const recovered = await runAssistant({
+  messages: [{ role: 'user', content: 'schema retry' }],
+  context: {},
+});
+assert.equal(recovered.message, 'recovered');
+assert.equal(schemaAttempts, 2);
+configureAssistantProvider({
+  providerId: 'ollama',
+  protocol: 'openai-chat',
+  baseUrl: 'http://ollama/v1',
+  model: 'qwen3',
+});
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    choices: [
+      {
+        message: {
+          content: '',
+          tool_calls: [{ id: 'native-call', function: { name: 'inspect_model', arguments: '{}' } }],
+        },
+      },
+    ],
+  }),
+});
+const nativeResponse = await runAssistant({
+  messages: [{ role: 'user', content: 'inspect' }],
+  context: {},
+});
+assert.equal(nativeResponse.done, false);
+assert.deepEqual(nativeResponse.toolCalls, [
+  { id: 'native-call', name: 'inspect_model', arguments: {} },
+]);
+clearAssistantProviderSession();
 globalThis.fetch = previousFetch;
 for (const [name, value] of Object.entries(previousEnvironment)) {
   if (value === undefined) delete process.env[name];

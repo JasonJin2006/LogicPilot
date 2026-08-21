@@ -9,6 +9,10 @@ export function handleAiCompareMetrics(req: unknown, res: unknown): Promise<void
 export function handleAiOptimize(req: unknown, res: unknown): Promise<void>;
 export function handleAiExplain(req: unknown, res: unknown): Promise<void>;
 export function handleAiAssistant(req: unknown, res: unknown): Promise<void>;
+export function handleAiAssistantStream(req: unknown, res: unknown): Promise<void>;
 export function handleAiProviders(req: unknown, res: unknown): Promise<void>;
+export function handleAiProviderModels(req: unknown, res: unknown): Promise<void>;
 export function handleAiProviderTest(req: unknown, res: unknown): Promise<void>;
+export function handleMcpCapabilities(req: unknown, res: unknown): Promise<void>;
+export function handleMcpCall(req: unknown, res: unknown): Promise<void>;
 export function handleConfig(req: unknown, res: unknown): void;

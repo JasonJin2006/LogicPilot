@@ -6,11 +6,16 @@
 // loop (scripts/ai-build.mjs) inside the dev server process.
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
+import { createApiRequestPolicy } from '../../../app/request-policy.mjs';
 
 import {
   handleAiAssistant,
+  handleAiAssistantStream,
+  handleAiProviderModels,
   handleAiProviders,
   handleAiProviderTest,
+  handleMcpCall,
+  handleMcpCapabilities,
   handleAiBuild,
   handleAiCompareMetrics,
   handleAiExplain,
@@ -28,44 +33,57 @@ import {
 const aiBuildPlugin = (): Plugin => ({
   name: 'logicpilot-ai-build',
   configureServer(server) {
+    const runWithApiPolicy = createApiRequestPolicy();
     server.middlewares.use('/api/ai-providers/test', (req, res) => {
-      void handleAiProviderTest(req, res);
+      void runWithApiPolicy(req, res, () => handleAiProviderTest(req, res));
+    });
+    server.middlewares.use('/api/ai-providers/models', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleAiProviderModels(req, res));
     });
     server.middlewares.use('/api/ai-providers', (req, res) => {
-      void handleAiProviders(req, res);
+      void runWithApiPolicy(req, res, () => handleAiProviders(req, res));
+    });
+    server.middlewares.use('/api/mcp/capabilities', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleMcpCapabilities(req, res));
+    });
+    server.middlewares.use('/api/mcp/call', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleMcpCall(req, res));
     });
     server.middlewares.use('/api/ai-build', (req, res) => {
-      void handleAiBuild(req, res);
+      void runWithApiPolicy(req, res, () => handleAiBuild(req, res));
     });
     server.middlewares.use('/api/ai-optimize', (req, res) => {
-      void handleAiOptimize(req, res);
+      void runWithApiPolicy(req, res, () => handleAiOptimize(req, res));
     });
     server.middlewares.use('/api/ai-run', (req, res) => {
-      void handleAiRun(req, res);
+      void runWithApiPolicy(req, res, () => handleAiRun(req, res));
     });
     server.middlewares.use('/api/parameter-variation', (req, res) => {
-      void handleParameterVariation(req, res);
+      void runWithApiPolicy(req, res, () => handleParameterVariation(req, res));
     });
     server.middlewares.use('/api/ai-validate', (req, res) => {
-      void handleAiValidate(req, res);
+      void runWithApiPolicy(req, res, () => handleAiValidate(req, res));
     });
     server.middlewares.use('/api/ai-patch', (req, res) => {
-      void handleAiPatch(req, res);
+      void runWithApiPolicy(req, res, () => handleAiPatch(req, res));
     });
     server.middlewares.use('/api/ai-query-metrics', (req, res) => {
-      void handleAiQueryMetrics(req, res);
+      void runWithApiPolicy(req, res, () => handleAiQueryMetrics(req, res));
     });
     server.middlewares.use('/api/ai-compare-metrics', (req, res) => {
-      void handleAiCompareMetrics(req, res);
+      void runWithApiPolicy(req, res, () => handleAiCompareMetrics(req, res));
     });
     server.middlewares.use('/api/ai-explain', (req, res) => {
-      void handleAiExplain(req, res);
+      void runWithApiPolicy(req, res, () => handleAiExplain(req, res));
+    });
+    server.middlewares.use('/api/assistant/stream', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleAiAssistantStream(req, res));
     });
     server.middlewares.use('/api/assistant', (req, res) => {
-      void handleAiAssistant(req, res);
+      void runWithApiPolicy(req, res, () => handleAiAssistant(req, res));
     });
     server.middlewares.use('/api/config', (req, res) => {
-      handleConfig(req, res);
+      void runWithApiPolicy(req, res, () => handleConfig(req, res));
     });
   },
 });
@@ -74,5 +92,30 @@ export default defineConfig({
   plugins: [react(), aiBuildPlugin()],
   server: {
     port: 5173,
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replaceAll('\\\\', '/');
+          if (normalized.includes('/node_modules/')) {
+            if (normalized.includes('/pixi.js/')) return 'vendor-pixi';
+            if (normalized.includes('/lucide-react/')) return 'vendor-icons';
+            if (
+              normalized.includes('/react/') ||
+              normalized.includes('/react-dom/') ||
+              normalized.includes('/scheduler/')
+            ) {
+              return 'vendor-react';
+            }
+            if (normalized.includes('/zustand/')) return 'vendor-state';
+            if (normalized.includes('/@logicpilot/')) return 'vendor-logicpilot';
+            return 'vendor';
+          }
+          if (normalized.includes('/src/ai/')) return 'feature-ai';
+          return undefined;
+        },
+      },
+    },
   },
 });

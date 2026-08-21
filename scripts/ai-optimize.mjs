@@ -12,8 +12,7 @@ import { ruleBasedProvider } from './ai-provider.mjs';
 
 function parseOptimizeSpec(prompt) {
   const text = prompt.toLowerCase();
-  const objective =
-      /maximize/.test(text) ? 'maximize' : 'minimize';
+  const objective = /maximize/.test(text) ? 'maximize' : 'minimize';
   let metric = 'Wq';
   if (/throughput/.test(text)) metric = 'throughput';
   else if (/\bwait\b|mean_wait|wq/.test(text)) metric = 'Wq';
@@ -53,12 +52,13 @@ function experimentBlock(spec) {
 
 export async function aiOptimize({
   prompt,
+  contextDsl = '',
   lpcli = '',
   budget = 20,
   strategy = 'auto',
 }) {
   const spec = parseOptimizeSpec(prompt);
-  const base = ruleBasedProvider(prompt);
+  const base = contextDsl.trim() ? contextDsl : ruleBasedProvider(prompt);
   const template = parameterize(base, spec.variable);
   const resolvedLpcli = lpcli || process.env.LPCLI || findLpcli();
   let declaredByModel = false;
@@ -119,9 +119,7 @@ async function main() {
   const lpcli = lpcliFlag >= 0 && argv[lpcliFlag + 1] ? argv[lpcliFlag + 1] : '';
   const prompt = argv.filter((arg) => !arg.startsWith('--')).join(' ');
   if (!prompt) {
-    console.error(
-        'usage: node scripts/ai-optimize.mjs "<prompt>" [--json] ' +
-        '[--lpcli <path>]');
+    console.error('usage: node scripts/ai-optimize.mjs "<prompt>" [--json] ' + '[--lpcli <path>]');
     process.exit(2);
   }
   const result = await aiOptimize({ prompt, lpcli });
@@ -129,14 +127,16 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
   } else {
     console.log(
-        `[ai-optimize] best ${result.variable}=${result.best.value} ` +
+      `[ai-optimize] best ${result.variable}=${result.best.value} ` +
         `${result.objective} ${result.metric} -> ${result.best.score} ` +
-        `(${result.strategy}, ${result.evaluations.length} evaluations)`);
+        `(${result.strategy}, ${result.evaluations.length} evaluations)`,
+    );
   }
 }
 
-if (process.argv[1] &&
-    import.meta.url ===
-        new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href
+) {
   main();
 }

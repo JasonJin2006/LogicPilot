@@ -8,6 +8,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { getPersistStorage } from './persistStorage';
 
 export interface CustomBlockDef {
   kind: string;
@@ -92,7 +93,7 @@ export const usePaletteStore = create<PaletteState>()(
     {
       name: 'logicpilot.palette',
       version: 1,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => getPersistStorage()),
       partialize: (state) => ({
         library: state.library,
         customLibraries: state.customLibraries,

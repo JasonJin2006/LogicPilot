@@ -105,6 +105,7 @@ function renderDiagnostics(diagnostics: Array<{ code: string; message: string }>
 
 export interface ContextInput {
   projectName: string;
+  workspaceRoot?: string;
   document: ModelDocument;
   selectedId: string | null;
   session: AssistantSessionState;
@@ -116,6 +117,7 @@ export function buildAssistantContext(input: ContextInput): AssistantContext {
   const dsl = session.dsl && document === session.documentSnapshot ? session.dsl : '';
   return {
     project: input.projectName,
+    ...(input.workspaceRoot === undefined ? {} : { workspaceRoot: input.workspaceRoot }),
     modelSummary: renderSummary(document),
     selection: renderSelection(document, selectedId),
     dsl: dsl.slice(0, MAX_DSL_CHARS),

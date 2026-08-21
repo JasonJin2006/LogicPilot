@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useAiConversationStore } from './conversationStore';
+import { createAssistantKernel } from './assistantKernel';
 
 describe('AI conversation store', () => {
-  beforeEach(() => useAiConversationStore.setState({ histories: {} }));
+  beforeEach(() =>
+    useAiConversationStore.setState({ histories: {}, checkpoints: {}, sessions: [] }),
+  );
 
   it('isolates applied tool history by model scope', () => {
     useAiConversationStore.getState().append('project:a', {
@@ -43,5 +46,27 @@ describe('AI conversation store', () => {
     useAiConversationStore.getState().move('model:Old', 'model:New');
     expect(useAiConversationStore.getState().histories['model:Old']).toBeUndefined();
     expect(useAiConversationStore.getState().histories['model:New']).toHaveLength(1);
+  });
+
+  it('persists and clears an unfinished Agent checkpoint by scope', () => {
+    const kernel = createAssistantKernel();
+    kernel.beginTurn({ role: 'user', content: 'resume me' });
+    kernel.beginStep();
+    const checkpoint = kernel.checkpoint();
+    useAiConversationStore.getState().saveCheckpoint('project:a', checkpoint);
+    expect(useAiConversationStore.getState().checkpoints['project:a']?.version).toBe(1);
+    useAiConversationStore.getState().clearCheckpoint('project:a');
+    expect(useAiConversationStore.getState().checkpoints['project:a']).toBeUndefined();
+  });
+
+  it('creates, pins and archives independent sessions', () => {
+    const id = useAiConversationStore
+      .getState()
+      .createSession('workspace:demo', 'Build a call center');
+    expect(useAiConversationStore.getState().sessions[0]?.title).toBe('Build a call center');
+    useAiConversationStore.getState().pinSession(id);
+    expect(useAiConversationStore.getState().sessions[0]?.pinned).toBe(true);
+    useAiConversationStore.getState().archiveSession(id);
+    expect(useAiConversationStore.getState().sessions[0]?.archived).toBe(true);
   });
 });
