@@ -223,6 +223,48 @@ std::vector<std::uint8_t> build_statechart_ir() {
                                        builder.GetSize());
 }
 
+std::vector<std::uint8_t> build_competing_timeout_statechart_ir() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto waiting = v2::CreateState(builder, builder.CreateString("waiting"));
+  const auto slow = v2::CreateState(builder, builder.CreateString("slow"));
+  const auto fast = v2::CreateState(builder, builder.CreateString("fast"));
+  const auto to_slow = v2::CreateTransition(
+      builder, builder.CreateString("waiting"), builder.CreateString("slow"),
+      v2::TriggerKind_Timeout, 5.0, 0, 0.0, 0, 0, 0);
+  const auto to_fast = v2::CreateTransition(
+      builder, builder.CreateString("waiting"), builder.CreateString("fast"),
+      v2::TriggerKind_Timeout, 1.0, 0, 0.0, 0, 0, 0);
+  const auto chart = v2::CreateStatechart(
+      builder,
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::State>>{
+          waiting, slow, fast}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<v2::Transition>>{to_slow, to_fast}),
+      builder.CreateString("waiting"));
+  const auto child = v2::CreateNode(
+      builder, v2::CreateMetadata(builder, builder.CreateString("Race"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("statechart"),
+                             builder.CreateString("statechart"), 0, 0),
+      0, 0, chart, 0, 0);
+  const auto root = v2::CreateNode(
+      builder,
+      v2::CreateMetadata(builder, builder.CreateString("RaceModel"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{
+          var_string(builder, "guard:0", "false"),
+          var_string(builder, "guard:1", "true")}),
+      0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("core"),
+                             builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Node>>{child}),
+      0, 0, 0, 0);
+  builder.Finish(v2::CreateModelFile(builder, 2, root, 0, 0), "LP2R");
+  return std::vector<std::uint8_t>(builder.GetBufferPointer(),
+                                   builder.GetBufferPointer() + builder.GetSize());
+}
+
 std::vector<std::uint8_t> build_multi_statechart_ir() {
   flatbuffers::FlatBufferBuilder builder;
   const auto sender = coupled_statechart_node(builder, "Sender", true);
@@ -340,6 +382,24 @@ TEST_CASE("simulation kernel: single-method statechart matches the batch path",
   REQUIRE(metrics[0].departures == baseline.departures);
   REQUIRE(metrics[0].final_value == baseline.final_value);
   REQUIRE(metrics[0].horizon_seconds == baseline.horizon_seconds);
+}
+
+TEST_CASE("statechart competing timeouts keep per-transition identity",
+          "[runtime][statechart][timeout]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_competing_timeout_statechart_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  ReplicationConfig config = test_config();
+  config.arrivals = 1;
+  const auto metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  // The one-second transition is declared second. It must win by time, not
+  // inherit the first transition's shared timeout event id.
+  REQUIRE(metrics[0].final_value == 2.0);
+  REQUIRE(metrics[0].horizon_seconds == 1.0);
 }
 
 TEST_CASE("simulation kernel: statechart coupling routes at event time",

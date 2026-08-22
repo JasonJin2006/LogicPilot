@@ -62,11 +62,10 @@ constexpr EventType kConditionPollType = 31;
 // of looping forever.
 constexpr double kConditionPollDt = 0.05;
 constexpr std::uint64_t kMaxConditionPolls = 20000;
-// FSM event ids: timed triggers use dedicated slots so a state may own both
-// a timeout and a rate transition; messages and conditions get ids >= 2.
-constexpr FsmEventId kTimeoutFsmEvent = 0;
-constexpr FsmEventId kRateFsmEvent = 1;
-constexpr FsmEventId kFirstDynamicFsmEvent = 2;
+// Every IR transition gets its own FSM event id. A trigger kind (timeout,
+// rate, message) is not an event identity: two transitions from the same state
+// may have the same trigger kind but different targets, guards or actions.
+constexpr FsmEventId kFirstDynamicFsmEvent = 0;
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
@@ -99,7 +98,7 @@ struct StatechartReplicationModel::Impl {
   std::unordered_set<StateId> final_states;
   std::unordered_set<StateId> history_states;
   std::unordered_map<StateId, std::vector<BranchExit>> branch_targets;
-  std::unordered_map<std::string, FsmEventId> message_events;
+  std::unordered_map<std::string, std::vector<FsmEventId>> message_events;
   std::unordered_map<FsmEventId, std::vector<std::string>> emitted_ports;
   std::unordered_map<FsmEventId, std::string> guard_text;
   std::vector<std::string> emitted_messages;
@@ -330,8 +329,8 @@ struct StatechartReplicationModel::Impl {
   bool register_transition(const Transition* transition,
                            const std::unordered_map<std::string, StateId>&
                                by_name,
-                           std::unordered_map<std::string, FsmEventId>&
-                               message_events,
+                            std::unordered_map<std::string, std::vector<FsmEventId>>&
+                                message_events,
                            FsmEventId& next_dynamic_event,
                            const std::string& guard) {
     const auto from_it = by_name.find(transition->from()->str());
@@ -357,11 +356,11 @@ struct StatechartReplicationModel::Impl {
         const double value = transition->timeout_value();
         sampler = [value](Xoshiro256PlusPlus&) { return value; };
       }
-      timed_triggers[from].push_back(TimedTrigger{kTimeoutFsmEvent,
-                                                  std::move(sampler)});
-      definition.add_transition(from, kTimeoutFsmEvent, to);
-      record_emits(transition, kTimeoutFsmEvent);
-      if (!guard.empty()) guard_text[kTimeoutFsmEvent] = guard;
+      const FsmEventId event = next_dynamic_event++;
+      timed_triggers[from].push_back(TimedTrigger{event, std::move(sampler)});
+      definition.add_transition(from, event, to);
+      record_emits(transition, event);
+      if (!guard.empty()) guard_text[event] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Rate) {
@@ -370,11 +369,11 @@ struct StatechartReplicationModel::Impl {
         Exponential<Xoshiro256PlusPlus> dist{rate};
         return dist(engine);
       };
-      timed_triggers[from].push_back(TimedTrigger{kRateFsmEvent,
-                                                  std::move(sampler)});
-      definition.add_transition(from, kRateFsmEvent, to);
-      record_emits(transition, kRateFsmEvent);
-      if (!guard.empty()) guard_text[kRateFsmEvent] = guard;
+      const FsmEventId event = next_dynamic_event++;
+      timed_triggers[from].push_back(TimedTrigger{event, std::move(sampler)});
+      definition.add_transition(from, event, to);
+      record_emits(transition, event);
+      if (!guard.empty()) guard_text[event] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Message) {
@@ -382,13 +381,11 @@ struct StatechartReplicationModel::Impl {
           transition->message_port() != nullptr
               ? transition->message_port()->str()
               : "";
-      auto it = message_events.find(port);
-      if (it == message_events.end()) {
-        it = message_events.emplace(port, next_dynamic_event++).first;
-      }
-      definition.add_transition(from, it->second, to);
-      record_emits(transition, it->second);
-      if (!guard.empty()) guard_text[it->second] = guard;
+      const FsmEventId event = next_dynamic_event++;
+      message_events[port].push_back(event);
+      definition.add_transition(from, event, to);
+      record_emits(transition, event);
+      if (!guard.empty()) guard_text[event] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Condition) {
@@ -479,7 +476,7 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
 
   // Transitions. Branch exits carry no trigger and are resolved on entry;
   // everything else goes onto the FSM table.
-  std::unordered_map<std::string, FsmEventId> message_events;
+  std::unordered_map<std::string, std::vector<FsmEventId>> message_events;
   FsmEventId next_dynamic_event = kFirstDynamicFsmEvent;
   std::size_t transition_index = 0;
   if (chart->transitions() != nullptr) {
@@ -642,20 +639,23 @@ bool StatechartReplicationModel::has_pending_events() {
 
 bool StatechartReplicationModel::dispatch_message(const std::string& port) {
   if (impl_ == nullptr || impl_->done_) return false;
-  const auto event = impl_->message_events.find(port);
-  if (event == impl_->message_events.end()) return false;
-  const StateId from = impl_->machine.current();
-  FsmContext context;
-  if (!impl_->guard_allows(event->second) ||
-      !impl_->machine.dispatch(impl_->definition, event->second, context)) {
-    return false;
+  const auto events = impl_->message_events.find(port);
+  if (events == impl_->message_events.end()) return false;
+  for (const FsmEventId event : events->second) {
+    const StateId from = impl_->machine.current();
+    FsmContext context;
+    if (!impl_->guard_allows(event) ||
+        !impl_->machine.dispatch(impl_->definition, event, context)) {
+      continue;
+    }
+    impl_->last_visited = from;
+    ++impl_->steps_;
+    impl_->emit_for(event);
+    impl_->settle();
+    impl_->reschedule_triggers(impl_->machine.current());
+    return true;
   }
-  impl_->last_visited = from;
-  ++impl_->steps_;
-  impl_->emit_for(event->second);
-  impl_->settle();
-  impl_->reschedule_triggers(impl_->machine.current());
-  return true;
+  return false;
 }
 
 std::vector<std::string> StatechartReplicationModel::take_emitted_messages() {
