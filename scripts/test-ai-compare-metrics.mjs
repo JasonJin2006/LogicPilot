@@ -21,6 +21,8 @@ const compared = compareMetrics({
 assert.equal(compared.kind, 'metric-comparison');
 assert.equal(compared.summary.sinkDeparturesDelta, 18);
 assert.equal(compared.summary.timeoutsDelta, -2);
+assert.equal(compared.summary.matchedReplicationPairs, 0);
+assert.equal(compared.statisticalEvidence.status, 'insufficient-data');
 assert.equal(
   compared.blocks.find((block) => block.name === 'Waiting').metrics.mean_occupancy.delta,
   -3,
@@ -52,6 +54,14 @@ assert.equal(paired.statistical.find((entry) => entry.metric === 'throughput').c
 assert.equal(paired.statistical.find((entry) => entry.metric === 'Lq').conclusion, 'decrease');
 assert.equal(paired.statistical.find((entry) => entry.metric === 'availability').conclusion, 'inconclusive');
 assert.ok(paired.findings.some((finding) => /statistically supported decrease/.test(finding)));
+assert.equal(paired.statisticalEvidence.status, 'available');
+
+const incomplete = compareMetrics({
+  before: { blocks: [], replications: [{ rep: 1, seed: 1, Wq: 2 }] },
+  after: { blocks: [], replications: [{ rep: 1, seed: 1, Wq: 1 }] },
+});
+assert.equal(incomplete.statisticalEvidence.status, 'insufficient-data');
+assert.deepEqual(incomplete.statistical, []);
 
 assert.throws(() => compareMetrics({ before: {}, after: {} }), /structured block metrics/);
 assert.throws(

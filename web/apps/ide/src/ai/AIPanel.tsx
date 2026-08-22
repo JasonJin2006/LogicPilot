@@ -1552,6 +1552,10 @@ export function AIPanel() {
         {comparison !== null && (
           <div className="ai-result">
             <p className="ai-meta">Before/after comparison using identical run settings</p>
+            <p className="ai-meta">
+              paired evidence: {comparison.statisticalEvidence.matchedReplicationPairs} matching
+              replication pair(s)
+            </p>
             <ul className="ai-findings">
               {comparison.findings.map((finding, index) => (
                 <li key={index}>{finding}</li>
@@ -1579,6 +1583,29 @@ export function AIPanel() {
                 ))}
               </tbody>
             </table>
+            {comparison.statistical.length > 0 && (
+              <table className="ai-scores" aria-label="Paired statistical comparison">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th>Mean Δ</th>
+                    <th>CI</th>
+                    <th>Conclusion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.statistical.map((entry) => (
+                    <tr key={entry.metric}>
+                      <td>{entry.metric}</td>
+                      <td>{entry.meanDifference.toFixed(4)}</td>
+                      <td>{'[' + entry.ciLow.toFixed(4) + ', ' + entry.ciHigh.toFixed(4) + ']'}</td>
+                      <td>{entry.conclusion}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="ai-meta">{comparison.statisticalEvidence.caveat}</p>
           </div>
         )}
         <div ref={threadEndRef} className="ai-thread-end" aria-hidden />

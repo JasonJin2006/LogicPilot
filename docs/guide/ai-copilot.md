@@ -275,7 +275,8 @@ SSE 的自定义网关自动回退到完整响应。最终的结构化 assistant
 
 主助手还可直接调用 `run_parameter_study`、`optimize_model`、`explain_results` 和
 `compare_runs`。优化会携带当前模型 DSL，结果解释和运行对比只引用真实工具返回的指标，
-不会把示例数字当成仿真证据。
+不会把示例数字当成仿真证据。`compare_runs` 只对相同 `rep + seed` 的复制做 paired
+CI；缺失或不足两组匹配复制时会明确显示 evidence 不足，不会把缺失指标当作 0。
 
 IDE 右侧 **AI** 面板是连续对话入口，自动选择建模、运行、优化或解释路径；高级
 快速操作仍保留在输入区的折叠菜单中。轨迹曲线、参数搜索和指标比较继续使用相同

@@ -49,14 +49,14 @@ function studentCritical(confidence, degreesOfFreedom) {
 }
 
 function pairedStatistics(before, after, confidence) {
-  if (!Array.isArray(before.replications) || !Array.isArray(after.replications)) return [];
-  const beforeByPair = new Map(before.replications.map((rep) => [`${rep.rep}:${rep.seed}`, rep]));
-  const pairs = after.replications
-    .map((rep) => [beforeByPair.get(`${rep.rep}:${rep.seed}`), rep])
-    .filter(([previous]) => previous != null);
+  const pairs = pairedReplicationPairs(before, after);
   if (pairs.length < 2) return [];
   return REPLICATION_METRICS.map((metric) => {
-    const differences = pairs.map(([previous, current]) => finite(current[metric]) - finite(previous[metric]));
+    const differences = pairs
+      .map(([previous, current]) => [previous[metric], current[metric]])
+      .filter(([previous, current]) => Number.isFinite(previous) && Number.isFinite(current))
+      .map(([previous, current]) => current - previous);
+    if (differences.length < 2) return null;
     const mean = differences.reduce((sum, value) => sum + value, 0) / differences.length;
     const variance = differences.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
       (differences.length - 1);
@@ -73,7 +73,15 @@ function pairedStatistics(before, after, confidence) {
       ciHigh,
       conclusion: ciLow > 0 ? 'increase' : ciHigh < 0 ? 'decrease' : 'inconclusive',
     };
-  });
+  }).filter((entry) => entry != null);
+}
+
+function pairedReplicationPairs(before, after) {
+  if (!Array.isArray(before.replications) || !Array.isArray(after.replications)) return [];
+  const beforeByPair = new Map(before.replications.map((rep) => [`${rep.rep}:${rep.seed}`, rep]));
+  return after.replications
+    .map((rep) => [beforeByPair.get(`${rep.rep}:${rep.seed}`), rep])
+    .filter(([previous]) => previous != null);
 }
 
 function finite(value) {
@@ -163,6 +171,26 @@ export function compareMetrics({ before, after, confidence = 0.95 }) {
       );
     }
   }
+  const matchedReplicationPairs = pairedReplicationPairs(before, after).length;
+  const statisticalEvidence = {
+    matchedReplicationPairs,
+    minimumPairs: 2,
+    status:
+      matchedReplicationPairs < 2
+        ? 'insufficient-data'
+        : statistical.length < REPLICATION_METRICS.length
+          ? 'partial'
+          : 'available',
+    caveat:
+      matchedReplicationPairs < 2
+        ? 'At least two matching replication seeds are required for paired confidence intervals.'
+        : statistical.length < REPLICATION_METRICS.length
+          ? 'Some metrics lacked two finite values and were excluded from paired inference.'
+          : 'Paired confidence intervals use matching replication numbers and seeds.',
+  };
+  if (statisticalEvidence.status !== 'available') {
+    findings.push(`Statistical comparison: ${statisticalEvidence.caveat}`);
+  }
   const timeoutBefore = before.blocks.reduce((sum, block) => sum + finite(block.timed_out_mean), 0);
   const timeoutAfter = after.blocks.reduce((sum, block) => sum + finite(block.timed_out_mean), 0);
   const timeoutDelta = timeoutAfter - timeoutBefore;
@@ -181,8 +209,10 @@ export function compareMetrics({ before, after, confidence = 0.95 }) {
       timeoutsBefore: timeoutBefore,
       timeoutsAfter: timeoutAfter,
       timeoutsDelta: timeoutDelta,
+      matchedReplicationPairs,
     },
     blocks,
     statistical,
+    statisticalEvidence,
   };
 }

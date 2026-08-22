@@ -194,6 +194,7 @@ export interface MetricComparisonResult {
     timeoutsBefore: number;
     timeoutsAfter: number;
     timeoutsDelta: number;
+    matchedReplicationPairs: number;
   };
   blocks: Array<{
     key: string;
@@ -217,6 +218,12 @@ export interface MetricComparisonResult {
     ciHigh: number;
     conclusion: 'increase' | 'decrease' | 'inconclusive';
   }>;
+  statisticalEvidence: {
+    matchedReplicationPairs: number;
+    minimumPairs: number;
+    status: 'available' | 'partial' | 'insufficient-data';
+    caveat: string;
+  };
 }
 
 async function post<T>(
