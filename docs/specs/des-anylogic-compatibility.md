@@ -23,7 +23,7 @@ Status meanings:
 | Source | first arrival after timeout / at start / at time | E2E | Absolute time is relative to model start in the current single-run lifecycle |
 | Source | multiple agents per arrival | E2E | Constant integer `agentsPerArrival`; expression-valued batch size is planned |
 | Source | limited number of arrivals | E2E | Limit counts arrival events, not generated agents |
-| Source | manual injection | Partial | An inert manual Source is representable; public `inject()`/AI tool command is not implemented |
+| Source | manual injection | Partial | `lp-server` exposes `inject {port: <source>, payload: <count>}` for manual Source arrivals; direct lpcli/AI tool injection and scheduled/database sources remain unimplemented |
 | Source | database, rate schedule, arrival schedule | Planned | Construction fails explicitly instead of silently using `arrival` |
 | Queue | finite/unbounded capacity | E2E | Backpressure is propagated upstream |
 | Queue | FIFO / LIFO / priority / comparison | E2E | Entity-identity routing proves priority/comparison victim order; invalid or incomplete comparison modes fail at compile time |

@@ -1379,6 +1379,50 @@ done:
   server.stop();
 }
 
+TEST_CASE("lp-server injects manual process source arrivals before start",
+          "[server][integration][flow][inject]") {
+  const std::string source = R"(model ManualFlow {
+  source In { arrivalType = "manual" arrival = constant(1.0) }
+  sink Out { }
+  couple In.out -> Out.in
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(R"({"cmd":"inject","port":"In","payload":3})");
+  REQUIRE(read_next_text(client).find("\"ok\":true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":3,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  std::map<std::string, double> last_counters;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      last_counters = counters_to_map(frame.counters->values());
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(last_counters.at("block.Out.arrived") == 3.0);
+  REQUIRE(last_counters.at("block.Out.departed") == 3.0);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server start honors per-run model parameter overrides",
           "[server][integration]") {
   logicpilot::server::SimServer server{make_test_config()};

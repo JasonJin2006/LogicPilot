@@ -147,6 +147,9 @@ source 声明的属性名（`LP5006` 校验放行）；`split` 复制实体时�
   影响业务的维护事件会被清理，调度器停在精确的业务结束时刻（horizon 与
   时间积分指标不受未来故障时间影响；generation 校验只是第二层防御，不能
   阻止事件被弹出前 run_until 已发生的时钟推进——事件本身会被取消）。
+  `arrivalType = "manual"` 的 Source 可通过网关控制帧
+  `{"cmd":"inject","port":"<SourceName>","payload":N}` 注入 N 个外部到达，
+  也可在 `start` 前排队；直接 `lpcli`/AI 注入接口仍未提供。
 - **普通输出端口不允许隐式扇出**：一个 process 输出端口最多连接一个下游
   （`couple A.out -> B.in` + `couple A.out -> C.in` 会在编译期报 `LP5007`）。
   需要复制实体时必须显式使用 `split`（原件走 `out`、副本走 `outCopy`，

@@ -41,7 +41,6 @@ class FlowEngine : public ReplicationModel {
   virtual std::size_t advance(SimTime until, TraceRecorder* trace) = 0;
   [[nodiscard]] virtual ReplicationMetrics metrics() const = 0;
   virtual void attach(RuntimeContext& context) = 0;
-
   // Exact current simulation time in nanoseconds. The engine clock only
   // advances to real event times, never to slice boundaries, so final
   // telemetry frames must use this instead of converting

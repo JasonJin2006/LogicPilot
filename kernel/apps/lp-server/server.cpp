@@ -36,6 +36,7 @@
 #include "wire_frames.h"
 #include "statechart_network.h"
 #include "statechart/statechart_replication.h"
+#include "process_flow.h"
 #include <wire_generated.h>
 
 #ifdef LOGICPILOT_HAS_DSL
@@ -557,6 +558,13 @@ struct SimServer::Impl {
     }
   }
 
+  void apply_pending_inputs(FlowEngine& flow) {
+    auto* process = dynamic_cast<ProcessFlowSim*>(&flow);
+    for (const ExternalInput& input : take_pending_inputs()) {
+      if (process != nullptr) process->inject(input.port, input.payload);
+    }
+  }
+
   // --- simulation worker -----------------------------------------------------
 
   void worker_loop() {
@@ -1067,6 +1075,8 @@ struct SimServer::Impl {
           break;
         }
       }
+
+      apply_pending_inputs(flow);
 
       if (!animated && frames >= kFastFrameBudget - 1) {
         // Telemetry budget spent (one frame is reserved for the final

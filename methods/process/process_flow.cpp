@@ -1,4 +1,5 @@
-// Generic process-flow executor implementation (see process_flow.h).
+// Generic process-flow executor implementation (see process_flow.h), including
+// manual Source injection.
 //
 // Push-protocol model: tokens advance block-by-block. A token is accepted
 // by a downstream block only when that block can start processing it now
@@ -620,6 +621,24 @@ class Engine final : public BlockContext {
   }
 
   bool has_pending_events() { return !scheduler().empty(); }
+
+  bool inject_source(const std::string& source_name, std::uint64_t count) {
+    const auto it = index_.find(source_name);
+    if (it == index_.end() || !blocks_[it->second]->source_is_manual()) {
+      return false;
+    }
+    const std::size_t source = it->second;
+    const std::uint64_t requested = std::max<std::uint64_t>(count, 1);
+    bool accepted = false;
+    manual_injection_ = true;
+    for (std::uint64_t i = 0; i < requested; ++i) {
+      if (arrival_events_ >= config_.arrivals) break;
+      on_arrive(Event{clock().now(), 0, arrive_handler_, source});
+      accepted = true;
+    }
+    manual_injection_ = false;
+    return accepted;
+  }
 
   // Exact engine clock time: advanced only to real event times.
   [[nodiscard]] std::int64_t now_ns() const { return clock().now().as_ns(); }
@@ -1273,6 +1292,13 @@ class Engine final : public BlockContext {
       }
       pump(source);
     }
+    if (manual_injection_) {
+      if (arrival_events_ >= config_.arrivals) {
+        cancel_all_pending_source_arrivals();
+        source_exhausted_[source] = true;
+      }
+      return;
+    }
     const bool global_ok = arrival_events_ < config_.arrivals;
     const bool local_ok =
         source_limit < 0 ||
@@ -1722,6 +1748,7 @@ class Engine final : public BlockContext {
   // source that could still fire one, together with in_system == 0.
   std::vector<EventToken> source_arrival_tokens_;
   std::vector<bool> source_exhausted_;
+  bool manual_injection_{false};
   // Pending block-level failure/repair/timeout events, keyed by
   // (EventType, payload) so different event kinds of the same block/entity
   // never overwrite or erase each other's tokens. They may outlive a reset
@@ -1816,6 +1843,10 @@ bool ProcessFlowSim::has_pending_events() {
     return false;
   }
   return impl_->engine.has_pending_events();
+}
+
+bool ProcessFlowSim::inject(const std::string& source, std::uint64_t count) {
+  return impl_ != nullptr && impl_->engine.inject_source(source, count);
 }
 
 std::int64_t ProcessFlowSim::now_ns() const {
