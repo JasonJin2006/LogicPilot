@@ -7,6 +7,7 @@ const METRICS = [
   'utilization',
   'timed_out_mean',
   'preempted_mean',
+  'mean_wait',
 ];
 
 const REPLICATION_METRICS = ['throughput', 'L', 'Lq', 'W', 'Wq', 'utilization', 'availability'];

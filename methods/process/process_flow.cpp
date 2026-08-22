@@ -750,6 +750,8 @@ class Engine final : public BlockContext {
     sojourn_count_ = 0;
     wait_sum_ = 0.0;
     wait_count_ = 0;
+    block_wait_sum_.assign(blocks_.size(), 0.0);
+    block_wait_count_.assign(blocks_.size(), 0);
     measure_sum_ = 0.0;
     measure_count_ = 0;
     servers_total_ = 0;
@@ -990,6 +992,11 @@ class Engine final : public BlockContext {
                         static_cast<double>(utilization_capacity);
         }
       }
+      item.wait_count = block_wait_count_[block_index];
+      item.mean_wait = item.wait_count > 0
+                           ? block_wait_sum_[block_index] /
+                                 static_cast<double>(item.wait_count)
+                           : 0.0;
       metrics.blocks.push_back(std::move(item));
     }
     return metrics;
@@ -1034,6 +1041,7 @@ class Engine final : public BlockContext {
     clone.id = emitted_;
     clone.created_ns = clock().now().as_ns();
     clone.service_start_ns = clone.created_ns;
+    clone.stage_arrival_ns = clone.created_ns;
     clone.contents.clear();
     clone.resources.clear();
     clone.has_measure = false;
@@ -1128,6 +1136,19 @@ class Engine final : public BlockContext {
           1e-9;
       ++wait_count_;
     }
+  }
+
+  void record_stage_wait(const Entity& entity) override {
+    if (entity.root_arrival_index < warmup_ ||
+        current_ >= blocks_.size() || current_ >= block_wait_sum_.size() ||
+        current_ >= block_wait_count_.size()) {
+      return;
+    }
+    const std::int64_t elapsed =
+        std::max<std::int64_t>(clock().now().as_ns() - entity.stage_arrival_ns,
+                               0);
+    block_wait_sum_[current_] += static_cast<double>(elapsed) * 1e-9;
+    ++block_wait_count_[current_];
   }
 
   bool try_seize(const std::string& resource, std::int64_t quantity) override {
@@ -1282,6 +1303,7 @@ class Engine final : public BlockContext {
       entity.root_arrival_index = arrival_index;
       entity.created_ns = clock().now().as_ns();
       entity.service_start_ns = entity.created_ns;
+      entity.stage_arrival_ns = entity.created_ns;
       entity.attributes = blocks_[source]->attribute_defaults();
       ++emitted_;
       ++in_system_;
@@ -1644,7 +1666,9 @@ class Engine final : public BlockContext {
     if (!block.can_accept(entity)) {
       return false;
     }
-    block.receive(entity, port);
+    Entity admitted = entity;
+    admitted.stage_arrival_ns = clock().now().as_ns();
+    block.receive(admitted, port);
     return true;
   }
 
@@ -1764,6 +1788,8 @@ class Engine final : public BlockContext {
   std::uint64_t sojourn_count_{0};
   double wait_sum_{0.0};
   std::uint64_t wait_count_{0};
+  std::vector<double> block_wait_sum_;
+  std::vector<std::uint64_t> block_wait_count_;
   double measure_sum_{0.0};
   std::uint64_t measure_count_{0};
   std::uint64_t warmup_{0};

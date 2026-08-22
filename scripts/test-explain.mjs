@@ -32,6 +32,13 @@ if (flag >= 0 && process.argv[flag + 1]) {
     utilization: 0.6, availability: 1.0,
   });
   assert.ok(healthy.some((f) => f.includes('healthy')));
+
+  const stageWait = explainFromSummary(
+    { throughput: 0.5, W: 2, Wq: 0.3, Lq: 0.1, utilization: 0.6, availability: 1.0 },
+    'where is the stage delay?',
+    [{ name: 'SharedService', kind: 'service', mean_wait: 1.75 }],
+  );
+  assert.ok(stageWait.some((f) => f.includes('longest measured stage wait')));
 }
 
 // 2. End-to-end on the failure model: downtime must be called out.

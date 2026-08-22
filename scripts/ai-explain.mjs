@@ -42,6 +42,9 @@ export function explainFromSummary(summary, question = '', blocks = [], metricEv
     .sort((a, b) => finite(b.mean_occupancy) - finite(a.mean_occupancy));
   const busiest = utilized[0];
   const largestQueue = queued[0];
+  const stageWaiting = (blocks ?? [])
+    .filter((block) => finite(block.mean_wait) > 0)
+    .sort((a, b) => finite(b.mean_wait) - finite(a.mean_wait))[0];
   const waitShare = summary.W > 0 ? summary.Wq / summary.W : 0;
   if (busiest) {
     const saturation =
@@ -69,6 +72,13 @@ export function explainFromSummary(summary, question = '', blocks = [], metricEv
     findings.push(
       `${largestQueue.name} has the largest mean queue occupancy at ` +
         `${finite(largestQueue.mean_occupancy).toFixed(3)} agents`,
+    );
+  }
+  if (stageWaiting) {
+    findings.push(
+      `${stageWaiting.name} has the longest measured stage wait at ` +
+        `${finite(stageWaiting.mean_wait).toFixed(3)} time units ` +
+        '(stage evidence, excluding warm-up entities).',
     );
   }
   if (waitShare > 0.6) {

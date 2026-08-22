@@ -90,7 +90,7 @@ function renderMetrics(metrics: AiMetrics): string {
   }
   for (const block of metrics.blocks ?? []) {
     lines.push(
-      `block ${block.kind} '${block.name}': arrived=${block.arrived_mean.toFixed(0)} departed=${block.departed_mean.toFixed(0)} util=${(block.utilization * 100).toFixed(1)}% occupancy=${block.mean_occupancy.toFixed(3)} timeouts=${block.timed_out_mean.toFixed(0)}`,
+      `block ${block.kind} '${block.name}': arrived=${block.arrived_mean.toFixed(0)} departed=${block.departed_mean.toFixed(0)} util=${(block.utilization * 100).toFixed(1)}% occupancy=${block.mean_occupancy.toFixed(3)} stageWait=${block.mean_wait.toFixed(3)} timeouts=${block.timed_out_mean.toFixed(0)}`,
     );
   }
   return lines.join('\n');

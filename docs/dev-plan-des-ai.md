@@ -186,7 +186,9 @@ remain an explicit user-facing diagnostic rather than an arbitrary choice.
   typed top-level parameter overrides, Cartesian combinations, concurrent
   iterations, fixed/precision replications, fixed/random seeds and confidence
   intervals. Freeform value sets and Monte Carlo sampling remain separate work.
-- Continue grounding explanations in topology plus structured metrics.
+- ✅ Ground explanations in topology plus structured metrics, including per-stage
+  `mean_wait` / `wait_count` for generic process flows; deeper intervention-level
+  causal inference remains future work.
 
 Exit criterion: AI answers "where is the bottleneck and what change helped?"
 from two reproducible experiment results.

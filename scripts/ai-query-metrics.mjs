@@ -23,6 +23,9 @@ export function queryMetrics({ question, metrics, model }) {
   const preempted = blocks
     .filter((block) => finite(block.preempted_mean) > 0)
     .sort((a, b) => finite(b.preempted_mean) - finite(a.preempted_mean));
+  const stageWaiting = blocks
+    .filter((block) => finite(block.mean_wait) > 0)
+    .sort((a, b) => finite(b.mean_wait) - finite(a.mean_wait));
   const blockFindings = blocks
     .map((block) => ({
       name: String(block.name ?? 'unknown'),
@@ -30,6 +33,7 @@ export function queryMetrics({ question, metrics, model }) {
       utilization: finite(block.utilization),
       availability: finite(block.availability),
       meanOccupancy: finite(block.mean_occupancy),
+      meanWait: finite(block.mean_wait),
       timedOut: finite(block.timed_out_mean),
       preempted: finite(block.preempted_mean),
     }))
@@ -37,8 +41,10 @@ export function queryMetrics({ question, metrics, model }) {
       (a, b) =>
         b.utilization +
         b.meanOccupancy * 0.01 +
+        b.meanWait * 0.01 +
         b.timedOut * 0.01 -
-        (a.utilization + a.meanOccupancy * 0.01 + a.timedOut * 0.01),
+        (a.utilization + a.meanOccupancy * 0.01 + a.meanWait * 0.01 +
+          a.timedOut * 0.01),
     )
     .slice(0, 5);
   const causalChain = buildCausalChain(model, utilized[0]?.name, queued[0]?.name);
@@ -74,10 +80,17 @@ export function queryMetrics({ question, metrics, model }) {
         'mean preempted agents per replication.',
     );
   }
+  if (stageWaiting[0]) {
+    findings.push(
+      `${stageWaiting[0].name} has the longest measured stage wait at ` +
+        `${finite(stageWaiting[0].mean_wait).toFixed(3)} time units.`,
+    );
+  }
   for (const block of blockFindings.slice(0, 3)) {
     const details = [];
     if (block.utilization > 0) details.push(`utilization ${(block.utilization * 100).toFixed(1)}%`);
     if (block.meanOccupancy > 0) details.push(`mean occupancy ${block.meanOccupancy.toFixed(3)}`);
+    if (block.meanWait > 0) details.push(`stage wait ${block.meanWait.toFixed(3)}`);
     if (block.availability > 0 && block.availability < 1)
       details.push(`availability ${(block.availability * 100).toFixed(1)}%`);
     if (block.timedOut > 0) details.push(`timeouts ${block.timedOut.toFixed(1)}`);
@@ -143,6 +156,7 @@ function buildCausalEvidence(blocks, causalChain, bottleneckName, queueName) {
         utilization: null,
         availability: null,
         meanOccupancy: null,
+        meanWait: null,
         timedOut: null,
         preempted: null,
       };
@@ -154,6 +168,7 @@ function buildCausalEvidence(blocks, causalChain, bottleneckName, queueName) {
       utilization: finite(block.utilization),
       availability: finite(block.availability),
       meanOccupancy: finite(block.mean_occupancy),
+      meanWait: finite(block.mean_wait),
       timedOut: finite(block.timed_out_mean),
       preempted: finite(block.preempted_mean),
     };

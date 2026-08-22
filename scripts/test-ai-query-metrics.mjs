@@ -6,8 +6,8 @@ const result = queryMetrics({
   question: 'where is the bottleneck?',
   metrics: {
     blocks: [
-      { name: 'Waiting', kind: 'queue', mean_occupancy: 4.25, utilization: 0, timed_out_mean: 2 },
-      { name: 'Packing', kind: 'service', mean_occupancy: 0.9, utilization: 0.92 },
+      { name: 'Waiting', kind: 'queue', mean_occupancy: 4.25, mean_wait: 2.5, utilization: 0, timed_out_mean: 2 },
+      { name: 'Packing', kind: 'service', mean_occupancy: 0.9, mean_wait: 0.75, utilization: 0.92 },
       { name: 'Audit', kind: 'service', mean_occupancy: 0.2, utilization: 0.35 },
     ],
   },
@@ -31,6 +31,8 @@ assert.ok(result.findings.some((finding) => /timed-out/.test(finding)));
 assert.deepEqual(result.evidence.causalChain, ['Arrivals', 'Waiting', 'Packing']);
 assert.equal(result.evidence.causalEvidence.status, 'topology-supported');
 assert.equal(result.evidence.causalEvidence.observations[1].meanOccupancy, 4.25);
+assert.equal(result.evidence.causalEvidence.observations[1].meanWait, 2.5);
+assert.ok(result.findings.some((finding) => /stage wait/.test(finding)));
 assert.ok(result.evidence.causalEvidence.caveat.includes('do not prove'));
 
 assert.throws(

@@ -3990,6 +3990,10 @@ TEST_CASE("process flow: failing pool shared by two services arbitrates the "
   // (queue occupancy > 0) while WorkA holds the only unit.
   CHECK(work_b.mean_occupancy > 0.0);
   CHECK(work_a.mean_occupancy == 0.0);  // WorkA seized the unit instantly
+  CHECK(work_a.wait_count == 1);
+  CHECK(work_a.mean_wait == Catch::Approx(0.0));
+  CHECK(work_b.wait_count == 1);
+  CHECK(work_b.mean_wait == Catch::Approx(kService));
 
   // FIFO pool queue: WorkB starts only after WorkA's 0.5s service, so the
   // mean wait (waitA = 0, waitB = 0.5) is at least half the service time.

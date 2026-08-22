@@ -36,6 +36,8 @@ export interface DesBlockSummary {
   timed_out_mean: number;
   preempted_mean: number;
   mean_occupancy: number;
+  mean_wait: number;
+  wait_count_mean: number;
   utilization: number;
   availability: number;
 }
@@ -208,6 +210,7 @@ export interface MetricComparisonResult {
     metrics: {
       departed_mean: MetricDelta;
       mean_occupancy: MetricDelta;
+      mean_wait: MetricDelta;
       utilization: MetricDelta;
       timed_out_mean: MetricDelta;
       preempted_mean: MetricDelta;

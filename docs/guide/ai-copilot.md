@@ -45,6 +45,9 @@ node scripts/ai-explain.mjs "build an M/M/1 queue model with arrival rate 0.8 an
 （可用性 < 97%）、等待占比（Wq/W > 60%）。无逐块遥测时回退到池级
 汇总；有结构化结果时同时展示 Wq 的 mean/CI/样本数，无法读取 `metrics.json`
 时明确标记为 stdout-only。
+通用 DES 块还会报告 `mean_wait`（实体进入该块到首次被处理的平均时间）和
+`wait_count`；它是排除 warm-up 后的阶段证据，不替代全局 Wq，也不把观察结果
+宣称为干预因果。
 拓扑路径会标记为 `topology + measured metrics` 观测证据；单次运行不会被宣称为
 干预因果证明。
 

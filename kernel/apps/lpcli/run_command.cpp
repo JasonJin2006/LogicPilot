@@ -102,6 +102,8 @@ void write_block(std::ofstream& out, const BlockMetrics& block) {
       << ",\"preempted\":" << block.preempted
       << ",\"capacity\":" << block.capacity
       << ",\"mean_occupancy\":" << json_double(block.mean_occupancy)
+      << ",\"mean_wait\":" << json_double(block.mean_wait)
+      << ",\"wait_count\":" << block.wait_count
       << ",\"utilization\":" << json_double(block.utilization)
       << ",\"availability\":" << json_double(block.availability) << "}";
 }
@@ -193,6 +195,8 @@ int write_results(const std::string& dir, const RunOptions& options,
         double timed_out = 0.0;
         double preempted = 0.0;
         double occupancy = 0.0;
+        double stage_wait_sum = 0.0;
+        double stage_wait_count = 0.0;
         double utilization = 0.0;
         double availability = 0.0;
         std::size_t samples = 0;
@@ -211,6 +215,9 @@ int write_results(const std::string& dir, const RunOptions& options,
           timed_out += static_cast<double>(match->timed_out);
           preempted += static_cast<double>(match->preempted);
           occupancy += match->mean_occupancy;
+          stage_wait_sum += match->mean_wait *
+                            static_cast<double>(match->wait_count);
+          stage_wait_count += static_cast<double>(match->wait_count);
           utilization += match->utilization;
           availability += match->availability;
           ++samples;
@@ -224,7 +231,12 @@ int write_results(const std::string& dir, const RunOptions& options,
             << json_double(departed / divisor) << ",\"timed_out_mean\":"
             << json_double(timed_out / divisor) << ",\"preempted_mean\":"
             << json_double(preempted / divisor) << ",\"mean_occupancy\":"
-            << json_double(occupancy / divisor) << ",\"utilization\":"
+            << json_double(occupancy / divisor) << ",\"mean_wait\":"
+            << json_double(stage_wait_count > 0.0
+                               ? stage_wait_sum / stage_wait_count
+                               : 0.0)
+            << ",\"wait_count_mean\":"
+            << json_double(stage_wait_count / divisor) << ",\"utilization\":"
             << json_double(utilization / divisor) << ",\"availability\":"
             << json_double(availability / divisor) << "}";
       }

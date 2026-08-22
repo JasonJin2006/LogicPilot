@@ -36,6 +36,7 @@ struct Entity {
   std::uint64_t root_arrival_index{0};
   std::int64_t created_ns{0};        // source emission time
   std::int64_t service_start_ns{0};  // last service/delay start
+  std::int64_t stage_arrival_ns{0};  // latest process-block arrival time
   // Temporary batch contents (Batch with permanent=false; restored by
   // Unbatch) and resource units held by Seize until Release.
   std::vector<Entity> contents;
@@ -112,6 +113,10 @@ class BlockContext {
 
   // A service completion happened: record wait statistics.
   virtual void record_service_wait(const Entity& entity) = 0;
+
+  // Record the time an entity spent waiting inside the current process block
+  // before its first active step. This is kept separate from global Wq.
+  virtual void record_stage_wait(const Entity& entity) = 0;
 
   // Resource-pool operations (Seize / Release). `resource` is the ResourcePool
   // block name; units are held on the entity until Release returns them.

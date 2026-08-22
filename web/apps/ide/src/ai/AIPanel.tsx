@@ -1423,6 +1423,7 @@ export function AIPanel() {
                         <th>Block</th>
                         <th>Out</th>
                         <th>Mean size</th>
+                        <th>Stage wait</th>
                         <th>Util.</th>
                         <th>Timeout</th>
                       </tr>
@@ -1433,6 +1434,7 @@ export function AIPanel() {
                           <td>{block.name}</td>
                           <td>{block.departed_mean.toFixed(0)}</td>
                           <td>{block.mean_occupancy.toFixed(3)}</td>
+                          <td>{block.mean_wait.toFixed(3)}</td>
                           <td>{(block.utilization * 100).toFixed(1)}%</td>
                           <td>{block.timed_out_mean.toFixed(0)}</td>
                         </tr>
@@ -1568,6 +1570,7 @@ export function AIPanel() {
                   <th>Status</th>
                   <th>Δ out</th>
                   <th>Δ size</th>
+                  <th>Δ stage wait</th>
                   <th>Δ util.</th>
                 </tr>
               </thead>
@@ -1578,6 +1581,7 @@ export function AIPanel() {
                     <td>{block.status}</td>
                     <td>{block.metrics.departed_mean.delta.toFixed(1)}</td>
                     <td>{block.metrics.mean_occupancy.delta.toFixed(3)}</td>
+                    <td>{block.metrics.mean_wait.delta.toFixed(3)}</td>
                     <td>{(block.metrics.utilization.delta * 100).toFixed(1)}%</td>
                   </tr>
                 ))}

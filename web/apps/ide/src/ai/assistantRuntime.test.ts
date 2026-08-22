@@ -81,6 +81,8 @@ function queueAssistant(responses: unknown[], options: { validate?: unknown; run
                 timed_out_mean: 0,
                 preempted_mean: 0,
                 mean_occupancy: 4,
+                mean_wait: 1.25,
+                wait_count_mean: 100,
                 utilization: 0.8,
                 availability: 1,
               },

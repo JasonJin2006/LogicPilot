@@ -97,7 +97,9 @@ multiple-run experiments, as AnyLogic does.
 
 `ReplicationMetrics.blocks` and `metrics.json.blocks` now expose stable block
 identity plus arrivals, departures, timeout/preemption counts, mean occupancy,
-utilization, availability, and capacity. The AI build endpoint returns this
+stage wait (`mean_wait` plus `wait_count`), utilization, availability, and capacity.
+Stage wait is the mean time from admission to the block's first active step,
+excluding warm-up entities; it is not the global Wq metric. The AI build endpoint returns this
 JSON unchanged, and the IDE renders it as a DES block table. Human-readable
 CLI output is no longer the AI integration contract.
 `metrics.json.summary` carries mean/stddev/confidence bounds and

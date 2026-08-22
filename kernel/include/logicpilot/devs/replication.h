@@ -38,6 +38,10 @@ struct BlockMetrics {
   std::uint64_t preempted{0};
   std::int64_t capacity{-1};
   double mean_occupancy{0.0};
+  // Mean time from entering this block to its first active processing step,
+  // excluding warm-up entities.
+  double mean_wait{0.0};
+  std::uint64_t wait_count{0};
   double utilization{0.0};
   double availability{1.0};
 };

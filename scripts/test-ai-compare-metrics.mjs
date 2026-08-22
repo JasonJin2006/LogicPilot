@@ -5,13 +5,13 @@ import { compareMetrics } from './ai-compare-metrics.mjs';
 const compared = compareMetrics({
   before: {
     blocks: [
-      { name: 'Waiting', kind: 'queue', mean_occupancy: 5, timed_out_mean: 2 },
+      { name: 'Waiting', kind: 'queue', mean_occupancy: 5, mean_wait: 3, timed_out_mean: 2 },
       { name: 'Done', kind: 'sink', departed_mean: 80 },
     ],
   },
   after: {
     blocks: [
-      { name: 'Waiting', kind: 'queue', mean_occupancy: 2, timed_out_mean: 0 },
+      { name: 'Waiting', kind: 'queue', mean_occupancy: 2, mean_wait: 1, timed_out_mean: 0 },
       { name: 'Done', kind: 'sink', departed_mean: 95 },
       { name: 'Overflow', kind: 'sink', departed_mean: 3 },
     ],
@@ -26,6 +26,10 @@ assert.equal(compared.statisticalEvidence.status, 'insufficient-data');
 assert.equal(
   compared.blocks.find((block) => block.name === 'Waiting').metrics.mean_occupancy.delta,
   -3,
+);
+assert.equal(
+  compared.blocks.find((block) => block.name === 'Waiting').metrics.mean_wait.delta,
+  -2,
 );
 assert.equal(compared.blocks.find((block) => block.name === 'Overflow').status, 'added');
 assert.ok(compared.findings.some((finding) => /delta -3\.000/.test(finding)));

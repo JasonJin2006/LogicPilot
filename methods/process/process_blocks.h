@@ -121,6 +121,7 @@ class QueueBlock final : public BufferedBlock {
     if (!ctx.emit(entity, "out")) {
       return false;
     }
+    ctx.record_stage_wait(entity);
     input_.pop_front();
     ++departed_;
     return true;
@@ -253,6 +254,7 @@ class WaitBlock final : public BufferedBlock {
     if (!ctx.emit(entity, "out")) {
       return false;
     }
+    ctx.record_stage_wait(entity);
     if (queuing_ == "queuing_lifo") {
       input_.pop_back();
     } else {
@@ -457,6 +459,7 @@ class DelayBlock final : public BufferedBlock {
     }
     Entity entity = input_.front();
     input_.pop_front();
+    ctx.record_stage_wait(entity);
     entity.service_start_ns = ctx.now().as_ns();
     in_service_.push_back(entity);
     const double hold = delay_time_(ctx.rng());
@@ -619,6 +622,7 @@ class ServiceBlock final : public BufferedBlock {
       ctx.cancel_timeout(entity.id);
     }
     entity.service_start_ns = ctx.now().as_ns();
+    ctx.record_stage_wait(entity);
     in_service_.push_back(entity);
     ++units_in_use_;
     ++busy_;
