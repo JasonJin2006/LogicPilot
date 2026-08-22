@@ -23,6 +23,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -100,6 +101,7 @@ struct StatechartReplicationModel::Impl {
   std::unordered_map<StateId, std::vector<BranchExit>> branch_targets;
   std::unordered_map<std::string, FsmEventId> message_events;
   std::unordered_map<FsmEventId, std::vector<std::string>> emitted_ports;
+  std::unordered_map<FsmEventId, std::string> guard_text;
   std::vector<std::string> emitted_messages;
   StateId initial{kInvalidState};
 
@@ -182,7 +184,7 @@ struct StatechartReplicationModel::Impl {
     const FsmEventId fsm_event = static_cast<FsmEventId>(event.payload);
     const StateId from = machine.current();
     FsmContext ctx;
-    if (machine.dispatch(definition, fsm_event, ctx)) {
+    if (guard_allows(fsm_event) && machine.dispatch(definition, fsm_event, ctx)) {
       last_visited = from;
       ++steps_;
       emit_for(fsm_event);
@@ -213,7 +215,8 @@ struct StatechartReplicationModel::Impl {
       FsmEventId fired = kInvalidState;
       for (const auto& [event, condition] : triggers->second) {
         const ExpressionEvaluator evaluator{condition};
-        if (evaluator.ok() && evaluator.eval(lookup) != 0.0) {
+        if (evaluator.ok() && evaluator.eval(lookup) != 0.0 &&
+            guard_allows(event)) {
           fired = event;
           break;
         }
@@ -276,6 +279,22 @@ struct StatechartReplicationModel::Impl {
     emitted_messages.insert(emitted_messages.end(), it->second.begin(), it->second.end());
   }
 
+  bool guard_allows(FsmEventId event) const {
+    const auto it = guard_text.find(event);
+    if (it == guard_text.end() || it->second.empty() || it->second == "true") {
+      return true;
+    }
+    if (it->second == "false") return false;
+    const ExpressionEvaluator evaluator{it->second};
+    if (!evaluator.ok()) return false;
+    const double now_seconds =
+        static_cast<double>(clock().now().as_ns()) * 1e-9;
+    return evaluator.eval([now_seconds](const std::string& name) {
+             if (name == "t" || name == "time") return now_seconds;
+             return 0.0;
+           }) != 0.0;
+  }
+
   void record_emits(const Transition* transition, FsmEventId event) {
     if (transition == nullptr || transition->actions() == nullptr) return;
     for (const Action* action : *transition->actions()) {
@@ -292,7 +311,8 @@ struct StatechartReplicationModel::Impl {
                                by_name,
                            std::unordered_map<std::string, FsmEventId>&
                                message_events,
-                           FsmEventId& next_dynamic_event) {
+                           FsmEventId& next_dynamic_event,
+                           const std::string& guard) {
     const auto from_it = by_name.find(transition->from()->str());
     const auto to_it = by_name.find(transition->to()->str());
     if (from_it == by_name.end() || to_it == by_name.end()) {
@@ -320,6 +340,7 @@ struct StatechartReplicationModel::Impl {
                                                   std::move(sampler)});
       definition.add_transition(from, kTimeoutFsmEvent, to);
       record_emits(transition, kTimeoutFsmEvent);
+      if (!guard.empty()) guard_text[kTimeoutFsmEvent] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Rate) {
@@ -332,6 +353,7 @@ struct StatechartReplicationModel::Impl {
                                                   std::move(sampler)});
       definition.add_transition(from, kRateFsmEvent, to);
       record_emits(transition, kRateFsmEvent);
+      if (!guard.empty()) guard_text[kRateFsmEvent] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Message) {
@@ -345,6 +367,7 @@ struct StatechartReplicationModel::Impl {
       }
       definition.add_transition(from, it->second, to);
       record_emits(transition, it->second);
+      if (!guard.empty()) guard_text[it->second] = guard;
       return true;
     }
     if (transition->trigger() == TriggerKind_Condition) {
@@ -355,6 +378,7 @@ struct StatechartReplicationModel::Impl {
       const FsmEventId event = next_dynamic_event++;
       definition.add_transition(from, event, to);
       record_emits(transition, event);
+      if (!guard.empty()) guard_text[event] = guard;
       if (condition.empty() || condition == "true") {
         immediate_conditions[from].push_back(event);
       } else {
@@ -400,6 +424,7 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
   // Element markers travel as semantics params: final/history/branch name
   // the special states; historyType selects shallow/deep (v1: one level).
   std::unordered_set<std::string> branch_names;
+  std::unordered_map<std::size_t, std::string> indexed_guards;
   if (root->params() != nullptr) {
     for (const auto* param : *root->params()) {
       if (param == nullptr || param->name() == nullptr ||
@@ -408,6 +433,15 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
       }
       const std::string key = param->name()->str();
       const std::string value = param->string_value()->str();
+      if (key.rfind("guard:", 0) == 0 && key.size() > 6) {
+        try {
+          indexed_guards.emplace(std::stoull(key.substr(6)), value);
+        } catch (const std::exception&) {
+          // Malformed auxiliary metadata is ignored; the transition remains
+          // executable without a guard.
+        }
+        continue;
+      }
       const auto it = by_name.find(value);
       if (it == by_name.end()) {
         continue;
@@ -426,6 +460,7 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
   // everything else goes onto the FSM table.
   std::unordered_map<std::string, FsmEventId> message_events;
   FsmEventId next_dynamic_event = kFirstDynamicFsmEvent;
+  std::size_t transition_index = 0;
   if (chart->transitions() != nullptr) {
     for (const Transition* transition : *chart->transitions()) {
       if (transition == nullptr || transition->from() == nullptr ||
@@ -451,13 +486,19 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
         exit.is_default =
             exit.condition == "default" || exit.condition == "else";
         impl_->branch_targets[from].push_back(std::move(exit));
+        ++transition_index;
         continue;
       }
+      const auto guard = indexed_guards.find(transition_index);
+      const std::string guard_text =
+          guard == indexed_guards.end() ? std::string{} : guard->second;
       if (!impl_->register_transition(
-              transition, by_name, message_events, next_dynamic_event)) {
+              transition, by_name, message_events, next_dynamic_event,
+              guard_text)) {
         fail("statechart transition references an unknown state");
         return;
       }
+      ++transition_index;
     }
   }
 
@@ -575,7 +616,8 @@ bool StatechartReplicationModel::dispatch_message(const std::string& port) {
   if (event == impl_->message_events.end()) return false;
   const StateId from = impl_->machine.current();
   FsmContext context;
-  if (!impl_->machine.dispatch(impl_->definition, event->second, context)) {
+  if (!impl_->guard_allows(event->second) ||
+      !impl_->machine.dispatch(impl_->definition, event->second, context)) {
     return false;
   }
   impl_->last_visited = from;

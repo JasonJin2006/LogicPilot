@@ -278,7 +278,7 @@ model Relay {
     state Sent { }
     transition send {
       from = Idle; to = Sent; triggeredBy = timeout; timeout = 1.0
-      action = "emit go"
+      action = "emit go"; guard = "t >= 2.0"
     }
   }
   statechart Receiver {

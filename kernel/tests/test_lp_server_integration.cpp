@@ -1556,6 +1556,51 @@ TEST_CASE("lp-server streams statechart active-state counters after compile",
   server.stop();
 }
 
+TEST_CASE("lp-server honors statechart transition guards",
+          "[server][integration][statechart][guard]") {
+  const std::string source = R"(model Guarded {
+  statechart Control {
+    initial = Idle
+    state Idle { }
+    state Done { }
+    transition wait { from = Idle; to = Done; triggeredBy = timeout; timeout = 1.0; guard = "t >= 2.0" }
+  }
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  bool saw_done = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      const auto counters = counters_to_map(frame.counters->values());
+      saw_done = saw_done || counters.count("state.active.Done") != 0;
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(saw_done);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server injects a message into a statechart before start",
           "[server][integration][statechart][inject]") {
   const std::string source = R"(model Door {

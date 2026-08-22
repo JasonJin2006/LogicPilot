@@ -589,6 +589,7 @@ flatbuffers::Offset<v2::Node> v2_statechart(flatbuffers::FlatBufferBuilder& buil
   std::vector<flatbuffers::Offset<v2::Transition>> transitions;
   std::vector<flatbuffers::Offset<v2::Var>> params;
   std::string initial;
+  std::size_t transition_index = 0;
 
   for (const Node& child : statechart.children) {
     if (child.kind == "state" || child.kind == "finalState" || child.kind == "historyState" ||
@@ -626,10 +627,14 @@ flatbuffers::Offset<v2::Node> v2_statechart(flatbuffers::FlatBufferBuilder& buil
       const std::string guard = node_field_text(child, "guard");
       if (!guard.empty()) {
         params.push_back(v2_var_string(builder, ("guard:" + child.name).c_str(), guard));
+        params.push_back(v2_var_string(
+            builder, ("guard:" + std::to_string(transition_index)).c_str(), guard));
       }
       const std::string action = node_field_text(child, "action");
       if (!action.empty()) {
         params.push_back(v2_var_string(builder, ("action:" + child.name).c_str(), action));
+        params.push_back(v2_var_string(
+            builder, ("action:" + std::to_string(transition_index)).c_str(), action));
       }
       std::vector<flatbuffers::Offset<v2::Action>> transition_actions;
       if (action.rfind("emit ", 0) == 0 && action.size() > 5) {
@@ -641,6 +646,7 @@ flatbuffers::Offset<v2::Node> v2_statechart(flatbuffers::FlatBufferBuilder& buil
           message_type.empty() ? 0 : builder.CreateString(message_type),
           condition.empty() ? 0 : builder.CreateString(condition),
           builder.CreateVector(transition_actions)));
+      ++transition_index;
       continue;
     }
   }
