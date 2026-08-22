@@ -306,8 +306,12 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    与 vite dev 共用 ai-endpoint 处理器）；前端启动经 `/api/config` 解析
    网关地址（dev 回落 8089）；`desktop/src-tauri` Tauri 壳（Rust main 拉
    起 app server 并打开 WebView2 窗口，含 Windows 图标）；`desktop/README.md`
-   含构建/运行说明。打包分发（`tauri build` 产物 + 捆绑 Node/lp-server
-   二进制）为后续项。
+   含构建/运行说明。**打包分发 ✅ 已完成**：`desktop:stage` 将版本匹配的
+   Node、`lp-server`、`lpcli`、原生 DLL 与前端资源装配到带 SHA-256 清单的
+   自包含运行时，`desktop:test-staged` 在隔离 PATH 下执行真实 AI DES 冒烟，
+   `desktop:bundle` 生成 NSIS 安装包；桌面启动器同时兼容开发目录与安装包的
+   `resources/` 资源根目录。异常崩溃后的完整清理、离线升级兼容性仍是发布后
+   验证项。
    **桌面自定义标题栏 ✅ 已完成**（2026-08-05）：无边框窗口
    （`decorations: false`）+ 顶栏内嵌最小化/最大化/关闭按钮（Tauri 环境
    下渲染，`@tauri-apps/api` 控制窗口，capabilities 授予 window 权限）；

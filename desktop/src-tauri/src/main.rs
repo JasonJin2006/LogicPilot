@@ -146,25 +146,35 @@ fn read_project_hashes(project_dir: String) -> Result<HashMap<String, String>, S
     project_fs::collect_project_hashes(&PathBuf::from(&project_dir))
 }
 
-fn repo_root() -> PathBuf {
-    if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
-        return PathBuf::from(root);
-    }
-    // Walk up from the executable looking for app/server.mjs (repo layout:
-    // desktop/src-tauri/target/<profile>/logicpilot-desktop.exe).
-    let mut dir = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|parent| parent.to_path_buf()))
-        .unwrap_or_else(|| PathBuf::from("."));
-    for _ in 0..6 {
-        if dir.join("app").join("server.mjs").exists() {
-            return dir;
+fn find_runtime_root(start: &std::path::Path) -> Option<PathBuf> {
+    // Development builds find the repository root by walking upward. Tauri
+    // bundles put resources beside the installed executable in `resources`,
+    // so check that child at every level as well. The latter is the important
+    // case for an installed NSIS package: there is no repository checkout to
+    // walk up to.
+    let mut dir = start.to_path_buf();
+    for _ in 0..8 {
+        for candidate in [&dir, &dir.join("resources")] {
+            if candidate.join("app").join("server.mjs").is_file() {
+                return Some(candidate.to_path_buf());
+            }
         }
         if !dir.pop() {
             break;
         }
     }
-    dir
+    None
+}
+
+fn repo_root() -> PathBuf {
+    if let Ok(root) = std::env::var("LOGICPILOT_ROOT") {
+        return PathBuf::from(root);
+    }
+    let start = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|parent| parent.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."));
+    find_runtime_root(&start).unwrap_or(start)
 }
 
 fn bundled_executable(root: &std::path::Path, relative: &[&str]) -> Option<PathBuf> {
@@ -283,6 +293,8 @@ fn main() {
             },
             _ => {
                 eprintln!("app server did not report its ports");
+                let _ = app_server.kill();
+                let _ = app_server.wait();
                 std::process::exit(1);
             }
         }
@@ -357,4 +369,43 @@ fn main() {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_runtime_root;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("logicpilot-desktop-root-{nonce}"))
+    }
+
+    #[test]
+    fn finds_tauri_resources_next_to_installed_executable() {
+        let root = temp_root();
+        let start = root.join("install");
+        let resources = start.join("resources");
+        fs::create_dir_all(resources.join("app")).expect("create resource tree");
+        fs::write(resources.join("app/server.mjs"), "// test").expect("write server marker");
+
+        assert_eq!(find_runtime_root(&start), Some(resources));
+        fs::remove_dir_all(root).expect("remove temporary resource tree");
+    }
+
+    #[test]
+    fn finds_repository_root_by_walking_up_from_development_build() {
+        let root = temp_root();
+        let start = root.join("desktop/src-tauri/target/debug");
+        fs::create_dir_all(start.join("app")).expect("create development tree");
+        fs::write(start.join("app/server.mjs"), "// test").expect("write server marker");
+
+        assert_eq!(find_runtime_root(&start), Some(start));
+        fs::remove_dir_all(root).expect("remove temporary development tree");
+    }
 }
