@@ -63,7 +63,8 @@ private:
   std::vector<Entry> entries_;
 };
 
-// Registers the kernel-native method runtimes ("devs", "agent", "sd").
+// Registers the kernel-native method runtimes ("devs", "sd"). Agent is a
+// linked method plugin registered by methods/register.cpp.
 // Idempotent; safe to call from any driver or test before lowering.
 void register_builtin_methods();
 

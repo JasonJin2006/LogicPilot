@@ -384,8 +384,10 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。**多 Statechart
     event-time coupling ✅ 已完成**（2026-08-22）：composite 在共享 scheduler
     的事件处理期间立即路由 emit 消息，并取消状态切换后的 stale timer，最终
-    horizon 不再被旧图定时器拖长；新增 SimulationKernel coupling 验收。后续：
-    agent/SD 拆方法库、共享变量显式写入。
+    horizon 不再被旧图定时器拖长；新增 SimulationKernel coupling 验收。**Agent
+    方法插件 ✅ 已完成**（2026-08-22）：AgentMethod 已从 kernel native runtime
+    移入 `methods/agent`，通过 `logicpilot_methods` 注册并保持 shared-event
+    lifecycle；后续：SD 拆方法库、共享变量显式写入。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

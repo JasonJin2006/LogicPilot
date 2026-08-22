@@ -6,6 +6,7 @@
 # support and call register_all_methods() (or the per-method register
 # function) at startup.
 
+add_subdirectory(agent)
 add_subdirectory(process)
 add_subdirectory(statechart)
 
@@ -18,6 +19,7 @@ target_include_directories(logicpilot_methods PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(logicpilot_methods PUBLIC
+  logicpilot_method_agent
   logicpilot_method_process
   logicpilot_method_statechart
 )

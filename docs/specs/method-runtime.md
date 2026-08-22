@@ -122,6 +122,9 @@ WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，
 
 ## 7. 新方法接入检查表
 
+当前 Agent 实现位于 `methods/agent/`，通过 `register_agent_method()` 加入聚合
+插件库；kernel 只保留通用的 native DEVS/SD 适配，不再定义 AgentMethod。
+
 1. 提供 `.lplib`，声明唯一库名、版本和块形状。
 2. lowering 生成正确的 `SemanticsRef`；专属数据放入版本化扩展载荷。
 3. 实现 `SimulationMethod`，准确声明能力，不虚报共享调度或 checkpoint。
