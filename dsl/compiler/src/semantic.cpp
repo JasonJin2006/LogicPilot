@@ -11,6 +11,7 @@
 #include "logicpilot/dsl/semantic.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -352,6 +353,27 @@ private:
                     "timeout/rate/condition/message",
                 triggered_by->span);
         }
+        const Field* action = field_of(child, "action");
+        if (action != nullptr && action->value.kind == ValueKind::kString &&
+            (action->value.string_value.rfind("emit ", 0) != 0 ||
+             action->value.string_value.size() <= 5)) {
+          error("LP3002",
+                "statechart transition action currently supports only "
+                "action = \"emit <port>\"",
+                action->span);
+        }
+        for (const char* expression_name : {"condition", "guard"}) {
+          const Field* expression = field_of(child, expression_name);
+          if (expression == nullptr || expression->value.kind != ValueKind::kString) {
+            continue;
+          }
+          if (!statechart_expression_identifiers_allowed(expression->value.string_value)) {
+            error("LP5006",
+                  "statechart " + std::string(expression_name) +
+                      " may reference only 't' and 'time'",
+                  expression->span);
+          }
+        }
         continue;
       }
       if (child.kind == "statechartEntryPoint" || child.kind == "initialStatePointer") {
@@ -374,6 +396,28 @@ private:
 
   static bool is_statechart_trigger(const std::string& value) {
     return value == "timeout" || value == "rate" || value == "condition" || value == "message";
+  }
+
+  static bool statechart_expression_identifiers_allowed(const std::string& expression) {
+    for (std::size_t i = 0; i < expression.size();) {
+      if (!std::isalpha(static_cast<unsigned char>(expression[i])) &&
+          expression[i] != '_') {
+        ++i;
+        continue;
+      }
+      const std::size_t begin = i++;
+      while (i < expression.size() &&
+             (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+              expression[i] == '_')) {
+        ++i;
+      }
+      const std::string identifier = expression.substr(begin, i - begin);
+      if (identifier != "t" && identifier != "time" && identifier != "true" &&
+          identifier != "false") {
+        return false;
+      }
+    }
+    return true;
   }
 
   // ------------------------------------------------------------------

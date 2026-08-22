@@ -849,3 +849,38 @@ TEST_CASE("semantic: match field expressions validate agent1/agent2 attributes",
   }
   REQUIRE(lp5006 >= 1);
 }
+
+TEST_CASE("semantic: statechart unsupported actions and identifiers fail explicitly",
+          "[dsl][semantic][statechart]") {
+  const ParseOutput unsupported_action = parse_source(
+      "model X {\n"
+      "  statechart C {\n"
+      "    initial = Idle\n"
+      "    state Idle { }\n"
+      "    state Done { }\n"
+      "    transition go { from = Idle; to = Done; triggeredBy = timeout; "
+      "timeout = 1.0; action = \"set phase = true\" }\n"
+      "  }\n"
+      "}\n",
+      "statechart-action.lp");
+  REQUIRE(unsupported_action.ok());
+  const auto action_diagnostics = analyze_model(*unsupported_action.model);
+  REQUIRE(std::any_of(action_diagnostics.begin(), action_diagnostics.end(),
+                      [](const auto& diagnostic) { return diagnostic.code == "LP3002"; }));
+
+  const ParseOutput unknown_guard = parse_source(
+      "model X {\n"
+      "  statechart C {\n"
+      "    initial = Idle\n"
+      "    state Idle { }\n"
+      "    state Done { }\n"
+      "    transition go { from = Idle; to = Done; triggeredBy = timeout; "
+      "timeout = 1.0; guard = \"phase > 0\" }\n"
+      "  }\n"
+      "}\n",
+      "statechart-guard.lp");
+  REQUIRE(unknown_guard.ok());
+  const auto guard_diagnostics = analyze_model(*unknown_guard.model);
+  REQUIRE(std::any_of(guard_diagnostics.begin(), guard_diagnostics.end(),
+                      [](const auto& diagnostic) { return diagnostic.code == "LP5006"; }));
+}

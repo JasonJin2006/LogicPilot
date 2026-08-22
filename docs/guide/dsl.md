@@ -294,8 +294,9 @@ model Relay {
 ```
 
 `action = "emit <port>"` 会在 transition 触发时发出消息；root 级 `couple` 将其
- 路由到另一个 Statechart 的 `messageType` transition。运行时会在同一仿真时间内
- 完成消息级联，并可通过 lp-server 的 `inject` 控制命令从外部投递消息。
+路由到另一个 Statechart 的 `messageType` transition。运行时会在同一仿真时间内
+完成消息级联；guard/condition 只允许引用 `t`/`time`，不支持的 action 或标识符
+会在编译期报错；并可通过 lp-server 的 `inject` 控制命令从外部投递消息。
 
 ## continuous：连续 ODE 系统
 
