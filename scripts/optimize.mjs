@@ -58,6 +58,26 @@ export function parseMetric(output, metric) {
   return Number(match[1]);
 }
 
+function finite(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeEvaluation(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return { score: value, mean: value, ciLow: null, ciHigh: null, samples: null };
+  }
+  if (value !== null && typeof value === 'object' && Number.isFinite(value.score)) {
+    return {
+      score: value.score,
+      mean: finite(value.mean) ?? value.score,
+      ciLow: finite(value.ciLow),
+      ciHigh: finite(value.ciHigh),
+      samples: Number.isSafeInteger(value.samples) ? value.samples : null,
+    };
+  }
+  throw new Error('evaluation must be a finite number or an object with a finite score');
+}
+
 // Deterministic PRNG (mulberry32) for the genetic algorithm.
 function mulberry32(seed) {
   let state = seed >>> 0;
@@ -88,8 +108,12 @@ export async function optimize({
   reps = 3,
   arrivals = 2000,
   warmup = 200,
+  confidence = 0.95,
   evaluate = null,
 }) {
+  if (!Number.isFinite(confidence) || confidence <= 0 || confidence >= 1) {
+    throw new Error('confidence must be between 0 and 1');
+  }
   const lo = Math.min(min, max);
   const hi = Math.max(min, max);
   const cache = new Map();
@@ -98,12 +122,14 @@ export async function optimize({
     if (cache.has(value)) {
       return cache.get(value);
     }
-    let metricValue;
+    let evaluation;
     let output = '';
     if (evaluate) {
-      metricValue = await evaluate(value);
+      evaluation = normalizeEvaluation(await evaluate(value));
     } else {
       const dir = mkdtempSync(join(tmpdir(), 'lp-opt-'));
+      const resultsDir = join(dir, 'results');
+      let structured = null;
       try {
         const dsl = substitute(template, variable, value);
         const lp = join(dir, 'model.lp');
@@ -116,14 +142,31 @@ export async function optimize({
           '--reps', String(reps),
           '--arrivals', String(arrivals),
           '--warmup', String(warmup),
+          '--confidence', String(confidence),
+          '--results-dir', resultsDir,
         ]);
+        const metricsPath = join(resultsDir, 'metrics.json');
+        if (existsSync(metricsPath)) {
+          structured = JSON.parse(readFileSync(metricsPath, 'utf8'));
+        }
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
-      metricValue = parseMetric(output, metric);
+      const summary = structured?.summary?.[metric];
+      evaluation = summary != null && Number.isFinite(summary.mean)
+        ? normalizeEvaluation({
+            score: summary.mean,
+            mean: summary.mean,
+            ciLow: summary.ci_low,
+            ciHigh: summary.ci_high,
+            samples: Array.isArray(structured.replications)
+              ? structured.replications.length
+              : null,
+          })
+        : normalizeEvaluation(parseMetric(output, metric));
     }
-    cache.set(value, metricValue);
-    return metricValue;
+    cache.set(value, evaluation);
+    return evaluation;
   };
 
   let bestValue = null;
@@ -134,11 +177,11 @@ export async function optimize({
     if (v < lo || v > hi || cache.has(v)) {
       return;
     }
-    const s = await score(v);
-    evaluations.push({ value: v, score: s });
-    if (bestValue === null || better(s, bestScore, objective)) {
+    const evaluation = await score(v);
+    evaluations.push({ value: v, ...evaluation });
+    if (bestValue === null || better(evaluation.score, bestScore, objective)) {
       bestValue = v;
-      bestScore = s;
+      bestScore = evaluation.score;
     }
   };
 
@@ -167,7 +210,8 @@ export async function optimize({
         let winner = pool[0];
         let winnerScore = Infinity;
         for (const member of pool) {
-          const s = cache.get(member) ?? (await score(member));
+          const cached = cache.get(member);
+          const s = cached?.score ?? (await score(member)).score;
           if (winnerScore === Infinity || better(s, winnerScore, objective)) {
             winner = member;
             winnerScore = s;
@@ -184,6 +228,17 @@ export async function optimize({
   }
 
   evaluations.sort((a, b) => a.value - b.value);
+  const bestEvaluation = evaluations.find((entry) => entry.value === bestValue);
+  const hasIntervals = bestEvaluation?.ciLow != null && bestEvaluation?.ciHigh != null;
+  for (const evaluation of evaluations) {
+    const overlaps =
+      hasIntervals && evaluation.ciLow != null && evaluation.ciHigh != null
+        ? evaluation.ciLow <= bestEvaluation.ciHigh &&
+          evaluation.ciHigh >= bestEvaluation.ciLow
+        : false;
+    evaluation.confidenceOverlapBest = overlaps;
+    evaluation.uncertain = overlaps && evaluation.value !== bestValue;
+  }
   return {
     variable,
     objective,
@@ -191,6 +246,17 @@ export async function optimize({
     strategy: strategy === 'grid' || hi - lo + 1 <= budget ? 'grid' : 'ga',
     best: { value: bestValue, score: bestScore },
     evaluations,
+    selection: {
+      status: hasIntervals && evaluations.some((entry) => entry.uncertain)
+        ? 'confidence-overlap'
+        : hasIntervals
+          ? 'interval-separated'
+          : 'point-estimate',
+      confidence: hasIntervals ? confidence : null,
+      caveat: hasIntervals
+        ? 'Overlapping confidence intervals mean the point-estimate winner is not statistically decisive.'
+        : 'No structured confidence interval was available for the evaluator.',
+    },
     range: [lo, hi],
   };
 }

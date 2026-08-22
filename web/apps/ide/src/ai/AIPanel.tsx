@@ -1460,7 +1460,8 @@ export function AIPanel() {
             <p className="ai-meta">
               best {optimized.variable}={optimized.best.value} ({optimized.objective}{' '}
               {optimized.metric} → {optimized.best.score},{optimized.strategy},{' '}
-              {optimized.evaluations.length} evaluations)
+              {optimized.evaluations.length} evaluations
+              {optimized.selection?.status === 'confidence-overlap' ? ', CI overlap' : ''})
             </p>
             <OptimizeChart evaluations={optimized.evaluations} objective={optimized.objective} />
             <table className="ai-scores">
@@ -1468,6 +1469,7 @@ export function AIPanel() {
                 <tr>
                   <th>{optimized.variable}</th>
                   <th>{optimized.metric}</th>
+                  <th>95% CI</th>
                 </tr>
               </thead>
               <tbody>
@@ -1475,10 +1477,19 @@ export function AIPanel() {
                   <tr key={entry.value}>
                     <td>{entry.value}</td>
                     <td>{entry.score.toFixed(4)}</td>
+                    <td>
+                      {entry.ciLow != null && entry.ciHigh != null
+                        ? `[${entry.ciLow.toFixed(4)}, ${entry.ciHigh.toFixed(4)}]`
+                        : '—'}
+                      {entry.uncertain ? ' · overlap' : ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {optimized.selection?.caveat != null && (
+              <p className="ai-meta">{optimized.selection.caveat}</p>
+            )}
           </div>
         )}
         {explained !== null && (

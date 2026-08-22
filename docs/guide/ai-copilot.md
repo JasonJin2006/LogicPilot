@@ -32,7 +32,7 @@ NL prompt → provider 生成 DSL
 node scripts/ai-optimize.mjs "minimize Wq over servers 1..5 for an M/M/1 queue with arrival 0.8 service 1.0"
 ```
 
-规则 provider 先构造参数化模板（`capacity = {{servers}}`），再把 `experiment` 块写入模型声明搜索规格；`lpcli compile --experiments-json` 读回后，用 grid/GA 策略在预算内评估，返回最优值与全部评估点。
+规则 provider 先构造参数化模板（`capacity = {{servers}}`），再把 `experiment` 块写入模型声明搜索规格；`lpcli compile --experiments-json` 读回后，用 grid/GA 策略在预算内评估，返回最优值、全部评估点及每个点的 summary CI。若候选点的 CI 与点估计最优重叠，结果会标记为 `confidence-overlap`，不会把噪声最优解释成确定结论。
 
 ## 瓶颈归因：ai-explain
 

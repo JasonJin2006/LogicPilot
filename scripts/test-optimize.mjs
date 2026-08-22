@@ -103,4 +103,28 @@ assert.equal(substitute('capacity = {{servers}}', 'servers', 3),
   assert.equal(result.declaredByModel, true);
 }
 
+// 6. Structured evaluator evidence marks a point-estimate winner as uncertain
+// when its confidence interval overlaps another candidate's interval.
+{
+  const result = await optimize({
+    template: '',
+    variable: 'servers',
+    min: 1,
+    max: 2,
+    objective: 'minimize',
+    metric: 'Wq',
+    strategy: 'grid',
+    evaluate: async (value) => ({
+      score: value === 1 ? 1 : 0.9,
+      mean: value === 1 ? 1 : 0.9,
+      ciLow: value === 1 ? 0.8 : 0.7,
+      ciHigh: value === 1 ? 1.2 : 1.1,
+      samples: 3,
+    }),
+  });
+  assert.equal(result.selection.status, 'confidence-overlap');
+  assert.ok(result.evaluations.some((entry) => entry.uncertain));
+  assert.equal(result.evaluations[0].samples, 3);
+}
+
 console.log('OPTIMIZE TEST: PASS');

@@ -109,7 +109,21 @@ export interface OptimizeResult {
   metric: string;
   strategy: string;
   best: { value: number; score: number };
-  evaluations: Array<{ value: number; score: number }>;
+  evaluations: Array<{
+    value: number;
+    score: number;
+    mean?: number;
+    ciLow?: number | null;
+    ciHigh?: number | null;
+    samples?: number | null;
+    confidenceOverlapBest?: boolean;
+    uncertain?: boolean;
+  }>;
+  selection?: {
+    status: 'confidence-overlap' | 'interval-separated' | 'point-estimate';
+    confidence: number | null;
+    caveat: string;
+  };
   dslTemplate: string;
 }
 
