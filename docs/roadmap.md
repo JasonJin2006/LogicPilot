@@ -265,7 +265,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **Phase 3–4 ✅ 已完成**（2026-08-06）：文字双击内联编辑、图片嵌入
    （文件 → data URL 持久化）、Ctrl+C/V/D 复制粘贴、方向键微调、Esc 取消、
    Shift 多选 + Ctrl+G 分组 / Inspector Ungroup、对齐（Inspector 6 向）、
-   置顶/置底（Ctrl+] / Ctrl+[ 与 Inspector）。待办：图层面板、动画绑定 API。
+   置顶/置底（Ctrl+] / Ctrl+[ 与 Inspector）。**Layers 面板基础能力 ✅ 已完成**：
+   Inspector 展示同级 presentation 层，支持选中、显隐、锁定和拖拽排序；嵌套
+   scene-graph 的独立层级树与动画绑定 API 仍是后续项。
    **Phase 0：Vector Graphics Engine 数据模型 ✅ 已完成**（2026-08-06）：
    拆除「组件类型」抽象（rect/roundedRect/oval 不再是独立 kind 语义），
    对象模型统一为 `GraphicNode`（shape + geometry / text / image / group /
@@ -331,7 +333,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    **阶段等待证据 ✅ 已完成**（2026-08-22）：通用 process runtime 按块记录实体从
    admission 到首次 active step 的 `mean_wait` / `wait_count`（排除 warm-up），并
    贯通 `metrics.json`、AI query/compare/explain、Assistant context 与 IDE 表格；
-   运行时保持全局 Wq 语义不变。第一阶段已完成：`ai-query-metrics` 输出逐块利用率、可用性、占用、超时、拓扑路径，
+   运行时保持全局 Wq 语义不变。**拓扑观察关系 ✅ 已完成**（2026-08-22）：
+   `ai-query-metrics` 在相邻路径节点间关联上游平均占用、下游阶段等待、利用率、
+   可用性和超时证据，并在 IDE 中显示为观察关系。第一阶段已完成：输出逐块利用率、可用性、占用、超时、拓扑路径，
    并返回链上逐节点的 `causalEvidence`；结果明确标注这是 topology + measured metrics
    的观测证据，不把单次运行伪装成干预因果。后续仍需将阶段等待与资源状态、
    队列路径做多次实验级关联，并升级为“Machine 3 利用率 98%、等待 40 分钟”级

@@ -43,8 +43,7 @@ export function queryMetrics({ question, metrics, model }) {
         b.meanOccupancy * 0.01 +
         b.meanWait * 0.01 +
         b.timedOut * 0.01 -
-        (a.utilization + a.meanOccupancy * 0.01 + a.meanWait * 0.01 +
-          a.timedOut * 0.01),
+        (a.utilization + a.meanOccupancy * 0.01 + a.meanWait * 0.01 + a.timedOut * 0.01),
     )
     .slice(0, 5);
   const causalChain = buildCausalChain(model, utilized[0]?.name, queued[0]?.name);
@@ -124,6 +123,12 @@ export function queryMetrics({ question, metrics, model }) {
       findings.push(`Topology evidence: ${causalChain.join(' → ')}.`);
     }
   }
+  for (const relationship of causalEvidence.relationships) {
+    findings.push(
+      `Observed path relationship: ${relationship.from} → ${relationship.to}; ` +
+        `${relationship.signals.join(', ')}.`,
+    );
+  }
 
   return {
     kind: 'metric-query',
@@ -143,9 +148,7 @@ export function queryMetrics({ question, metrics, model }) {
 }
 
 function buildCausalEvidence(blocks, causalChain, bottleneckName, queueName) {
-  const metricsByName = new Map(
-    blocks.map((block) => [String(block.name ?? 'unknown'), block]),
-  );
+  const metricsByName = new Map(blocks.map((block) => [String(block.name ?? 'unknown'), block]));
   const observations = causalChain.map((name) => {
     const block = metricsByName.get(name);
     if (!block) {
@@ -185,10 +188,57 @@ function buildCausalEvidence(blocks, causalChain, bottleneckName, queueName) {
         ? 'topology-supported'
         : 'insufficient-evidence',
     observations,
+    relationships: deriveRelationships(observations),
     caveat:
       'Topology plus measured metrics are observational evidence from this run; ' +
       'they do not prove intervention causality.',
   };
+}
+
+function deriveRelationships(observations) {
+  const relationships = [];
+  for (let index = 1; index < observations.length; index += 1) {
+    const upstream = observations[index - 1];
+    const downstream = observations[index];
+    if (!upstream.measured || !downstream.measured || downstream.meanWait == null) {
+      continue;
+    }
+    const signals = [];
+    if (upstream.meanOccupancy != null && upstream.meanOccupancy > 0 && downstream.meanWait > 0) {
+      signals.push('upstream queue occupancy accompanies downstream stage wait');
+    }
+    if (
+      downstream.utilization != null &&
+      downstream.utilization >= 0.9 &&
+      downstream.meanWait > 0
+    ) {
+      signals.push('downstream utilization is near saturation');
+    }
+    if (
+      downstream.availability != null &&
+      downstream.availability < 0.97 &&
+      downstream.meanWait > 0
+    ) {
+      signals.push('downstream availability indicates failure/repair time');
+    }
+    if (downstream.timedOut != null && downstream.timedOut > 0) {
+      signals.push('downstream timeout evidence is present');
+    }
+    if (signals.length === 0) continue;
+    relationships.push({
+      from: upstream.name,
+      to: downstream.name,
+      signals,
+      evidence: {
+        upstreamMeanOccupancy: upstream.meanOccupancy,
+        downstreamMeanWait: downstream.meanWait,
+        downstreamUtilization: downstream.utilization,
+        downstreamAvailability: downstream.availability,
+        downstreamTimedOut: downstream.timedOut,
+      },
+    });
+  }
+  return relationships;
 }
 
 function buildCausalChain(model, bottleneckName, queueName) {

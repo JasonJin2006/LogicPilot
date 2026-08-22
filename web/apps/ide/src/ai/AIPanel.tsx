@@ -1520,6 +1520,7 @@ export function AIPanel() {
                       <th>Util.</th>
                       <th>Availability</th>
                       <th>Mean size</th>
+                      <th>Stage wait</th>
                       <th>Timeouts</th>
                     </tr>
                   </thead>
@@ -1530,6 +1531,7 @@ export function AIPanel() {
                         <td>{(block.utilization * 100).toFixed(1)}%</td>
                         <td>{(block.availability * 100).toFixed(1)}%</td>
                         <td>{block.meanOccupancy.toFixed(3)}</td>
+                        <td>{block.meanWait.toFixed(3)}</td>
                         <td>{block.timedOut.toFixed(1)}</td>
                       </tr>
                     ))}
@@ -1541,13 +1543,24 @@ export function AIPanel() {
                 <p className="ai-meta">causal path: {explained.evidence.causalChain.join(' → ')}</p>
               )}
             {explained.evidence.causalEvidence != null && (
-              <p className="ai-meta">
-                {explained.evidence.causalEvidence.status === 'topology-supported'
-                  ? 'causal evidence: topology + measured metrics'
-                  : 'causal evidence: insufficient measured coverage'}
-                {' — '}
-                {explained.evidence.causalEvidence.caveat}
-              </p>
+              <>
+                {explained.evidence.causalEvidence.relationships.length > 0 && (
+                  <ul className="ai-findings" aria-label="Observed causal relationships">
+                    {explained.evidence.causalEvidence.relationships.map((relationship) => (
+                      <li key={`${relationship.from}:${relationship.to}`}>
+                        {relationship.from} → {relationship.to}: {relationship.signals.join('; ')}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="ai-meta">
+                  {explained.evidence.causalEvidence.status === 'topology-supported'
+                    ? 'causal evidence: topology + measured metrics'
+                    : 'causal evidence: insufficient measured coverage'}
+                  {' — '}
+                  {explained.evidence.causalEvidence.caveat}
+                </p>
+              </>
             )}
           </div>
         )}

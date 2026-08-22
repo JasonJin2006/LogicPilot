@@ -47,7 +47,8 @@ node scripts/ai-explain.mjs "build an M/M/1 queue model with arrival rate 0.8 an
 时明确标记为 stdout-only。
 通用 DES 块还会报告 `mean_wait`（实体进入该块到首次被处理的平均时间）和
 `wait_count`；它是排除 warm-up 后的阶段证据，不替代全局 Wq，也不把观察结果
-宣称为干预因果。
+宣称为干预因果。若拓扑路径上游存在平均占用、下游同时出现阶段等待，或下游
+利用率接近饱和/可用性下降，结果会列出这些**观察关系**；它们仍不是干预因果证明。
 拓扑路径会标记为 `topology + measured metrics` 观测证据；单次运行不会被宣称为
 干预因果证明。
 

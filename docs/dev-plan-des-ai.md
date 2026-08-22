@@ -187,8 +187,8 @@ remain an explicit user-facing diagnostic rather than an arbitrary choice.
   iterations, fixed/precision replications, fixed/random seeds and confidence
   intervals. Freeform value sets and Monte Carlo sampling remain separate work.
 - ✅ Ground explanations in topology plus structured metrics, including per-stage
-  `mean_wait` / `wait_count` for generic process flows; deeper intervention-level
-  causal inference remains future work.
+  `mean_wait` / `wait_count` and adjacent-path observation relationships for generic
+  process flows; deeper intervention-level causal inference remains future work.
 
 Exit criterion: AI answers "where is the bottleneck and what change helped?"
 from two reproducible experiment results.

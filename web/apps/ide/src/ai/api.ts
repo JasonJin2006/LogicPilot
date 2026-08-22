@@ -163,6 +163,7 @@ export interface MetricQueryResult {
       utilization: number;
       availability: number;
       meanOccupancy: number;
+      meanWait: number;
       timedOut: number;
       preempted: number;
     }>;
@@ -176,8 +177,21 @@ export interface MetricQueryResult {
         utilization: number | null;
         availability: number | null;
         meanOccupancy: number | null;
+        meanWait: number | null;
         timedOut: number | null;
         preempted: number | null;
+      }>;
+      relationships: Array<{
+        from: string;
+        to: string;
+        signals: string[];
+        evidence: {
+          upstreamMeanOccupancy: number | null;
+          downstreamMeanWait: number | null;
+          downstreamUtilization: number | null;
+          downstreamAvailability: number | null;
+          downstreamTimedOut: number | null;
+        };
       }>;
       caveat: string;
     };
