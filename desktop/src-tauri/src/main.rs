@@ -27,6 +27,7 @@ static APP_ENDPOINTS: OnceLock<AppEndpoints> = OnceLock::new();
 struct AppEndpoints {
     api_base: String,
     ws_url: String,
+    session_token: String,
 }
 
 #[tauri::command]
@@ -60,17 +61,44 @@ fn create_project_dir(
     if !base.is_absolute() {
         return Err("the project folder must be an absolute path".to_string());
     }
-    if !base.is_dir() {
+    let base_metadata = std::fs::symlink_metadata(&base)
+        .map_err(|error| format!("cannot inspect '{}': {}", base.display(), error))?;
+    if base_metadata.file_type().is_symlink() {
+        return Err(format!(
+            "project parent '{}' must not be a symbolic link or junction",
+            base.display()
+        ));
+    }
+    if !base_metadata.is_dir() {
         return Err(format!("'{}' is not a folder", base.display()));
     }
+    let base = std::fs::canonicalize(&base)
+        .map_err(|error| format!("cannot resolve '{}': {}", base.display(), error))?;
     let project_dir = base.join(&name);
+    match std::fs::symlink_metadata(&project_dir) {
+        Ok(_) => {
+            return Err(format!(
+                "project directory '{}' already exists; choose another name or open it instead",
+                project_dir.display()
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "cannot inspect '{}': {}",
+                project_dir.display(),
+                error
+            ));
+        }
+    }
     std::fs::create_dir_all(&project_dir)
         .map_err(|error| format!("cannot create '{}': {}", project_dir.display(), error))?;
-    write_project_files_impl(&project_dir, &files)?;
     // Container scene files (one per container node) live under model/scenes/.
     // build/ and results/ are NOT pre-created: the Explorer tree mirrors the
     // real folder exactly, and nothing writes into them yet.
-    let _ = std::fs::create_dir_all(project_dir.join("model").join("scenes"));
+    std::fs::create_dir_all(project_dir.join("model").join("scenes"))
+        .map_err(|error| format!("cannot create project scene folder: {}", error))?;
+    write_project_files_impl(&project_dir, &files)?;
     Ok(project_dir.to_string_lossy().into_owned())
 }
 
@@ -254,6 +282,7 @@ fn main() {
         let mut reader = BufReader::new(stdout);
         let mut http_port = None;
         let mut ws_port = None;
+        let mut session_token = None;
         let mut line = String::new();
         loop {
             line.clear();
@@ -265,8 +294,10 @@ fn main() {
                 http_port = Some(port.to_string());
             } else if let Some(port) = trimmed.strip_prefix("LOGICPILOT_WS_PORT ") {
                 ws_port = Some(port.to_string());
+            } else if let Some(token) = trimmed.strip_prefix("LOGICPILOT_SESSION_TOKEN ") {
+                session_token = Some(token.to_string());
             }
-            if http_port.is_some() && ws_port.is_some() {
+            if http_port.is_some() && ws_port.is_some() && session_token.is_some() {
                 break;
             }
         }
@@ -286,10 +317,11 @@ fn main() {
                 }
             }
         });
-        match (http_port, ws_port) {
-            (Some(http_port), Some(ws_port)) => AppEndpoints {
+        match (http_port, ws_port, session_token) {
+            (Some(http_port), Some(ws_port), Some(session_token)) => AppEndpoints {
                 api_base: format!("http://127.0.0.1:{}", http_port),
-                ws_url: format!("ws://127.0.0.1:{}/sim", ws_port),
+                ws_url: format!("ws://127.0.0.1:{}/sim?token={}", ws_port, session_token),
+                session_token,
             },
             _ => {
                 eprintln!("app server did not report its ports");

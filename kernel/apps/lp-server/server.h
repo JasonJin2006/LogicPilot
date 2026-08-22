@@ -78,6 +78,9 @@ struct ServerConfig {
   // SO_SNDBUF on an already-connected socket is ignored on Windows.
   std::size_t send_buffer_size{0};
   bool trace{false};  // mirror every outgoing frame as JSON on stdout
+  // When set, WebSocket clients must include ?token=<value> in /sim. The
+  // standalone CLI keeps the empty default for local development/tests.
+  std::string session_token;
 };
 
 class SimServer {

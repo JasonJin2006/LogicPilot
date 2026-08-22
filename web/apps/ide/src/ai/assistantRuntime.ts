@@ -86,6 +86,7 @@ export interface RunAssistantOptions {
   maxIterations?: number;
   /** Base URL prefix for the assistant endpoint ('' in the desktop app). */
   apiBase?: string;
+  sessionToken?: string;
   /** Capability packages mounted by the host (for example modeling tools). */
   capabilities?: string[];
   /** Runtime-discovered tools, such as MCP tools, mounted for this turn. */
@@ -165,7 +166,10 @@ async function requestStep(
     try {
       response = await fetchImpl(`${options.apiBase ?? ''}/api/assistant`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          ...(options.sessionToken ? { 'x-logicpilot-session': options.sessionToken } : {}),
+        },
         body: JSON.stringify({
           messages,
           context,
@@ -251,7 +255,10 @@ async function requestStepStream(
   const fetchImpl = options.fetchImpl ?? fetch;
   const response = await fetchImpl(`${options.apiBase ?? ''}/api/assistant/stream`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(options.sessionToken ? { 'x-logicpilot-session': options.sessionToken } : {}),
+    },
     body: JSON.stringify({
       messages,
       context,

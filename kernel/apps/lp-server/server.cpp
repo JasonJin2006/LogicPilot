@@ -14,6 +14,7 @@
 #include <mutex>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -176,6 +177,8 @@ class Session : public std::enable_shared_from_this<Session> {
 
   websocket::stream<tcp::socket> ws_;
   SimServer::Impl& server_;
+  beast::flat_buffer handshake_buffer_;
+  websocket::request_type handshake_request_;
   beast::flat_buffer read_buffer_;
   std::deque<OutMessage> write_queue_;
   OutMessage in_flight_;
@@ -189,6 +192,11 @@ class Session : public std::enable_shared_from_this<Session> {
 // ---------------------------------------------------------------------------
 struct SimServer::Impl {
   ServerConfig config;
+
+  [[nodiscard]] bool authorized_websocket_target(std::string_view target) const {
+    if (config.session_token.empty()) return target == "/sim";
+    return target == "/sim?token=" + config.session_token;
+  }
 
   // --- network ---
   asio::io_context ioc_{1};  // single-threaded run() on net_thread_
@@ -1670,13 +1678,25 @@ struct SimServer::Impl {
 void Session::run() {
   ws_.set_option(websocket::stream_base::timeout::suggested(
       beast::role_type::server));
+  auto self = shared_from_this();
   ws_.set_option(websocket::stream_base::decorator(
       [](websocket::response_type& response) {
         response.set(http::field::server, "LogicPilot-lp-server/1");
       }));
-  auto self = shared_from_this();
-  ws_.async_accept(
-      [self](beast::error_code ec) { self->on_accept(ec); });
+  http::async_read(
+      ws_.next_layer(), handshake_buffer_, handshake_request_,
+      [self](beast::error_code ec, std::size_t) {
+        if (ec || !self->server_.authorized_websocket_target(
+                      self->handshake_request_.target())) {
+          beast::error_code close_ec;
+          self->ws_.next_layer().close(close_ec);
+          self->server_.remove_session(self.get());
+          return;
+        }
+        self->ws_.async_accept(
+            self->handshake_request_,
+            [self](beast::error_code accept_ec) { self->on_accept(accept_ec); });
+      });
 }
 
 void Session::on_accept(beast::error_code ec) {

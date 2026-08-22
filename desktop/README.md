@@ -71,16 +71,19 @@ Environment overrides (development/debugging only):
 - `LP_SERVER` / `LPCLI` — native binary paths (default to bundled Release
   sidecars in an installed app).
 
-The app server prints `LOGICPILOT_PORT <http>` / `LOGICPILOT_WS_PORT <ws>` on
-stdout; it shuts its gateway down when the desktop process exits.
+The app server prints `LOGICPILOT_PORT <http>`, `LOGICPILOT_WS_PORT <ws>` and a
+random `LOGICPILOT_SESSION_TOKEN` on stdout; it shuts its gateway down when the
+desktop process exits. The token is passed to the Tauri page through
+`app_config` and is required by both the HTTP API and WebSocket gateway.
 
 ## Local API security boundary
 
-The Node app server binds only to `127.0.0.1`. Its HTTP API is a local desktop
-control surface, not an authenticated multi-user backend: any process that can
-reach the loopback port should be treated as trusted. Requests are bounded by
-a 16 MiB body limit, a 120 second timeout and four concurrent API operations;
-additional provider-specific limits may be stricter. Do not expose the app
-server through a LAN bind, reverse proxy or port forward without adding
+The Node app server binds only to `127.0.0.1`. Its HTTP API accepts only the
+actual loopback `Host`, the Tauri/loopback origins and the per-process session
+token; `OPTIONS` is subject to the same host/origin check. Unknown `/api/*`
+paths return JSON 404 and static resources accept only GET/HEAD. Requests are
+bounded by a 16 MiB body limit, a 120 second timeout and four concurrent API
+operations; additional provider-specific limits may be stricter. Do not expose
+the app server through a LAN bind, reverse proxy or port forward without adding
 authentication, origin/CSRF protection, rate limiting and SSRF controls for
 custom AI endpoints.

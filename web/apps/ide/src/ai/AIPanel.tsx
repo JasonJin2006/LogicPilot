@@ -719,6 +719,7 @@ export function AIPanel() {
       session,
       history,
       apiBase: config?.apiBase ?? '',
+      sessionToken: config?.sessionToken,
       capabilities: [
         ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
           ? permissionMode === 'Read only' || agentMode !== 'Agent'

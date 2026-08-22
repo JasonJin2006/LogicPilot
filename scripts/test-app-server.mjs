@@ -39,11 +39,15 @@ function waitForPort(child, onGatewayPid = () => {}, timeoutMs = 20_000) {
       buffered += chunk.toString();
       const match = buffered.match(/(?:^|\r?\n)LOGICPILOT_PORT (\d+)(?:\r?\n|$)/);
       if (!match) return;
+      const token = buffered.match(
+        /(?:^|\r?\n)LOGICPILOT_SESSION_TOKEN ([A-Za-z0-9_-]+)(?:\r?\n|$)/,
+      );
+      if (!token) return;
       const gateway = buffered.match(/(?:^|\r?\n)LOGICPILOT_GATEWAY_PID (\d+)(?:\r?\n|$)/);
       if (gateway) onGatewayPid(Number(gateway[1]));
       clearTimeout(timeout);
       child.stdout.off('data', onData);
-      resolve(Number(match[1]));
+      resolve({ port: Number(match[1]), sessionToken: token[1] });
     };
     child.stdout.on('data', onData);
     child.once('exit', (code) => {
@@ -91,7 +95,16 @@ child.stderr.on('data', (chunk) => {
 });
 
 try {
-  const port = await waitForPort(child);
+  const startup = await waitForPort(child);
+  const port = startup.port;
+  const apiFetch = (url, init = {}) =>
+    fetch(url, {
+      ...init,
+      headers: {
+        'x-logicpilot-session': startup.sessionToken,
+        ...(init.headers ?? {}),
+      },
+    });
   const baseUrl = `http://127.0.0.1:${port}`;
 
   const indexResponse = await fetch(`${baseUrl}/`);
@@ -102,9 +115,25 @@ try {
   const configResponse = await fetch(`${baseUrl}/api/config`);
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
-  assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim$/);
+  assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim\?token=/);
+  const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
+  assert.equal(unauthorized.status, 401);
+  const rebinding = await fetch(`${baseUrl}/api/config`, {
+    headers: { host: 'evil.example', origin: 'http://evil.example' },
+  });
+  assert.equal(rebinding.status, 403);
+  const rejectedPreflight = await fetch(`${baseUrl}/api/config`, {
+    method: 'OPTIONS',
+    headers: { host: 'evil.example', origin: 'http://evil.example' },
+  });
+  assert.equal(rejectedPreflight.status, 403);
+  const unknownApi = await apiFetch(`${baseUrl}/api/does-not-exist`);
+  assert.equal(unknownApi.status, 404);
+  assert.equal((await unknownApi.json()).ok, false);
+  const staticPost = await fetch(`${baseUrl}/`, { method: 'POST' });
+  assert.equal(staticPost.status, 404);
 
-  const oversizedRequest = await fetch(`${baseUrl}/api/ai-build`, {
+  const oversizedRequest = await apiFetch(`${baseUrl}/api/ai-build`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ prompt: 'x'.repeat(17 * 1024 * 1024) }),
@@ -112,7 +141,7 @@ try {
   assert.equal(oversizedRequest.status, 413);
   assert.match((await oversizedRequest.json()).error, /request body exceeds/);
 
-  const buildResponse = await fetch(`${baseUrl}/api/ai-build`, {
+  const buildResponse = await apiFetch(`${baseUrl}/api/ai-build`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -128,7 +157,7 @@ try {
   assert.ok(result.metrics.blocks.some((block) => block.kind === 'queue'));
   assert.ok(result.metrics.blocks.some((block) => block.kind === 'service'));
 
-  const patchResponse = await fetch(`${baseUrl}/api/ai-patch`, {
+  const patchResponse = await apiFetch(`${baseUrl}/api/ai-patch`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -146,7 +175,7 @@ try {
     { op: 'update_block', target: 'server-id', params: { capacity: 3 } },
   ]);
 
-  const validateResponse = await fetch(`${baseUrl}/api/ai-validate`, {
+  const validateResponse = await apiFetch(`${baseUrl}/api/ai-validate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dsl: result.dsl }),
@@ -154,7 +183,7 @@ try {
   assert.equal(validateResponse.status, 200);
   assert.equal((await validateResponse.json()).ok, true);
 
-  const runResponse = await fetch(`${baseUrl}/api/ai-run`, {
+  const runResponse = await apiFetch(`${baseUrl}/api/ai-run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dsl: result.dsl, reps: 1, arrivals: 100, warmup: 0 }),
@@ -165,7 +194,7 @@ try {
   assert.match(runResult.runSummary, /summary:/);
   assert.ok(runResult.metrics.blocks.some((block) => block.kind === 'queue'));
 
-  const variationResponse = await fetch(`${baseUrl}/api/parameter-variation`, {
+  const variationResponse = await apiFetch(`${baseUrl}/api/parameter-variation`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -185,7 +214,7 @@ try {
   // Bad variation inputs must produce an understandable 4xx, not a
   // TypeError/500: an empty Monte Carlo value set used to crash with
   // `undefined.toPrecision()`.
-  const badVariation = await fetch(`${baseUrl}/api/parameter-variation`, {
+  const badVariation = await apiFetch(`${baseUrl}/api/parameter-variation`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -203,7 +232,7 @@ try {
   assert.match(badResult.error, /values must be a non-empty/);
   // A seed outside the 32-bit sampler state is rejected explicitly instead
   // of silently colliding with its truncated value.
-  const badSeed = await fetch(`${baseUrl}/api/parameter-variation`, {
+  const badSeed = await apiFetch(`${baseUrl}/api/parameter-variation`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -219,7 +248,7 @@ try {
   assert.equal(badSeedResult.ok, false);
   assert.match(badSeedResult.error, /seed must be an integer in \[0, 4294967295\]/);
 
-  const queryResponse = await fetch(`${baseUrl}/api/ai-query-metrics`, {
+  const queryResponse = await apiFetch(`${baseUrl}/api/ai-query-metrics`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ question: 'where is the bottleneck?', metrics: runResult.metrics }),
@@ -230,7 +259,7 @@ try {
   assert.ok(queryResult.findings.length > 0);
   assert.equal(queryResult.evidence.causalEvidence.status, 'insufficient-evidence');
 
-  const compareResponse = await fetch(`${baseUrl}/api/ai-compare-metrics`, {
+  const compareResponse = await apiFetch(`${baseUrl}/api/ai-compare-metrics`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ before: result.metrics, after: runResult.metrics }),
@@ -256,7 +285,7 @@ try {
       crashStderr += chunk.toString();
     });
     try {
-      const crashPort = await waitForPort(
+      const crashStartup = await waitForPort(
         crashChild,
         (pid) => {
           gatewayPid = pid;
@@ -264,7 +293,7 @@ try {
         20_000,
       );
       assert.ok(gatewayPid > 0, 'app server must report the gateway pid');
-      const crashBase = `http://127.0.0.1:${crashPort}`;
+      const crashBase = `http://127.0.0.1:${crashStartup.port}`;
       const alive = await fetch(`${crashBase}/api/config`)
         .then((response) => response.ok)
         .catch(() => false);

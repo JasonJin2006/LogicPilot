@@ -1,4 +1,4 @@
-import { getAppConfig } from '../state/appConfig';
+import { getAppConfig, sessionHeaders } from '../state/appConfig';
 import type { AssistantTool } from './capabilities/logicpilot-modeling/tools';
 
 export interface McpToolDescriptor {
@@ -22,6 +22,7 @@ async function endpoint(path: string, init?: RequestInit, signal?: AbortSignal) 
     cache: 'no-store',
     signal,
     ...init,
+    headers: { ...sessionHeaders(config), ...init?.headers },
   });
   const data = await response.json();
   if (!response.ok) throw new Error(String(data?.error ?? `HTTP ${response.status}`));

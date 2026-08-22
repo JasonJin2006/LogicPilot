@@ -133,6 +133,9 @@ function sendBodyError(res, error) {
 export function handleConfig(req, res) {
   send(res, 200, {
     wsUrl: process.env.LOGICPILOT_WS_URL ?? 'ws://127.0.0.1:8089/sim',
+    ...(process.env.LOGICPILOT_SESSION_TOKEN
+      ? { sessionToken: process.env.LOGICPILOT_SESSION_TOKEN }
+      : {}),
   });
 }
 

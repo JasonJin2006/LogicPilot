@@ -2,7 +2,7 @@
 // Types mirror the server responses (scripts/ai-build.mjs, ai-optimize.mjs,
 // ai-explain.mjs).
 
-import { getAppConfig } from '../state/appConfig';
+import { getAppConfig, sessionHeaders } from '../state/appConfig';
 import type { AiConversationTurn } from './conversationStore';
 import type { ModelDocument, ModelPatch } from '@logicpilot/editor';
 import type { RunOptions } from '../state/runStore';
@@ -255,7 +255,7 @@ async function post<T>(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}${endpoint}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ prompt, run: true, ...extra }),
   });
   const data: unknown = await response.json();
@@ -292,7 +292,7 @@ export async function aiValidateDsl(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-validate`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ dsl }),
     signal,
   });
@@ -313,7 +313,7 @@ export async function aiRunDsl(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-run`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ dsl, ...experiment }),
     signal,
   });
@@ -329,7 +329,7 @@ export async function runParameterVariation(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/parameter-variation`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ dsl, ...options }),
   });
   const data = (await response.json()) as ParameterVariationResult & { error?: string };
@@ -353,7 +353,7 @@ export async function aiQueryMetrics(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-query-metrics`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ question, metrics, model }),
   });
   const data = (await response.json()) as MetricQueryResult & { error?: string };
@@ -369,7 +369,7 @@ export async function aiCompareMetrics(
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-compare-metrics`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
     body: JSON.stringify({ before, after, confidence }),
   });
   const data = (await response.json()) as MetricComparisonResult & { error?: string };

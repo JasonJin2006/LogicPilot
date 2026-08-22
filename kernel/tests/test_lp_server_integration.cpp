@@ -56,7 +56,8 @@ struct EnsureMethodsRegistered {
 class WsClient {
  public:
   bool connect(unsigned short port, int retries = 40,
-               bool small_receive_buffer = false) {
+               bool small_receive_buffer = false,
+               std::string target = "/sim") {
     for (int attempt = 0; attempt < retries; ++attempt) {
       try {
         tcp::resolver resolver{ioc_};
@@ -85,7 +86,7 @@ class WsClient {
         } else {
           asio::connect(ws_.next_layer(), results);
         }
-        ws_.handshake("127.0.0.1:" + std::to_string(port), "/sim");
+        ws_.handshake("127.0.0.1:" + std::to_string(port), target);
         return true;
       } catch (const std::exception&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -411,6 +412,23 @@ logicpilot::server::ServerConfig make_test_config() {
 }
 
 }  // namespace
+
+TEST_CASE("lp-server requires the configured WebSocket session token",
+          "[server][security]") {
+  auto config = make_test_config();
+  config.session_token = "test-session-token";
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient missing;
+  REQUIRE_FALSE(missing.connect(server.port(), 1));
+
+  WsClient authorized;
+  REQUIRE(authorized.connect(
+      server.port(), 40, false, "/sim?token=test-session-token"));
+  server.stop();
+}
 
 TEST_CASE("lp-server streams a full mm1 run over WebSocket",
           "[server][integration]") {

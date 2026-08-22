@@ -1,4 +1,4 @@
-import { getAppConfig } from '../state/appConfig';
+import { getAppConfig, sessionHeaders } from '../state/appConfig';
 
 export interface AiProtocolInfo {
   id: string;
@@ -29,7 +29,11 @@ export interface AiProviderState {
 
 async function endpoint(path: string, init?: RequestInit) {
   const config = await getAppConfig();
-  const response = await fetch(`${config?.apiBase ?? ''}${path}`, { cache: 'no-store', ...init });
+  const response = await fetch(`${config?.apiBase ?? ''}${path}`, {
+    cache: 'no-store',
+    ...init,
+    headers: { ...sessionHeaders(config), ...init?.headers },
+  });
   const data = await response.json();
   if (!response.ok) throw new Error(String(data?.error ?? `request failed (${response.status})`));
   return data;

@@ -55,13 +55,12 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 
 工程是工作单元（`*.lpproj` 单文件打包，格式见[工程格式 v2](../specs/project-format-v2)）：
 
-- **File > New Project...**（Ctrl+N）：输入工程名与所在文件夹，桌面客户端会在该文件夹生成 `工程名/` 目录（`logicpilot.json`、`model/main.lp`、`presentation/main.canvas.json`、`build/`、`results/`）；浏览器模式创建内存工程并在 Save 时导出 `.lpproj`。编辑后 Explorer 根部显示脏点，桌面模式的 Save 写回工程目录。
-- **File > Save**：把画布模型（含坐标/连线/参数）与生成的 DSL 一起存成
-  `*.lpproj`，重新打开时布局完整还原。
+- **File > New Project...**（Ctrl+N）：输入工程名与所在文件夹，桌面客户端会在该文件夹生成 `工程名/` 目录（`logicpilot.json`、`model/main.lp`、`presentation/main.canvas.json`、`build/`、`results/`）。目标目录已存在时会拒绝创建，避免覆盖已有工程；浏览器模式创建内存工程并在 Save 时导出 `.lpproj`。编辑后 Explorer 根部显示脏点，桌面模式的 Save 写回工程目录。
+- **File > Save**：桌面模式先在同级临时目录完成整棵工程树的写入和校验，再交换目录，并保留一个 `.logicpilot-backup-*` 可恢复快照；浏览器模式仍导出 `*.lpproj`。
 - **File > Open... / Open Recent**：打开 `*.lpproj` 工程；旧 `.lp` / `.json`
   单模型文件仍可打开（无布局信息）。
 
-桌面模式会每 2 秒检查已打开工程的文件指纹。外部工具修改文件后，Explorer 根节点和
+桌面模式会每 2 秒检查已打开工程（排除 `build/`、`results/`）的文件指纹。外部工具修改文件后，Explorer 根节点和
 底部状态栏会显示变更数量；IDE 不会自动覆盖这些修改，Save 时会列出 LP5xxx 冲突并
 要求明确选择是否覆盖。浏览器内存工程不启用此检查。
 

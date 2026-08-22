@@ -42,6 +42,7 @@ void print_usage() {
       "  --model-file <path>  FlatBuffers IR (.lpir/.ir.bin); default is the\n"
       "                       built-in M/M/1 model\n"
       "  --port <n>           listen port (default 8089; ws://127.0.0.1:P/sim)\n"
+      "  --session-token <s>  require this token in the WebSocket /sim URL\n"
       "  --seed <n>           default run seed (default 42)\n"
       "  --reps <n>           default replications per run (default 1)\n"
       "  --arrivals <n>       arrivals per replication (default 4000)\n"
@@ -170,6 +171,12 @@ int main(int argc, char** argv) {
         return 2;
       }
       config.port = static_cast<unsigned short>(port);
+    } else if (arg == "--session-token") {
+      if (!need_value() || value.empty()) {
+        fmt::print(stderr, "error: invalid --session-token\n");
+        return 2;
+      }
+      config.session_token = value;
     } else if (arg == "--seed") {
       if (!need_value() || !parse_u64(value, config.seed)) {
         fmt::print(stderr, "error: invalid --seed\n");

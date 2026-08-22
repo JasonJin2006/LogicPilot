@@ -6,6 +6,7 @@
 export interface AppConfig {
   apiBase: string;
   wsUrl: string;
+  sessionToken: string;
 }
 
 let cached: AppConfig | null | undefined;
@@ -17,8 +18,16 @@ export async function getAppConfig(): Promise<AppConfig | null> {
   if (isTauri) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const config = (await invoke('app_config')) as { api_base: string; ws_url: string };
-      cached = { apiBase: config.api_base, wsUrl: config.ws_url };
+      const config = (await invoke('app_config')) as {
+        api_base: string;
+        ws_url: string;
+        session_token: string;
+      };
+      cached = {
+        apiBase: config.api_base,
+        wsUrl: config.ws_url,
+        sessionToken: config.session_token,
+      };
       return cached;
     } catch {
       // The Tauri command can briefly race the app-server bootstrap. Do not
@@ -27,6 +36,31 @@ export async function getAppConfig(): Promise<AppConfig | null> {
       return null;
     }
   }
-  cached = null;
-  return cached;
+  // Vitest/Node callers do not have a browser origin to bootstrap from. Keep
+  // the browser-only discovery out of server-side/unit-test fetch mocks.
+  if (typeof window === 'undefined') {
+    cached = null;
+    return cached;
+  }
+  try {
+    const response = await fetch('/api/config', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const config = (await response.json()) as {
+      wsUrl?: string;
+      sessionToken?: string;
+    };
+    cached = {
+      apiBase: '',
+      wsUrl: config.wsUrl ?? '',
+      sessionToken: config.sessionToken ?? '',
+    };
+    return cached;
+  } catch {
+    cached = undefined;
+    return null;
+  }
+}
+
+export function sessionHeaders(config: AppConfig | null): Record<string, string> {
+  return config?.sessionToken ? { 'x-logicpilot-session': config.sessionToken } : {};
 }
