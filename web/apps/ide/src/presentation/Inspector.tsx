@@ -8,8 +8,9 @@
 import { createGraphicNode, regularPolygonPoints } from '@logicpilot/editor';
 import type { Arrowhead, BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import { useState } from 'react';
-import { Eye, EyeOff, GripVertical, Lock, Unlock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, Unlock } from 'lucide-react';
 import type { AlignAxis, DistributeAxis } from '../state/modelStore';
+import type { PresentationLayer } from './layers';
 
 type ConstraintShape = NonNullable<GraphicNode['constraints']>;
 
@@ -25,11 +26,11 @@ interface InspectorProps {
   onBoolean?: (op: BooleanOp) => void;
   onBringToFront?: () => void;
   onSendToBack?: () => void;
-  layers?: Array<{ id: string; name: string; kind: string; object: GraphicNode }>;
+  layers?: PresentationLayer[];
   selectedLayerId?: string;
   onSelectLayer?: (id: string) => void;
-  onToggleLayerVisibility?: (id: string) => void;
-  onToggleLayerLock?: (id: string) => void;
+  onToggleLayerVisibility?: (id: string, path: number[]) => void;
+  onToggleLayerLock?: (id: string, path: number[]) => void;
   onReorderLayers?: (idsTopFirst: string[]) => void;
   onMakeComponent?: () => void;
   onCreateInstance?: () => void;
@@ -83,6 +84,7 @@ export function PresentationInspector({
   onConnectSelection,
 }: InspectorProps) {
   const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
+  const [collapsedLayerIds, setCollapsedLayerIds] = useState<Set<string>>(new Set());
   const t = object.transform;
   const s = object.style;
   const patchTransform = (patch: Partial<GraphicNode['transform']>) =>
@@ -128,10 +130,23 @@ export function PresentationInspector({
         i === index ? { ...child, ...patch } : child,
       ),
     });
-  const topFirstLayers = [...(layers ?? [])].reverse();
+  const topFirstLayers = layers ?? [];
+  let hiddenAtDepth: number | null = null;
+  const visibleLayers = topFirstLayers.filter((layer) => {
+    if (hiddenAtDepth !== null) {
+      if (layer.depth > hiddenAtDepth) return false;
+      hiddenAtDepth = null;
+    }
+    if (collapsedLayerIds.has(layer.id)) hiddenAtDepth = layer.depth;
+    return true;
+  });
   const dropLayer = (targetId: string) => {
     if (!draggedLayerId || draggedLayerId === targetId) return;
-    const ids = topFirstLayers.map((layer) => layer.id).filter((id) => id !== draggedLayerId);
+    const roots = topFirstLayers.filter((layer) => layer.path.length === 0);
+    const dragged = roots.find((layer) => layer.id === draggedLayerId);
+    const target = roots.find((layer) => layer.id === targetId);
+    if (!dragged || !target) return;
+    const ids = roots.map((layer) => layer.id).filter((id) => id !== draggedLayerId);
     const targetIndex = ids.indexOf(targetId);
     ids.splice(targetIndex < 0 ? ids.length : targetIndex, 0, draggedLayerId);
     onReorderLayers?.(ids);
@@ -169,15 +184,20 @@ export function PresentationInspector({
         <div className="props-section presentation-layers">
           <div className="props-section-title">Layers</div>
           <div className="presentation-layer-list">
-            {topFirstLayers.map((layer) => {
+            {visibleLayers.map((layer) => {
               const visible = layer.object.visible !== false;
               const locked = layer.object.locked === true;
+              const expandable = (layer.object.children?.length ?? 0) > 0;
+              const collapsed = collapsedLayerIds.has(layer.id);
+              const rootLayer = layer.path.length === 0;
               return (
                 <div
                   key={layer.id}
                   className={`presentation-layer-row${layer.id === selectedLayerId ? ' selected' : ''}${layer.id === draggedLayerId ? ' dragging' : ''}`}
-                  draggable={!!onReorderLayers}
+                  style={{ paddingLeft: `${4 + layer.depth * 14}px` }}
+                  draggable={!!onReorderLayers && rootLayer}
                   onDragStart={(event) => {
+                    if (!rootLayer) return;
                     setDraggedLayerId(layer.id);
                     event.dataTransfer.effectAllowed = 'move';
                     event.dataTransfer.setData('text/plain', layer.id);
@@ -190,15 +210,37 @@ export function PresentationInspector({
                   }}
                   onDrop={(event) => {
                     event.preventDefault();
+                    if (!rootLayer) return;
                     dropLayer(layer.id);
                   }}
                 >
-                  <GripVertical className="presentation-layer-grip" size={13} aria-hidden />
+                  {expandable ? (
+                    <button
+                      type="button"
+                      className="presentation-layer-expand"
+                      aria-label={collapsed ? `Expand ${layer.name}` : `Collapse ${layer.name}`}
+                      onClick={() =>
+                        setCollapsedLayerIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(layer.id)) next.delete(layer.id);
+                          else next.add(layer.id);
+                          return next;
+                        })
+                      }
+                    >
+                      {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                  ) : (
+                    <span className="presentation-layer-expand-spacer" />
+                  )}
+                  {rootLayer && (
+                    <GripVertical className="presentation-layer-grip" size={13} aria-hidden />
+                  )}
                   <button
                     type="button"
                     className="presentation-layer-main"
                     title={`Select ${layer.name}`}
-                    onClick={() => onSelectLayer?.(layer.id)}
+                    onClick={() => onSelectLayer?.(layer.rootId)}
                   >
                     <span>{layer.name}</span>
                     <small>{layer.kind}</small>
@@ -207,7 +249,7 @@ export function PresentationInspector({
                     type="button"
                     className="presentation-layer-icon"
                     title={visible ? 'Hide layer' : 'Show layer'}
-                    onClick={() => onToggleLayerVisibility?.(layer.id)}
+                    onClick={() => onToggleLayerVisibility?.(layer.rootId, layer.path)}
                   >
                     {visible ? <Eye size={14} /> : <EyeOff size={14} />}
                   </button>
@@ -215,7 +257,7 @@ export function PresentationInspector({
                     type="button"
                     className="presentation-layer-icon"
                     title={locked ? 'Unlock layer' : 'Lock layer'}
-                    onClick={() => onToggleLayerLock?.(layer.id)}
+                    onClick={() => onToggleLayerLock?.(layer.rootId, layer.path)}
                   >
                     {locked ? <Lock size={14} /> : <Unlock size={14} />}
                   </button>

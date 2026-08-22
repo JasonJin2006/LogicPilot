@@ -446,6 +446,152 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   log('generic process flow streamed live delay telemetry');
 
+  // Presentation Layers: import a real v3 canvas bundle containing a nested
+  // group, then verify the scene-graph tree can expand/collapse and mutate a
+  // child layer without flattening it into a top-level model node.
+  await page.getByRole('button', { name: 'File', exact: true }).click();
+  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
+  await page.getByRole('button', { name: "Don't Save" }).click();
+  await page.waitForSelector('.center-empty', { timeout: 5_000 });
+  const nestedLayerObject = {
+    type: 'group',
+    transform: {
+      x: 200,
+      y: 160,
+      width: 260,
+      height: 160,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+      skewX: 0,
+      skewY: 0,
+    },
+    style: { fill: 'none', stroke: '#333333', strokeWidth: 1.5, opacity: 1 },
+    children: [
+      {
+        type: 'rect',
+        transform: {
+          x: 20,
+          y: 20,
+          width: 80,
+          height: 50,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          skewX: 0,
+          skewY: 0,
+        },
+        style: { fill: '#d7e8ff', stroke: '#336699', strokeWidth: 1.5, opacity: 1 },
+      },
+      {
+        type: 'group',
+        transform: {
+          x: 120,
+          y: 40,
+          width: 110,
+          height: 80,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          skewX: 0,
+          skewY: 0,
+        },
+        style: { fill: 'none', stroke: '#996633', strokeWidth: 1.5, opacity: 1 },
+        children: [
+          {
+            type: 'text',
+            text: 'Nested',
+            textStyle: {
+              fontFamily: 'Arial',
+              fontSize: 16,
+              fontWeight: 400,
+              align: 'center',
+              fontStyle: 'normal',
+              textDecoration: 'none',
+              lineHeight: 1.2,
+              letterSpacing: 0,
+              verticalAlign: 'middle',
+            },
+            transform: {
+              x: 8,
+              y: 8,
+              width: 90,
+              height: 30,
+              rotation: 0,
+              scaleX: 1,
+              scaleY: 1,
+              skewX: 0,
+              skewY: 0,
+            },
+            style: { fill: '#333333', stroke: '#333333', strokeWidth: 0, opacity: 1 },
+          },
+        ],
+      },
+    ],
+  };
+  const layerBundle = {
+    schema: 'logicpilot.project',
+    format: 'bundle',
+    version: 1,
+    manifest: {
+      name: 'LayerDemo',
+      model: 'model/main.lp',
+      presentation: 'presentation/main.canvas.json',
+      defaultExperiment: null,
+      defaults: { seed: 42, schemaVersion: 2 },
+    },
+    files: {
+      'model/main.lp': 'model LayerDemo {\n}\n',
+      'presentation/main.canvas.json': JSON.stringify({
+        schema: 'logicpilot.canvas',
+        version: 3,
+        layout: {},
+        edges: [],
+        shapes: [{ kind: 'group', name: 'Card', object: nestedLayerObject }],
+      }),
+    },
+  };
+  await page
+    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .first()
+    .setInputFiles({
+      name: 'layers.lpproj',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(layerBundle)),
+    });
+  await page.waitForSelector('.model-shape.kind-group', { timeout: 20_000 });
+  await page.locator('.model-shape.kind-group').click();
+  await page.locator('.area-right .tab', { hasText: 'Properties' }).click();
+  await page.waitForSelector('.presentation-layer-list', { timeout: 5_000 });
+  const layerRows = page.locator('.presentation-layer-row');
+  if ((await layerRows.count()) !== 4) {
+    throw new Error(`nested layers expected four rows, got ${await layerRows.count()}`);
+  }
+  const nestedGroupRow = layerRows.filter({ hasText: 'group 2' });
+  if ((await nestedGroupRow.count()) !== 1) {
+    throw new Error('nested group missing from Layers tree');
+  }
+  await nestedGroupRow.locator('button[aria-label^="Collapse"]').click();
+  if ((await layerRows.count()) !== 3) {
+    throw new Error('collapsing a nested layer did not hide its child');
+  }
+  await nestedGroupRow.locator('button[aria-label^="Expand"]').click();
+  const nestedTextRow = layerRows.filter({ hasText: 'Nested' });
+  await nestedTextRow.locator('button[title="Hide layer"]').click();
+  await nestedTextRow.locator('button[title="Lock layer"]').click();
+  if ((await nestedTextRow.locator('button[title="Show layer"]').count()) !== 1) {
+    throw new Error('nested layer visibility toggle did not update');
+  }
+  if ((await nestedTextRow.locator('button[title="Unlock layer"]').count()) !== 1) {
+    throw new Error('nested layer lock toggle did not update');
+  }
+  await nestedTextRow.locator('.presentation-layer-main').click();
+  if ((await page.locator('.presentation-layer-row.selected').count()) !== 1) {
+    throw new Error('selecting a nested layer did not select its root object');
+  }
+  log('nested presentation Layers tree expands, toggles and selects child layers');
+
   // Agent population: the same compile->serve path should emit Tick frames
   // and keep the population count visible on the agent canvas card.
   await page.getByRole('button', { name: 'File', exact: true }).click();

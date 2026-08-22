@@ -7,6 +7,7 @@
 import { useModelStore } from '../state/modelStore';
 import { BLOCK_DEFAULTS, blockProperties, type BlockPropertyDef } from './blockDefs';
 import { PresentationInspector } from '../presentation/Inspector';
+import { flattenPresentationLayers, getPresentationLayer } from '../presentation/layers';
 import { useShapeSelection } from '../presentation/selectionStore';
 import { useMemo, useState } from 'react';
 import type { GraphicNode, ModelNode } from '@logicpilot/editor';
@@ -204,6 +205,15 @@ export function PropertiesPanel() {
   }
 
   if (node.presentation) {
+    const presentationLayers = (document?.nodes ?? [])
+      .filter(
+        (entry): entry is ModelNode & { presentation: GraphicNode } =>
+          !!entry.presentation && entry.container === node.container,
+      )
+      .reverse()
+      .flatMap((entry) =>
+        flattenPresentationLayers(entry.id, entry.name, entry.kind, entry.presentation),
+      );
     return (
       <PresentationInspector
         object={node.presentation}
@@ -221,30 +231,28 @@ export function PropertiesPanel() {
         }
         onBringToFront={() => useModelStore.getState().bringToFront(node.id)}
         onSendToBack={() => useModelStore.getState().sendToBack(node.id)}
-        layers={(document?.nodes ?? [])
-          .filter(
-            (entry): entry is ModelNode & { presentation: GraphicNode } =>
-              !!entry.presentation && entry.container === node.container,
-          )
-          .map((entry) => ({
-            id: entry.id,
-            name: entry.name,
-            kind: entry.kind,
-            object: entry.presentation,
-          }))}
+        layers={presentationLayers}
         selectedLayerId={node.id}
         onSelectLayer={select}
-        onToggleLayerVisibility={(id) => {
-          const layer = useModelStore
+        onToggleLayerVisibility={(id, path) => {
+          const root = useModelStore
             .getState()
             .document.nodes.find((entry) => entry.id === id)?.presentation;
-          if (layer) setPresentation(id, { ...layer, visible: layer.visible === false });
+          const layer = root ? getPresentationLayer(root, path) : null;
+          if (layer) {
+            useModelStore
+              .getState()
+              .setPresentationLayer(id, path, { visible: layer.visible === false });
+          }
         }}
-        onToggleLayerLock={(id) => {
-          const layer = useModelStore
+        onToggleLayerLock={(id, path) => {
+          const root = useModelStore
             .getState()
             .document.nodes.find((entry) => entry.id === id)?.presentation;
-          if (layer) setPresentation(id, { ...layer, locked: !layer.locked });
+          const layer = root ? getPresentationLayer(root, path) : null;
+          if (layer) {
+            useModelStore.getState().setPresentationLayer(id, path, { locked: !layer.locked });
+          }
         }}
         onReorderLayers={(idsTopFirst) =>
           useModelStore.getState().reorderPresentationLayers(idsTopFirst)

@@ -1438,6 +1438,27 @@
   color: var(--text-muted);
 }
 
+.presentation-layer-expand,
+.presentation-layer-expand-spacer {
+  display: grid;
+  width: 18px;
+  height: 22px;
+  flex: 0 0 18px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.presentation-layer-expand {
+  padding: 0;
+  cursor: pointer;
+}
+
+.presentation-layer-expand:hover {
+  color: var(--text-primary);
+}
+
 .presentation-layer-main,
 .presentation-layer-icon {
   border: 0;

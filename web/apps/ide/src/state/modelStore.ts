@@ -30,6 +30,7 @@ import {
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
 import { routeOrthogonal } from '../presentation/routing';
+import { updatePresentationLayer } from '../presentation/layers';
 
 const MAX_HISTORY = 100;
 // Rapid successive edits (drag moves, typing) within this window collapse
@@ -131,6 +132,8 @@ interface ModelState {
   /** Replace a node's vector presentation object (undoable). Keeps the
    *  node's x/y in sync with the object's transform. */
   setPresentation: (id: string, object: GraphicNode) => void;
+  /** Update a nested scene-graph child by its root-relative index path. */
+  setPresentationLayer: (id: string, path: number[], patch: Partial<GraphicNode>) => void;
   /** Merge presentation nodes into one `group` node (undoable). Returns the
    *  new node's id, or null when fewer than two nodes were given. */
   groupShapes: (ids: string[]) => string | null;
@@ -191,6 +194,51 @@ function commitAtomic(state: ModelState, next: ModelDocument): Partial<ModelStat
     canUndo: true,
     canRedo: false,
   };
+}
+
+function replacePresentation(
+  document: ModelDocument,
+  id: string,
+  object: GraphicNode,
+): ModelDocument | null {
+  let found = false;
+  let next: ModelDocument = {
+    ...document,
+    nodes: document.nodes.map((node) => {
+      if (node.id !== id) return node;
+      found = true;
+      return {
+        ...node,
+        presentation: object,
+        x: object.transform.x,
+        y: object.transform.y,
+      };
+    }),
+  };
+  if (!found) return null;
+  if (object.componentId && !object.instanceOf) {
+    next = {
+      ...next,
+      nodes: next.nodes.map((node) => {
+        const instance = node.presentation;
+        if (!instance || instance.instanceOf !== object.componentId) return node;
+        const transform = instance.transform;
+        return {
+          ...node,
+          presentation: {
+            ...object,
+            id: instance.id,
+            componentId: undefined,
+            instanceOf: object.componentId,
+            transform,
+            visible: instance.visible,
+            locked: instance.locked,
+          },
+        };
+      }),
+    };
+  }
+  return refreshLinkedConnectors(next);
 }
 
 export const useModelStore = create<ModelState>()((set, get) => ({
@@ -302,47 +350,18 @@ export const useModelStore = create<ModelState>()((set, get) => ({
     set((state) => commit(state, renameParam(state.document, id, oldKey, newKey))),
   setPresentation: (id, object) =>
     set((state) => {
-      let found = false;
-      let document: ModelDocument = {
-        ...state.document,
-        nodes: state.document.nodes.map((node) => {
-          if (node.id !== id) {
-            return node;
-          }
-          found = true;
-          return {
-            ...node,
-            presentation: object,
-            x: object.transform.x,
-            y: object.transform.y,
-          };
-        }),
-      };
-      if (object.componentId && !object.instanceOf) {
-        document = {
-          ...document,
-          nodes: document.nodes.map((node) => {
-            const instance = node.presentation;
-            if (!instance || instance.instanceOf !== object.componentId) return node;
-            const transform = instance.transform;
-            return {
-              ...node,
-              presentation: {
-                ...object,
-                id: instance.id,
-                componentId: undefined,
-                instanceOf: object.componentId,
-                transform,
-                visible: instance.visible,
-                locked: instance.locked,
-              },
-            };
-          }),
-        };
-      }
-      document = refreshLinkedConnectors(document);
-      return found ? commit(state, document) : {};
+      const document = replacePresentation(state.document, id, object);
+      return document ? commit(state, document) : {};
     }),
+  setPresentationLayer: (id, path, patch) => {
+    const state = get();
+    const node = state.document.nodes.find((entry) => entry.id === id);
+    if (!node?.presentation) return;
+    const next = updatePresentationLayer(node.presentation, path, patch);
+    if (!next) return;
+    const document = replacePresentation(state.document, id, next);
+    if (document) set({ ...commitAtomic(state, document) });
+  },
   groupShapes: (ids) => {
     const state = useModelStore.getState();
     const members = ids

@@ -108,6 +108,35 @@ describe('modelStore presentation layer order', () => {
       'back',
     ]);
   });
+
+  it('updates a nested layer through the undoable model store action', () => {
+    const group = createGraphicNode('group', 0, 0);
+    group.children = [createGraphicNode('rect', 0, 0)];
+    useModelStore.getState().loadDocument({
+      ...createDocument('Nested layers'),
+      nodes: [
+        {
+          id: 'group',
+          kind: 'group',
+          name: 'Group',
+          x: 0,
+          y: 0,
+          params: {},
+          library: 'presentation',
+          presentation: group,
+        },
+      ],
+    });
+
+    useModelStore.getState().setPresentationLayer('group', [0], { locked: true });
+    expect(useModelStore.getState().document.nodes[0]!.presentation!.children![0]!.locked).toBe(
+      true,
+    );
+    useModelStore.getState().undo();
+    expect(
+      useModelStore.getState().document.nodes[0]!.presentation!.children![0]!.locked,
+    ).toBeUndefined();
+  });
 });
 
 describe('modelStore reusable presentation components', () => {
