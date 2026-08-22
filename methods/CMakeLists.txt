@@ -8,6 +8,7 @@
 
 add_subdirectory(agent)
 add_subdirectory(process)
+add_subdirectory(sd)
 add_subdirectory(statechart)
 
 # Aggregate method library: links every built-in method plugin and provides
@@ -21,5 +22,6 @@ target_include_directories(logicpilot_methods PUBLIC
 target_link_libraries(logicpilot_methods PUBLIC
   logicpilot_method_agent
   logicpilot_method_process
+  logicpilot_method_sd
   logicpilot_method_statechart
 )

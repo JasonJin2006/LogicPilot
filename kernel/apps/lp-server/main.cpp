@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
   std::vector<std::string> args(raw.begin(), raw.end());
 
   // Method Runtime Layer: register every linked method runtime (process is
-  // the first; devs/agent/sd are kernel-native).
+  // the first; DEVS is kernel-native, while Agent/SD are linked plugins).
   logicpilot::register_all_methods();
 
   logicpilot::server::ServerConfig config;

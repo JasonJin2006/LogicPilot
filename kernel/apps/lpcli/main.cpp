@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
   std::vector<std::string> args(argv + 1, argv + argc);
   logicpilot::cli::register_builtin_models();
   // Method Runtime Layer: register every linked method runtime (process is
-  // the first; devs/agent/sd are kernel-native).
+  // the first; DEVS is kernel-native, while Agent/SD are linked plugins).
   logicpilot::register_all_methods();
 
   if (args.empty()) {

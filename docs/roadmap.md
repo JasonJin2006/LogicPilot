@@ -387,7 +387,9 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     horizon 不再被旧图定时器拖长；新增 SimulationKernel coupling 验收。**Agent
     方法插件 ✅ 已完成**（2026-08-22）：AgentMethod 已从 kernel native runtime
     移入 `methods/agent`，通过 `logicpilot_methods` 注册并保持 shared-event
-    lifecycle；后续：SD 拆方法库、共享变量显式写入。
+    lifecycle。**SD 方法插件 ✅ 已完成**（2026-08-22）：SdMethod 已移入
+    `methods/sd`，连续 RK4 仍通过 shared scheduler 发布 `sd::<state>` 变量；
+    后续：共享变量显式写入权限与声明式单位。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

@@ -215,8 +215,8 @@ std::unique_ptr<ReplicationModel> build_replication_model(const IrModelFile& fil
     return fail("no root model");
   }
 
-  // Kernel-native methods (devs/agent/sd) are always available; method
-  // libraries such as methods/process register themselves at driver startup.
+  // DEVS is kernel-native; Agent, SD and other method libraries register
+  // themselves at driver startup through register_all_methods().
   register_builtin_methods();
 
   const std::string method = resolve_method_name(file.v2_root->root());

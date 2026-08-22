@@ -4,6 +4,7 @@
 #include "logicpilot/runtime/method_registry.h"
 #include "agent_runtime.h"
 #include "process_runtime.h"
+#include "sd_runtime.h"
 #include "statechart_runtime.h"
 
 namespace logicpilot {
@@ -11,6 +12,7 @@ namespace logicpilot {
 void register_all_methods() {
   register_builtin_methods();
   register_agent_method();
+  register_sd_method();
   register_process_method();
   register_statechart_method();
 }
