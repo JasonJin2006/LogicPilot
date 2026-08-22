@@ -39,6 +39,7 @@ lp-server --model-file examples/mm1.ir.bin --port 8089 --seed 42
 | `{"cmd":"step"}` | 暂停时单步推进一个发射间隔 |
 | `{"cmd":"stop"}` | 取消当前运行（发 RunFinished{Cancelled}） |
 | `{"cmd":"speed","speed":10}` | 运行中调整墙钟倍率（不影响结果确定性） |
+| `{"cmd":"inject","port":"go","payload":0}` | 向已编译 generic 模型排队投递外部输入；Statechart 按 Message transition 的 `messageType` 匹配，Atomic 按 root input port 匹配；可在 start 前发送 |
 
 应答：`{"ok":true,"cmd":"start"}`；出错时
 `{"ok":false,"error":"unknown command 'launch'"}`。
@@ -47,7 +48,7 @@ lp-server --model-file examples/mm1.ir.bin --port 8089 --seed 42
 
 每帧为 size-prefixed FlatBuffer（`schemas/wire.fbs`，identifier `LPWR`，
 version 1）：`FrameHeader{version,seq,sim_time_ns,kind}` + 载荷。
-一次运行的帧序：
+一次运行的帧序（具体样本类型取决于模型）：
 
 ```
 RunStarted -> (Tick, Counters)* -> RunFinished
@@ -61,6 +62,10 @@ RunStarted -> (Tick, Counters)* -> RunFinished
 - Counters：`queue_length`、`busy`、`throughput`、`mean_wait`（累计 Wq
   均值）、`mean_sojourn`、`mean_in_system`、`mean_in_queue`、`arrivals`、
   `departures`、`rep`、`reps`。
+- Generic 模型额外输出：Process 使用 `block.<name>.*`，Agent 使用
+  `agent_*`，Statechart 使用 `state.active.<name>`/`state.steps`，Continuous
+  使用 `continuous.time`/`continuous.step`/`continuous.value.<name>`，Atomic
+  使用 `atomic.time`/`atomic.step`。
 - RunFinished.stats：`reps`、`confidence` 以及 throughput/L/Lq/W/Wq 的
   `*.mean`、`*.std`、`*.ci_low`、`*.ci_high`（跨 replication 的 Student-t CI）。
 

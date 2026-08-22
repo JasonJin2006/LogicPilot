@@ -1510,6 +1510,53 @@ TEST_CASE("lp-server streams statechart active-state counters after compile",
   server.stop();
 }
 
+TEST_CASE("lp-server injects a message into a statechart before start",
+          "[server][integration][statechart][inject]") {
+  const std::string source = R"(model Door {
+  statechart Control {
+    initial = Idle
+    state Idle { }
+    state Open { }
+    transition open { from = Idle; to = Open; triggeredBy = message; messageType = go }
+  }
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  client.send_text(R"({"cmd":"inject","port":"go"})");
+  REQUIRE(read_next_text(client).find("\"ok\":true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  bool saw_open = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      const auto counters = counters_to_map(frame.counters->values());
+      saw_open = saw_open || counters.count("state.active.Open") != 0;
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(saw_open);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server streams continuous values after compile",
           "[server][integration][continuous]") {
   const std::string source = R"(model Decay {

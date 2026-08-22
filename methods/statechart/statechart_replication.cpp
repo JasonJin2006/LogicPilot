@@ -97,6 +97,7 @@ struct StatechartReplicationModel::Impl {
   std::unordered_set<StateId> final_states;
   std::unordered_set<StateId> history_states;
   std::unordered_map<StateId, std::vector<BranchExit>> branch_targets;
+  std::unordered_map<std::string, FsmEventId> message_events;
   StateId initial{kInvalidState};
 
   // Per-replication runtime state.
@@ -446,6 +447,7 @@ StatechartReplicationModel::StatechartReplicationModel(const Node* root,
     return;
   }
   impl_->initial = initial_it->second;
+  impl_->message_events = std::move(message_events);
   impl_->machine = StateMachine{impl_->initial};
 }
 
@@ -540,6 +542,22 @@ bool StatechartReplicationModel::done() const {
 
 bool StatechartReplicationModel::has_pending_events() {
   return impl_ != nullptr && !impl_->scheduler().empty();
+}
+
+bool StatechartReplicationModel::dispatch_message(const std::string& port) {
+  if (impl_ == nullptr || impl_->done_) return false;
+  const auto event = impl_->message_events.find(port);
+  if (event == impl_->message_events.end()) return false;
+  const StateId from = impl_->machine.current();
+  FsmContext context;
+  if (!impl_->machine.dispatch(impl_->definition, event->second, context)) {
+    return false;
+  }
+  impl_->last_visited = from;
+  ++impl_->steps_;
+  impl_->settle();
+  impl_->schedule_triggers(impl_->machine.current());
+  return true;
 }
 
 StateId StatechartReplicationModel::last_state() const {

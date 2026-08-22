@@ -222,6 +222,11 @@ std::size_t DevsReplicationModel::advance(SimTime until) {
   return executor_->run(until);
 }
 
+bool DevsReplicationModel::inject(const std::string& root_port,
+                                   std::uint64_t payload) {
+  return active_ && executor_ != nullptr && executor_->inject(root_port, payload);
+}
+
 bool DevsReplicationModel::done() const {
   return !active_ || executor_ == nullptr ||
          !executor_->has_pending_events() ||

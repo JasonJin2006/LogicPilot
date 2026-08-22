@@ -138,7 +138,7 @@ pause/step）。
 
 ## 测试与门禁
 
-- **kernel/DSL**：390 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
+- **kernel/DSL**：391 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
 - **前端**：editor / renderer2d / protocol vitest + 浏览器 E2E
 - **契约**：F1/F2 schema conform + 基线 SHA256 双门禁；C++↔TS 互操作逐字段校验
 - **性能**：bench 门禁（≥ 1M events/s，`bench/`）

@@ -12,6 +12,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <limits>
 #include <string>
 #include <thread>
 #include <utility>
@@ -224,6 +225,10 @@ struct SimServer::Impl {
     double repair_rate{0.0};
   };
   enum class RunState { kIdle, kRunning, kPaused };
+  struct ExternalInput {
+    std::string port;
+    std::uint64_t payload{0};
+  };
 
   std::mutex run_mutex_;
   std::condition_variable run_cv_;
@@ -233,6 +238,7 @@ struct SimServer::Impl {
   bool pending_step_{false};
   bool shutdown_{false};
   RunParams pending_params_;
+  std::deque<ExternalInput> pending_inputs_;
   std::atomic<double> speed_{1.0};
 
   std::thread worker_thread_;
@@ -442,6 +448,31 @@ struct SimServer::Impl {
       return json_ok(cmd);
     }
 
+    if (cmd == "inject") {
+      std::string port;
+      if (!json_string_field(message, "port", port) || port.empty()) {
+        return json_error("inject requires a non-empty \"port\" string");
+      }
+      std::uint64_t payload = 0;
+      if (json_number_field(message, "payload", number)) {
+        if (number < 0.0 ||
+            number >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+          return json_error("inject payload must be a non-negative uint64");
+        }
+        payload = static_cast<std::uint64_t>(number);
+      }
+      std::lock_guard lock{run_mutex_};
+      if (!config.generic_model || config.model_bytes.empty()) {
+        return json_error("inject requires a compiled generic model");
+      }
+      if (shutdown_) {
+        return json_error("server is shutting down");
+      }
+      pending_inputs_.push_back(ExternalInput{std::move(port), payload});
+      run_cv_.notify_all();
+      return json_ok(cmd);
+    }
+
     if (cmd == "speed") {
       if (!has_speed || speed_value <= 0.0) {
         return json_error("speed requires a positive \"speed\" value");
@@ -500,6 +531,25 @@ struct SimServer::Impl {
     return std::clamp(speed, 1e-3, 1e6);
   }
 
+  std::deque<ExternalInput> take_pending_inputs() {
+    std::deque<ExternalInput> inputs;
+    std::lock_guard lock{run_mutex_};
+    inputs.swap(pending_inputs_);
+    return inputs;
+  }
+
+  void apply_pending_inputs(StatechartReplicationModel& chart) {
+    for (const ExternalInput& input : take_pending_inputs()) {
+      chart.dispatch_message(input.port);
+    }
+  }
+
+  void apply_pending_inputs(DevsReplicationModel& atomic) {
+    for (const ExternalInput& input : take_pending_inputs()) {
+      atomic.inject(input.port, input.payload);
+    }
+  }
+
   // --- simulation worker -----------------------------------------------------
 
   void worker_loop() {
@@ -522,6 +572,7 @@ struct SimServer::Impl {
         std::lock_guard lock{run_mutex_};
         state_ = RunState::kIdle;
         active_run_ = false;
+        pending_inputs_.clear();
       }
       run_cv_.notify_all();
     }
@@ -1143,6 +1194,8 @@ struct SimServer::Impl {
         }
       }
 
+      apply_pending_inputs(chart);
+
       if (!animated && frames >= kFastFrameBudget - 1) {
         std::int64_t drain_ns = kFastDrainSliceNs;
         while (!chart.done()) {
@@ -1179,7 +1232,8 @@ struct SimServer::Impl {
       if (deadline > now) {
         std::unique_lock lock{run_mutex_};
         run_cv_.wait_until(lock, deadline, [&] {
-          return stop_request_ || state_ != RunState::kRunning;
+          return stop_request_ || state_ != RunState::kRunning ||
+                 !pending_inputs_.empty();
         });
         if (stop_request_) return false;
       } else {
@@ -1290,6 +1344,8 @@ struct SimServer::Impl {
         }
       }
 
+      apply_pending_inputs(atomic);
+
       if (!animated && frames >= kFastFrameBudget - 1) {
         while (!atomic.done()) {
           {
@@ -1318,7 +1374,8 @@ struct SimServer::Impl {
       if (deadline > now) {
         std::unique_lock lock{run_mutex_};
         run_cv_.wait_until(lock, deadline, [&] {
-          return stop_request_ || state_ != RunState::kRunning;
+          return stop_request_ || state_ != RunState::kRunning ||
+                 !pending_inputs_.empty();
         });
         if (stop_request_) return false;
       } else {

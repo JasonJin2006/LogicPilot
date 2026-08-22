@@ -50,6 +50,7 @@ class StatechartReplicationModel final : public ReplicationModel {
   [[nodiscard]] std::uint64_t step_count() const;
   [[nodiscard]] bool done() const;
   [[nodiscard]] bool has_pending_events();
+  bool dispatch_message(const std::string& port);
 
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;

@@ -9,7 +9,8 @@
 //     to every connected session through strand-serialized async writes.
 //
 // Control plane: JSON text frames from any client
-//   {"cmd":"start"|"pause"|"resume"|"step"|"stop","speed":n,"seed":s,
+//   {"cmd":"start"|"pause"|"resume"|"step"|"stop"|"inject", "port":"...",
+//    "payload":n,"speed":n,"seed":s,
 //    "seedMode":"fixed"|"random","reps":r,
 //    "replicationMode":"fixed"|"precision","minReps":n,"maxReps":n,
 //    "errorPercent":p,"precisionMetric":"Wq",

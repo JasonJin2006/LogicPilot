@@ -81,6 +81,7 @@ class DevsReplicationModel final : public ReplicationModel {
 
   bool reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until);
+  bool inject(const std::string& root_port, std::uint64_t payload = 0);
   [[nodiscard]] bool done() const;
   [[nodiscard]] ReplicationMetrics metrics() const;
   [[nodiscard]] std::size_t internal_transitions() const;
