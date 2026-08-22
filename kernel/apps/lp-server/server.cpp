@@ -772,9 +772,19 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
-          if (!continuous->reset(rep_config) ||
-              !stream_continuous_replication(*continuous, params, rep,
-                                             run_limit)) {
+           if (!continuous->reset(rep_config) ||
+               !stream_continuous_replication(*continuous, params, rep,
+                                              run_limit)) {
+             if (continuous->failed()) {
+               RunFinishedFrame failed;
+               failed.seq = ++seq_;
+               failed.run_id = run_id;
+               failed.status = 1;
+               failed.error = "continuous integration failed: " +
+                              continuous->last_error();
+               emit(build_run_finished_frame(failed), trace_run_finished(failed));
+               return;
+             }
             cancelled = true;
             break;
           }
@@ -1413,7 +1423,7 @@ struct SimServer::Impl {
             std::lock_guard lock{run_mutex_};
             if (stop_request_) return false;
           }
-          continuous.step();
+           if (!continuous.step() && continuous.failed()) return false;
         }
         emit_continuous_counters(continuous, rep, run_limit);
         return true;
@@ -1421,7 +1431,7 @@ struct SimServer::Impl {
 
       for (std::uint64_t step = 0;
            step < steps_per_frame && !continuous.done(); ++step) {
-        continuous.step();
+         if (!continuous.step() && continuous.failed()) return false;
       }
       emit_continuous_counters(continuous, rep, run_limit);
       ++frames;

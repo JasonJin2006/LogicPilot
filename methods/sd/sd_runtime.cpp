@@ -25,6 +25,7 @@ class SdMethod final : public SimulationMethod {
 
   bool initialize(RuntimeContext& context, const IrModelFile& model,
                   std::string* error) override {
+    error_.clear();
     context_ = &context;
     simulation_ = std::make_unique<ContinuousReplicationModel>(
         model.v2_bytes,
@@ -42,7 +43,10 @@ class SdMethod final : public SimulationMethod {
   void advance(SimTime) override {}
 
   void shutdown() override {
-    if (simulation_ != nullptr) last_metrics_ = simulation_->finish();
+    if (simulation_ != nullptr) {
+      last_metrics_ = simulation_->finish();
+      error_ = simulation_->last_error();
+    }
     simulation_.reset();
     context_ = nullptr;
   }
@@ -50,6 +54,8 @@ class SdMethod final : public SimulationMethod {
   [[nodiscard]] ReplicationMetrics replication_metrics() const override {
     return last_metrics_;
   }
+
+  [[nodiscard]] std::string runtime_error() const override { return error_; }
 
   std::unique_ptr<ReplicationModel> to_replication_model(
       const IrModelFile& model, std::string* error) override {
@@ -92,6 +98,7 @@ class SdMethod final : public SimulationMethod {
   HandlerId step_handler_{0};
   std::unique_ptr<ContinuousReplicationModel> simulation_;
   ReplicationMetrics last_metrics_;
+  std::string error_;
 };
 
 }  // namespace

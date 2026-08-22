@@ -289,6 +289,43 @@ TEST_CASE("sign of a lone negative RHS is preserved", "[continuous][dsl]") {
   REQUIRE(metrics.final_value == Approx(-1.0).margin(1e-4));
 }
 
+TEST_CASE("continuous RK4 rejects non-finite derivatives", "[continuous][numeric]") {
+  const std::string source =
+      "model Broken {\n"
+      "  continuous Dynamics {\n"
+      "    state y = 0.0\n"
+      "    d y/dt = 1 / 0\n"
+      "  }\n"
+      "}\n";
+  const dsl::CompileResult compiled = dsl::compile_source(source, "broken.lp");
+  REQUIRE(compiled.ok);
+  IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  std::string error;
+  std::unique_ptr<ReplicationModel> model = build_replication_model(loaded.file, &error);
+  REQUIRE(model != nullptr);
+  ReplicationConfig config;
+  config.arrivals = 2;
+  const ReplicationMetrics metrics = model->run(config, nullptr);
+  const auto* continuous = dynamic_cast<const ContinuousReplicationModel*>(model.get());
+  REQUIRE(continuous != nullptr);
+  REQUIRE(continuous->failed());
+  REQUIRE(continuous->last_error().find("y") != std::string::npos);
+  REQUIRE(continuous->last_error().find("k1") != std::string::npos);
+  REQUIRE(metrics.arrivals == 0);
+  REQUIRE(metrics.final_value == 0.0);
+
+  // The kernel must surface the same numerical failure instead of returning a
+  // successful metric vector containing infinities.
+  SimulationKernel kernel;
+  REQUIRE(kernel.load(loaded.file, &error));
+  std::vector<RuntimeDiagnostic> diagnostics;
+  const auto kernel_metrics = kernel.run(config, nullptr, &error, &diagnostics);
+  REQUIRE(kernel_metrics.empty());
+  REQUIRE(error.find("sd runtime failed") != std::string::npos);
+  REQUIRE_FALSE(diagnostics.empty());
+}
+
 TEST_CASE("directly constructed coupled oscillator", "[continuous]") {
   flatbuffers::FlatBufferBuilder builder;
   std::vector<flatbuffers::Offset<v2::Var>> state{

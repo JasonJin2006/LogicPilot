@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -84,6 +85,7 @@ std::uint64_t replication_seed(std::uint64_t run_seed, std::uint64_t rep) {
 }
 
 std::string json_double(double value) {
+  if (!std::isfinite(value)) return "null";
   return fmt::format("{:.6g}", value);
 }
 
@@ -811,6 +813,13 @@ int run_command(std::span<const std::string> args) {
   if (options.random_seed) {
     options.seed = random_run_seed();
   }
+  if (dynamic_cast<const ContinuousReplicationModel*>(model.get()) != nullptr &&
+      options.threads > 1) {
+    fmt::print(stderr,
+               "error: continuous models require --threads 1 so numerical "
+               "failures can be reported with their equation context\n");
+    return 2;
+  }
 
   fmt::print(
       "lpcli run: model={} seed={} seed_mode={} reps={} replication_mode={} arrivals={} warmup={} "
@@ -863,6 +872,13 @@ int run_command(std::span<const std::string> args) {
       config.arrivals = options.arrivals;
       config.warmup_arrivals = options.warmup;
       ReplicationMetrics metrics = model->run(config, nullptr);
+      if (const auto* continuous =
+              dynamic_cast<const ContinuousReplicationModel*>(model.get());
+          continuous != nullptr && continuous->failed()) {
+        fmt::print(stderr, "error: continuous integration failed: {}\n",
+                   continuous->last_error());
+        return 1;
+      }
       fmt::print(
           "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
           "{:>8.4f}\n",
@@ -966,9 +982,10 @@ int run_command(std::span<const std::string> args) {
       const auto& trajectory = continuous->trajectory();
       for (std::size_t i = 0; i < trajectory.size(); ++i) {
         const auto& point = trajectory[i];
-        out << (i > 0 ? "," : "") << "{\"t\":" << point.t << ",\"values\":[";
-        for (std::size_t j = 0; j < point.values.size(); ++j) {
-          out << (j > 0 ? "," : "") << point.values[j];
+         out << (i > 0 ? "," : "") << "{\"t\":" << json_double(point.t)
+             << ",\"values\":[";
+         for (std::size_t j = 0; j < point.values.size(); ++j) {
+           out << (j > 0 ? "," : "") << json_double(point.values[j]);
         }
         out << "]}";
       }

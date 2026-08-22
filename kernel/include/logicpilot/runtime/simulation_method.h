@@ -66,6 +66,11 @@ public:
   virtual void advance(SimTime until) = 0;
   virtual void shutdown() = 0;
 
+  // Optional failure from an incremental runtime discovered during advance.
+  // The kernel checks this after shutdown so a runtime failure cannot be
+  // returned as an apparently successful metric set.
+  [[nodiscard]] virtual std::string runtime_error() const { return {}; }
+
   // Batch compatibility adapter: lowers `model` to the legacy
   // ReplicationModel contract so existing drivers (lpcli run, lp-server
   // batch path) keep working unchanged while the kernel driver migrates to

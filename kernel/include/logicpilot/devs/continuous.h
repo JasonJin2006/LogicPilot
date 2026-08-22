@@ -93,6 +93,8 @@ public:
   bool reset(const ReplicationConfig& config);
   bool step();
   [[nodiscard]] bool done() const;
+  [[nodiscard]] bool failed() const { return !error_.empty(); }
+  [[nodiscard]] const std::string& last_error() const { return error_; }
   [[nodiscard]] std::uint64_t step_count() const { return step_index_; }
   [[nodiscard]] double sim_time_seconds() const { return current_t_; }
   ReplicationMetrics finish(TraceRecorder* trace = nullptr);
@@ -129,6 +131,7 @@ private:
   std::uint64_t step_index_{0};
   double current_t_{0.0};
   bool active_{false};
+  std::string error_;
 };
 
 }  // namespace logicpilot

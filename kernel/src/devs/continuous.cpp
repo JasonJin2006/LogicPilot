@@ -357,15 +357,24 @@ bool ContinuousReplicationModel::reset(const ReplicationConfig& config) {
   variables_.clear();
   trajectory_.clear();
   last_state_.clear();
+  error_.clear();
   active_ = false;
-  if (odes_.empty())
+  if (odes_.empty()) {
+    error_ = "no continuous equations to integrate";
     return false;
+  }
 
   for (const Ode& ode : odes_) {
+    if (!std::isfinite(ode.initial)) {
+      error_ = "initial state for '" + ode.var + "' is non-finite";
+      return false;
+    }
     state_[ode.var] = ode.initial;
     ExpressionEvaluator evaluator{ode.rhs_text};
-    if (!evaluator.ok())
+    if (!evaluator.ok()) {
+      error_ = "invalid equation for '" + ode.var + "': " + evaluator.error();
       return false;
+    }
     evaluators_.push_back(std::move(evaluator));
     variables_.push_back(ode.var);
     y_.push_back(ode.initial);
@@ -400,31 +409,62 @@ bool ContinuousReplicationModel::step() {
   for (std::size_t i = 0; i < count; ++i) {
     state_[odes_[i].var] = y_[i];
   }
-  for (std::size_t i = 0; i < count; ++i) {
-    k1[i] = evaluators_[i].eval(lookup);
-  }
+  const auto check_state = [&](const char* stage) {
+    for (std::size_t i = 0; i < count; ++i) {
+      const double value = state_[odes_[i].var];
+      if (!std::isfinite(value)) {
+        error_ = "non-finite RK4 state for '" + odes_[i].var + "' at t=" +
+                 std::to_string(current_t_) + " during " + stage +
+                 " stage: " + std::to_string(value);
+        active_ = false;
+        return false;
+      }
+    }
+    return true;
+  };
+  const auto evaluate_derivatives = [&](std::vector<double>& derivatives,
+                                        const char* stage) {
+    for (std::size_t i = 0; i < count; ++i) {
+      derivatives[i] = evaluators_[i].eval(lookup);
+      if (!std::isfinite(derivatives[i])) {
+        error_ = "non-finite derivative for '" + odes_[i].var + "' at t=" +
+                 std::to_string(current_t_) + " during " + stage +
+                 " stage: " + std::to_string(derivatives[i]);
+        active_ = false;
+        return false;
+      }
+    }
+    return true;
+  };
+  if (!check_state("initial")) return false;
+  if (!evaluate_derivatives(k1, "k1")) return false;
   current_t_ = (static_cast<double>(step_index_) + 0.5) * kDt;
   for (std::size_t i = 0; i < count; ++i) {
     state_[odes_[i].var] = y_[i] + 0.5 * kDt * k1[i];
   }
-  for (std::size_t i = 0; i < count; ++i) {
-    k2[i] = evaluators_[i].eval(lookup);
-  }
+  if (!check_state("k2 state")) return false;
+  if (!evaluate_derivatives(k2, "k2")) return false;
   for (std::size_t i = 0; i < count; ++i) {
     state_[odes_[i].var] = y_[i] + 0.5 * kDt * k2[i];
   }
-  for (std::size_t i = 0; i < count; ++i) {
-    k3[i] = evaluators_[i].eval(lookup);
-  }
+  if (!check_state("k3 state")) return false;
+  if (!evaluate_derivatives(k3, "k3")) return false;
   current_t_ = (static_cast<double>(step_index_) + 1.0) * kDt;
   for (std::size_t i = 0; i < count; ++i) {
     state_[odes_[i].var] = y_[i] + kDt * k3[i];
   }
+  if (!check_state("k4 state")) return false;
+  if (!evaluate_derivatives(k4, "k4")) return false;
   for (std::size_t i = 0; i < count; ++i) {
-    k4[i] = evaluators_[i].eval(lookup);
-  }
-  for (std::size_t i = 0; i < count; ++i) {
-    y_[i] += (kDt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+    const double next = y_[i] + (kDt / 6.0) *
+                                      (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+    if (!std::isfinite(next)) {
+      error_ = "non-finite RK4 result for '" + odes_[i].var + "' at t=" +
+               std::to_string(current_t_) + ": " + std::to_string(next);
+      active_ = false;
+      return false;
+    }
+    y_[i] = next;
     state_[odes_[i].var] = y_[i];
     last_state_[odes_[i].var] = y_[i];
   }
@@ -442,7 +482,7 @@ bool ContinuousReplicationModel::done() const {
 
 ReplicationMetrics ContinuousReplicationModel::finish(TraceRecorder* trace) {
   ReplicationMetrics metrics;
-  if (!active_ || odes_.empty())
+  if (!active_ || !error_.empty() || odes_.empty())
     return metrics;
   constexpr double kDt =
       static_cast<double>(ContinuousReplicationModel::kStepNs) * 1e-9;

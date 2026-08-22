@@ -129,6 +129,13 @@ std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& c
 
   // Runtimes finalize their metrics during shutdown().
   manager.shutdown();
+  for (std::size_t i = 0; i < manager.method_count(); ++i) {
+    const SimulationMethod* method = manager.method(i);
+    if (method != nullptr && !method->runtime_error().empty()) {
+      return fail("KR1010", std::string(method->method_name()) +
+                              " runtime failed: " + method->runtime_error());
+    }
+  }
   std::vector<ReplicationMetrics> out;
   out.reserve(manager.method_count());
   for (std::size_t i = 0; i < manager.method_count(); ++i) {
