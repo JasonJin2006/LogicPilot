@@ -164,17 +164,24 @@ int serve_command(std::span<const std::string> args) {
       fmt::print(stderr, "error: {}\n", build_error);
       return 1;
     }
+    if (logicpilot::resolve_method_names(loaded.file).size() > 1) {
+      fmt::print(stderr,
+                 "error: mixed-method models require 'lpcli run'; "
+                 "lpcli serve live streaming cannot execute them yet\n");
+      return 2;
+    }
+    model_bytes = loaded.file.v2_bytes;
     logicpilot::FlowRunParams flow;
     std::string flow_error;
-    if (!logicpilot::extract_flow_params(loaded.file, flow, &flow_error)) {
-      fmt::print(stderr, "error: {}\n", flow_error);
-      return 1;
+    config.generic_model = !logicpilot::extract_flow_params(
+        loaded.file, flow, &flow_error) || !flow.sim_runner_equivalent;
+    if (!config.generic_model) {
+      config.lambda = flow.lambda;
+      config.mu = flow.mu;
+      config.servers = flow.servers;
+      config.failure_rate = flow.failure_rate;
+      config.repair_rate = flow.repair_rate;
     }
-    config.lambda = flow.lambda;
-    config.mu = flow.mu;
-    config.servers = flow.servers;
-    config.failure_rate = flow.failure_rate;
-    config.repair_rate = flow.repair_rate;
     config.model_name = logicpilot::inspect_model(loaded.file);
   } else {
     if (input.empty()) {
@@ -202,6 +209,12 @@ int serve_command(std::span<const std::string> args) {
       fmt::print(stderr, "error: compiled IR rejected: {}\n", loaded.message);
       return 1;
     }
+    if (logicpilot::resolve_method_names(loaded.file).size() > 1) {
+      fmt::print(stderr,
+                 "error: mixed-method models require 'lpcli run'; "
+                 "lpcli serve live streaming cannot execute them yet\n");
+      return 2;
+    }
     std::string build_error;
     if (!logicpilot::build_replication_model(loaded.file, &build_error)) {
       fmt::print(stderr, "error: {}\n", build_error);
@@ -209,17 +222,18 @@ int serve_command(std::span<const std::string> args) {
     }
     logicpilot::FlowRunParams flow;
     std::string flow_error;
-    if (!logicpilot::extract_flow_params(loaded.file, flow, &flow_error)) {
-      fmt::print(stderr, "error: {}\n", flow_error);
-      return 1;
+    config.generic_model = !logicpilot::extract_flow_params(
+        loaded.file, flow, &flow_error) || !flow.sim_runner_equivalent;
+    if (!config.generic_model) {
+      config.lambda = flow.lambda;
+      config.mu = flow.mu;
+      config.servers = flow.servers;
+      config.failure_rate = flow.failure_rate;
+      config.repair_rate = flow.repair_rate;
     }
-    config.lambda = flow.lambda;
-    config.mu = flow.mu;
-    config.servers = flow.servers;
-    config.failure_rate = flow.failure_rate;
-    config.repair_rate = flow.repair_rate;
     config.model_name = compiled.model_name;
   }
+  config.model_bytes = model_bytes;
 
   logicpilot::server::SimServer server{config};
   std::string error;

@@ -254,11 +254,18 @@ int main(int argc, char** argv) {
       fmt::print(stderr, "error: {}\n", build_error);
       return 1;
     }
+    if (logicpilot::resolve_method_names(loaded.file).size() > 1) {
+      fmt::print(stderr,
+                 "error: mixed-method models require 'lpcli run'; "
+                 "lp-server live streaming cannot execute them yet\n");
+      return 2;
+    }
     config.model_bytes = loaded.file.v2_bytes;
     logicpilot::FlowRunParams flow_params;
     std::string flow_error;
     config.generic_model = !logicpilot::extract_flow_params(
-        loaded.file, flow_params, &flow_error);
+        loaded.file, flow_params, &flow_error) ||
+                           !flow_params.sim_runner_equivalent;
     if (!config.generic_model) {
       // Carry the IR's actual M/M/1-family rates into the streaming driver.
       config.lambda = flow_params.lambda;

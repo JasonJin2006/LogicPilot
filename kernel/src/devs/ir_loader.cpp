@@ -257,6 +257,7 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out, std::strin
     return fail("no root model");
   }
   const Node* root = file.v2_root->root();
+  out.sim_runner_equivalent = false;
   if (std::strcmp(node_block(root), "model") != 0 || root->children() == nullptr) {
     return fail("no process model to stream");
   }
@@ -276,7 +277,9 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out, std::strin
   }
   // Agent-centric flows: process-library blocks directly under the root, or
   // inside a root-level agent body (agent Main { source ...; couple ... }).
+  bool nested_process = false;
   if (flow_stages.empty()) {
+    nested_process = true;
     for (const Node* child : *root->children()) {
       if (std::strcmp(node_library(child), "agent") != 0 || child->children() == nullptr) {
         continue;
@@ -302,12 +305,15 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out, std::strin
   }
   const Node* source = nullptr;
   const Node* service = nullptr;
+  const Node* sink = nullptr;
   for (const Node* stage : flow_stages) {
     const std::string block = node_block(stage);
     if (block == "source") {
       source = stage;
     } else if (block == "service") {
       service = stage;
+    } else if (block == "sink") {
+      sink = stage;
     }
   }
   if (source == nullptr || service == nullptr) {
@@ -355,6 +361,28 @@ bool extract_flow_params(const IrModelFile& file, FlowRunParams& out, std::strin
   out.servers = node_int_param(resource, "capacity", 1);
   out.failure_rate = node_float_param(resource, "failure_rate", 0.0);
   out.repair_rate = node_float_param(resource, "repair_rate", 1.0);
+  // SimRunner models only one linear source -> service -> sink flow. Parameter
+  // extraction remains useful for diagnostics, but it is not proof that a
+  // queue, delay, route, finite capacity or nested method can be ignored.
+  std::size_t source_count = 0;
+  std::size_t service_count = 0;
+  std::size_t sink_count = 0;
+  bool only_linear_blocks = !nested_process;
+  for (const Node* stage : flow_stages) {
+    const std::string block = node_block(stage);
+    if (block == "source") {
+      ++source_count;
+    } else if (block == "service") {
+      ++service_count;
+    } else if (block == "sink") {
+      ++sink_count;
+    } else {
+      only_linear_blocks = false;
+    }
+  }
+  out.sim_runner_equivalent = only_linear_blocks && source_count == 1 &&
+                              service_count == 1 && sink_count == 1 &&
+                              flow_stages.size() == 3 && sink != nullptr;
   return true;
 }
 

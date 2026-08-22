@@ -79,7 +79,7 @@ usage: lpcli serve <input.lp> [options]
   --trace               mirror every binary frame as JSON
 ```
 
-监听 `ws://127.0.0.1:<port>/sim`，向所有客户端广播 wire 帧（`LPWR`）；控制消息为 JSON 文本帧。
+监听 `ws://127.0.0.1:<port>/sim`，向所有客户端广播 wire 帧（`LPWR`）；控制消息为 JSON 文本帧。`lpcli serve` 目前只接受单一方法模型；混合模型请使用 `lpcli run`，由 `SimulationKernel` 统一驱动。若模型包含 Queue、Delay、路由或其他非线性流程块，网关会自动放弃 M/M/c 快速路径，改走完整 Process 引擎。
 
 ## 退出码约定
 

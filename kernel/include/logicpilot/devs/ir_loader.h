@@ -97,6 +97,10 @@ struct FlowRunParams {
   std::int64_t servers{1};
   double failure_rate{0.0};
   double repair_rate{1.0};
+  // True only when the IR is proven equivalent to SimRunner's narrow
+  // source->service->sink path. Parameter extraction alone is not proof that
+  // queues, delays, routing or finite capacities can be ignored.
+  bool sim_runner_equivalent{false};
 };
 
 // Extracts the exponential-flow parameters from a (coupled) ProcessModel:

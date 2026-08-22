@@ -267,6 +267,12 @@ TEST_CASE("v2 process model lowers to a runnable queueing flow", "[ir]") {
   REQUIRE(metrics.mean_sojourn > metrics.mean_wait);
   REQUIRE(metrics.throughput > 0.5);
   REQUIRE(metrics.throughput < 1.0);
+
+  FlowRunParams flow;
+  REQUIRE(extract_flow_params(result.file, flow, &error));
+  // The queue is finite and semantically meaningful; it must not be erased by
+  // the lp-server's narrow M/M/c streaming optimization.
+  REQUIRE_FALSE(flow.sim_runner_equivalent);
 }
 
 TEST_CASE("agent-centric root flow: process blocks + couplings directly "
@@ -332,6 +338,7 @@ TEST_CASE("agent body flow: process blocks inside an agent child run as a "
   REQUIRE(extract_flow_params(loaded.file, flow, &error));
   REQUIRE(flow.lambda == Approx(0.8));
   REQUIRE(flow.mu == Approx(1.0));
+  REQUIRE_FALSE(flow.sim_runner_equivalent);
 }
 
 TEST_CASE("IR loader survives malformed buffers without crashing",

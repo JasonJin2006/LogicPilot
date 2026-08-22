@@ -19,7 +19,9 @@
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/simulation_kernel.h"
 #include "ir_v2_generated.h"
+#include "register.h"
 #ifdef LOGICPILOT_HAS_DSL
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/diagnostics.h"
@@ -327,6 +329,129 @@ bool apply_declared_experiment(const IrModelFile& file, RunOptions& options,
   return false;
 }
 
+void write_kernel_metric(std::ofstream& out, const ReplicationMetrics& metrics) {
+  out << "{\"arrivals\":" << metrics.arrivals
+      << ",\"departures\":" << metrics.departures
+      << ",\"horizon_seconds\":" << json_double(metrics.horizon_seconds)
+      << ",\"throughput\":" << json_double(metrics.throughput)
+      << ",\"L\":" << json_double(metrics.mean_in_system)
+      << ",\"Lq\":" << json_double(metrics.mean_in_queue)
+      << ",\"W\":" << json_double(metrics.mean_sojourn)
+      << ",\"Wq\":" << json_double(metrics.mean_wait)
+      << ",\"final_value\":" << json_double(metrics.final_value) << "}";
+}
+
+// User-facing multi-method entry point. The legacy ReplicationModel adapter is
+// intentionally single-method; mixed models must go through SimulationKernel
+// so a Process child cannot silently swallow Statechart/Agent/SD siblings.
+int run_kernel_model(const IrModelFile& file, RunOptions options,
+                     const std::string& label) {
+  if (options.threads > 1) {
+    fmt::print(stderr,
+               "error: multi-method SimulationKernel runs currently require --threads 1\n");
+    return 2;
+  }
+  if (options.precision_reps) {
+    fmt::print(stderr,
+               "error: precision replication is not yet defined for mixed-method metrics; "
+               "use fixed --reps\n");
+    return 2;
+  }
+  if (!options.trajectory.empty()) {
+    fmt::print(stderr,
+               "error: --trajectory is only supported for a single continuous method\n");
+    return 2;
+  }
+
+  const std::vector<std::string> methods = resolve_method_names(file);
+  if (methods.size() < 2) {
+    fmt::print(stderr, "error: internal mixed-model dispatch received one method\n");
+    return 2;
+  }
+  register_all_methods();
+  SimulationKernel kernel;
+  std::string error;
+  if (!kernel.load(file, &error)) {
+    fmt::print(stderr, "error: cannot load mixed model '{}': {}\n", label, error);
+    return 1;
+  }
+  if (options.random_seed) options.seed = random_run_seed();
+
+  const std::uint64_t run_limit = options.reps;
+  std::vector<std::vector<ReplicationMetrics>> per_method(methods.size());
+  for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+    ReplicationConfig config;
+    config.seed = replication_seed(options.seed, rep);
+    config.arrivals = options.arrivals;
+    config.warmup_arrivals = options.warmup;
+    std::vector<RuntimeDiagnostic> diagnostics;
+    const std::vector<ReplicationMetrics> metrics =
+        kernel.run(config, nullptr, &error, &diagnostics);
+    if (!error.empty() || metrics.size() != methods.size()) {
+      fmt::print(stderr, "error: mixed-model replication {} failed: {}\n", rep + 1,
+                 error.empty() ? "runtime returned an incomplete metric set" : error);
+      for (const RuntimeDiagnostic& diagnostic : diagnostics) {
+        fmt::print(stderr, "  {}\n", format_runtime_diagnostic(diagnostic));
+      }
+      return 1;
+    }
+    for (std::size_t method = 0; method < methods.size(); ++method) {
+      per_method[method].push_back(metrics[method]);
+      fmt::print("rep {:>3}  method={:<12} arrivals={:<8} departures={:<8} "
+                 "horizon={:.4f} final={:.6g}\n",
+                 rep + 1, methods[method], metrics[method].arrivals,
+                 metrics[method].departures, metrics[method].horizon_seconds,
+                 metrics[method].final_value);
+    }
+  }
+
+  fmt::print("summary: {} mixed methods, {} replications, shared SimulationKernel\n",
+             methods.size(), run_limit);
+  if (options.results_dir.empty()) return 0;
+
+  std::error_code fs_error;
+  std::filesystem::create_directories(options.results_dir, fs_error);
+  if (fs_error) {
+    fmt::print(stderr, "error: cannot create results dir '{}': {}\n",
+               options.results_dir, fs_error.message());
+    return 1;
+  }
+  std::ofstream run_out(options.results_dir + "/run.json", std::ios::trunc);
+  std::ofstream metrics_out(options.results_dir + "/metrics.json", std::ios::trunc);
+  if (!run_out || !metrics_out) {
+    fmt::print(stderr, "error: cannot write mixed-model results in '{}'\n",
+               options.results_dir);
+    return 1;
+  }
+  run_out << "{\"input\":\"" << json_escape(label)
+          << "\",\"mode\":\"multi-method\",\"methods\":[";
+  for (std::size_t i = 0; i < methods.size(); ++i) {
+    run_out << (i == 0 ? "" : ",") << "\"" << json_escape(methods[i]) << "\"";
+  }
+  run_out << "],\"seed\":" << options.seed << ",\"reps\":" << run_limit
+          << ",\"arrivals\":" << options.arrivals
+          << ",\"warmup\":" << options.warmup << "}\n";
+  metrics_out << "{\"mode\":\"multi-method\",\"methods\":[";
+  for (std::size_t method = 0; method < methods.size(); ++method) {
+    metrics_out << (method == 0 ? "" : ",") << "{\"name\":\""
+                << json_escape(methods[method]) << "\",\"replications\":[";
+    for (std::size_t rep = 0; rep < per_method[method].size(); ++rep) {
+      metrics_out << (rep == 0 ? "" : ",");
+      write_kernel_metric(metrics_out, per_method[method][rep]);
+    }
+    metrics_out << "]}";
+  }
+  metrics_out << "]}\n";
+  if (!run_out || !metrics_out) {
+    fmt::print(stderr, "error: failed writing mixed-model results in '{}'\n",
+               options.results_dir);
+    return 1;
+  }
+  fmt::print("results written to '{}' (run.json, metrics.json)\n",
+             options.results_dir);
+  return 0;
+}
+
 }  // namespace
 
 int run_command(std::span<const std::string> args) {
@@ -602,6 +727,10 @@ int run_command(std::span<const std::string> args) {
               .replace_extension(".results")
               .string();
     }
+    if (resolve_method_names(loaded.file).size() > 1) {
+      return run_kernel_model(loaded.file, options,
+                              fmt::format("project:{}", options.project));
+    }
 #else
     fmt::print(stderr, "error: --project requires a DSL-enabled build\n");
     return 2;
@@ -619,6 +748,10 @@ int run_command(std::span<const std::string> args) {
                                    explicit_reps, experiment_error)) {
       fmt::print(stderr, "error: {}\n", experiment_error);
       return 2;
+    }
+    if (resolve_method_names(loaded.file).size() > 1) {
+      return run_kernel_model(loaded.file, options,
+                              fmt::format("file:{}", options.model_file));
     }
     const std::vector<std::uint8_t> model_bytes = loaded.file.v2_bytes;
     build_model = [model_bytes]() -> std::unique_ptr<ReplicationModel> {

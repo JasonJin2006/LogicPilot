@@ -501,9 +501,14 @@ struct SimServer::Impl {
           dsl::compile_source(base64_decode(source_b64), "<editor>");
       if (compiled.ok) {
         IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(),
-                                                compiled.v2_bytes.size());
+                                                 compiled.v2_bytes.size());
         if (!loaded.ok()) {
           return json_error("compiled model could not be loaded: " + loaded.message);
+        }
+        if (resolve_method_names(loaded.file).size() > 1) {
+          return json_error(
+              "mixed-method models require the SimulationKernel batch entry point; "
+              "the live gateway cannot execute them yet");
         }
         std::string build_error;
         if (build_replication_model(loaded.file, &build_error) == nullptr) {
