@@ -848,8 +848,8 @@ try {
     .locator('.ai-result')
     .filter({ hasText: 'busiest=' })
     .textContent();
-  if (!explainText?.includes('blocks')) {
-    throw new Error('AI panel did not show an explanation');
+  if (!explainText?.includes('blocks') || !explainText.includes('causal evidence')) {
+    throw new Error('AI panel did not show measured causal evidence');
   }
   log('AI panel explained the model results from the prompt');
 

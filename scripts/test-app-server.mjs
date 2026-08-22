@@ -228,6 +228,7 @@ try {
   const queryResult = await queryResponse.json();
   assert.equal(queryResult.kind, 'metric-query');
   assert.ok(queryResult.findings.length > 0);
+  assert.equal(queryResult.evidence.causalEvidence.status, 'insufficient-evidence');
 
   const compareResponse = await fetch(`${baseUrl}/api/ai-compare-metrics`, {
     method: 'POST',

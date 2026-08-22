@@ -29,6 +29,9 @@ assert.equal(result.evidence.largestQueue, 'Waiting');
 assert.ok(result.findings.some((finding) => /92\.0%/.test(finding)));
 assert.ok(result.findings.some((finding) => /timed-out/.test(finding)));
 assert.deepEqual(result.evidence.causalChain, ['Arrivals', 'Waiting', 'Packing']);
+assert.equal(result.evidence.causalEvidence.status, 'topology-supported');
+assert.equal(result.evidence.causalEvidence.observations[1].meanOccupancy, 4.25);
+assert.ok(result.evidence.causalEvidence.caveat.includes('do not prove'));
 
 assert.throws(
   () => queryMetrics({ question: 'why?', metrics: null }),

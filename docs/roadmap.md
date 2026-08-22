@@ -324,9 +324,11 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    入口：`web/apps/ide/src/`、`web/packages/editor/`（预留包，已从仓库移除占位）。
 
 8. **逐环节瓶颈归因**
-   现状：`ai-query-metrics` 已输出逐块利用率、可用性、占用、超时和拓扑路径证据。
-   范围：内核按 stage 输出更细指标（服务台利用率、队列占用、等待时长）→ 扩展 F2 或摘要 →
-   `ai-explain` 升级为"Machine 3 利用率 98%、等待 40 分钟"级深层因果归因。
+   第一阶段已完成：`ai-query-metrics` 输出逐块利用率、可用性、占用、超时、拓扑路径，
+   并返回链上逐节点的 `causalEvidence`；结果明确标注这是 topology + measured metrics
+   的观测证据，不把单次运行伪装成干预因果。后续仍需内核按 stage 输出更细指标
+   （服务台利用率、队列占用、等待时长）→ 扩展 F2 或摘要 → `ai-explain` 升级为
+   “Machine 3 利用率 98%、等待 40 分钟”级深层因果归因。
    注意：F2 为冻结契约，指标扩展需走冻结流程。
    入口：`kernel/src/devs/`、`kernel/apps/lp-server/wire_frames.cpp`、`scripts/ai-explain.mjs`。
 

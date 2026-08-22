@@ -42,6 +42,12 @@ export function queryMetrics({ question, metrics, model }) {
     )
     .slice(0, 5);
   const causalChain = buildCausalChain(model, utilized[0]?.name, queued[0]?.name);
+  const causalEvidence = buildCausalEvidence(
+    blocks,
+    causalChain,
+    utilized[0]?.name,
+    queued[0]?.name,
+  );
 
   const findings = [];
   if (utilized[0]) {
@@ -88,8 +94,22 @@ export function queryMetrics({ question, metrics, model }) {
       'The completed run contains no non-zero utilization, queue, timeout, or preemption evidence.',
     );
   }
-  if (causalChain.length > 1) {
-    findings.push(`Topology evidence: ${causalChain.join(' → ')}.`);
+  if (causalEvidence.status === 'topology-supported') {
+    const queueEvidence = causalEvidence.observations.find(
+      (observation) => observation.name === queued[0]?.name,
+    );
+    const bottleneckEvidence = causalEvidence.observations.find(
+      (observation) => observation.name === utilized[0]?.name,
+    );
+    if (queueEvidence?.meanOccupancy != null && bottleneckEvidence?.utilization != null) {
+      findings.push(
+        `Measured path evidence: ${queueEvidence.name} has mean occupancy ` +
+          `${queueEvidence.meanOccupancy.toFixed(3)} before ${bottleneckEvidence.name}, ` +
+          `whose utilization is ${(bottleneckEvidence.utilization * 100).toFixed(1)}%.`,
+      );
+    } else {
+      findings.push(`Topology evidence: ${causalChain.join(' → ')}.`);
+    }
   }
 
   return {
@@ -104,7 +124,55 @@ export function queryMetrics({ question, metrics, model }) {
       blockCount: blocks.length,
       blockFindings,
       causalChain,
+      causalEvidence,
     },
+  };
+}
+
+function buildCausalEvidence(blocks, causalChain, bottleneckName, queueName) {
+  const metricsByName = new Map(
+    blocks.map((block) => [String(block.name ?? 'unknown'), block]),
+  );
+  const observations = causalChain.map((name) => {
+    const block = metricsByName.get(name);
+    if (!block) {
+      return {
+        name,
+        kind: 'unknown',
+        measured: false,
+        utilization: null,
+        availability: null,
+        meanOccupancy: null,
+        timedOut: null,
+        preempted: null,
+      };
+    }
+    return {
+      name,
+      kind: String(block.kind ?? 'unknown'),
+      measured: true,
+      utilization: finite(block.utilization),
+      availability: finite(block.availability),
+      meanOccupancy: finite(block.mean_occupancy),
+      timedOut: finite(block.timed_out_mean),
+      preempted: finite(block.preempted_mean),
+    };
+  });
+  const hasMeasuredTarget = observations.some(
+    (observation) => observation.name === bottleneckName && observation.measured,
+  );
+  const hasMeasuredQueue = observations.some(
+    (observation) => observation.name === queueName && observation.measured,
+  );
+  return {
+    status:
+      causalChain.length > 1 && hasMeasuredTarget && hasMeasuredQueue
+        ? 'topology-supported'
+        : 'insufficient-evidence',
+    observations,
+    caveat:
+      'Topology plus measured metrics are observational evidence from this run; ' +
+      'they do not prove intervention causality.',
   };
 }
 

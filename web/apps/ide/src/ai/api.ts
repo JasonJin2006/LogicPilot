@@ -147,6 +147,20 @@ export interface MetricQueryResult {
       preempted: number;
     }>;
     causalChain?: string[];
+    causalEvidence?: {
+      status: 'topology-supported' | 'insufficient-evidence';
+      observations: Array<{
+        name: string;
+        kind: string;
+        measured: boolean;
+        utilization: number | null;
+        availability: number | null;
+        meanOccupancy: number | null;
+        timedOut: number | null;
+        preempted: number | null;
+      }>;
+      caveat: string;
+    };
   };
 }
 

@@ -1527,6 +1527,15 @@ export function AIPanel() {
               explained.evidence.causalChain.length > 1 && (
                 <p className="ai-meta">causal path: {explained.evidence.causalChain.join(' → ')}</p>
               )}
+            {explained.evidence.causalEvidence != null && (
+              <p className="ai-meta">
+                {explained.evidence.causalEvidence.status === 'topology-supported'
+                  ? 'causal evidence: topology + measured metrics'
+                  : 'causal evidence: insufficient measured coverage'}
+                {' — '}
+                {explained.evidence.causalEvidence.caveat}
+              </p>
+            )}
           </div>
         )}
         {comparison !== null && (
