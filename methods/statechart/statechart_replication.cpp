@@ -103,6 +103,7 @@ struct StatechartReplicationModel::Impl {
   std::unordered_map<FsmEventId, std::vector<std::string>> emitted_ports;
   std::unordered_map<FsmEventId, std::string> guard_text;
   std::vector<std::string> emitted_messages;
+  std::function<void()> emission_callback;
   StateId initial{kInvalidState};
 
   // Per-replication runtime state.
@@ -113,6 +114,8 @@ struct StatechartReplicationModel::Impl {
   EventHandlerRegistry owned_handlers_;
   HandlerId timer_handler_{0};
   HandlerId condition_handler_{0};
+  std::vector<EventToken> timer_tokens;
+  EventToken condition_token{};
   StateMachine machine;
   ReplicationConfig config_;
   std::uint64_t steps_{0};
@@ -190,7 +193,7 @@ struct StatechartReplicationModel::Impl {
       emit_for(fsm_event);
       settle();
     }
-    schedule_triggers(machine.current());
+    reschedule_triggers(machine.current());
   }
 
   void on_condition_poll() {
@@ -202,6 +205,7 @@ struct StatechartReplicationModel::Impl {
       return;
     }
     const StateId state = machine.current();
+    bool transitioned = false;
     const auto triggers = condition_triggers.find(state);
     if (triggers != condition_triggers.end()) {
       const double now_seconds =
@@ -225,6 +229,7 @@ struct StatechartReplicationModel::Impl {
         const StateId from = machine.current();
         FsmContext ctx;
         if (machine.dispatch(definition, fired, ctx)) {
+          transitioned = true;
           last_visited = from;
           ++steps_;
           emit_for(fired);
@@ -232,7 +237,8 @@ struct StatechartReplicationModel::Impl {
         }
       }
     }
-    schedule_condition_poll(machine.current());
+    if (transitioned) reschedule_triggers(machine.current());
+    else schedule_condition_poll(machine.current());
   }
 
   void schedule_condition_poll(StateId state) {
@@ -242,8 +248,22 @@ struct StatechartReplicationModel::Impl {
     if (condition_triggers.count(state) == 0) {
       return;
     }
-    scheduler().schedule(clock().now() + SimTime::from_ns(to_ns(kConditionPollDt)),
-                         kConditionPollType, condition_handler_, 0);
+    if (condition_token.valid()) scheduler().cancel(condition_token);
+    condition_token = scheduler().schedule(
+        clock().now() + SimTime::from_ns(to_ns(kConditionPollDt)),
+        kConditionPollType, condition_handler_, 0);
+  }
+
+  void cancel_scheduled_triggers() {
+    for (const EventToken token : timer_tokens) scheduler().cancel(token);
+    timer_tokens.clear();
+    if (condition_token.valid()) scheduler().cancel(condition_token);
+    condition_token = EventToken{};
+  }
+
+  void reschedule_triggers(StateId state) {
+    cancel_scheduled_triggers();
+    schedule_triggers(state);
   }
 
   void schedule_triggers(StateId state) {
@@ -258,16 +278,16 @@ struct StatechartReplicationModel::Impl {
     if (timed != timed_triggers.end()) {
       for (const TimedTrigger& trigger : timed->second) {
         const double seconds = trigger.sampler(engine_);
-        scheduler().schedule(
+        timer_tokens.push_back(scheduler().schedule(
             clock().now() + SimTime::from_ns(to_ns(seconds)),
-            kTimerEventType, timer_handler_, trigger.event);
+            kTimerEventType, timer_handler_, trigger.event));
       }
     }
     const auto immediate = immediate_conditions.find(state);
     if (immediate != immediate_conditions.end()) {
       for (const FsmEventId event : immediate->second) {
-        scheduler().schedule(clock().now(), kTimerEventType, timer_handler_,
-                             event);
+        timer_tokens.push_back(scheduler().schedule(
+            clock().now(), kTimerEventType, timer_handler_, event));
       }
     }
     schedule_condition_poll(state);
@@ -277,6 +297,7 @@ struct StatechartReplicationModel::Impl {
     const auto it = emitted_ports.find(event);
     if (it == emitted_ports.end()) return;
     emitted_messages.insert(emitted_messages.end(), it->second.begin(), it->second.end());
+    if (emission_callback) emission_callback();
   }
 
   bool guard_allows(FsmEventId event) const {
@@ -522,11 +543,20 @@ void StatechartReplicationModel::attach(RuntimeContext& context) {
   impl_->external_ = &context;
 }
 
+void StatechartReplicationModel::cancel_pending_events() {
+  if (impl_ != nullptr) impl_->cancel_scheduled_triggers();
+}
+
 void StatechartReplicationModel::reset(const ReplicationConfig& config) {
   if (impl_ == nullptr) {
     return;
   }
   impl_->config_ = config;
+  if (impl_->external_ != nullptr) impl_->cancel_scheduled_triggers();
+  else {
+    impl_->timer_tokens.clear();
+    impl_->condition_token = EventToken{};
+  }
   impl_->steps_ = 0;
   impl_->condition_polls_ = 0;
   impl_->done_ = false;
@@ -546,7 +576,7 @@ void StatechartReplicationModel::reset(const ReplicationConfig& config) {
     impl_->on_condition_poll();
   });
   impl_->settle();
-  impl_->schedule_triggers(impl_->machine.current());
+  impl_->reschedule_triggers(impl_->machine.current());
 }
 
 ReplicationMetrics StatechartReplicationModel::run(
@@ -624,7 +654,7 @@ bool StatechartReplicationModel::dispatch_message(const std::string& port) {
   ++impl_->steps_;
   impl_->emit_for(event->second);
   impl_->settle();
-  impl_->schedule_triggers(impl_->machine.current());
+  impl_->reschedule_triggers(impl_->machine.current());
   return true;
 }
 
@@ -633,6 +663,11 @@ std::vector<std::string> StatechartReplicationModel::take_emitted_messages() {
   std::vector<std::string> messages;
   messages.swap(impl_->emitted_messages);
   return messages;
+}
+
+void StatechartReplicationModel::set_emission_callback(
+    std::function<void()> callback) {
+  if (impl_ != nullptr) impl_->emission_callback = std::move(callback);
 }
 
 StateId StatechartReplicationModel::last_state() const {

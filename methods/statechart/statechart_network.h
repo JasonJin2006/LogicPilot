@@ -33,6 +33,7 @@ class StatechartNetworkReplicationModel final : public ReplicationModel {
                          TraceRecorder* trace) override;
 
   bool reset(const ReplicationConfig& config);
+  void cancel_pending_events();
   void attach(RuntimeContext& context);
   std::size_t advance(SimTime until);
   bool dispatch_message(const std::string& port);

@@ -46,8 +46,11 @@ struct StatechartNetworkReplicationModel::Impl {
   std::vector<Route> routes;
   ReplicationConfig config;
   bool valid{false};
+  bool routing_emissions{false};
 
   void route_emissions() {
+    if (routing_emissions) return;
+    routing_emissions = true;
     // A message action can synchronously trigger another chart, which can
     // emit again. Bound cascades so a cyclic coupling cannot hang the worker.
     for (std::size_t round = 0; round < 1024; ++round) {
@@ -67,8 +70,12 @@ struct StatechartNetworkReplicationModel::Impl {
           }
         }
       }
-      if (!routed) return;
+      if (!routed) {
+        routing_emissions = false;
+        return;
+      }
     }
+    routing_emissions = false;
   }
 
   bool dispatch_message(const std::string& port) {
@@ -127,6 +134,9 @@ StatechartNetworkReplicationModel::StatechartNetworkReplicationModel(
                                     coupling->to_port()->str()});
     }
   }
+  // The callback is installed during reset (after every chart has been
+  // reset), so immediate condition transitions cannot reach a sibling's old
+  // state from the previous replication.
   impl_->valid = true;
 }
 
@@ -135,13 +145,23 @@ StatechartNetworkReplicationModel::~StatechartNetworkReplicationModel() = defaul
 bool StatechartNetworkReplicationModel::reset(const ReplicationConfig& config) {
   if (impl_ == nullptr || !impl_->valid) return false;
   impl_->config = config;
+  for (auto& chart : impl_->charts) chart.model->set_emission_callback({});
   for (auto& chart : impl_->charts) chart.model->reset(config);
+  for (auto& chart : impl_->charts) {
+    chart.model->set_emission_callback([this] { impl_->route_emissions(); });
+  }
+  impl_->route_emissions();
   return true;
 }
 
 void StatechartNetworkReplicationModel::attach(RuntimeContext& context) {
   if (impl_ == nullptr) return;
   for (auto& chart : impl_->charts) chart.model->attach(context);
+}
+
+void StatechartNetworkReplicationModel::cancel_pending_events() {
+  if (impl_ == nullptr) return;
+  for (auto& chart : impl_->charts) chart.model->cancel_pending_events();
 }
 
 std::size_t StatechartNetworkReplicationModel::advance(SimTime until) {

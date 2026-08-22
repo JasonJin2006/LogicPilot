@@ -131,6 +131,15 @@ WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，
 
 ## 8. 仍需完成的边界
 
+### 8.1 多 Statechart 事件顺序
+
+同一 model root 下的多个 Statechart 由一个 `StatechartNetworkReplicationModel`
+挂接到 SimulationKernel 的共享 scheduler。状态转换产生的 `emit` 消息在当前
+事件处理期间立即路由到目标图，而不是等某个 chart 的整段 `advance()` 返回；
+状态切换会取消旧的 timer/condition poll，避免 stale event 改变最终仿真 horizon。
+这保证了 `(sim_time, scheduler sequence)` 的事件顺序可重放；消息环路仍受有界
+cascade 保护。该边界已有 kernel coupling/determinism 验收覆盖。
+
 - 为插件包增加发布者签名、信任策略与细粒度能力授权；当前 C ABI 插件与宿主同进程，只有 WASM 插件具备内存隔离和计算配额。
 - 为 `VariableStore` 增加声明式单位、所有权与写入权限；为端口增加类型兼容检查。
 - 定义连续时间方法的误差控制、零交叉与离散事件回滚协议。

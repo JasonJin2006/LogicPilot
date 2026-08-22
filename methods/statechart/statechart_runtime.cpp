@@ -116,10 +116,12 @@ void StatechartRuntime::shutdown() {
     auto* chart = dynamic_cast<StatechartReplicationModel*>(replication_.get());
     if (chart != nullptr) {
       last_metrics_ = chart->metrics();
+      chart->cancel_pending_events();
     } else if (auto* network = dynamic_cast<StatechartNetworkReplicationModel*>(
                    replication_.get());
                network != nullptr) {
       last_metrics_ = network->metrics();
+      network->cancel_pending_events();
     }
   }
   replication_.reset();

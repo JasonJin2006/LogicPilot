@@ -136,6 +136,55 @@ flatbuffers::Offset<v2::Node> statechart_node(
       0, 0, chart, 0, 0);
 }
 
+// Sender emits `go` at t=1. Receiver has a competing timeout at t=5; when
+// the message is routed at the sender's event time it reaches `active`, then
+// finishes at t=2. A delayed post-advance route would let the receiver reach
+// `expired` at t=5 instead, so this pins event-level composite ordering.
+flatbuffers::Offset<v2::Node> coupled_statechart_node(
+    flatbuffers::FlatBufferBuilder& builder, const char* name, bool sender) {
+  const auto idle = v2::CreateState(builder, builder.CreateString("idle"));
+  const auto done = v2::CreateState(builder, builder.CreateString("done"));
+  std::vector<flatbuffers::Offset<v2::State>> states{idle, done};
+  std::vector<flatbuffers::Offset<v2::Transition>> transitions;
+  if (sender) {
+    const auto action = v2::CreateAction(
+        builder, 0, 0, builder.CreateString("go"));
+    const auto actions = builder.CreateVector(
+        std::vector<flatbuffers::Offset<v2::Action>>{action});
+    transitions.push_back(v2::CreateTransition(
+        builder, builder.CreateString("idle"), builder.CreateString("done"),
+        v2::TriggerKind_Timeout, 1.0, 0, 0.0, 0, 0, actions));
+  } else {
+    const auto waiting = v2::CreateState(builder, builder.CreateString("waiting"));
+    const auto active = v2::CreateState(builder, builder.CreateString("active"));
+    const auto expired = v2::CreateState(builder, builder.CreateString("expired"));
+    states = {waiting, active, expired, done};
+    transitions.push_back(v2::CreateTransition(
+        builder, builder.CreateString("waiting"), builder.CreateString("active"),
+        v2::TriggerKind_Message, 0.0, 0, 0.0, builder.CreateString("go"), 0, 0));
+    transitions.push_back(v2::CreateTransition(
+        builder, builder.CreateString("active"), builder.CreateString("done"),
+        v2::TriggerKind_Timeout, 1.0, 0, 0.0, 0, 0, 0));
+    transitions.push_back(v2::CreateTransition(
+        builder, builder.CreateString("waiting"), builder.CreateString("expired"),
+        v2::TriggerKind_Timeout, 5.0, 0, 0.0, 0, 0, 0));
+  }
+  const auto chart = v2::CreateStatechart(
+      builder, builder.CreateVector(states), builder.CreateVector(transitions),
+      builder.CreateString(sender ? "idle" : "waiting"));
+  const auto final_param = v2::CreateVar(
+      builder, builder.CreateString("final"), v2::VarType_String, false, 0,
+      0.0, builder.CreateString("done"), 0);
+  return v2::CreateNode(
+      builder, v2::CreateMetadata(builder, builder.CreateString(name), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{final_param}),
+      0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("statechart"),
+                             builder.CreateString("statechart"), 0, 0),
+      0, 0, chart, 0, 0);
+}
+
 std::vector<std::uint8_t> build_flat_mm1_ir() {
   flatbuffers::FlatBufferBuilder builder;
   std::vector<flatbuffers::Offset<v2::Coupling>> couplings;
@@ -172,6 +221,30 @@ std::vector<std::uint8_t> build_statechart_ir() {
   return std::vector<std::uint8_t>(builder.GetBufferPointer(),
                                    builder.GetBufferPointer() +
                                        builder.GetSize());
+}
+
+std::vector<std::uint8_t> build_multi_statechart_ir() {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto sender = coupled_statechart_node(builder, "Sender", true);
+  const auto receiver = coupled_statechart_node(builder, "Receiver", false);
+  const auto coupling = v2::CreateCoupling(
+      builder, builder.CreateString("Sender"), builder.CreateString("go"),
+      builder.CreateString("Receiver"), builder.CreateString("go"));
+  const auto root = v2::CreateNode(
+      builder,
+      v2::CreateMetadata(builder, builder.CreateString("CoupledCharts"), 0, 0,
+                         0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}), 0,
+      v2::CreateSemanticsRef(builder, builder.CreateString("core"),
+                             builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Node>>{sender,
+                                                                       receiver}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<v2::Coupling>>{coupling}),
+      0, 0, 0);
+  builder.Finish(v2::CreateModelFile(builder, 2, root, 0, 0), "LP2R");
+  return std::vector<std::uint8_t>(builder.GetBufferPointer(),
+                                   builder.GetBufferPointer() + builder.GetSize());
 }
 
 std::vector<std::uint8_t> build_multi_method_ir() {
@@ -267,6 +340,31 @@ TEST_CASE("simulation kernel: single-method statechart matches the batch path",
   REQUIRE(metrics[0].departures == baseline.departures);
   REQUIRE(metrics[0].final_value == baseline.final_value);
   REQUIRE(metrics[0].horizon_seconds == baseline.horizon_seconds);
+}
+
+TEST_CASE("simulation kernel: statechart coupling routes at event time",
+          "[runtime][kernel][statechart][coupling]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_statechart_ir());
+  ReplicationConfig config = test_config();
+  config.arrivals = 10;
+
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  const auto metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);  // the composite network is one method
+  REQUIRE(metrics[0].departures == 3);  // sender + receiver message + timeout
+  REQUIRE(metrics[0].horizon_seconds == 2.0);
+
+  SimulationKernel again;
+  REQUIRE(again.load(model.file, &error));
+  const auto repeated = again.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(repeated.size() == 1);
+  REQUIRE(repeated[0].departures == metrics[0].departures);
+  REQUIRE(repeated[0].horizon_seconds == metrics[0].horizon_seconds);
 }
 
 TEST_CASE("simulation kernel: process + statechart compose in one run",

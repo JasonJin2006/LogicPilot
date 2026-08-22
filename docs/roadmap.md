@@ -381,9 +381,11 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     Scheduler 事件 → 对应 runtime 处理）；ProcessFlowSim/QueueingFlowSim/
     Statechart 支持外部设施模式（attach RuntimeContext），批量路径不变；
     单方法 kernel 驱动与批量逐位一致，process+statechart 多方法组合在单次
-    运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。后续：agent/SD
-    拆方法库、共享变量显式写入；lp-server 已接入多 Statechart composite 的
-    Message coupling，SimulationKernel 的多状态图共享队列适配仍需后续统一。
+    运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。**多 Statechart
+    event-time coupling ✅ 已完成**（2026-08-22）：composite 在共享 scheduler
+    的事件处理期间立即路由 emit 消息，并取消状态切换后的 stale timer，最终
+    horizon 不再被旧图定时器拖长；新增 SimulationKernel coupling 验收。后续：
+    agent/SD 拆方法库、共享变量显式写入。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

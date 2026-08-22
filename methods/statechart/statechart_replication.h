@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,6 +46,7 @@ class StatechartReplicationModel final : public ReplicationModel {
   // clock/scheduler/handler registry; the kernel dispatches events.
   void attach(RuntimeContext& context);
   void reset(const ReplicationConfig& config);
+  void cancel_pending_events();
   std::size_t advance(SimTime until, TraceRecorder* trace);
   [[nodiscard]] ReplicationMetrics metrics() const;
   [[nodiscard]] std::string current_state_name() const;
@@ -53,6 +55,9 @@ class StatechartReplicationModel final : public ReplicationModel {
   [[nodiscard]] bool has_pending_events();
   bool dispatch_message(const std::string& port);
   std::vector<std::string> take_emitted_messages();
+  // Composite runtimes use this callback to route an emitted message before
+  // the shared scheduler advances to the next event.
+  void set_emission_callback(std::function<void()> callback);
 
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;
