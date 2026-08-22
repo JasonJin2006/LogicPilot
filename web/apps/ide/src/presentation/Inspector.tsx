@@ -5,7 +5,11 @@
 // Pure: every edit calls back with a fresh GraphicNode; the model store
 // commits it (undoable).
 
-import { createGraphicNode, regularPolygonPoints } from '@logicpilot/editor';
+import {
+  createGraphicNode,
+  GRAPHIC_BINDING_VARIABLES,
+  regularPolygonPoints,
+} from '@logicpilot/editor';
 import type { Arrowhead, BooleanOp, GraphicNode, GraphicStyle } from '@logicpilot/editor';
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, Unlock } from 'lucide-react';
@@ -793,9 +797,7 @@ export function PresentationInspector({
         </label>
         {binding && (
           <>
-            <p className="side-hint">
-              Variables: queueLength, busy, servers, downServers, throughput, meanWait, tick
-            </p>
+            <p className="side-hint">Variables: {GRAPHIC_BINDING_VARIABLES.join(', ')}</p>
             {(['width', 'height', 'opacity', 'x', 'y', 'rotation'] as const).map((key) => (
               <label className="props-field" key={key}>
                 <span className="props-field-name">{key}</span>

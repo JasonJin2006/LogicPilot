@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { evalBindingExpression, resolveGraphicBindings, shapeNode } from '../src/index.js';
+import {
+  evalBindingExpression,
+  GRAPHIC_BINDING_VARIABLES,
+  resolveGraphicBindings,
+  shapeNode,
+} from '../src/index.js';
 
 describe('binding expressions', () => {
   it('evaluates arithmetic over runtime variables', () => {
@@ -7,6 +12,9 @@ describe('binding expressions', () => {
     expect(evalBindingExpression('(a + b) / 2', { a: 4, b: 6 })).toBe(5);
     expect(evalBindingExpression('-x + 10', { x: 4 })).toBe(6);
     expect(evalBindingExpression('10 % 3', {})).toBe(1);
+    expect(evalBindingExpression('time * 30 + simTime', { time: 2, simTime: 4 })).toBe(64);
+    expect(GRAPHIC_BINDING_VARIABLES).toContain('time');
+    expect(GRAPHIC_BINDING_VARIABLES).toContain('simTime');
   });
 
   it('treats unknown identifiers as 0 and rejects invalid input safely', () => {
@@ -21,12 +29,14 @@ describe('binding expressions', () => {
         width: 'queueLength * 10',
         opacity: 'busy',
         height: '2',
+        rotation: 'time * 30',
       },
     };
-    const resolved = resolveGraphicBindings(node, { queueLength: 5, busy: 1 });
+    const resolved = resolveGraphicBindings(node, { queueLength: 5, busy: 1, time: 2 });
     expect(resolved.transform.width).toBe(50);
     expect(resolved.transform.height).toBe(2);
     expect(resolved.style.opacity).toBe(1);
+    expect(resolved.transform.rotation).toBe(60);
     // The stored node is untouched.
     expect(node.transform.width).toBe(120);
     expect(node.style.opacity).toBe(1);

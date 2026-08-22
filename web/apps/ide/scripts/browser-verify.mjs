@@ -590,6 +590,14 @@ try {
   if ((await page.locator('.presentation-layer-row.selected').count()) !== 1) {
     throw new Error('selecting a nested layer did not select its root object');
   }
+  const bindingSection = page.locator('.props-section').filter({ hasText: 'Simulation binding' });
+  await bindingSection.locator('input[type="checkbox"]').check();
+  if (
+    !(await bindingSection.textContent())?.includes('time') ||
+    !(await bindingSection.textContent())?.includes('simTime')
+  ) {
+    throw new Error('animation binding variables are missing from the Inspector');
+  }
   log('nested presentation Layers tree expands, toggles and selects child layers');
 
   // Agent population: the same compile->serve path should emit Tick frames

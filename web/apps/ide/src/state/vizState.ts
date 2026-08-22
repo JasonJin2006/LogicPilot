@@ -34,6 +34,8 @@ export interface VizState {
   throughput: number;
   /** Latest Counters.mean_wait (mean waiting time, for bindings). */
   meanWait: number;
+  /** Latest wire-frame simulation time in seconds, for animation bindings. */
+  simTime: number;
   /** Latest Agent population telemetry (non-Process method runs). */
   agentCount: number;
   agentTick: number;
@@ -73,6 +75,7 @@ export function createVizState(): VizState {
     queueLength: 0,
     throughput: 0,
     meanWait: 0,
+    simTime: 0,
     agentCount: 0,
     agentTick: 0,
     activeState: null,
@@ -97,6 +100,7 @@ export function resetVizState(viz: VizState): void {
   viz.queueLength = 0;
   viz.throughput = 0;
   viz.meanWait = 0;
+  viz.simTime = 0;
   viz.agentCount = 0;
   viz.agentTick = 0;
   viz.activeState = null;

@@ -36,6 +36,9 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
 - **Properties**（右侧）：选中块后编辑名称与字段（AnyLogic 风格参数）。
   - presentation 对象提供 **Layers** 树：可展开/折叠 group/frame 子对象，点击
     子层选中其根对象，并分别切换显隐/锁定；顶层图层可拖拽调整绘制顺序。
+  - presentation 对象的 **Simulation binding** 可用算术表达式驱动尺寸、位置、
+    旋转和透明度；除队列/资源指标外，`time` / `simTime` 是秒级仿真时钟，可用于
+    时间动画（例如 `rotation = time * 30`）。
   - `source` 块额外有 **Entity attributes** 区：新增/重命名/删除实体属性
     （int/float/bool），生成 DSL 里的 `state <name>: <type> = <值>`，可被
     selectOutput/hold 条件、match 配对、优先级排队引用。

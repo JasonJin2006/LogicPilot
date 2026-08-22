@@ -160,6 +160,8 @@ function parseCompileReply(message: string): { ok: boolean; events: LogEvent[] }
 
 // Apply one telemetry frame to viz + run stores (single writer).
 function applyFrame(frame: WireFrame): void {
+  const simTime = Number(frame.simTimeNs) / 1e9;
+  if (Number.isFinite(simTime)) vizState.simTime = Math.max(0, simTime);
   switch (frame.kind) {
     case 'run-started': {
       resetVizState(vizState);

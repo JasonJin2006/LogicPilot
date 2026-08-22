@@ -1206,6 +1206,12 @@ export function ModelCanvas() {
         tick: vizState.tickVersion,
         throughput: vizState.throughput,
         meanWait: vizState.meanWait,
+        time: vizState.simTime,
+        simTime: vizState.simTime,
+        stateSteps: vizState.stateSteps,
+        agentTick: vizState.agentTick,
+        continuousTime: vizState.continuousTime,
+        atomicTime: vizState.atomicTime,
       }
     : undefined;
   let shapesView: ReactElement | null = null;

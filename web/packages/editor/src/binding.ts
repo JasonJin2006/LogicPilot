@@ -1,6 +1,5 @@
-// Simulation binding: drive a GraphicNode's live transform/style from
-// runtime simulation variables (queueLength, busy, servers, downServers,
-// tick) through small arithmetic expressions.
+// Simulation/animation binding: drive a GraphicNode's live transform/style
+// from runtime simulation variables through small arithmetic expressions.
 //
 // `evalBindingExpression` is a tiny safe recursive-descent evaluator:
 // numbers, identifiers, + - * / % ( ) and unary minus only. No functions,
@@ -8,6 +7,25 @@
 // through a binding expression.
 
 import type { GraphicNode } from './presentation.js';
+
+/** Public runtime variable contract for GraphicNode bindings. */
+export const GRAPHIC_BINDING_VARIABLES = [
+  'queueLength',
+  'busy',
+  'servers',
+  'downServers',
+  'throughput',
+  'meanWait',
+  'tick',
+  'time',
+  'simTime',
+  'stateSteps',
+  'agentTick',
+  'continuousTime',
+  'atomicTime',
+] as const;
+
+export type GraphicBindingVariable = (typeof GRAPHIC_BINDING_VARIABLES)[number];
 
 type Token =
   | { type: 'number'; value: number }

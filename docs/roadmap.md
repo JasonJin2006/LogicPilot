@@ -267,7 +267,9 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    Shift 多选 + Ctrl+G 分组 / Inspector Ungroup、对齐（Inspector 6 向）、
    置顶/置底（Ctrl+] / Ctrl+[ 与 Inspector）。**Layers 面板基础能力 ✅ 已完成**：
    Inspector 展示 presentation scene-graph 层级树，支持展开/折叠、子节点选中、
-   显隐、锁定和顶层拖拽排序；动画绑定 API 仍是后续项。
+   显隐、锁定和顶层拖拽排序。**动画绑定 API ✅ 已完成**（2026-08-22）：公开统一的
+   binding 变量表，并将 wire 仿真时钟暴露为 `time` / `simTime`，支持时间驱动的
+   位置、旋转、尺寸和透明度。
    **Phase 0：Vector Graphics Engine 数据模型 ✅ 已完成**（2026-08-06）：
    拆除「组件类型」抽象（rect/roundedRect/oval 不再是独立 kind 语义），
    对象模型统一为 `GraphicNode`（shape + geometry / text / image / group /

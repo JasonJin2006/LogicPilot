@@ -48,6 +48,7 @@ describe('parseBlockCounters', () => {
     vizState.continuousStep = 120;
     vizState.atomicTime = 4;
     vizState.atomicStep = 4;
+    vizState.simTime = 12.5;
     resetVizState(vizState);
     expect(vizState.agentCount).toBe(0);
     expect(vizState.agentTick).toBe(0);
@@ -58,6 +59,7 @@ describe('parseBlockCounters', () => {
     expect(vizState.continuousStep).toBe(0);
     expect(vizState.atomicTime).toBe(0);
     expect(vizState.atomicStep).toBe(0);
+    expect(vizState.simTime).toBe(0);
   });
 });
 
