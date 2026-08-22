@@ -74,7 +74,11 @@ class SdMethod final : public SimulationMethod {
   void publish_state() {
     if (context_ == nullptr || simulation_ == nullptr) return;
     for (const auto& [name, value] : simulation_->last_state()) {
-      context_->variables().set("sd::" + name, value);
+      const std::string variable = "sd::" + name;
+      context_->variables().declare(
+          variable,
+          VariableDeclaration{"sd", "", {"sd", "host"}, {"sd"}});
+      context_->variables().set_by("sd", variable, value);
     }
   }
 

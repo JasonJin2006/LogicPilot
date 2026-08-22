@@ -116,6 +116,12 @@ WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，
 - `VariableStore`：低频、可观察的共享标量状态（bool/int64/double/string）。
 - `MessageStore`：类型化消息体，包含 `type_uri`、schema 版本、编码、来源方法和字节数据。
 
+`VariableStore` 的 method API 通过 `VariableDeclaration` 声明 owner、unit、readers
+和 writers；方法必须使用 `set_by(method, ...)` / `get_by(method, ...)`，未声明或
+未授权访问会失败。无身份的 `set/get` 仅保留给 kernel/host 的兼容管理视图，不是
+方法插件的权限边界。SD 运行时声明 `sd::<state>` 后按 `sd` 写入；C ABI host 对
+插件自身首次写入的变量建立同名 owner 声明，仍禁止其他 method 借用其 writer 权限。
+
 调度器的 `Event.payload` 继续保持 64 位，以保证热路径紧凑。复杂载荷时它保存 `MessageId`，指向一次 replication 内的 `MessageStore`；方法可用类型 URI 和版本校验后再解码。初始化或回滚时，变量与消息都会清空，不跨 replication 泄漏。
 
 端口层的 `Port.event_type` 描述静态消息类型，`MessageEnvelope.type_uri` 描述运行时实际载荷。后续应增加端口连接的编译期类型兼容检查。
@@ -145,7 +151,8 @@ WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，
 cascade 保护。该边界已有 kernel coupling/determinism 验收覆盖。
 
 - 为插件包增加发布者签名、信任策略与细粒度能力授权；当前 C ABI 插件与宿主同进程，只有 WASM 插件具备内存隔离和计算配额。
-- 为 `VariableStore` 增加声明式单位、所有权与写入权限；为端口增加类型兼容检查。
+- 为 `VariableStore` 增加跨方法变量的声明式单位、所有权与读写权限 ✅；为端口增加
+  类型兼容检查。
 - 定义连续时间方法的误差控制、零交叉与离散事件回滚协议。
 
 这些是超越 AnyLogic 扩展性的关键工程，不应靠 Java 式任意继承来替代明确、可版本化、可诊断的契约。

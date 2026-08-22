@@ -388,8 +388,10 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     方法插件 ✅ 已完成**（2026-08-22）：AgentMethod 已从 kernel native runtime
     移入 `methods/agent`，通过 `logicpilot_methods` 注册并保持 shared-event
     lifecycle。**SD 方法插件 ✅ 已完成**（2026-08-22）：SdMethod 已移入
-    `methods/sd`，连续 RK4 仍通过 shared scheduler 发布 `sd::<state>` 变量；
-    后续：共享变量显式写入权限与声明式单位。
+    `methods/sd`，连续 RK4 仍通过 shared scheduler 发布 `sd::<state>` 变量。**共享
+    变量权限 ✅ 已完成**（2026-08-22）：`VariableStore` 支持 owner/unit/readers/
+    writers 声明，method-scoped 读写拒绝未授权访问，host 兼容视图保持可用；后续：
+    端口类型兼容检查与更深因果推断。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 

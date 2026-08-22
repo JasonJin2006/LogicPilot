@@ -176,8 +176,13 @@ private:
     if (self->context_ == nullptr || name == nullptr || *name == '\0')
       return 0;
     try {
-      self->context_->variables().set(name, value);
-      return 1;
+      const std::string accessor = self->api_->method_name;
+      if (self->context_->variables().declaration(name) == nullptr) {
+        self->context_->variables().declare(
+            name, VariableDeclaration{accessor, "", {accessor, "host"},
+                                      {accessor}});
+      }
+      return self->context_->variables().set_by(accessor, name, value) ? 1 : 0;
     } catch (...) {
       return 0;
     }
@@ -189,7 +194,7 @@ private:
       return 0;
     const VariableValue* stored = nullptr;
     try {
-      stored = self->context_->variables().get(name);
+      stored = self->context_->variables().get_by(self->api_->method_name, name);
     } catch (...) {
       return 0;
     }

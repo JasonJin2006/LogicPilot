@@ -244,6 +244,30 @@ TEST_CASE("variable store: typed shared state across methods", "[runtime]") {
   REQUIRE_FALSE(store.has("inventory"));
 }
 
+TEST_CASE("variable store: declarations enforce owner, readers, writers and units",
+          "[runtime][variables][permissions]") {
+  VariableStore store;
+  const VariableDeclaration declaration{
+      "sd", "items", {"sd", "agent", "host"}, {"sd"}};
+  REQUIRE(store.declare("sd::inventory", declaration));
+  REQUIRE(store.declare("sd::inventory", declaration));
+  REQUIRE_FALSE(store.declare(
+      "sd::inventory",
+      VariableDeclaration{"agent", "items", {"agent"}, {"agent"}}));
+  REQUIRE(store.declaration("sd::inventory") != nullptr);
+  REQUIRE(store.declaration("sd::inventory")->unit == "items");
+
+  REQUIRE(store.set_by("sd", "sd::inventory", std::int64_t{4}));
+  REQUIRE(std::get<std::int64_t>(*store.get_by("agent", "sd::inventory")) == 4);
+  REQUIRE(store.get_by("untrusted", "sd::inventory") == nullptr);
+  REQUIRE_FALSE(store.set_by("agent", "sd::inventory", std::int64_t{5}));
+  REQUIRE(std::get<std::int64_t>(*store.get("sd::inventory")) == 4);
+
+  store.clear();
+  REQUIRE(store.declaration("sd::inventory") == nullptr);
+  REQUIRE_FALSE(store.set_by("sd", "sd::inventory", std::int64_t{1}));
+}
+
 TEST_CASE("method plugin manifest: validates discovery metadata and registry binding",
           "[runtime][plugin]") {
   const auto parsed = parse_method_plugin_manifest(R"json({
