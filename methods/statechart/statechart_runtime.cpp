@@ -10,6 +10,7 @@
 #include "logicpilot/runtime/runtime_context.h"
 
 #include "ir_v2_generated.h"
+#include "statechart_network.h"
 #include "statechart_replication.h"
 
 namespace logicpilot {
@@ -37,6 +38,18 @@ const ir::v2::Node* find_statechart_node(const ir::v2::Node* root) {
   return nullptr;
 }
 
+bool has_multiple_statecharts(const ir::v2::Node* root) {
+  if (root == nullptr || node_is(root, "statechart", "statechart") ||
+      root->children() == nullptr) {
+    return false;
+  }
+  std::size_t count = 0;
+  for (const ir::v2::Node* child : *root->children()) {
+    if (node_is(child, "statechart", "statechart") && ++count > 1) return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 bool StatechartRuntime::initialize(RuntimeContext& context, const IrModelFile& model,
@@ -57,6 +70,17 @@ bool StatechartRuntime::initialize(RuntimeContext& context, const IrModelFile& m
     }
     return false;
   }
+  if (has_multiple_statecharts(model.v2_root->root())) {
+    auto network = std::make_unique<StatechartNetworkReplicationModel>(
+        model.v2_root->root(), error);
+    if (network == nullptr || (error != nullptr && !error->empty())) {
+      return false;
+    }
+    network->attach(context);
+    network->reset(context.config());
+    replication_ = std::move(network);
+    return true;
+  }
   replication_ = std::make_unique<StatechartReplicationModel>(node, error);
   if (replication_ == nullptr || (error != nullptr && !error->empty())) {
     replication_.reset();
@@ -73,12 +97,17 @@ void StatechartRuntime::advance(SimTime until) {
     return;
   }
   auto* chart = dynamic_cast<StatechartReplicationModel*>(replication_.get());
-  if (chart == nullptr) {
+  if (chart != nullptr) {
+    chart->advance(until, nullptr);
+    last_metrics_ = chart->metrics();
+    ran_ = true;
     return;
   }
-  // Drives whichever facilities are current (kernel's or self-contained).
-  chart->advance(until, nullptr);
-  last_metrics_ = chart->metrics();
+  auto* network =
+      dynamic_cast<StatechartNetworkReplicationModel*>(replication_.get());
+  if (network == nullptr) return;
+  network->advance(until);
+  last_metrics_ = network->metrics();
   ran_ = true;
 }
 
@@ -87,6 +116,10 @@ void StatechartRuntime::shutdown() {
     auto* chart = dynamic_cast<StatechartReplicationModel*>(replication_.get());
     if (chart != nullptr) {
       last_metrics_ = chart->metrics();
+    } else if (auto* network = dynamic_cast<StatechartNetworkReplicationModel*>(
+                   replication_.get());
+               network != nullptr) {
+      last_metrics_ = network->metrics();
     }
   }
   replication_.reset();
@@ -102,7 +135,13 @@ std::unique_ptr<ReplicationModel> StatechartRuntime::to_replication_model(const 
     }
     return nullptr;
   }
-  const ir::v2::Node* node = find_statechart_node(model.v2_root->root());
+  const ir::v2::Node* root = model.v2_root->root();
+  if (has_multiple_statecharts(root)) {
+    auto network = std::make_unique<StatechartNetworkReplicationModel>(root, error);
+    if (error != nullptr && !error->empty()) return nullptr;
+    return network;
+  }
+  const ir::v2::Node* node = find_statechart_node(root);
   if (node == nullptr) {
     if (error != nullptr) {
       *error = "no statechart node under the model root";

@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/statemachine/state_machine.h"
@@ -51,6 +52,7 @@ class StatechartReplicationModel final : public ReplicationModel {
   [[nodiscard]] bool done() const;
   [[nodiscard]] bool has_pending_events();
   bool dispatch_message(const std::string& port);
+  std::vector<std::string> take_emitted_messages();
 
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;

@@ -265,6 +265,35 @@ model Swarm {
 大规模群体（≥ 65536 个 agent 且多核）时，flip/bounce 这类逐实体独立的行为自动
 走并行批量 tick 路径，每实体计算与串行逐位一致（10 万 agent 确定性测试覆盖）。
 
+## statechart：状态机与消息耦合
+
+```logicpilot
+model Relay {
+  statechart Sender {
+    initial = Idle
+    state Idle { }
+    state Sent { }
+    transition send {
+      from = Idle; to = Sent; triggeredBy = timeout; timeout = 1.0
+      action = "emit go"
+    }
+  }
+  statechart Receiver {
+    initial = Waiting
+    state Waiting { }
+    state Done { }
+    transition receive {
+      from = Waiting; to = Done; triggeredBy = message; messageType = go
+    }
+  }
+  couple Sender.go -> Receiver.go
+}
+```
+
+`action = "emit <port>"` 会在 transition 触发时发出消息；root 级 `couple` 将其
+ 路由到另一个 Statechart 的 `messageType` transition。运行时会在同一仿真时间内
+ 完成消息级联，并可通过 lp-server 的 `inject` 控制命令从外部投递消息。
+
 ## continuous：连续 ODE 系统
 
 ```logicpilot

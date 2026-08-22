@@ -30,7 +30,8 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
     （restrictedArea* / pickup / resourceTask* 等）尚无内核实现，已从
     palette 隐藏，避免拖入后编译失败。
   - `presentation` 演示库：矩形/椭圆/线/文本等绘图形状，渲染为真实 SVG。
-  - `statechart` / `action`：状态图与行动图元素（画布建模，语义落内核为后续）。
+  - `statechart`：状态图元素，支持 timeout/rate/condition/message、transition emit
+    和多 Statechart coupling；`action` 仍是画布建模元素，暂不进入仿真 IR。
 - 画布：滚轮缩放、空白拖动平移、坐标网格；端口拖出连线（点击连线删除）。
 - **Properties**（右侧）：选中块后编辑名称与字段（AnyLogic 风格参数）。
   - `source` 块额外有 **Entity attributes** 区：新增/重命名/删除实体属性

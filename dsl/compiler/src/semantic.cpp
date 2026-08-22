@@ -1617,10 +1617,14 @@ private:
 
   void check_couplings(const ModelAst& model) {
     std::unordered_map<std::string, const Node*> atomics;
+    std::unordered_map<std::string, const Node*> statecharts;
     std::unordered_map<std::string, const Node*> process_stages;
     for (const Node& member : model.members) {
       if (member.kind == "atomic") {
         atomics.emplace(member.name, &member);
+      }
+      if (member.kind == "statechart") {
+        statecharts.emplace(member.name, &member);
       }
       if (registry_ != nullptr && registry_->has_block(member.registry_key()) &&
           member.kind != "resource") {
@@ -1643,6 +1647,12 @@ private:
         check_atomic_coupling(*from->second, *to->second, couple);
         continue;
       }
+      const auto from_chart = statecharts.find(couple.from_model);
+      const auto to_chart = statecharts.find(couple.to_model);
+      if (from_chart != statecharts.end() && to_chart != statecharts.end()) {
+        check_statechart_coupling(*from_chart->second, *to_chart->second, couple);
+        continue;
+      }
       // Process flow coupling: both ends must be registered process stages.
       // Port/shape validation (LP5003, conditional gating) is done once by
       // check_flow_scope on the model root; here we only report unknown
@@ -1659,6 +1669,46 @@ private:
               couple.span);
         continue;
       }
+    }
+  }
+
+  void check_statechart_coupling(const Node& from, const Node& to,
+                                 const CoupleDecl& couple) {
+    bool valid_from = false;
+    for (const Node& child : from.children) {
+      if (child.kind != "transition") continue;
+      const Field* action = field_of(child, "action");
+      if (action != nullptr && action->value.kind == ValueKind::kString &&
+          action->value.string_value == "emit " + couple.from_port) {
+        valid_from = true;
+        break;
+      }
+    }
+    bool valid_to = false;
+    for (const Node& child : to.children) {
+      if (child.kind != "transition") continue;
+      const Field* trigger = field_of(child, "triggeredBy");
+      const Field* message = field_of(child, "messageType");
+      if (trigger != nullptr && trigger->value.kind == ValueKind::kIdentifier &&
+          trigger->value.string_value == "message" && message != nullptr &&
+          (message->value.kind == ValueKind::kIdentifier ||
+           message->value.kind == ValueKind::kString) &&
+          message->value.string_value == couple.to_port) {
+        valid_to = true;
+        break;
+      }
+    }
+    if (!valid_from) {
+      error("LP5003",
+            "coupling port '" + couple.from_model + "." + couple.from_port +
+                "' is not emitted by a statechart transition action",
+            couple.span);
+    }
+    if (!valid_to) {
+      error("LP5003",
+            "coupling port '" + couple.to_model + "." + couple.to_port +
+                "' is not a Statechart message transition",
+            couple.span);
     }
   }
 

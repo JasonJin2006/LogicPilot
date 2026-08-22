@@ -66,6 +66,9 @@ RunStarted -> (Tick, Counters)* -> RunFinished
   `agent_*`，Statechart 使用 `state.active.<name>`/`state.steps`，Continuous
   使用 `continuous.time`/`continuous.step`/`continuous.value.<name>`，Atomic
   使用 `atomic.time`/`atomic.step`。
+- 多 Statechart root 的 coupling 使用 transition `action = "emit <port>"` →
+  `messageType = <port>`，并在同一仿真时间内路由；服务端会以
+  `state.active.<chart>.<state>` / `state.steps.<chart>` 输出各图状态。
 - RunFinished.stats：`reps`、`confidence` 以及 throughput/L/Lq/W/Wq 的
   `*.mean`、`*.std`、`*.ci_low`、`*.ci_high`（跨 replication 的 Student-t CI）。
 

@@ -1421,7 +1421,9 @@ TEST_CASE("lp-server streams agent population ticks after compile",
 
   client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
                    base64_encode(source) + "\"}");
-  REQUIRE(read_next_text(client).find("\"ok\": true") != std::string::npos);
+  const std::string compile_reply = read_next_text(client);
+  INFO(compile_reply);
+  REQUIRE(compile_reply.find("\"ok\": true") != std::string::npos);
   client.send_text(
       R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
 
@@ -1553,6 +1555,61 @@ TEST_CASE("lp-server injects a message into a statechart before start",
   }
   REQUIRE(completed);
   REQUIRE(saw_open);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server routes emitted messages between statecharts",
+          "[server][integration][statechart][coupling]") {
+  const std::string source = R"(model Relay {
+  statechart Sender {
+    initial = Idle
+    state Idle { }
+    state Sent { }
+    transition send { from = Idle; to = Sent; triggeredBy = timeout; timeout = 1.0; action = "emit go" }
+  }
+  statechart Receiver {
+    initial = Waiting
+    state Waiting { }
+    state Done { }
+    transition receive { from = Waiting; to = Done; triggeredBy = message; messageType = go }
+  }
+  couple Sender.go -> Receiver.go
+}
+)";
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text("{\"cmd\":\"compile\",\"source_b64\":\"" +
+                   base64_encode(source) + "\"}");
+  const std::string compile_reply = read_next_text(client);
+  INFO(compile_reply);
+  REQUIRE(compile_reply.find("\"ok\": true") != std::string::npos);
+  client.send_text(
+      R"({"cmd":"start","seed":7,"arrivals":4,"warmup":0,"executionMode":"animated","speed":1000000})");
+
+  bool completed = false;
+  bool saw_receiver_done = false;
+  while (client.read_one()) {
+    if (!client.was_binary()) continue;
+    const ParsedFrame frame = parse_frame(client.payload());
+    REQUIRE(frame.valid);
+    if (frame.kind == wire::FrameKind_Counters) {
+      const auto counters = counters_to_map(frame.counters->values());
+      saw_receiver_done = saw_receiver_done ||
+                          counters.count("state.active.Receiver.Done") != 0;
+    } else if (frame.kind == wire::FrameKind_RunFinished) {
+      completed = frame.run_finished != nullptr &&
+                  frame.run_finished->status() == wire::RunStatus_Completed;
+      break;
+    }
+  }
+  REQUIRE(completed);
+  REQUIRE(saw_receiver_done);
   client.abort_from_other_thread();
   server.stop();
 }

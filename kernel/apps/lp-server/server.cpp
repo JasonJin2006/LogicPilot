@@ -34,6 +34,7 @@
 #include "json_controls.h"
 #include "sim_runner.h"
 #include "wire_frames.h"
+#include "statechart_network.h"
 #include "statechart/statechart_replication.h"
 #include <wire_generated.h>
 
@@ -544,6 +545,12 @@ struct SimServer::Impl {
     }
   }
 
+  void apply_pending_inputs(StatechartNetworkReplicationModel& network) {
+    for (const ExternalInput& input : take_pending_inputs()) {
+      network.dispatch_message(input.port);
+    }
+  }
+
   void apply_pending_inputs(DevsReplicationModel& atomic) {
     for (const ExternalInput& input : take_pending_inputs()) {
       atomic.inject(input.port, input.payload);
@@ -702,6 +709,31 @@ struct SimServer::Impl {
           results.push_back(chart->metrics());
           run_sim_offset_ns_ += static_cast<std::int64_t>(
               chart->metrics().horizon_seconds * 1e9);
+          if (precision_reached()) break;
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) {
+              cancelled = true;
+              break;
+            }
+          }
+        }
+      } else if (auto* network =
+                     dynamic_cast<StatechartNetworkReplicationModel*>(model.get());
+                 network != nullptr) {
+        for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
+          ReplicationConfig rep_config;
+          rep_config.seed = streams.derive_state(rep)[0];
+          rep_config.arrivals = params.arrivals;
+          rep_config.warmup_arrivals = params.warmup;
+          if (!network->reset(rep_config) ||
+              !stream_statechart_network(*network, params, rep, run_limit)) {
+            cancelled = true;
+            break;
+          }
+          results.push_back(network->metrics());
+          run_sim_offset_ns_ += static_cast<std::int64_t>(
+              network->metrics().horizon_seconds * 1e9);
           if (precision_reached()) break;
           {
             std::lock_guard lock{run_mutex_};
@@ -1242,6 +1274,82 @@ struct SimServer::Impl {
     }
   }
 
+  bool stream_statechart_network(StatechartNetworkReplicationModel& network,
+                                 const RunParams& params,
+                                 std::uint64_t rep,
+                                 std::uint64_t run_limit) {
+    const bool animated = params.animated;
+    const std::int64_t step_ns = config.emit_step_ns > 0
+                                     ? config.emit_step_ns
+                                     : 100'000'000;
+    std::int64_t boundary_ns = 0;
+    std::int64_t slice_ns = step_ns;
+    std::uint64_t frames = 0;
+    auto deadline = std::chrono::steady_clock::now();
+    for (;;) {
+      bool step_once = false;
+      {
+        std::unique_lock lock{run_mutex_};
+        for (;;) {
+          if (stop_request_) return false;
+          if (state_ == RunState::kPaused) {
+            if (pending_step_) {
+              pending_step_ = false;
+              step_once = true;
+              break;
+            }
+            run_cv_.wait(lock);
+            continue;
+          }
+          break;
+        }
+      }
+
+      apply_pending_inputs(network);
+      if (!animated && frames >= kFastFrameBudget - 1) {
+        std::int64_t drain_ns = kFastDrainSliceNs;
+        while (!network.done() && network.has_pending_events()) {
+          {
+            std::lock_guard lock{run_mutex_};
+            if (stop_request_) return false;
+          }
+          boundary_ns = saturating_add(boundary_ns, drain_ns);
+          const std::size_t dispatched = network.advance(SimTime::from_ns(boundary_ns));
+          if (dispatched == 0) break;
+          drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
+        }
+        emit_statechart_network_counters(network, rep, run_limit);
+        return true;
+      }
+
+      boundary_ns = saturating_add(boundary_ns, slice_ns);
+      const std::size_t dispatched = network.advance(SimTime::from_ns(boundary_ns));
+      emit_statechart_network_counters(network, rep, run_limit);
+      ++frames;
+      if (network.done() || !network.has_pending_events()) return true;
+      if (!animated || step_once) continue;
+
+      if (dispatched < kFastMinEventsPerSlice) {
+        slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
+      }
+      const double speed = speed_.load(std::memory_order_relaxed);
+      deadline += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+          std::chrono::duration<double>(
+              static_cast<double>(step_ns) * 1e-9 / speed));
+      const auto now = std::chrono::steady_clock::now();
+      if (deadline > now) {
+        std::unique_lock lock{run_mutex_};
+        run_cv_.wait_until(lock, deadline, [&] {
+          return stop_request_ || state_ != RunState::kRunning ||
+                 !pending_inputs_.empty();
+        });
+        if (stop_request_) return false;
+      } else {
+        deadline = now;
+      }
+    }
+  }
+
   bool stream_continuous_replication(ContinuousReplicationModel& continuous,
                                      const RunParams& params,
                                      std::uint64_t rep,
@@ -1456,6 +1564,29 @@ struct SimServer::Impl {
                                static_cast<double>(chart.step_count())});
     counters.values.push_back({"state_id",
                                static_cast<double>(chart.last_state())});
+    counters.values.push_back({"rep", static_cast<double>(rep + 1)});
+    counters.values.push_back({"reps", static_cast<double>(reps_total)});
+    last_frame_sim_ns_ = counters.sim_time_ns;
+    emit(build_counters_frame(counters), trace_counters(counters));
+  }
+
+  void emit_statechart_network_counters(
+      StatechartNetworkReplicationModel& network, std::uint64_t rep,
+      std::uint64_t reps_total) {
+    CountersFrame counters;
+    counters.seq = ++seq_;
+    const auto metrics = network.metrics();
+    counters.sim_time_ns = run_sim_offset_ns_ +
+                           static_cast<std::int64_t>(metrics.horizon_seconds * 1e9);
+    for (const StatechartSnapshot& snapshot : network.snapshots()) {
+      if (!snapshot.state.empty()) {
+        counters.values.push_back({"state.active." + snapshot.name + "." +
+                                       snapshot.state,
+                                   1.0});
+      }
+      counters.values.push_back({"state.steps." + snapshot.name,
+                                 static_cast<double>(snapshot.steps)});
+    }
     counters.values.push_back({"rep", static_cast<double>(rep + 1)});
     counters.values.push_back({"reps", static_cast<double>(reps_total)});
     last_frame_sim_ns_ = counters.sim_time_ns;

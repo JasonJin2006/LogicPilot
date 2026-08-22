@@ -196,8 +196,19 @@ function applyFrame(frame: WireFrame): void {
       const activeState = Object.entries(frame.payload.values).find(
         ([key, value]) => key.startsWith('state.active.') && value > 0,
       );
-      vizState.activeState = activeState ? activeState[0].slice('state.active.'.length) : null;
-      vizState.stateSteps = Math.max(0, Math.round(frame.payload.values['state.steps'] ?? 0));
+      if (activeState) {
+        const rawState = activeState[0].slice('state.active.'.length);
+        vizState.activeState = rawState.slice(rawState.lastIndexOf('.') + 1);
+      } else {
+        vizState.activeState = null;
+      }
+      const networkSteps = Object.entries(frame.payload.values)
+        .filter(([key, value]) => key.startsWith('state.steps.') && value >= 0)
+        .reduce((max, [, value]) => Math.max(max, value), 0);
+      vizState.stateSteps = Math.max(
+        0,
+        Math.round(frame.payload.values['state.steps'] ?? networkSteps),
+      );
       const continuousValues = new Map<string, number>();
       for (const [key, value] of Object.entries(frame.payload.values)) {
         if (key.startsWith('continuous.value.')) {

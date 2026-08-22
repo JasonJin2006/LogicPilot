@@ -45,6 +45,7 @@ namespace logicpilot {
 namespace {
 
 using ir::v2::Node;
+using ir::v2::Action;
 using ir::v2::Statechart;
 using ir::v2::Transition;
 using ir::v2::TriggerKind_Condition;
@@ -98,6 +99,8 @@ struct StatechartReplicationModel::Impl {
   std::unordered_set<StateId> history_states;
   std::unordered_map<StateId, std::vector<BranchExit>> branch_targets;
   std::unordered_map<std::string, FsmEventId> message_events;
+  std::unordered_map<FsmEventId, std::vector<std::string>> emitted_ports;
+  std::vector<std::string> emitted_messages;
   StateId initial{kInvalidState};
 
   // Per-replication runtime state.
@@ -182,6 +185,7 @@ struct StatechartReplicationModel::Impl {
     if (machine.dispatch(definition, fsm_event, ctx)) {
       last_visited = from;
       ++steps_;
+      emit_for(fsm_event);
       settle();
     }
     schedule_triggers(machine.current());
@@ -220,6 +224,7 @@ struct StatechartReplicationModel::Impl {
         if (machine.dispatch(definition, fired, ctx)) {
           last_visited = from;
           ++steps_;
+          emit_for(fired);
           settle();
         }
       }
@@ -265,6 +270,21 @@ struct StatechartReplicationModel::Impl {
     schedule_condition_poll(state);
   }
 
+  void emit_for(FsmEventId event) {
+    const auto it = emitted_ports.find(event);
+    if (it == emitted_ports.end()) return;
+    emitted_messages.insert(emitted_messages.end(), it->second.begin(), it->second.end());
+  }
+
+  void record_emits(const Transition* transition, FsmEventId event) {
+    if (transition == nullptr || transition->actions() == nullptr) return;
+    for (const Action* action : *transition->actions()) {
+      if (action != nullptr && action->emit_port() != nullptr) {
+        emitted_ports[event].push_back(action->emit_port()->str());
+      }
+    }
+  }
+
   // Register one transition on the FSM definition; returns false when the
   // transition references an undeclared state.
   bool register_transition(const Transition* transition,
@@ -299,6 +319,7 @@ struct StatechartReplicationModel::Impl {
       timed_triggers[from].push_back(TimedTrigger{kTimeoutFsmEvent,
                                                   std::move(sampler)});
       definition.add_transition(from, kTimeoutFsmEvent, to);
+      record_emits(transition, kTimeoutFsmEvent);
       return true;
     }
     if (transition->trigger() == TriggerKind_Rate) {
@@ -310,6 +331,7 @@ struct StatechartReplicationModel::Impl {
       timed_triggers[from].push_back(TimedTrigger{kRateFsmEvent,
                                                   std::move(sampler)});
       definition.add_transition(from, kRateFsmEvent, to);
+      record_emits(transition, kRateFsmEvent);
       return true;
     }
     if (transition->trigger() == TriggerKind_Message) {
@@ -322,6 +344,7 @@ struct StatechartReplicationModel::Impl {
         it = message_events.emplace(port, next_dynamic_event++).first;
       }
       definition.add_transition(from, it->second, to);
+      record_emits(transition, it->second);
       return true;
     }
     if (transition->trigger() == TriggerKind_Condition) {
@@ -331,6 +354,7 @@ struct StatechartReplicationModel::Impl {
               : "";
       const FsmEventId event = next_dynamic_event++;
       definition.add_transition(from, event, to);
+      record_emits(transition, event);
       if (condition.empty() || condition == "true") {
         immediate_conditions[from].push_back(event);
       } else {
@@ -466,6 +490,7 @@ void StatechartReplicationModel::reset(const ReplicationConfig& config) {
   impl_->condition_polls_ = 0;
   impl_->done_ = false;
   impl_->last_visited = kInvalidState;
+  impl_->emitted_messages.clear();
   impl_->machine = StateMachine{impl_->initial};
   impl_->engine_ = Xoshiro256PlusPlus{config.seed};
   if (impl_->external_ == nullptr) {
@@ -555,9 +580,17 @@ bool StatechartReplicationModel::dispatch_message(const std::string& port) {
   }
   impl_->last_visited = from;
   ++impl_->steps_;
+  impl_->emit_for(event->second);
   impl_->settle();
   impl_->schedule_triggers(impl_->machine.current());
   return true;
+}
+
+std::vector<std::string> StatechartReplicationModel::take_emitted_messages() {
+  if (impl_ == nullptr) return {};
+  std::vector<std::string> messages;
+  messages.swap(impl_->emitted_messages);
+  return messages;
 }
 
 StateId StatechartReplicationModel::last_state() const {

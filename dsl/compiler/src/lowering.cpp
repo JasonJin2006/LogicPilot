@@ -631,10 +631,16 @@ flatbuffers::Offset<v2::Node> v2_statechart(flatbuffers::FlatBufferBuilder& buil
       if (!action.empty()) {
         params.push_back(v2_var_string(builder, ("action:" + child.name).c_str(), action));
       }
+      std::vector<flatbuffers::Offset<v2::Action>> transition_actions;
+      if (action.rfind("emit ", 0) == 0 && action.size() > 5) {
+        transition_actions.push_back(
+            v2::CreateAction(builder, 0, 0, builder.CreateString(action.substr(5))));
+      }
       transitions.push_back(v2::CreateTransition(
           builder, builder.CreateString(from), builder.CreateString(to), trigger, timeout, 0, rate,
           message_type.empty() ? 0 : builder.CreateString(message_type),
-          condition.empty() ? 0 : builder.CreateString(condition), 0));
+          condition.empty() ? 0 : builder.CreateString(condition),
+          builder.CreateVector(transition_actions)));
       continue;
     }
   }

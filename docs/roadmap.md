@@ -27,7 +27,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
 | Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
 | 并行执行                     | ✅   | ADR-0009 阶段 A（reps 级线程池）与阶段 B（agent ECS 批量 tick，≥65536 agent 多核自动并行，10 万 agent 逐位确定）已落地；阶段 C（事件级保守并行）延后                                                                                                                              |
 | 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
-| 测试基线                     | ✅   | 391 ctest、corpus 50/50、renderer2d 5 vitest、editor 67 vitest、IDE 206 vitest、interop 74 checks、浏览器 E2E                                                                                                                                                                     |
+| 测试基线                     | ✅   | 392 ctest、corpus 50/50、renderer2d 5 vitest、editor 67 vitest、IDE 206 vitest、interop 74 checks、浏览器 E2E                                                                                                                                                                     |
 
 ## 3. 契约与工程纪律状态
 
@@ -149,7 +149,7 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    测试）；`@logicpilot/editor` 新增 `modelRunParams`（画布块图 → M/M/1 驱动
    参数或拒绝原因）；DSL 编辑区新增 Run（编译通过后自动 start）；运行中画布
    块实时显示队列长度徽标与 service 忙/闲/宕机状态点。browser-verify 覆盖
-   完整闭环。**泛型 ProcessFlowSim streaming 已完成**：任意 process 拓扑按端口感知路由和工作队列分片推进，lp-server 输出 per-block Counters，IDE 显示实时徽标和令牌动画，并有延迟流程集成验收；Agent/Statechart/Continuous 也已接入分片遥测，Atomic 仍走批量摘要路径。
+   完整闭环。**泛型 ProcessFlowSim streaming 已完成**：任意 process 拓扑按端口感知路由和工作队列分片推进，lp-server 输出 per-block Counters，IDE 显示实时徽标和令牌动画，并有延迟流程集成验收；Agent/Statechart/Continuous/Atomic 也已接入分片遥测。
    **编辑器补强 ✅ 已完成**（2026-08-05）：撤销/重做（600ms 合并窗口，
    Ctrl/Cmd+Z、Ctrl/Cmd+Shift+Z、Ctrl+Y，中心标签栏图标按钮）；
    Project 面板显示模型摘要 + "New model"。
@@ -369,8 +369,8 @@ statechart}` + `behavior` 表经注册表降级到 kernel 表驱动状态机并�
     Statechart 支持外部设施模式（attach RuntimeContext），批量路径不变；
     单方法 kernel 驱动与批量逐位一致，process+statechart 多方法组合在单次
     运行中共享同一时钟；新增 4 个测试，191 ctest 全绿。后续：agent/SD
-    拆方法库、DSL 状态图语法与跨状态机 Message 耦合、共享变量显式写入；
-    lp-server 的 Process/Agent/Statechart/Continuous/Atomic 流式驱动已接入。
+    拆方法库、共享变量显式写入；lp-server 已接入多 Statechart composite 的
+    Message coupling，SimulationKernel 的多状态图共享队列适配仍需后续统一。
     验收：kernel 层禁止 include `methods/`；新方法=新目录+`SimulationMethod`
     子类+注册函数；不破坏 F1/F2 冻结契约。
 
