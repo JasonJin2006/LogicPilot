@@ -46,6 +46,8 @@ if (flag >= 0 && process.argv[flag + 1]) {
   assert.ok(result.metrics.availability < 0.97);
   assert.ok(result.findings.some((f) => f.includes('Availability')));
   assert.ok(Array.isArray(result.blocks) && result.blocks.length > 0);
+  assert.ok(result.evidence.metricEvidence.Wq.samples >= 3);
+  assert.ok(result.evidence.metricEvidence.Wq.ciLow <= result.evidence.metricEvidence.Wq.mean);
 }
 
 // 3. Prompt-driven path returns findings for a plain M/M/1.

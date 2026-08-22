@@ -43,7 +43,8 @@ node scripts/ai-explain.mjs "build an M/M/1 queue model with arrival rate 0.8 an
 运行固定种子模型并读取 `metrics.json`，**基于逐块证据**给出归因：利用
 率最高的块（饱和时明确建议扩容）、最大平均队列占用的排队块、宕机主导
 （可用性 < 97%）、等待占比（Wq/W > 60%）。无逐块遥测时回退到池级
-汇总。
+汇总；有结构化结果时同时展示 Wq 的 mean/CI/样本数，无法读取 `metrics.json`
+时明确标记为 stdout-only。
 拓扑路径会标记为 `topology + measured metrics` 观测证据；单次运行不会被宣称为
 干预因果证明。
 

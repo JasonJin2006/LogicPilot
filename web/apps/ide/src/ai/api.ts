@@ -139,6 +139,10 @@ export interface ExplainResult {
     availability: number;
   };
   findings: string[];
+  evidence?: {
+    metricEvidence: Record<string, unknown>;
+    caveat: string;
+  };
 }
 
 export interface MetricQueryResult {

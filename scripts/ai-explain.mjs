@@ -27,7 +27,7 @@ function runLpcli(lpcli, args) {
   });
 }
 
-export function explainFromSummary(summary, question = '', blocks = []) {
+export function explainFromSummary(summary, question = '', blocks = [], metricEvidence = {}) {
   const findings = [];
   const finite = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
   const utilized = (blocks ?? [])
@@ -77,6 +77,14 @@ export function explainFromSummary(summary, question = '', blocks = []) {
         `(Wq/W)${largestQueue ? `; the queue builds before ${largestQueue.name}` : ''}.`,
     );
   }
+  const waitEvidence = metricEvidence.Wq;
+  if (waitEvidence?.ciLow != null && waitEvidence?.ciHigh != null) {
+    findings.push(
+      `Wq mean ${waitEvidence.mean.toFixed(4)} has a ${(metricEvidence.confidence * 100).toFixed(0)}% ` +
+        `CI [${waitEvidence.ciLow.toFixed(4)}, ${waitEvidence.ciHigh.toFixed(4)}] ` +
+        `(n=${waitEvidence.samples}); treat the bottleneck signal as sample-based evidence.`,
+    );
+  }
   if (findings.length === 0) {
     findings.push('All indicators are in the healthy range; no significant bottleneck found.');
   }
@@ -119,10 +127,29 @@ export async function aiExplain({
     ]);
     let summary;
     let blocks = [];
+    let metricEvidence = { confidence: 0.95, actualReps: null, Wq: null };
     const metricsPath = join(resultsDir, 'metrics.json');
     if (existsSync(metricsPath)) {
       const metrics = JSON.parse(readFileSync(metricsPath, 'utf8'));
+      const runPath = join(resultsDir, 'run.json');
+      const runMeta = existsSync(runPath) ? JSON.parse(readFileSync(runPath, 'utf8')) : {};
       const mean = (name) => metrics.summary?.[name]?.mean ?? 0;
+      const evidence = {};
+      for (const name of ['throughput', 'W', 'Wq', 'Lq', 'utilization', 'availability']) {
+        const stat = metrics.summary?.[name];
+        if (stat == null) continue;
+        evidence[name] = {
+          mean: stat.mean,
+          ciLow: stat.ci_low,
+          ciHigh: stat.ci_high,
+          samples: Array.isArray(metrics.replications) ? metrics.replications.length : 0,
+        };
+      }
+      metricEvidence = {
+        confidence: runMeta.confidence ?? 0.95,
+        actualReps: Array.isArray(metrics.replications) ? metrics.replications.length : null,
+        ...evidence,
+      };
       summary = {
         throughput: mean('throughput'),
         W: mean('W'),
@@ -133,6 +160,12 @@ export async function aiExplain({
       };
       blocks = metrics.blocks ?? [];
     } else {
+      metricEvidence = {
+        confidence: null,
+        actualReps: null,
+        status: 'stdout-only',
+        caveat: 'Structured metrics.json was unavailable; findings use parsed means only.',
+      };
       summary = {
         throughput: parseMetric(output, 'throughput'),
         W: parseMetric(output, 'W'),
@@ -147,7 +180,14 @@ export async function aiExplain({
       question,
       metrics: summary,
       blocks,
-      findings: explainFromSummary(summary, question, blocks),
+      findings: explainFromSummary(summary, question, blocks, metricEvidence),
+      evidence: {
+        metricEvidence,
+        caveat:
+          metricEvidence.status === 'stdout-only'
+            ? metricEvidence.caveat
+            : 'Means and confidence intervals come from the completed metrics.json run.',
+      },
       output,
     };
   } finally {
