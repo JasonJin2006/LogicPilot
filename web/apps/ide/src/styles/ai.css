@@ -331,6 +331,10 @@
   border-radius: 10px;
 }
 
+.ai-turn-streaming .ai-message.assistant > div > .ai-working-header {
+  margin-top: 4px;
+}
+
 .ai-checkpoint-card {
   display: flex;
   align-items: center;

@@ -208,6 +208,7 @@ export function AIPanel() {
   } | null>(null);
   const [liveSteps, setLiveSteps] = useState<AssistantStepRecord[]>([]);
   const [liveResponse, setLiveResponse] = useState('');
+  const [streamingRequest, setStreamingRequest] = useState<string | null>(null);
   const [assistantApproval, setAssistantApproval] = useState<PendingAssistantApproval | null>(null);
   const toolApprovalRef = useRef<{ resolve: (approved: boolean) => void } | null>(null);
   const [toolApproval, setToolApproval] = useState<PendingToolApproval | null>(null);
@@ -559,7 +560,21 @@ export function AIPanel() {
     void run(action, requestPrompt);
   };
 
+  // One-shot quick-action artifacts belong to the conversation they were
+  // produced in; switching sessions clears them so they cannot leak into
+  // another thread.
+  const clearArtifacts = () => {
+    setResult(null);
+    setProposal(null);
+    setOptimized(null);
+    setVariation(null);
+    setExplained(null);
+    setComparison(null);
+    setProposalExperiment(null);
+  };
+
   const enterSession = (session: AiSession) => {
+    clearArtifacts();
     activeSessionRef.current = session.id;
     activeSessionScopeRef.current = session.scope;
     setActiveSessionId(session.id);
@@ -567,6 +582,7 @@ export function AIPanel() {
   };
 
   const startSession = (title: string) => {
+    clearArtifacts();
     const id = createSession(workspaceScope, title);
     activeSessionRef.current = id;
     activeSessionScopeRef.current = workspaceScope;
@@ -575,6 +591,7 @@ export function AIPanel() {
   };
 
   const leaveSession = () => {
+    clearArtifacts();
     activeSessionRef.current = null;
     activeSessionScopeRef.current = null;
     setActiveSessionId(null);
@@ -595,6 +612,63 @@ export function AIPanel() {
     activeSessionScopeRef.current === null ||
     activeSessionScopeRef.current === workspaceScope;
 
+  // Approval cards belong to the in-flight assistant turn, so they render
+  // inside the streaming bubble (never for legacy quick-action runs).
+  const approvalCards =
+    assistantApproval !== null || toolApproval !== null ? (
+      <>
+        {assistantApproval !== null && (
+          <section className="ai-approval-card" aria-label="检查模型修改">
+            <header>
+              <AlertTriangle size={14} />
+              <strong>检查模型修改</strong>
+            </header>
+            <p>{assistantApproval.summary}</p>
+            <div className="ai-approval-meta">
+              <span>{assistantApproval.proposal.descriptions.length} 个操作</span>
+              {assistantApproval.proposal.destructiveOperations > 0 && (
+                <span className="destructive">
+                  {assistantApproval.proposal.destructiveOperations} 个破坏性
+                </span>
+              )}
+            </div>
+            <ul>
+              {assistantApproval.proposal.descriptions.map((description, index) => (
+                <li key={`${index}:${description}`}>{description}</li>
+              ))}
+            </ul>
+            <footer>
+              <button className="secondary" onClick={() => settleAssistantApproval(false)}>
+                <X size={13} /> 保留当前模型
+              </button>
+              <button className="primary" onClick={() => settleAssistantApproval(true)}>
+                <Check size={13} /> 应用并继续
+              </button>
+            </footer>
+          </section>
+        )}
+        {toolApproval !== null && (
+          <section className="ai-approval-card" aria-label="批准工具调用">
+            <header>
+              <AlertTriangle size={14} />
+              <strong>批准工具调用</strong>
+            </header>
+            <p>{toolApproval.summary}</p>
+            <code>{toolApproval.toolName}</code>
+            <pre>{JSON.stringify(toolApproval.arguments, null, 2)}</pre>
+            <footer>
+              <button className="secondary" onClick={() => settleToolApproval(false)}>
+                <X size={13} /> 拒绝
+              </button>
+              <button className="primary" onClick={() => settleToolApproval(true)}>
+                <Check size={13} /> 允许
+              </button>
+            </footer>
+          </section>
+        )}
+      </>
+    ) : null;
+
   // A missing provider/model does not swallow the user's message: the turn
   // is committed and the assistant side shows a genuine error state, so the
   // panel never pretends the assistant replied.
@@ -602,13 +676,14 @@ export function AIPanel() {
     scope: string,
     userText: string,
     steps: AssistantStepRecord[] = [],
+    error = NOT_CONFIGURED_MESSAGE,
   ) => {
     appendConversation(scope, {
       user: userText,
       assistant: '请求未完成。',
       patch: { version: 1, operations: [] },
       outcome: 'run_failed',
-      assistantRecord: { steps, error: NOT_CONFIGURED_MESSAGE },
+      assistantRecord: { steps, error },
     });
   };
 
@@ -666,6 +741,7 @@ export function AIPanel() {
     setBusy(true);
     setLiveSteps([]);
     setLiveResponse('');
+    setStreamingRequest(request);
     const controller = new AbortController();
     abortRef.current = controller;
     const context = buildAssistantContext({
@@ -773,9 +849,14 @@ export function AIPanel() {
     setLiveSteps([]);
     if (!result.cancelled) clearCheckpoint(scope);
     if (result.cancelled) {
+      // Keep the user's message in the conversation: the bubble becomes a
+      // cancelled-error turn instead of silently disappearing.
+      setStreamingRequest(null);
       setError('助手步骤已取消。');
+      appendAssistantErrorTurn(scope, resumedRequest, result.steps, '助手步骤已取消。');
       return;
     }
+    setStreamingRequest(null);
     if (!result.ok && isAssistantNotConfiguredError(result.error ?? '')) {
       // The assistant turned out unconfigured after the turn started: still
       // commit the turn with a real error instead of dropping the message.
@@ -1253,81 +1334,65 @@ export function AIPanel() {
               <strong>未完成的 Agent 回合</strong>
               <small>你可以继续上一个断点,或者丢弃它。</small>
             </div>
-            <button className="secondary" onClick={() => void sendAssistant(true)}>
-              Resume
-            </button>
-            <button className="btn-ghost" onClick={() => clearCheckpoint(conversationScope)}>
-              Discard
-            </button>
+              <button className="secondary" onClick={() => void sendAssistant(true)}>
+                继续
+              </button>
+              <button className="btn-ghost" onClick={() => clearCheckpoint(conversationScope)}>
+                丢弃
+              </button>
           </div>
         )}
-        {busy && (
+        {busy && streamingRequest !== null && (
+          <div className="ai-turn ai-turn-streaming" aria-live="polite">
+            <div className="ai-message user">
+              <span className="ai-message-avatar" aria-hidden>
+                <UserRound size={13} />
+              </span>
+              <div>
+                <strong>你</strong>
+                <p>{streamingRequest}</p>
+              </div>
+            </div>
+            <div className="ai-message assistant">
+              <span className="ai-message-avatar" aria-hidden>
+                <Sparkles size={13} />
+              </span>
+              <div>
+                <strong>Copilot</strong>
+                <div className="ai-working-header">
+                  <span className="ai-step-spinner" aria-hidden />
+                  <div>
+                    <strong>
+                      {assistantApproval === null ? '正在处理你的模型' : '需要批准'}
+                    </strong>
+                    <small>
+                      {assistantApproval === null
+                        ? '正在检查画布,按需编译并运行工具'
+                        : '在你批准该修改前,模型画布保持原样'}
+                    </small>
+                  </div>
+                </div>
+                {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>正在读取当前模型…</p>}
+                {visibleLiveResponse(liveResponse) !== '' && (
+                  <p className="ai-live-response">{visibleLiveResponse(liveResponse)}</p>
+                )}
+                {approvalCards}
+              </div>
+            </div>
+          </div>
+        )}
+        {busy && streamingRequest === null && (
           <div className="ai-working-card" aria-live="polite">
             <div className="ai-working-header">
               <span className="ai-step-spinner" aria-hidden />
               <div>
-                <strong>
-                  {assistantApproval === null ? '正在处理你的模型' : '需要批准'}
-                </strong>
-                <small>
-                  {assistantApproval === null
-                    ? '正在检查画布,按需编译并运行工具'
-                    : '在你批准该修改前,模型画布保持原样'}
-                </small>
+                <strong>正在处理你的模型</strong>
+                <small>正在检查画布,按需编译并运行工具</small>
               </div>
             </div>
             {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>正在读取当前模型…</p>}
             {visibleLiveResponse(liveResponse) !== '' && (
               <p className="ai-live-response">{visibleLiveResponse(liveResponse)}</p>
-            )}
-            {assistantApproval !== null && (
-              <section className="ai-approval-card" aria-label="Review proposed model change">
-                <header>
-                  <AlertTriangle size={14} />
-                  <strong>检查模型修改</strong>
-                </header>
-                <p>{assistantApproval.summary}</p>
-                <div className="ai-approval-meta">
-                  <span>{assistantApproval.proposal.descriptions.length} 个操作</span>
-                  {assistantApproval.proposal.destructiveOperations > 0 && (
-                    <span className="destructive">
-                      {assistantApproval.proposal.destructiveOperations} 个破坏性
-                    </span>
-                  )}
-                </div>
-                <ul>
-                  {assistantApproval.proposal.descriptions.map((description, index) => (
-                    <li key={`${index}:${description}`}>{description}</li>
-                  ))}
-                </ul>
-                <footer>
-                  <button className="secondary" onClick={() => settleAssistantApproval(false)}>
-                    <X size={13} /> 保留当前模型
-                  </button>
-                  <button className="primary" onClick={() => settleAssistantApproval(true)}>
-                    <Check size={13} /> 应用并继续
-                  </button>
-                </footer>
-              </section>
-            )}
-            {toolApproval !== null && (
-              <section className="ai-approval-card" aria-label="批准工具调用">
-                <header>
-                  <AlertTriangle size={14} />
-                  <strong>批准工具调用</strong>
-                </header>
-                <p>{toolApproval.summary}</p>
-                <code>{toolApproval.toolName}</code>
-                <pre>{JSON.stringify(toolApproval.arguments, null, 2)}</pre>
-                <footer>
-                  <button className="secondary" onClick={() => settleToolApproval(false)}>
-                    <X size={13} /> 拒绝
-                  </button>
-                  <button className="primary" onClick={() => settleToolApproval(true)}>
-                    <Check size={13} /> 允许
-                  </button>
-                </footer>
-              </section>
             )}
           </div>
         )}
