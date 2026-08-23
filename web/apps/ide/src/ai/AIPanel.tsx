@@ -110,7 +110,6 @@ interface PendingToolApproval {
   arguments: Record<string, unknown>;
 }
 
-type AgentMode = 'Agent' | 'Ask' | 'Plan';
 type PermissionMode = 'Full access' | 'Workspace' | 'Read only';
 type VoiceState = 'idle' | 'listening' | 'transcribing' | 'error';
 
@@ -177,7 +176,6 @@ export function AIPanel() {
   const runRef = useRef<HTMLPreElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState('');
-  const [agentMode, setAgentMode] = useState<AgentMode>('Agent');
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('Workspace');
   const [toolsEnabled, setToolsEnabled] = useState(true);
   const [sourceEditingEnabled, setSourceEditingEnabled] = useState(false);
@@ -698,7 +696,7 @@ export function AIPanel() {
     let additionalTools: AssistantTool[] = [];
     try {
       additionalTools = createMcpTools(await discoverMcpCapabilities(controller.signal));
-      if (permissionMode === 'Read only' || agentMode !== 'Agent' || !workspacePermissionAllowed) {
+      if (permissionMode === 'Read only' || !workspacePermissionAllowed) {
         additionalTools = additionalTools.filter((tool) => tool.requiresApproval !== true);
       }
     } catch {
@@ -746,14 +744,13 @@ export function AIPanel() {
       },
       capabilities: [
         ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
-          ? permissionMode === 'Read only' || agentMode !== 'Agent'
+          ? permissionMode === 'Read only'
             ? [LOGICPILOT_MODELING_READONLY_CAPABILITY.id]
             : LOGICPILOT_MODELING_PROFILE.capabilityIds
           : []),
         ...(workspaceOpen &&
         workspacePermissionAllowed &&
         sourceEditingEnabled &&
-        agentMode === 'Agent' &&
         permissionMode !== 'Read only'
           ? ['logicpilot-source-editing']
           : []),
@@ -1714,32 +1711,6 @@ export function AIPanel() {
                 </button>
               </div>
             </details>
-            <details className="ai-composer-select">
-              <summary title="Agent mode">
-                <Code2 size={14} />
-                <span>{agentMode}</span>
-                <ChevronDown size={11} />
-              </summary>
-              <div className="ai-tools-popover ai-select-popover">
-                {(['Agent', 'Ask', 'Plan'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={agentMode === mode ? 'selected' : ''}
-                    onClick={() => setAgentMode(mode)}
-                  >
-                    <strong>{mode}</strong>
-                    <small>
-                      {mode === 'Agent'
-                        ? 'Build, edit, run and explain'
-                        : mode === 'Ask'
-                          ? 'Answer without changing the workspace'
-                          : 'Prepare a plan before execution'}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            </details>
             <details className="ai-composer-select ai-model-select">
               <summary title="Switch model">
                 <span>{modelLabel}</span>
@@ -1883,7 +1854,6 @@ export function AIPanel() {
               ))}
             </div>
           </details>
-          {agentMode === 'Plan' && <span className="ai-status-hint">Plan mode</span>}
         </div>
       </div>
     </div>
