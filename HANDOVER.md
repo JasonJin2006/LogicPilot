@@ -35,6 +35,7 @@
 | (本轮) | **S1 补齐**:① `DocumentContribution.completions(source,offset)` 缝隙,SysML 贡献方注册(元素上下文/关键字),DslEditor 通用 Ctrl+Space 弹层(方向键/Enter/Esc、输入续排、点击接受,disk 模式同样落盘);② `sysmlProjectIndex.ts` 聚合全部 .sysml——唯一名/限定名/::尾三级解析,歧义返回 null,诊断按路径聚合;find_sysml_definition 增加 projectFiles 列表与跨文件回退。新增 4 索引测试 + 语言上下文用例扩展(共 280 vitest);`.verify/completion-check.mjs` 实测弹层→点选 Power→token 落盘 PASS |
 | (本轮) | **S2-a/SysML 语义执行 0.1**:新建 `sysmlExecution.ts`——`extractExecutionTargets`(action/calculation/state/analysis/verification usage → 显式 target,含不支持原因;纯结构模型为空表)+ 版本化 `SYSML_CONFORMANCE_MATRIX`(supported/planned/unsupported 三档,测试钉住)+ 无 eval 的递归下降表达式求值器(优先级/括号/一元负/兄弟引用/除零与未知标识符确定性报错带行号);parser 新增 calculation/calc 关键字(calc 归一化);store 增加 execution/runError(runTarget),任何新 revision 到达即失效;画布工具条仅当存在受支持目标时渲染目标选择+Run,trace 条显示步骤/result/revision。6 个执行测试(共 286 vitest);`.verify/run-check.mjs` 实测计算 result=38/action 序列/纯需求模型零入口 PASS |
 | (本轮) | **视觉切片/ELK 排版+主题**:依赖 elkjs@0.9.2(仓库根 .npmrc 固定 virtual-store-dir-max-length=60 对齐存量存储);新建 `sysmlAutoLayoutElk.ts`——buildElkGraph 把包含关系嵌套为 ELK 复合 children(`contains` 从边表消失)、其余关系参与全局分层(INCLUDE_CHILDREN),固定 randomSeed 确定性,direction=RIGHT 让同父兄弟纵向堆叠、深度向右;运行走 Web Worker(`?url` 引入经典 worker),失败降级主线程 bundled,再败回退同步树形首帧;ELK 返回的容器放大尺寸经 `SysMLLayout.sizes` 持久化并用于拉伸外框;坐标按祖先链累加为绝对值。配色删除硬编码 COLORS,节点 g 带 `data-kind`,CSS 用 currentColor+color-mix 映射主题 token(accent/warn/error/ok/surface),双主题一致。Auto layout 按钮→applyElkLayout(checkpoint 可撤销),无侧车新文件加载后自动精排。+4 测试(共 288 vitest);sysml-canvas/run-check 截图人工复核通过 |
+| (本轮) | **S2-d 收尾+视觉修复**:接手另一 AI 未提交的 evidence 切片并补全验证——`.verify/state-evidence-check.mjs` 实测红绿灯状态机(202 步,t=0→2675,预算停止)、evidence 面板逐 Run 累加(1→2 条)、跨容器 satisfies 渲染、浏览器控制台零 ELK 回退;修复两处:① `.sysml-node-kind/.sysml-node-name` 硬编码深色文字改 var(--text-secondary)/var(--text)(浅色主题下名字不可见的真凶);② ELK worker 在无 Worker 环境快速抛出走主线程兜底(消除单测告警刷屏)。309 vitest/build/E2E/专项检查全绿,截图人工复核 |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -66,7 +67,10 @@
 - **S1 至此功能面补齐**。遗留(非阻塞):跨文件 relation 抽取(需要合并虚拟文档)、索引未接入 referencesOf。
 - ✅ **S2-a 语义执行子集 0.1**(见 §3):ExecutionTargetRef 提取 + 版本化 conformance matrix + 表达式/calculation/action 赋值序列解释器 + trace 绑定 revision;纯结构/需求模型零 Run 入口(验收红线已测);
 - ✅ **可视化重做**:ELK(elkjs)分层自动排版(worker 优先/主线程兜底/同步树形首帧)+ data-kind 主题配色(双主题一致);calculation 关键字入 parser;
-- S2 剩余:state 转移与 time trigger(0.2 计划)、lowering 到 Statechart/DEVS runtime、evidence 持久化、外部 analysis adapter、跨容器连线正交路由。
+- ✅ **S2-b 状态机 0.2**(另一 AI,`0c135e9`):扁平状态机 + transition succession + `after/at` 数值时间触发器,离散事件时钟、步数预算停止;guard 条件(when/otherwise)标 planned;
+- ✅ **S2-c 正交路由**(另一 AI,`e4ade3b`):跨容器连线 Manhattan 路由,纯函数渲染时计算,对 ELK/树形/手动布局统一生效;
+- ✅ **S2-d evidence 日志**(本轮收尾提交):每次 Run 产出不可变记录(绑 revision/目标/trace/时长/conformance 版本),localStorage + bundle 侧车 `presentation/sysml/<hash>.evidence.json` 双持久化,上限 20 条,refresh 不清空(旧 revision 证据仍可查);画布 overlay 面板展示最近 5 条;
+- S2 剩余:lowering 到 Statechart/DEVS runtime、外部 analysis adapter、evidence 的 AI 查询工具。
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)

@@ -10,17 +10,49 @@ import {
   type SysMLPosition,
 } from '../sysml/sysmlProjection';
 import {
+  extractExecutionTargets,
   runExecutionTarget,
+  SYSML_EXECUTION_CONFORMANCE_VERSION,
   type TraceStep,
 } from '../sysml/sysmlExecution';
+import {
+  appendEvidence,
+  makeEvidenceId,
+  parseEvidence,
+  serializeEvidence,
+  type SysMLEvidenceRecord,
+} from '../sysml/sysmlEvidence';
 import { autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
 
 export type SysMLViewMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';
 
 const LAYOUT_PREFIX = 'logicpilot.sysml.layout.';
+const EVIDENCE_PREFIX = 'logicpilot.sysml.evidence.';
 
 function layoutKey(path: string): string {
   return `${LAYOUT_PREFIX}${path}`;
+}
+
+function evidenceKey(path: string): string {
+  return `${EVIDENCE_PREFIX}${path}`;
+}
+
+function loadEvidence(path: string): SysMLEvidenceRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    return parseEvidence(window.localStorage.getItem(evidenceKey(path)));
+  } catch {
+    return [];
+  }
+}
+
+function persistEvidence(path: string, records: readonly SysMLEvidenceRecord[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(evidenceKey(path), serializeEvidence(records));
+  } catch {
+    // A read-only/private storage backend should not disable visualization.
+  }
 }
 
 function loadLayout(path: string, projection: SysMLProjection, serialized?: string): SysMLLayout {
@@ -78,6 +110,10 @@ interface SysMLState {
    *  new revision arrives so stale results are never shown as current. */
   execution: { targetId: string; sourceHash: string; steps: TraceStep[]; result: number | null } | null;
   runError: string | null;
+  /** Bounded recent-runs journal (plan §8 S2): every Run appends an immutable
+   *  evidence record bound to the exact revision it executed. Deliberately
+   *  NOT cleared by refresh - old-revision evidence stays queryable. */
+  evidence: SysMLEvidenceRecord[];
   runTarget: (targetId: string) => void;
   clearExecution: () => void;
   /** ELK-layered layout (worker, async). Checkpoints like a manual edit so
@@ -85,7 +121,7 @@ interface SysMLState {
   applyElkLayout: () => Promise<void>;
   past: SysMLLayout[];
   future: SysMLLayout[];
-  load: (path: string, source: string, serialized?: string) => void;
+  load: (path: string, source: string, serialized?: string, evidence?: SysMLEvidenceRecord[]) => void;
   refresh: (source: string) => void;
   select: (id: string | null) => void;
   setViewMode: (mode: SysMLViewMode) => void;
@@ -109,9 +145,10 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   parseDirty: false,
   execution: null,
   runError: null,
+  evidence: [],
   past: [],
   future: [],
-  load: (path, source, serialized) => {
+  load: (path, source, serialized, evidenceRecords) => {
     // Opening a file has no previous snapshot to protect: take what parsed.
     const projection = projectSysML(source);
     const layout = loadLayout(path, projection, serialized);
@@ -127,6 +164,12 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
       parseDirty: projection.diagnostics.some((d) => d.severity === 'error'),
       execution: null,
       runError: null,
+      // A project bundle's evidence sidecar wins; localStorage keeps the
+      // journal alive for external .sysml files.
+      evidence:
+        evidenceRecords !== undefined && evidenceRecords.length > 0
+          ? evidenceRecords
+          : loadEvidence(path),
       past: [],
       future: [],
     });
@@ -167,6 +210,8 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     }
     const layout: SysMLLayout = { version: 1, sourceHash: projection.sourceHash, positions };
     persistLayout(path, layout);
+    // `evidence` is intentionally absent: the journal keeps records from
+    // older revisions - that binding is its whole point.
     set({
       source,
       projection,
@@ -183,10 +228,33 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   select: (id) => set({ selectedId: id }),
   runTarget: (targetId) => {
     const state = get();
-    if (!state.projection) return;
+    if (!state.projection || !state.path) return;
+    const startedAt = new Date().toISOString();
+    const startedAtMs = Date.now();
     const result = runExecutionTarget(state.source, state.projection, targetId);
+    // Every run - success or failure - becomes an evidence record bound to
+    // the exact revision it executed (plan §8 S2).
+    const target = extractExecutionTargets(state.source, state.projection).find(
+      (entry) => entry.id === targetId,
+    );
+    const record: SysMLEvidenceRecord = {
+      id: makeEvidenceId(state.projection.sourceHash, targetId, startedAt),
+      targetId,
+      targetQualifiedName: target?.qualifiedName ?? targetId,
+      targetKind: target?.kind ?? 'unknown',
+      revision: state.projection.sourceHash,
+      ok: result.ok,
+      startedAt,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      ...(result.steps ? { steps: result.steps } : {}),
+      ...(result.result !== undefined ? { result: result.result } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      conformanceVersion: SYSML_EXECUTION_CONFORMANCE_VERSION,
+    };
+    const evidence = appendEvidence(state.evidence, record);
+    persistEvidence(state.path, evidence);
     if (!result.ok || !result.steps) {
-      set({ runError: result.error ?? 'execution failed', execution: null });
+      set({ runError: result.error ?? 'execution failed', execution: null, evidence });
       return;
     }
     set({
@@ -197,6 +265,7 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
         result: result.result ?? null,
       },
       runError: null,
+      evidence,
     });
   },
   clearExecution: () => set({ execution: null, runError: null }),
@@ -255,5 +324,5 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   },
   markLayoutPersisted: () => set({ layoutDirty: false }),
   clear: () =>
-    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, execution: null, runError: null, past: [], future: [] }),
+    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, execution: null, runError: null, evidence: [], past: [], future: [] }),
 }));

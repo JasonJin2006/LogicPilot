@@ -209,6 +209,7 @@ export function SysMLCanvas() {
   const execution = useSysMLStore((state) => state.execution);
   const runError = useSysMLStore((state) => state.runError);
   const runTarget = useSysMLStore((state) => state.runTarget);
+  const evidence = useSysMLStore((state) => state.evidence);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
   const pastLength = useSysMLStore((state) => state.past.length);
@@ -354,23 +355,46 @@ export function SysMLCanvas() {
           </>
         )}
       </div>
-      {runError !== null && (
-        <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
-      )}
-      {execution !== null && (
-        <div className="sysml-trace">
-          <div className="sysml-trace-head">
-            trace · {execution.steps.length} step(s){execution.result !== null && ` · result ${execution.result}`} · rev {execution.sourceHash}
-          </div>
-          {execution.steps.map((step) => (
-            <div key={step.index} className="sysml-trace-step">
-              [{step.index + 1}] {step.description}
-              {step.time !== undefined && ` · t=${step.time}`}
-              {step.line !== undefined && ` (line ${step.line})`} → {step.value}
+      <div className="sysml-overlays">
+        {runError !== null && (
+          <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
+        )}
+        {execution !== null && (
+          <div className="sysml-trace">
+            <div className="sysml-trace-head">
+              trace · {execution.steps.length} step(s){execution.result !== null && ` · result ${execution.result}`} · rev {execution.sourceHash}
             </div>
-          ))}
-        </div>
-      )}
+            {execution.steps.map((step) => (
+              <div key={step.index} className="sysml-trace-step">
+                [{step.index + 1}] {step.description}
+                {step.time !== undefined && ` · t=${step.time}`}
+                {step.line !== undefined && ` (line ${step.line})`} → {step.value}
+              </div>
+            ))}
+          </div>
+        )}
+        {evidence.length > 0 && (
+          <div className="sysml-evidence">
+            <div className="sysml-trace-head">
+              evidence · last {Math.min(evidence.length, 5)} of {evidence.length} run(s) · bound to model revisions
+            </div>
+            {evidence.slice(0, 5).map((record) => (
+              <div key={record.id} className={`sysml-evidence-row${record.ok ? '' : ' failed'}`}>
+                <span>{new Date(record.startedAt).toLocaleTimeString()}</span>
+                <strong>{record.targetQualifiedName}</strong>
+                <span>
+                  {record.ok
+                    ? record.result !== null && record.result !== undefined
+                      ? `result ${record.result}`
+                      : `${record.steps?.length ?? 0} step(s)`
+                    : `failed: ${record.error ?? 'unknown error'}`}
+                </span>
+                <span title={record.revision}>rev {record.revision.replace(/^fnv1a-/, '').slice(0, 8)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <svg
         ref={documentRef}
         className="sysml-svg"

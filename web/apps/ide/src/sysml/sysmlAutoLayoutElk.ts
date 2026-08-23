@@ -42,6 +42,11 @@ let workerElk: import('elkjs/lib/elk-api.js').ELK | null = null;
 
 function workerInstance(): import('elkjs/lib/elk-api.js').ELK {
   if (workerElk === null) {
+    if (typeof Worker === 'undefined') {
+      // Non-browser environment (unit tests): fail fast into the main-thread
+      // fallback instead of throwing deep inside the worker shim.
+      throw new Error('Worker is not available in this environment');
+    }
     // Classic worker shipped by elkjs; Vite copies it via ?url.
     workerElk = new ELK({ workerUrl: elkWorkerUrl });
   }
