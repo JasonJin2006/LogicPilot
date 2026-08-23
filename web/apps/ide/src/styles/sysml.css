@@ -370,3 +370,67 @@
 .sysml-run-error {
   border-color: color-mix(in srgb, #f0a294 55%, transparent);
 }
+
+/* ---- Theme-driven node palette ---------------------------------------
+   Shapes stroke with the kind's theme color and fill with a light tint of
+   it over the surface, so dark and light themes both stay consistent with
+   the rest of the workbench (no hardcoded diagram colors). */
+.sysml-node {
+  color: var(--text-secondary);
+}
+
+.sysml-node .sysml-node-shape {
+  fill: color-mix(in srgb, currentColor 9%, var(--surface-2));
+  stroke: currentColor;
+}
+
+.sysml-node .sysml-node-mark {
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.3;
+}
+
+.sysml-node-badge {
+  fill: var(--surface-3);
+  stroke: currentColor;
+  stroke-width: 1.1;
+}
+
+.sysml-node-socket-pin {
+  fill: currentColor;
+  stroke: none;
+}
+
+.sysml-node-badge-text {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* Kind hues reuse the tokens other panels already speak. */
+.sysml-node[data-kind='package'],
+.sysml-node[data-kind='interface'],
+.sysml-node[data-kind='port'],
+.sysml-node[data-kind='view'],
+.sysml-node[data-kind='viewpoint'] {
+  color: var(--accent-text);
+}
+
+.sysml-node[data-kind='action'],
+.sysml-node[data-kind='state'] {
+  color: var(--accent-hover);
+}
+
+.sysml-node[data-kind='requirement'],
+.sysml-node[data-kind='constraint'] {
+  color: var(--warn);
+}
+
+.sysml-node[data-kind='verification'] {
+  color: var(--error);
+}
+
+.sysml-node[data-kind='analysis'],
+.sysml-node[data-kind='calculation'] {
+  color: var(--ok-text);
+}

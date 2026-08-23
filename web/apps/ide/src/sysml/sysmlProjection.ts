@@ -103,10 +103,18 @@ export interface SysMLPosition {
   y: number;
 }
 
+/** Canonical visual node footprint shared by the canvas renderer and every
+ *  layout backend, so computed geometry always fits the drawn boxes. */
+export const SYML_NODE_WIDTH = 196;
+export const SYML_NODE_HEIGHT = 62;
+
 export interface SysMLLayout {
   version: 1;
   sourceHash: string;
   positions: Record<string, SysMLPosition>;
+  /** ELK-enlarged bounds for compound containers; optional and ignored by
+   *  older sidecars. */
+  sizes?: Record<string, { width: number; height: number }>;
 }
 
 /** Portable project-side layout artifact; the source file remains external or

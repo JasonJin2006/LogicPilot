@@ -4,34 +4,16 @@ import { useLayoutStore } from '../state/layoutStore';
 import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { extractExecutionTargets } from './sysmlExecution';
-import type { SysMLElement, SysMLPosition, SysMLRelationKind, SysMLVisualKind } from './sysmlProjection';
+import {
+  SYML_NODE_HEIGHT,
+  SYML_NODE_WIDTH,
+  type SysMLElement,
+  type SysMLPosition,
+  type SysMLRelationKind,
+  type SysMLVisualKind,
+} from './sysmlProjection';
 
-const NODE_WIDTH = 196;
-const NODE_HEIGHT = 62;
 
-const COLORS: Record<SysMLVisualKind, { fill: string; stroke: string }> = {
-  package: { fill: '#24364d', stroke: '#7fb4e8' },
-  part: { fill: '#263c35', stroke: '#7dd3a7' },
-  item: { fill: '#243c3d', stroke: '#7bd6d2' },
-  port: { fill: '#3b3044', stroke: '#c49be8' },
-  interface: { fill: '#3e3448', stroke: '#d5a7ef' },
-  requirement: { fill: '#4a3528', stroke: '#f0bc78' },
-  action: { fill: '#333b55', stroke: '#9fb7f7' },
-  calculation: { fill: '#2f3e46', stroke: '#9fd6c0' },
-  state: { fill: '#3d344d', stroke: '#c7a7ef' },
-  analysis: { fill: '#3a3c2c', stroke: '#d5d788' },
-  verification: { fill: '#43312f', stroke: '#f0a294' },
-  attribute: { fill: '#303c42', stroke: '#9bc8d8' },
-  constraint: { fill: '#3a3841', stroke: '#c4b6d9' },
-  usecase: { fill: '#3a3348', stroke: '#d2a3ef' },
-  view: { fill: '#2f3c46', stroke: '#9dc9e3' },
-  viewpoint: { fill: '#2e3e48', stroke: '#8fd4e6' },
-  enum: { fill: '#3f382b', stroke: '#e2c27f' },
-  occurrence: { fill: '#2d3d3a', stroke: '#8dd0bd' },
-  stakeholder: { fill: '#40352f', stroke: '#e5b18f' },
-  flow: { fill: '#323e4d', stroke: '#a5c7ee' },
-  unknown: { fill: '#30343b', stroke: '#8d98a8' },
-};
 
 const RELATION_STYLES: Record<SysMLRelationKind, { dash?: string; color: string }> = {
   contains: { dash: '5 5', color: '#718096' },
@@ -73,16 +55,16 @@ function positionOf(element: SysMLElement, positions: Record<string, SysMLPositi
 }
 
 function bounds(elements: SysMLElement[], positions: Record<string, SysMLPosition>) {
-  const width = Math.max(960, ...elements.map((element) => positionOf(element, positions).x + NODE_WIDTH + 120));
-  const height = Math.max(640, ...elements.map((element) => positionOf(element, positions).y + NODE_HEIGHT + 120));
+  const width = Math.max(960, ...elements.map((element) => positionOf(element, positions).x + SYML_NODE_WIDTH + 120));
+  const height = Math.max(640, ...elements.map((element) => positionOf(element, positions).y + SYML_NODE_HEIGHT + 120));
   return { width, height };
 }
 
 function relationPoint(element: SysMLElement, positions: Record<string, SysMLPosition>, side: 'from' | 'to') {
   const position = positionOf(element, positions);
   return {
-    x: position.x + (side === 'from' ? NODE_WIDTH : 0),
-    y: position.y + NODE_HEIGHT / 2,
+    x: position.x + (side === 'from' ? SYML_NODE_WIDTH : 0),
+    y: position.y + SYML_NODE_HEIGHT / 2,
   };
 }
 
@@ -107,62 +89,81 @@ const BADGE_MARK: Partial<Record<SysMLVisualKind, string>> = {
  *  top-left tab, requirements/cases a ⓤ/A/V corner mark, actions and states
  *  are rounded, use cases an ellipse, everything else a plain block. All
  *  variants share one bounding box so layout and edges stay untouched. */
-function NodeBody({ kind, fill, stroke }: { kind: SysMLVisualKind; fill: string; stroke: string }) {
+function NodeBody({
+  kind,
+  width = SYML_NODE_WIDTH,
+  height = SYML_NODE_HEIGHT,
+}: {
+  kind: SysMLVisualKind;
+  width?: number;
+  height?: number;
+}) {
+  const shape = 'sysml-node-shape';
   switch (kind) {
     case 'package':
+      // Compound containers stretch: the tab stays put, the body wraps the
+      // ELK-enlarged bounds so children render INSIDE their parent frame.
       return (
         <>
-          <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT - 10} y={10} rx={3} fill={fill} stroke={stroke} />
-          <path className="sysml-node-shape" d={`M0 10 V2 H30 L38 10 Z`} fill={fill} stroke={stroke} />
+          <rect className={shape} width={width} height={height - 10} y={10} rx={3} />
+          <path className={shape} d={`M0 10 V2 H30 L38 10 Z`} />
         </>
       );
     case 'usecase':
-      return <ellipse className="sysml-node-shape" cx={NODE_WIDTH / 2} cy={NODE_HEIGHT / 2} rx={NODE_WIDTH / 2 - 2} ry={NODE_HEIGHT / 2 - 3} fill={fill} stroke={stroke} />;
+      return <ellipse className={shape} cx={width / 2} cy={height / 2} rx={width / 2 - 2} ry={height / 2 - 3} />;
     case 'state':
-      return <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={17} fill={fill} stroke={stroke} />;
+      return <rect className={shape} width={width} height={height} rx={Math.min(17, height / 3)} />;
     case 'action':
       return (
         <>
-          <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={9} fill={fill} stroke={stroke} />
+          <rect className={shape} width={width} height={height} rx={9} />
           {/* call-behavior rake arrow, top-right */}
-          <path d={`M${NODE_WIDTH - 26} 13 l9 5 l-9 5`} fill="none" stroke={stroke} strokeWidth={1.3} />
+          <path className="sysml-node-mark" d={`M${width - 26} 13 l9 5 l-9 5`} />
         </>
       );
     default:
-      return <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={4} fill={fill} stroke={stroke} />;
+      return <rect className={shape} width={width} height={height} rx={4} />;
   }
 }
 
-function CornerMark({ kind, fill, stroke }: { kind: SysMLVisualKind; fill: string; stroke: string }) {
+function CornerMark({
+  kind,
+  width = SYML_NODE_WIDTH,
+  height = SYML_NODE_HEIGHT,
+}: {
+  kind: SysMLVisualKind;
+  width?: number;
+  height?: number;
+}) {
   const mark = BADGE_MARK[kind];
   if (mark !== undefined) {
-    const cx = NODE_WIDTH - 15;
-    const cy = NODE_HEIGHT - 15;
+    const cx = width - 15;
+    const cy = height - 15;
     return (
       <>
-        <circle cx={cx} cy={cy} r={8.5} fill={fill} stroke={stroke} strokeWidth={1.2} />
-        <text x={cx} y={cy + 3.4} textAnchor="middle" fontSize={10} fontWeight={700} fill="#f5f8fb">{mark}</text>
+        <circle className="sysml-node-badge" cx={cx} cy={cy} r={8.5} />
+        <text className="sysml-node-mark sysml-node-badge-text" x={cx} y={cy + 3.4} textAnchor="middle">{mark}</text>
       </>
     );
   }
   if (kind === 'constraint') {
-    return <text x={NODE_WIDTH - 10} y={NODE_HEIGHT - 9} textAnchor="end" fontSize={12} fill="#f5f8fb">{'{ }'}</text>;
+    return <text className="sysml-node-mark sysml-node-badge-text" x={width - 10} y={height - 9} textAnchor="end">{'{ }'}</text>;
   }
   if (kind === 'port' || kind === 'interface') {
     // Socket notation: nested squares.
     return (
       <>
-        <rect x={NODE_WIDTH - 21} y={NODE_HEIGHT - 21} width={13} height={13} fill={fill} stroke={stroke} strokeWidth={1.1} />
-        <rect x={NODE_WIDTH - 17} y={NODE_HEIGHT - 17} width={5} height={5} fill={stroke} />
+        <rect className="sysml-node-badge" x={width - 21} y={height - 21} width={13} height={13} />
+        <rect className="sysml-node-mark sysml-node-socket-pin" x={width - 17} y={height - 17} width={5} height={5} />
       </>
     );
   }
   if (kind === 'stakeholder') {
-    const cx = NODE_WIDTH - 15;
+    const cx = width - 15;
     return (
       <>
-        <circle cx={cx} cy={NODE_HEIGHT - 21} r={3.6} fill="none" stroke={stroke} strokeWidth={1.2} />
-        <path d={`M${cx - 7} ${NODE_HEIGHT - 8} q7 -9 14 0`} fill="none" stroke={stroke} strokeWidth={1.2} />
+        <circle className="sysml-node-mark" cx={cx} cy={height - 21} r={3.6} fill="none" />
+        <path className="sysml-node-mark" d={`M${cx - 7} ${height - 8} q7 -9 14 0`} fill="none" />
       </>
     );
   }
@@ -194,7 +195,7 @@ export function SysMLCanvas() {
   const setViewMode = useSysMLStore((state) => state.setViewMode);
   const checkpoint = useSysMLStore((state) => state.checkpoint);
   const move = useSysMLStore((state) => state.move);
-  const autoLayout = useSysMLStore((state) => state.autoLayout);
+  const autoLayout = useSysMLStore((state) => state.applyElkLayout);
   const undo = useSysMLStore((state) => state.undo);
   const redo = useSysMLStore((state) => state.redo);
   const [camera, setCamera] = useState<Camera>({ scale: 1, x: 0, y: 0 });
@@ -283,7 +284,7 @@ export function SysMLCanvas() {
   return (
     <div className="sysml-canvas">
       <div className="sysml-canvas-toolbar">
-        <button type="button" title="Auto layout" onClick={autoLayout}>
+        <button type="button" title="Auto layout (ELK layered)" onClick={() => void autoLayout()}>
           <LayoutTemplate size={13} />
           <span>Auto layout</span>
         </button>
@@ -381,22 +382,34 @@ export function SysMLCanvas() {
           })}
           {visibleElements.map((element) => {
             const point = positionOf(element, positions);
-            const color = COLORS[element.kind];
             const isSelected = element.id === selectedId;
             return (
               <g
                 key={element.id}
                 transform={`translate(${point.x} ${point.y})`}
                 className={`sysml-node${isSelected ? ' selected' : ''}`}
+                data-kind={element.kind}
                 onPointerDown={(event) => beginMove(event, element)}
                 onClick={(event) => { event.stopPropagation(); select(element.id); }}
               >
                 {/* uniform hit area: the notation shapes leave corners free */}
-                <rect width={NODE_WIDTH} height={NODE_HEIGHT} fill="transparent" />
-                <NodeBody kind={element.kind} fill={color.fill} stroke={color.stroke} />
+                <rect
+                  width={layout?.sizes?.[element.id]?.width ?? SYML_NODE_WIDTH}
+                  height={layout?.sizes?.[element.id]?.height ?? SYML_NODE_HEIGHT}
+                  fill="transparent"
+                />
+                <NodeBody
+                  kind={element.kind}
+                  width={layout?.sizes?.[element.id]?.width}
+                  height={layout?.sizes?.[element.id]?.height}
+                />
                 <text x={12} y={24} className="sysml-node-kind">{stereotypeFor(element)}</text>
                 <text x={12} y={44} className="sysml-node-name">{element.name}</text>
-                <CornerMark kind={element.kind} fill={color.fill} stroke={color.stroke} />
+                <CornerMark
+                  kind={element.kind}
+                  width={layout?.sizes?.[element.id]?.width}
+                  height={layout?.sizes?.[element.id]?.height}
+                />
               </g>
             );
           })}

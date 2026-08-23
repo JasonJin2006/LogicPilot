@@ -34,6 +34,7 @@
 | (本轮) | **D3/SysML 语言服务**:新建 `sysmlLanguage.ts`——completionsAt(by/to/from 后给元素名,否则按前缀过滤声明关键字)、hoverAt(最内层包含块)、definitionAt(声明处=自身;引用词走唯一名/::尾解析)、referencesOf、renameAt;uiStore 新增 sourceReveal 请求,DslEditor 聚焦并选中 span(浏览器自动滚动到可见),属性面板与画布选中卡加 Open in source 按钮;AI 侧新增 find_sysml_definition/find_sysml_references。renameElement 升级:除声明 token 外,所有能解析到该元素的裸名/限定尾引用一并替换(其他作用域同名不受影响)。语言测试 6 例(共 276 vitest) |
 | (本轮) | **S1 补齐**:① `DocumentContribution.completions(source,offset)` 缝隙,SysML 贡献方注册(元素上下文/关键字),DslEditor 通用 Ctrl+Space 弹层(方向键/Enter/Esc、输入续排、点击接受,disk 模式同样落盘);② `sysmlProjectIndex.ts` 聚合全部 .sysml——唯一名/限定名/::尾三级解析,歧义返回 null,诊断按路径聚合;find_sysml_definition 增加 projectFiles 列表与跨文件回退。新增 4 索引测试 + 语言上下文用例扩展(共 280 vitest);`.verify/completion-check.mjs` 实测弹层→点选 Power→token 落盘 PASS |
 | (本轮) | **S2-a/SysML 语义执行 0.1**:新建 `sysmlExecution.ts`——`extractExecutionTargets`(action/calculation/state/analysis/verification usage → 显式 target,含不支持原因;纯结构模型为空表)+ 版本化 `SYSML_CONFORMANCE_MATRIX`(supported/planned/unsupported 三档,测试钉住)+ 无 eval 的递归下降表达式求值器(优先级/括号/一元负/兄弟引用/除零与未知标识符确定性报错带行号);parser 新增 calculation/calc 关键字(calc 归一化);store 增加 execution/runError(runTarget),任何新 revision 到达即失效;画布工具条仅当存在受支持目标时渲染目标选择+Run,trace 条显示步骤/result/revision。6 个执行测试(共 286 vitest);`.verify/run-check.mjs` 实测计算 result=38/action 序列/纯需求模型零入口 PASS |
+| (本轮) | **视觉切片/ELK 排版+主题**:依赖 elkjs@0.9.2(仓库根 .npmrc 固定 virtual-store-dir-max-length=60 对齐存量存储);新建 `sysmlAutoLayoutElk.ts`——buildElkGraph 把包含关系嵌套为 ELK 复合 children(`contains` 从边表消失)、其余关系参与全局分层(INCLUDE_CHILDREN),固定 randomSeed 确定性,direction=RIGHT 让同父兄弟纵向堆叠、深度向右;运行走 Web Worker(`?url` 引入经典 worker),失败降级主线程 bundled,再败回退同步树形首帧;ELK 返回的容器放大尺寸经 `SysMLLayout.sizes` 持久化并用于拉伸外框;坐标按祖先链累加为绝对值。配色删除硬编码 COLORS,节点 g 带 `data-kind`,CSS 用 currentColor+color-mix 映射主题 token(accent/warn/error/ok/surface),双主题一致。Auto layout 按钮→applyElkLayout(checkpoint 可撤销),无侧车新文件加载后自动精排。+4 测试(共 288 vitest);sysml-canvas/run-check 截图人工复核通过 |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -64,7 +65,8 @@
 - ✅ **S1 收尾**(见 §3):`DocumentContribution.completions` 缝隙 + DslEditor 通用补全弹层(Ctrl+Space);`sysmlProjectIndex.ts` 多文件项目级索引(definition 跨文件回退、歧义即 null、诊断带路径聚合);
 - **S1 至此功能面补齐**。遗留(非阻塞):跨文件 relation 抽取(需要合并虚拟文档)、索引未接入 referencesOf。
 - ✅ **S2-a 语义执行子集 0.1**(见 §3):ExecutionTargetRef 提取 + 版本化 conformance matrix + 表达式/calculation/action 赋值序列解释器 + trace 绑定 revision;纯结构/需求模型零 Run 入口(验收红线已测);
-- S2 剩余:state 转移与 time trigger(0.2 计划)、lowering 到 Statechart/DEVS runtime、evidence 持久化、外部 analysis adapter。
+- ✅ **可视化重做**:ELK(elkjs)分层自动排版(worker 优先/主线程兜底/同步树形首帧)+ data-kind 主题配色(双主题一致);calculation 关键字入 parser;
+- S2 剩余:state 转移与 time trigger(0.2 计划)、lowering 到 Statechart/DEVS runtime、evidence 持久化、外部 analysis adapter、跨容器连线正交路由。
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)
@@ -101,7 +103,8 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
 - 后台服务:gateway(lpcli serve mm1.lp :8089)、vite(:5173)已重启;注意本机
   shell 有 HTTP(S)_PROXY=127.0.0.1:7890,curl 探活必须加 `--noproxy "*"`(浏览器
   E2E 不受影响);
+- 新增前端依赖:`elkjs@0.9.2`(EPL-2.0,布局引擎,worker 经 Vite `?url` 引入);
 - `.verify/` 为未跟踪 scratch 目录(E2E 输出/临时脚本);`.playwright-cli/` 是历史 console 日志;
-- 测试基线数字:IDE vitest 38 文件 248 用例、editor 73、kernel ctest 492(clean 时);
+- 测试基线数字:IDE vitest ~41 文件 288 用例、editor 73、kernel ctest 492(clean 时);
 - 截图人工复核:模型可直接用 Read 工具读 `.verify/out/*.png`(旧 vision.js
   流程已按用户要求废弃);`.verify/screenshot-sanity.mjs` 的像素统计仍可作辅助。

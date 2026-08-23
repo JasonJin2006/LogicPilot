@@ -20,6 +20,7 @@
     "@logicpilot/renderer2d": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.0.0",
+    "elkjs": "0.9.2",
     "lucide-react": "^1.28.0",
     "pixi.js": "^8.6.6",
     "react": "^19.1.0",

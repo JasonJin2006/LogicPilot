@@ -13,6 +13,7 @@ import {
   runExecutionTarget,
   type TraceStep,
 } from '../sysml/sysmlExecution';
+import { autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
 
 export type SysMLViewMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';
 
@@ -33,6 +34,8 @@ function loadLayout(path: string, projection: SysMLProjection, serialized?: stri
       return fallback;
     }
     const positions: Record<string, SysMLPosition> = { ...fallback.positions };
+    const sizes =
+      typeof parsed.sizes === 'object' && parsed.sizes !== null ? parsed.sizes : fallback.sizes;
     for (const element of projection.elements) {
       const position = parsed.positions[element.id];
       if (
@@ -45,7 +48,7 @@ function loadLayout(path: string, projection: SysMLProjection, serialized?: stri
         positions[element.id] = { x: position.x, y: position.y };
       }
     }
-    return { version: 1, sourceHash: projection.sourceHash, positions };
+    return { version: 1, sourceHash: projection.sourceHash, positions, sizes };
   } catch {
     return fallback;
   }
@@ -77,6 +80,9 @@ interface SysMLState {
   runError: string | null;
   runTarget: (targetId: string) => void;
   clearExecution: () => void;
+  /** ELK-layered layout (worker, async). Checkpoints like a manual edit so
+   *  undo returns to the previous arrangement. */
+  applyElkLayout: () => Promise<void>;
   past: SysMLLayout[];
   future: SysMLLayout[];
   load: (path: string, source: string, serialized?: string) => void;
@@ -124,6 +130,22 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
       past: [],
       future: [],
     });
+    // Fresh files have no sidecar: beautify asynchronously once ELK lands.
+    // The synchronous tree above remains the first paint and the fallback.
+    if (serialized === undefined && projection.elements.length > 0) {
+      void (async () => {
+        try {
+          const elkLayout = await autoLayoutWithElk(source, projection);
+          if (get().path !== path) return; // user switched files meanwhile
+          persistLayout(path, elkLayout);
+          if (get().path === path && get().layout?.sourceHash === projection.sourceHash) {
+            set({ layout: elkLayout });
+          }
+        } catch {
+          // tree fallback already in place
+        }
+      })();
+    }
   },
   refresh: (source) => {
     const path = get().path;
@@ -178,6 +200,20 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     });
   },
   clearExecution: () => set({ execution: null, runError: null }),
+  applyElkLayout: async () => {
+    const state = get();
+    if (!state.projection || !state.path) return;
+    state.checkpoint();
+    try {
+      const layout = await autoLayoutWithElk(state.source, state.projection);
+      // The user may have switched files while ELK was computing.
+      if (get().path !== state.path) return;
+      persistLayout(state.path, layout);
+      set({ layout, layoutDirty: true });
+    } catch (error) {
+      console.error('[sysml] ELK layout failed', error);
+    }
+  },
   setViewMode: (mode) => set({ viewMode: mode, selectedId: null }),
   checkpoint: () => {
     const state = get();
