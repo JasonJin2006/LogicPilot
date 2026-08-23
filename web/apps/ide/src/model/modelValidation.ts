@@ -1,5 +1,6 @@
 import type { ModelDocument, ModelEdge, ModelNode } from '@logicpilot/editor';
 import { BLOCK_DEFAULTS, blockPorts, isExecutableProcessKind } from './blockDefs';
+import { DIAGNOSTIC_PROVIDERS } from '../workbench/diagnostics';
 
 export type ModelDiagnosticSeverity = 'error' | 'warning';
 
@@ -284,3 +285,14 @@ function validateMinimum(
     });
   }
 }
+
+// The DES graph validator is registered as the DSL document type's diagnostic
+// provider instead of being imported by every shell surface directly
+// (workbench-architecture-plan.md §9.1). Canvas badges, Properties, the Run
+// gate and the AI preflight aggregate through the Workbench seam, so further
+// DSL validators register here without touching consumers.
+DIAGNOSTIC_PROVIDERS.register({
+  id: 'logicpilot.des-graph',
+  documentTypes: ['dsl'],
+  diagnose: (document) => validateDesModel(document as ModelDocument),
+});

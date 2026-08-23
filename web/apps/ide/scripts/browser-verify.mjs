@@ -553,7 +553,7 @@ try {
     },
   };
   await page
-    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .locator('input[type="file"][accept=".lpproj,.lp,.sysml,.json"]')
     .first()
     .setInputFiles({
       name: 'layers.lpproj',
@@ -609,7 +609,7 @@ try {
   await page.waitForSelector('.center-empty', { timeout: 5_000 });
   const agentSource = `model Swarm {\n  agent Drone {\n    count = 3\n    state active = true\n    on_tick { flip active }\n    on_tick { bounce }\n  }\n}\n`;
   await page
-    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .locator('input[type="file"][accept=".lpproj,.lp,.sysml,.json"]')
     .first()
     .setInputFiles({
       name: 'agents.lp',
@@ -689,7 +689,7 @@ try {
 }
 `;
   await page
-    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .locator('input[type="file"][accept=".lpproj,.lp,.sysml,.json"]')
     .first()
     .setInputFiles({
       name: 'traffic.lp',
@@ -770,7 +770,7 @@ try {
 }
 `;
   await page
-    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .locator('input[type="file"][accept=".lpproj,.lp,.sysml,.json"]')
     .first()
     .setInputFiles({
       name: 'decay.lp',
@@ -851,7 +851,7 @@ try {
 }
 `;
   await page
-    .locator('input[type="file"][accept=".lpproj,.lp,.json"]')
+    .locator('input[type="file"][accept=".lpproj,.lp,.sysml,.json"]')
     .first()
     .setInputFiles({
       name: 'pulse_chain.lp',

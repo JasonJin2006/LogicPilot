@@ -89,6 +89,9 @@ export default defineConfig({
             collapsed: true,
             items: [
               { text: '总计划与现状', link: '/roadmap' },
+              { text: '工程化路线计划', link: '/dev-plan' },
+              { text: 'Workbench 架构计划', link: '/workbench-architecture-plan' },
+              { text: 'Workbench 迁移审查', link: '/workbench-migration-review' },
               { text: '性能预算', link: '/performance-budget' },
             ],
           },

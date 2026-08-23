@@ -172,8 +172,10 @@ export function ModelInfoPanel() {
     const orphans: PanelEntry[] = [];
     for (const path of Object.keys(files).sort()) {
       const source = files[path]!;
-      if (!path.endsWith('.lp')) {
-        continue; // data files (canvas layout, assets) belong to the Explorer
+      // Only files whose registered contribution is the DSL get parsed as
+      // models; data files (canvas layout, assets) belong to the Explorer.
+      if (documentContributionFor(path)?.id !== 'dsl') {
+        continue;
       }
       if (partPaths.includes(path)) {
         // Fragments belong to their model; parse them lazily through the main

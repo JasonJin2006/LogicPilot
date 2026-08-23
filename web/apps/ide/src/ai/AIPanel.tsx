@@ -75,6 +75,7 @@ import { useProjectStore } from '../state/projectStore';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import { useRunStore } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
+import { documentContributionFor } from '../workbench/documentTypes';
 import { ScrollArea } from '../components/ScrollArea';
 import { useCanvasView } from '../state/canvasView';
 import { getAppConfig } from '../state/appConfig';
@@ -720,6 +721,12 @@ export function AIPanel() {
       history,
       apiBase: config?.apiBase ?? '',
       sessionToken: config?.sessionToken,
+      // Dynamic discovery (plan §7): capabilities see the active document's
+      // contribution type and mount only their relevant tools.
+      toolScope: {
+        documentType:
+          documentContributionFor(useUiStore.getState().activeFile)?.id ?? null,
+      },
       capabilities: [
         ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
           ? permissionMode === 'Read only' || agentMode !== 'Agent'

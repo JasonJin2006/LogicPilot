@@ -11,7 +11,10 @@ import { flattenPresentationLayers, getPresentationLayer } from '../presentation
 import { useShapeSelection } from '../presentation/selectionStore';
 import { useMemo, useState } from 'react';
 import type { GraphicNode, ModelNode } from '@logicpilot/editor';
-import { validateDesModel } from './modelValidation';
+import { diagnoseDocument } from '../workbench/diagnostics';
+// Side-effect import: registers the DES graph diagnostic provider consumed
+// through the seam below.
+import './modelValidation';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {
@@ -193,7 +196,7 @@ export function PropertiesPanel() {
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
   const nodeDiagnostics = useMemo(
-    () => validateDesModel(document).filter((diagnostic) => diagnostic.nodeId === selectedId),
+    () => diagnoseDocument('dsl', document).filter((diagnostic) => diagnostic.nodeId === selectedId),
     [document, selectedId],
   );
   if (!node) {

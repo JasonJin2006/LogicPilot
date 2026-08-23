@@ -221,18 +221,19 @@ function TabBar({ area }: { area: AreaId }) {
               </div>
             );
           })}
-          {/* Code tabs: one per open bundle file. */}
+          {/* Code tabs: one per open bundle file. The contribution registry
+              picks the editor panel for each path. */}
           {openFiles.map((path) => {
             const name = path.slice(path.lastIndexOf('/') + 1);
-            const isSysML = editorPanelFor(path) === 'sysml';
-            const active = state.activePanel === (isSysML ? 'sysml' : 'dsl') && path === activeFile;
+            const panel = editorPanelFor(path);
+            const active = state.activePanel === panel && path === activeFile;
             return (
               <div
                 key={`file:${path}`}
                 className={`tab tab-file${active ? ' active' : ''}`}
                 title={path}
                 onClick={() => {
-                  openPanel('center', editorPanelFor(path));
+                  openPanel('center', panel);
                   openFile(path);
                 }}
               >

@@ -44,7 +44,10 @@ import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
 import { snapRect, type SnapGuide } from '../presentation/snapping';
 import { graphicIntersectsViewport, worldViewportFromCamera } from '../presentation/viewport';
-import { validateDesModel } from './modelValidation';
+import { diagnoseDocument } from '../workbench/diagnostics';
+// Side-effect import: registers the DES graph diagnostic provider for the
+// DSL document type (the validator itself is not referenced here).
+import './modelValidation';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 16;
@@ -174,7 +177,7 @@ export function ModelCanvas() {
     }),
     [rawDocument],
   );
-  const modelDiagnostics = useMemo(() => validateDesModel(document), [document]);
+  const modelDiagnostics = useMemo(() => diagnoseDocument('dsl', document), [document]);
   const diagnosticsByNode = useMemo(() => {
     const grouped = new Map<string, typeof modelDiagnostics>();
     for (const diagnostic of modelDiagnostics) {

@@ -34,13 +34,16 @@ import {
   renameProjectEntry,
   writeProjectFile,
 } from '../state/tauriFs';
+import { documentContributionFor, newFileContentFor } from '../workbench/documentTypes';
 import { ContextMenu } from './ContextMenu';
 import type { ContextAction } from './ContextMenu';
 
 interface TreeFile {
   name: string;
   path: string;
-  kind: 'dsl' | 'sysml' | 'json' | 'ir' | 'muted';
+  /** Registered Workbench document contribution id; null for data files
+   *  without a registered editor contribution (rendered as plain data). */
+  contributionId: string | null;
 }
 
 interface TreeFolder {
@@ -69,14 +72,12 @@ export function treeFromPaths(paths: string[]): TreeEntry[] {
       const existing = level.find((entry) => entry.name === name);
       if (isFile) {
         if (existing === undefined) {
+          // The contribution registry decides how a file is classified and
+          // which editor opens it - no per-extension switch in the shell.
           level.push({
             name,
             path,
-            kind: path.endsWith('.lp')
-              ? ('dsl' as const)
-              : path.toLowerCase().endsWith('.sysml')
-                ? ('sysml' as const)
-                : ('json' as const),
+            contributionId: documentContributionFor(path)?.id ?? null,
           });
         }
         break;
@@ -126,8 +127,9 @@ function FileRow({
   dataPath?: string;
   active?: boolean;
 }) {
-  const Icon = file.kind === 'dsl' || file.kind === 'sysml' ? FileCode2 : FileJson2;
-  const muted = file.kind === 'muted' || file.kind === 'ir';
+  // Registered contributions are source-like documents (code icon); files
+  // without a contribution render as plain data.
+  const Icon = file.contributionId !== null ? FileCode2 : FileJson2;
   return (
     <div
       className={`tree-row tree-file${active ? ' tree-active' : ''}`}
@@ -135,14 +137,10 @@ function FileRow({
       title={file.path}
       data-path={dataPath}
     >
-      {file.kind === 'ir' || file.kind === 'muted' ? (
-        <span className="tree-glyph tree-glyph-muted">·</span>
-      ) : (
-        <span className="tree-glyph">
-          <Icon size={12} />
-        </span>
-      )}
-      <span className={`tree-label${muted ? ' tree-muted' : ''}`}>{file.name}</span>
+      <span className="tree-glyph">
+        <Icon size={12} />
+      </span>
+      <span className="tree-label">{file.name}</span>
     </div>
   );
 }
@@ -195,7 +193,7 @@ function FolderRow({
               key={child.path}
               file={child}
               indent={indent + 1}
-              dataPath={child.kind === 'muted' || child.kind === 'ir' ? undefined : child.path}
+              dataPath={child.path}
               active={child.path === activePath}
             />
           ),
@@ -283,7 +281,8 @@ export function ExplorerPanel() {
       onSubmit: (name) => {
         const path = dir === '' ? name : `${dir}/${name}`;
         if (isDisk && projectPath) {
-          const content = path.endsWith('.lp') ? `model ${name.replace(/\.lp$/, '')} {\n}\n` : '';
+          // The contribution registry supplies the new-file template.
+          const content = newFileContentFor(path);
           void writeProjectFile(projectPath, path, content).then((result) => {
             if (!result.ok) {
               openInfo('Create failed', result.error ?? 'cannot create the file');
@@ -294,7 +293,7 @@ export function ExplorerPanel() {
         }
         updateFiles((files) => ({
           ...files,
-          [path]: path.endsWith('.lp') ? `model ${name.replace(/\.lp$/, '')} {\n}\n` : '',
+          [path]: newFileContentFor(path),
         }));
       },
     });

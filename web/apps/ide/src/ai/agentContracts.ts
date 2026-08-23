@@ -50,6 +50,22 @@ export interface AgentCapability {
   tools?: readonly AgentTool[];
   contextProviders?: readonly AgentContextProvider[];
   promptContributors?: readonly AgentPromptContribution[];
+  /**
+   * Optional dynamic tool discovery (workbench-architecture-plan.md §7):
+   * return the subset of this capability's tools that apply to the given
+   * scope, typically the active document's contribution type. When absent,
+   * `tools` applies to every scope.
+   */
+  toolsForScope?: (scope: AgentToolScope) => readonly AgentTool[];
+}
+
+/**
+ * Where a turn runs: the active document's registered Workbench contribution
+ * id (or null when nothing contribution-backed is active). Deliberately
+ * free of editor/DSL concepts - hosts map their own document model onto it.
+ */
+export interface AgentToolScope {
+  documentType?: string | null;
 }
 
 export interface AgentSkillManifest {
@@ -116,8 +132,10 @@ export class AgentCapabilityRegistry {
     return ids.map((id) => this.capabilities.get(id)).filter(Boolean) as AgentCapability[];
   }
 
-  tools(ids: readonly string[] | undefined): readonly AgentTool[] {
-    const tools = this.resolve(ids).flatMap((capability) => capability.tools ?? []);
+  tools(ids: readonly string[] | undefined, scope?: AgentToolScope): readonly AgentTool[] {
+    const tools = this.resolve(ids).flatMap((capability) =>
+      scope === undefined ? (capability.tools ?? []) : (capability.toolsForScope?.(scope) ?? capability.tools ?? []),
+    );
     return [...new Map(tools.map((tool) => [tool.name, tool])).values()];
   }
 }

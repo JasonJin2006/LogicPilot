@@ -26,6 +26,7 @@ import {
   type AssistantKernelEvent,
 } from './assistantKernel';
 import { resolveAgentTools } from './agentCapabilities';
+import type { AgentToolScope } from './agentContracts';
 import { findAssistantTool, type AssistantTool } from './capabilities/logicpilot-modeling/tools';
 import { useModelStore } from '../state/modelStore';
 import type { ModelPatch } from '@logicpilot/editor';
@@ -89,6 +90,10 @@ export interface RunAssistantOptions {
   sessionToken?: string;
   /** Capability packages mounted by the host (for example modeling tools). */
   capabilities?: string[];
+  /** Where this turn runs (the active document's contribution type). When
+   *  given, capabilities discover their tools for that scope; when omitted,
+   *  the full mounted tool set applies. */
+  toolScope?: AgentToolScope;
   /** Runtime-discovered tools, such as MCP tools, mounted for this turn. */
   additionalTools?: readonly AssistantTool[];
   /** Skill ids selected by the host or user for this turn. */
@@ -478,7 +483,7 @@ function groundedFinalIssue(
 export async function runAssistantTurn(options: RunAssistantOptions): Promise<AssistantRunResult> {
   const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const availableTools = [
-    ...resolveAgentTools(options.capabilities),
+    ...resolveAgentTools(options.capabilities, options.toolScope),
     ...(options.additionalTools ?? []),
   ];
   const steps: AssistantStepRecord[] = [];

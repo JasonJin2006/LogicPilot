@@ -3,7 +3,10 @@
 import { generateDsl } from '@logicpilot/editor';
 import { aiValidateDsl } from '../../api';
 import type { AssistantSessionState } from '../../assistantTypes';
-import { validateDesModel } from '../../../model/modelValidation';
+import { diagnoseDocument } from '../../../workbench/diagnostics';
+// Side-effect import: registers the DES graph diagnostic provider consumed
+// through the seam below.
+import '../../../model/modelValidation';
 import { useModelStore } from '../../../state/modelStore';
 
 export async function compileCurrent(
@@ -22,10 +25,12 @@ export async function compileCurrent(
   const document = useModelStore.getState().document;
   const dsl = generateDsl(document);
   session.dsl = dsl;
-  const preflight = validateDesModel(document).map((diagnostic) => ({
+  const preflight = diagnoseDocument('dsl', document).map((diagnostic) => ({
     code: diagnostic.code,
     message: diagnostic.message,
-    severity: diagnostic.severity,
+    // Compiler diagnostics have no 'info' lane; informational findings do
+    // not block and surface as warnings.
+    severity: diagnostic.severity === 'info' ? ('warning' as const) : diagnostic.severity,
     source: 'preflight' as const,
   }));
   if (preflight.some((diagnostic) => diagnostic.severity === 'error')) {

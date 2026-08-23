@@ -10,7 +10,10 @@ import { useConnectionStore } from '../state/connectionStore';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
-import { validateDesModel } from '../model/modelValidation';
+import { diagnoseDocument } from '../workbench/diagnostics';
+// Side-effect import: registers the DES graph diagnostic provider consumed
+// through the seam below.
+import '../model/modelValidation';
 
 interface NumberFieldProps {
   label: string;
@@ -121,7 +124,7 @@ export function RunDialog() {
     speed: parseNum(speed) ?? Number.NaN,
   };
   const validationError = validateRunOptions(draftOptions);
-  const modelDiagnostics = validateDesModel(document);
+  const modelDiagnostics = diagnoseDocument('dsl', document);
   const blockingModelDiagnostics = modelDiagnostics.filter(
     (diagnostic) => diagnostic.severity === 'error',
   );
