@@ -436,4 +436,99 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       };
     },
   },
+  {
+    name: 'query_sysml_evidence',
+    description:
+      'Query the execution evidence journal of the open SysML document: ' +
+      'recent runs bound to the exact revisions that produced them. ' +
+      'Optional filters: target (name/qualified name) and outcome.',
+    parameters: {
+      target: { type: 'string' },
+      outcome: { type: 'string', enum: ['ok', 'failed'] },
+      limit: { type: 'number' },
+    },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.path) return 'no SysML document is open';
+      const outcome = args.outcome;
+      if (outcome !== undefined && outcome !== 'ok' && outcome !== 'failed') {
+        return "outcome must be 'ok' or 'failed'";
+      }
+      const limit = args.limit;
+      if (limit !== undefined && (typeof limit !== 'number' || limit < 1 || limit > 20)) {
+        return 'limit must be a number between 1 and 20';
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const targetQuery = stringArg(args, 'target')?.toLowerCase();
+      const outcome = args.outcome as 'ok' | 'failed' | undefined;
+      const limit = typeof args.limit === 'number' ? Math.floor(args.limit) : 10;
+      const filtered = state.evidence.filter((record) => {
+        if (
+          targetQuery !== undefined &&
+          !record.targetQualifiedName.toLowerCase().includes(targetQuery) &&
+          record.targetId.toLowerCase() !== targetQuery
+        ) {
+          return false;
+        }
+        if (outcome === 'ok' && !record.ok) return false;
+        if (outcome === 'failed' && record.ok) return false;
+        return true;
+      });
+      return {
+        ok: true,
+        total: state.evidence.length,
+        matched: filtered.length,
+        runs: filtered.slice(0, limit).map((record) => ({
+          id: record.id,
+          target: record.targetQualifiedName,
+          kind: record.targetKind,
+          runOk: record.ok,
+          revision: record.revision,
+          startedAt: record.startedAt,
+          durationMs: record.durationMs,
+          stepCount: record.steps?.length ?? 0,
+          result: record.result ?? null,
+          error: record.error ?? null,
+          conformanceVersion: record.conformanceVersion,
+        })),
+      };
+    },
+  },
+  {
+    name: 'explain_sysml_run',
+    description:
+      'Return the full execution trace of one evidence record by id, including ' +
+      'per-step source lines and clock times - use it after query_sysml_evidence.',
+    parameters: { evidenceId: { type: 'string', required: true } },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.path) return 'no SysML document is open';
+      const id = stringArg(args, 'evidenceId');
+      if (id === null) return 'evidenceId must be a non-empty string';
+      if (!state.evidence.some((record) => record.id === id)) {
+        return `no evidence record with id '${id}' (use query_sysml_evidence first)`;
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const record = state.evidence.find((entry) => entry.id === stringArg(args, 'evidenceId'))!;
+      return {
+        ok: true,
+        target: record.targetQualifiedName,
+        kind: record.targetKind,
+        revision: record.revision,
+        runOk: record.ok,
+        startedAt: record.startedAt,
+        durationMs: record.durationMs,
+        conformanceVersion: record.conformanceVersion,
+        steps: record.steps ?? [],
+        result: record.result ?? null,
+        error: record.error ?? null,
+      };
+    },
+  },
 ];
