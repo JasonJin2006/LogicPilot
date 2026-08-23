@@ -30,6 +30,7 @@
 | (本轮) | **C2/F8+F10 Panel 开放注册**:panels.tsx 的 `PanelId` 放开为 string + `registerPanel()`(重复 id 拒绝);`PanelDef.focus?` 谓词承载"选中→属性面板"规则,Workspace 的 selectedId/sysmlSelectedId 二元分支改为 `focusedPanelId('right')` 注册表解析(两个订阅仅作触发器);SysML 编辑器/属性面板迁至 `sysml/sysmlPanelsContribution.tsx`(lazy 保留),App.tsx 作为组合根最先引入(保证持久化 layout 校验前注册完成);documentTypes 的 editorPanel union 同步放开。新增 panels 测试 2 例(共 248)。E2E + outline-check PASS |
 | (本轮) | **C3/DocumentSession 同步**:`projectSync.refreshCanvasDocument()`——解析成功即换新 revision,失败保留最后有效模型并记控制台;DslEditor 编辑 bundle 文件 300ms 防抖触发(文本→画布实时);Project 树/AI 源码工具/场景导入三条流全部改走温和路径(不再 closeAllFiles+resetCanvasViews);canvasView resolve 增加"前代名字恢复",reparse 换 id 后已打开容器视图存活。新增 projectSync.test.ts(3 例)+ canvasView 跨 reparse 用例(共 252 vitest)+ `.verify/live-sync-check.mjs` 实测 PASS |
 | (本轮) | **D1/SysML 结构化 parser**:新建 `sysml/sysmlParser.ts`(括号配对作用域栈、坏语句跳过继续收集全部错误);元素带 `nameSpan`(标识符精确定位)+ 覆盖到闭括号行的块级 span;诊断改稳定码 SY0001 未识别语句/SY0002 未解析引用/SY0003 重名/SY0004 括号失衡/SY0005 无声明;`sysmlStore.refresh` 错误时只更新 source、保留最后有效 projection/layout 并置 `parseDirty`(画布显示提示条)。id 方案不变(qualifiedName fnv1a),布局侧车向后兼容。新增 parser 6 测 + store 1 测(共 259 vitest);E2E/sysml-canvas-check PASS |
+| (本轮) | **D2/SysML AI typed edits**:新建 `sysmlEdits.ts`(insertElement/renameElement/addRelationStatement 纯函数——嵌套插入带缩进、单行 `{ }` 父块自动展开、rename 只替换 nameSpan token、同作用域重名拒绝、括号失衡拒追关系);工具侧 `commitEdit` 写前用 parser 重验证(会引入 SY error 的输出直接拒绝且不动文件),读取走权威存储而非滞后的 store.source。新增 7 个纯函数测试 + 4 个真实 store 集成测试(共 270 vitest) |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -55,7 +56,8 @@
 
 ### D. SysML S1 推进中
 - ✅ **D1 结构化 parser**(见 §3):`sysml/sysmlParser.ts` 括号配对+错误恢复,nameSpan/块级 span,稳定诊断码族 SY0001–SY0005(表在文件头),store 错误时保留最后有效快照(parseDirty);元素 id 沿用 qualifiedName 哈希(布局侧车兼容);
-- 剩余 S1:completion/hover/go-to-def/find-references/rename 语言服务(可基于 nameSpan 实现)、AI typed edits(requirement/part/port/connection/trace)、Outline 已有(projection 驱动);
+- ✅ **D2 AI typed edits**(见 §3):`sysml/sysmlEdits.ts` 纯源文本事务 + `add_sysml_element`/`rename_sysml_element`/`connect_sysml_elements` 三工具(写前重解析验证,拒绝会产生 SY error 的输出;从 bundle/diskFiles 权威存储读取当前文本);
+- 剩余 S1:completion/hover/go-to-def/find-references/rename 语言服务(可基于 nameSpan 实现)、多文件项目级编辑;Outline 已有(projection 驱动);
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)

@@ -1,12 +1,99 @@
-// AI tools for the external SysML projection. These tools edit only the
-// visualization sidecar; the professional SysML source remains authoritative.
+// AI tools for the external SysML projection. Read/layout tools edit only
+// the visualization sidecar; the typed-edit tools are source-text
+// transactions (sysmlEdits) that are re-verified by the parser before they
+// may touch the authoritative file.
 
 import type { AssistantTool } from '../../toolTypes';
 import { useSysMLStore, type SysMLViewMode } from '../../../state/sysmlStore';
+import { useProjectStore } from '../../../state/projectStore';
+import { useUiStore } from '../../../state/uiStore';
+import { projectSysML } from '../../../sysml/sysmlProjection';
+import {
+  addRelationStatement,
+  insertElement,
+  renameElement,
+  type RelationVerb,
+} from '../../../sysml/sysmlEdits';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
-  return typeof args[key] === 'number' && Number.isFinite(args[key]) ? (args[key] as number) : null;
+  return typeof args[key] === 'number' && Number.isFinite(args[key] as number) ? (args[key] as number) : null;
 }
+
+function stringArg(args: Record<string, unknown>, key: string): string | null {
+  return typeof args[key] === 'string' && args[key].trim() !== '' ? (args[key] as string) : null;
+}
+
+/** Read the CURRENT authoritative text straight from the owning store
+ *  (bundle first, then disk files) - never from sysmlStore.source, which
+ *  only updates when the workspace effect re-projects on the next render. */
+function currentSysMLSource(): string | null {
+  const activeFile = useUiStore.getState().activeFile;
+  if (!activeFile) return null;
+  const bundle = useProjectStore.getState().bundle;
+  const bundled = bundle?.files[activeFile];
+  if (bundled !== undefined) return bundled;
+  return useUiStore.getState().diskFiles[activeFile] ?? null;
+}
+
+/** Persist edited source to whichever store owns the open document. The
+ *  SysMLWorkspace effect re-projects automatically; broken output would be
+ *  caught by parseDirty retention, but we refuse before writing anyway. */
+function writeSysMLSource(nextSource: string): { ok: false; error: string } | null {
+  const state = useSysMLStore.getState();
+  const activeFile = useUiStore.getState().activeFile;
+  if (!state.path || !state.projection || !activeFile) {
+    return { ok: false, error: 'no SysML document is open' };
+  }
+  if (activeFile !== state.path) {
+    return { ok: false, error: 'the active file does not match the open projection' };
+  }
+  const bundle = useProjectStore.getState().bundle;
+  if (bundle && bundle.files[activeFile] !== undefined) {
+    useProjectStore.getState().updateFiles((files) => ({
+      ...files,
+      [activeFile]: nextSource,
+    }));
+    return null;
+  }
+  useUiStore.getState().updateDiskFile(activeFile, nextSource);
+  return null;
+}
+
+/** Shared transaction tail: re-parse the candidate source and refuse the
+ *  write when it would introduce error-level diagnostics (verified patch). */
+function commitEdit(
+  edit: { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string },
+): Record<string, unknown> {
+  if (!edit.ok) {
+    return { ok: false, error: edit.error };
+  }
+  const nextProjection = projectSysML(edit.source);
+  const newError = nextProjection.diagnostics.find((d) => d.severity === 'error');
+  if (newError !== undefined) {
+    return {
+      ok: false,
+      error:
+        `edit rejected: generated source fails to parse (${newError.code}` +
+        `${newError.line ? ` line ${newError.line}` : ''}) - source left unchanged`,
+    };
+  }
+  const written = writeSysMLSource(edit.source);
+  if (written !== null) {
+    return written;
+  }
+  return {
+    ok: true,
+    detail: edit.detail,
+    elementId: edit.elementId ?? null,
+    warnings: nextProjection.diagnostics.filter((d) => d.severity === 'warning'),
+  };
+}
+
+const ELEMENT_KIND_ENUM = [
+  'package', 'part', 'item', 'port', 'interface', 'requirement', 'action',
+  'state', 'analysis', 'verification', 'attribute', 'constraint', 'usecase',
+  'view', 'viewpoint', 'enum', 'occurrence', 'stakeholder', 'flow',
+] as const;
 
 export const SYSML_TOOLS: readonly AssistantTool[] = [
   {
@@ -126,6 +213,108 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       useSysMLStore.getState().checkpoint();
       useSysMLStore.getState().move(id, { x, y });
       return { ok: true, elementId: id, position: { x, y } };
+    },
+  },
+  {
+    name: 'add_sysml_element',
+    description:
+      'Insert one typed SysML declaration (optionally nested in a parent block). ' +
+      `Kind is one of: ${ELEMENT_KIND_ENUM.join(', ')}.`,
+    parameters: {
+      kind: { type: 'string', required: true, enum: ELEMENT_KIND_ENUM },
+      name: { type: 'string', required: true },
+      declaration: { type: 'string', enum: ['def', 'usage'] },
+      parent: { type: 'string' },
+    },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection || !state.path) return 'no SysML projection is open';
+      if (stringArg(args, 'name') === null) return 'name must be a non-empty identifier';
+      const declaration = args.declaration;
+      if (declaration !== undefined && declaration !== 'def' && declaration !== 'usage') {
+        return "declaration must be 'def' or 'usage'";
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const source = currentSysMLSource();
+      if (source === null) {
+        return { ok: false, error: 'no SysML source is available to edit' };
+      }
+      return commitEdit(
+        insertElement(source, state.projection!, {
+          kind: stringArg(args, 'kind')!,
+          name: stringArg(args, 'name')!,
+          declaration: args.declaration === 'def' ? 'def' : args.declaration === 'usage' ? 'usage' : undefined,
+          parent: stringArg(args, 'parent') ?? undefined,
+        }),
+      );
+    },
+  },
+  {
+    name: 'rename_sysml_element',
+    description:
+      'Rename one SysML element by editing exactly its identifier token in the source. ' +
+      'Children keep resolving - textual nesting carries no parent names.',
+    parameters: {
+      query: { type: 'string', required: true },
+      newName: { type: 'string', required: true },
+    },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection || !state.path) return 'no SysML projection is open';
+      if (stringArg(args, 'query') === null) return 'query must name the element to rename';
+      if (stringArg(args, 'newName') === null) return 'newName must be a non-empty identifier';
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const source = currentSysMLSource();
+      if (source === null) {
+        return { ok: false, error: 'no SysML source is available to edit' };
+      }
+      return commitEdit(renameElement(source, state.projection!, stringArg(args, 'query')!, stringArg(args, 'newName')!));
+    },
+  },
+  {
+    name: 'connect_sysml_elements',
+    description:
+      'Append one typed relation statement between two elements: satisfy/verify ' +
+      '(requirement traceability), trace, connect, allocate or bind.',
+    parameters: {
+      verb: { type: 'string', required: true, enum: ['satisfy', 'verify', 'trace', 'connect', 'allocate', 'bind'] },
+      from: { type: 'string', required: true },
+      to: { type: 'string', required: true },
+    },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection || !state.path) return 'no SysML projection is open';
+      const verb = args.verb;
+      if (
+        typeof verb !== 'string' ||
+        !['satisfy', 'verify', 'trace', 'connect', 'allocate', 'bind'].includes(verb)
+      ) {
+        return "verb must be one of 'satisfy', 'verify', 'trace', 'connect', 'allocate', 'bind'";
+      }
+      if (stringArg(args, 'from') === null || stringArg(args, 'to') === null) {
+        return 'from and to must reference existing elements';
+      }
+      return null;
+    },
+    execute: (args) => {
+      const source = currentSysMLSource();
+      if (source === null) {
+        return { ok: false, error: 'no SysML source is available to edit' };
+      }
+      return commitEdit(
+        addRelationStatement(
+          source,
+          args.verb as RelationVerb,
+          stringArg(args, 'from')!,
+          stringArg(args, 'to')!,
+        ),
+      );
     },
   },
 ];
