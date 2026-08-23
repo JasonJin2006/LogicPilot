@@ -194,3 +194,10 @@ export function lowerStateMachine(
 
   return { ok: true, modelName, dsl, entryState, diagnostics };
 }
+
+/** Where a lowered artifact lives inside a project. Deliberately OUTSIDE
+ *  `model/` so the sync engine never mistakes it for a model-part fragment -
+ *  it is a complete standalone model, not a fragment of the parent. */
+export function loweredDslPath(modelName: string): string {
+  return `generated/${modelName}.lp`;
+}

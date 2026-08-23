@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
+import { useProjectStore } from '../state/projectStore';
 import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { extractExecutionTargets } from './sysmlExecution';
+import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
   orthogonalRoute,
   polylineLabelPoint,
@@ -209,6 +211,9 @@ export function SysMLCanvas() {
   const execution = useSysMLStore((state) => state.execution);
   const runError = useSysMLStore((state) => state.runError);
   const runTarget = useSysMLStore((state) => state.runTarget);
+  const updateFiles = useProjectStore((state) => state.updateFiles);
+  const activeFile = useUiStore((state) => state.activeFile);
+  const updateDiskFile = useUiStore((state) => state.updateDiskFile);
   const evidence = useSysMLStore((state) => state.evidence);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
@@ -223,6 +228,21 @@ export function SysMLCanvas() {
   const redo = useSysMLStore((state) => state.redo);
   const [camera, setCamera] = useState<Camera>({ scale: 1, x: 0, y: 0 });
   const [runTargetId, setRunTargetId] = useState<string | null>(null);
+  const [loweringErrors, setLoweringErrors] = useState<
+    Array<{ code: string; message: string }> | null
+  >(null);
+  const machineTargets = useMemo(
+    () =>
+      projection === null
+        ? []
+        : projection.elements.filter(
+            (element) =>
+              element.kind === 'state' &&
+              element.declaration === 'definition' &&
+              projection.elements.some((child) => child.ownerId === element.id),
+          ),
+    [projection],
+  );
   const dragRef = useRef<DragState | null>(null);
   const documentRef = useRef<SVGSVGElement>(null);
 
@@ -301,6 +321,31 @@ export function SysMLCanvas() {
     dragRef.current = null;
   };
 
+  /** One-click lowering: generate .lp DSL into generated/<Name>.lp and open
+   *  it as a text tab. Outside model/ on purpose - the artifact is a
+   *  complete standalone model, never a fragment of this project's model. */
+  const lowerToDsl = (targetId: string) => {
+    if (projection === null) return;
+    const result = lowerStateMachine(source, projection, targetId);
+    if (!result.ok) {
+      setLoweringErrors(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'));
+      return;
+    }
+    setLoweringErrors(null);
+    const path = loweredDslPath(result.modelName);
+    const bundle = useProjectStore.getState().bundle;
+    if (bundle !== null && activeFile !== null && bundle.files[activeFile] !== undefined) {
+      // Project mode: the artifact lives in bundle files and Save carries it.
+      useProjectStore.getState().updateFiles((files) => ({ ...files, [path]: result.dsl }));
+      useUiStore.getState().openFile(path);
+    } else {
+      // Virtual/disk document mode: keep the artifact beside the source.
+      useUiStore.getState().updateDiskFile(path, result.dsl);
+      useUiStore.getState().openDiskFile(path, result.dsl);
+    }
+    useLayoutStore.getState().openPanel('center', 'dsl');
+  };
+
   const zoom = (factor: number) =>
     setCamera((current) => ({ ...current, scale: Math.min(2.2, Math.max(0.35, current.scale * factor)) }));
 
@@ -329,6 +374,15 @@ export function SysMLCanvas() {
           <option value="traceability">Traceability</option>
         </select>
         <span className="sysml-canvas-count">{visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length} relations</span>
+        {machineTargets.length > 0 && (
+          <button
+            type="button"
+            title="Lower the state machine to .lp DSL (kernel StatechartRuntime)"
+            onClick={() => lowerToDsl(machineTargets[0]!.id)}
+          >
+            Lower to DSL
+          </button>
+        )}
         {supportedTargets.length > 0 && (
           <>
             <select
@@ -358,6 +412,15 @@ export function SysMLCanvas() {
       <div className="sysml-overlays">
         {runError !== null && (
           <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
+        )}
+        {loweringErrors !== null && (
+          <div className="sysml-trace sysml-run-error">
+            {loweringErrors.map((diagnostic) => (
+              <div key={diagnostic.code + diagnostic.message}>
+                {diagnostic.code}: {diagnostic.message}
+              </div>
+            ))}
+          </div>
         )}
         {execution !== null && (
           <div className="sysml-trace">
