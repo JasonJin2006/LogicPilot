@@ -3,9 +3,9 @@
 // so the Project panel hosts it without importing SysML specifics.
 
 import type { ReactNode } from 'react';
-import { Boxes } from 'lucide-react';
 import { useSysMLStore } from '../state/sysmlStore';
 import { OUTLINE_CONTRIBUTIONS } from '../workbench/outline';
+import { SysMLElementIcon } from './sysmlIcons';
 import type { SysMLElement, SysMLProjection } from './sysmlProjection';
 
 function SysMLOutline({ projection, selectedId }: { projection: SysMLProjection; selectedId: string | null }) {
@@ -25,8 +25,7 @@ function SysMLOutline({ projection, selectedId }: { projection: SysMLProjection;
           title={`${element.kind} ${element.qualifiedName}`}
           onClick={() => select(element.id)}
         >
-          <span className="tree-glyph tree-glyph-muted">·</span>
-          <span className="tree-glyph"><Boxes size={12} /></span>
+          <span className="tree-glyph"><SysMLElementIcon kind={element.kind} size={12} /></span>
           <span className="outline-name">{element.name}</span>
           <span className="sysml-outline-kind">{element.kind}</span>
         </div>

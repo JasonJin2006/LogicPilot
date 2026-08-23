@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DOCUMENT_CONTRIBUTIONS, documentContributionFor, editorPanelFor, newFileContentFor } from './documentTypes';
+// External languages register from their own modules (the composition root
+// imports them in the app); the DSL is the only core-registered type.
+import '../sysml/sysmlDocumentContribution';
 
 describe('Workbench document contributions', () => {
-  it('routes SysML documents to the projection editor', () => {
-    expect(documentContributionFor('model/Vehicle.SYSML')?.id).toBe('sysml');
+  it('routes SysML documents to the projection editor with its standard icon', () => {
+    const sysml = documentContributionFor('model/Vehicle.SYSML');
+    expect(sysml?.id).toBe('sysml');
     expect(editorPanelFor('model/Vehicle.sysml')).toBe('sysml');
+    // The language contributes its own standard file icon.
+    expect(sysml?.icon).toBeTypeOf('function');
+    expect(newFileContentFor('model/vehicle.sysml')).toBe('');
   });
 
   it('routes LogicPilot sources through the registered DSL contribution', () => {

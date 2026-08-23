@@ -127,9 +127,11 @@ function FileRow({
   dataPath?: string;
   active?: boolean;
 }) {
-  // Registered contributions are source-like documents (code icon); files
-  // without a contribution render as plain data.
-  const Icon = file.contributionId !== null ? FileCode2 : FileJson2;
+  // A language's standard icon wins; contributed files without one render
+  // as source, unregistered files as plain data.
+  const Icon =
+    documentContributionFor(file.path)?.icon ??
+    (file.contributionId !== null ? FileCode2 : FileJson2);
   return (
     <div
       className={`tree-row tree-file${active ? ' tree-active' : ''}`}

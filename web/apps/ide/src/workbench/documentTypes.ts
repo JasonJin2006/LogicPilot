@@ -1,9 +1,10 @@
 // Minimal Workbench document contribution registry. It intentionally owns
 // only routing/capability metadata; language semantics stay in the extension.
-// Adding a document type means registering here: shell panels (Explorer file
-// kinds/icons, center tab bar, editors, new-file templates) resolve through
-// this registry instead of hardcoded extension switches
-// (workbench-architecture-plan.md §5/§13).
+// Shell panels (Explorer file kinds/icons, center tab bar, editors, new-file
+// templates) resolve through this registry instead of hardcoded extension
+// switches (workbench-architecture-plan.md §5/§13).
+
+import type { ComponentType } from 'react';
 
 /** The center panel a document type opens in. A plain string: the panel
  *  itself is registered by the language's panel contribution, not by the
@@ -19,6 +20,10 @@ export interface DocumentContribution {
   /** Content template used when the Explorer creates a new file of this
    *  type; omit to create empty files. */
   newFileTemplate?: (fileName: string) => string;
+  /** The language's standard file icon; the Explorer falls back to its
+   *  generic source/data glyphs when omitted. Contributed by the language -
+   *  the workbench never maps kinds to icons itself. */
+  icon?: ComponentType<{ size?: number }>;
 }
 
 class DocumentContributionRegistry {
@@ -57,9 +62,10 @@ class DocumentContributionRegistry {
 
 export const DOCUMENT_CONTRIBUTIONS = new DocumentContributionRegistry();
 
-// The LogicPilot DSL is itself a registered contribution, so file routing and
-// creation templates come from the registry rather than `.lp` literals
-// scattered through the shell.
+// The LogicPilot DSL is the platform-native language and registers here;
+// external languages (SysML, ...) register from their own contribution
+// modules so this core file stays free of per-language entries.
+
 DOCUMENT_CONTRIBUTIONS.register({
   id: 'dsl',
   label: 'LogicPilot DSL',
@@ -67,14 +73,6 @@ DOCUMENT_CONTRIBUTIONS.register({
   editorPanel: 'dsl',
   providesProjection: false,
   newFileTemplate: (fileName) => `model ${fileName.replace(/\.lp$/i, '')} {\n}\n`,
-});
-
-DOCUMENT_CONTRIBUTIONS.register({
-  id: 'sysml',
-  label: 'SysML v2',
-  extensions: ['.sysml'],
-  editorPanel: 'sysml',
-  providesProjection: true,
 });
 
 export function documentContributionFor(path: string | null | undefined): DocumentContribution | undefined {

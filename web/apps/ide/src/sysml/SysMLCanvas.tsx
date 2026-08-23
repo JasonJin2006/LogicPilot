@@ -86,6 +86,85 @@ function labelForKind(kind: SysMLVisualKind): string {
   return kind === 'unknown' ? 'element' : kind;
 }
 
+/** Standard stereotype header («part def», «requirement», ...) as used by
+ *  SysML graphical notation. */
+function stereotypeFor(element: SysMLElement): string {
+  const kind = labelForKind(element.kind);
+  return element.declaration === 'definition' ? `«${kind} def»` : `«${kind}»`;
+}
+
+const BADGE_MARK: Partial<Record<SysMLVisualKind, string>> = {
+  requirement: 'U',
+  analysis: 'A',
+  verification: 'V',
+};
+
+/** Node body drawn per standard SysML graphical notation: packages carry a
+ *  top-left tab, requirements/cases a ⓤ/A/V corner mark, actions and states
+ *  are rounded, use cases an ellipse, everything else a plain block. All
+ *  variants share one bounding box so layout and edges stay untouched. */
+function NodeBody({ kind, fill, stroke }: { kind: SysMLVisualKind; fill: string; stroke: string }) {
+  switch (kind) {
+    case 'package':
+      return (
+        <>
+          <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT - 10} y={10} rx={3} fill={fill} stroke={stroke} />
+          <path className="sysml-node-shape" d={`M0 10 V2 H30 L38 10 Z`} fill={fill} stroke={stroke} />
+        </>
+      );
+    case 'usecase':
+      return <ellipse className="sysml-node-shape" cx={NODE_WIDTH / 2} cy={NODE_HEIGHT / 2} rx={NODE_WIDTH / 2 - 2} ry={NODE_HEIGHT / 2 - 3} fill={fill} stroke={stroke} />;
+    case 'state':
+      return <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={17} fill={fill} stroke={stroke} />;
+    case 'action':
+      return (
+        <>
+          <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={9} fill={fill} stroke={stroke} />
+          {/* call-behavior rake arrow, top-right */}
+          <path d={`M${NODE_WIDTH - 26} 13 l9 5 l-9 5`} fill="none" stroke={stroke} strokeWidth={1.3} />
+        </>
+      );
+    default:
+      return <rect className="sysml-node-shape" width={NODE_WIDTH} height={NODE_HEIGHT} rx={4} fill={fill} stroke={stroke} />;
+  }
+}
+
+function CornerMark({ kind, fill, stroke }: { kind: SysMLVisualKind; fill: string; stroke: string }) {
+  const mark = BADGE_MARK[kind];
+  if (mark !== undefined) {
+    const cx = NODE_WIDTH - 15;
+    const cy = NODE_HEIGHT - 15;
+    return (
+      <>
+        <circle cx={cx} cy={cy} r={8.5} fill={fill} stroke={stroke} strokeWidth={1.2} />
+        <text x={cx} y={cy + 3.4} textAnchor="middle" fontSize={10} fontWeight={700} fill="#f5f8fb">{mark}</text>
+      </>
+    );
+  }
+  if (kind === 'constraint') {
+    return <text x={NODE_WIDTH - 10} y={NODE_HEIGHT - 9} textAnchor="end" fontSize={12} fill="#f5f8fb">{'{ }'}</text>;
+  }
+  if (kind === 'port' || kind === 'interface') {
+    // Socket notation: nested squares.
+    return (
+      <>
+        <rect x={NODE_WIDTH - 21} y={NODE_HEIGHT - 21} width={13} height={13} fill={fill} stroke={stroke} strokeWidth={1.1} />
+        <rect x={NODE_WIDTH - 17} y={NODE_HEIGHT - 17} width={5} height={5} fill={stroke} />
+      </>
+    );
+  }
+  if (kind === 'stakeholder') {
+    const cx = NODE_WIDTH - 15;
+    return (
+      <>
+        <circle cx={cx} cy={NODE_HEIGHT - 21} r={3.6} fill="none" stroke={stroke} strokeWidth={1.2} />
+        <path d={`M${cx - 7} ${NODE_HEIGHT - 8} q7 -9 14 0`} fill="none" stroke={stroke} strokeWidth={1.2} />
+      </>
+    );
+  }
+  return null;
+}
+
 function visibleInMode(kind: SysMLVisualKind, mode: SysMLViewMode): boolean {
   if (mode === 'all') return true;
   if (mode === 'structure') return ['package', 'part', 'item', 'port', 'interface', 'enum', 'occurrence', 'stakeholder', 'view', 'viewpoint'].includes(kind);
@@ -256,9 +335,12 @@ export function SysMLCanvas() {
                 onPointerDown={(event) => beginMove(event, element)}
                 onClick={(event) => { event.stopPropagation(); select(element.id); }}
               >
-                <rect width={NODE_WIDTH} height={NODE_HEIGHT} rx={7} fill={color.fill} stroke={color.stroke} />
-                <text x={12} y={20} className="sysml-node-kind">{labelForKind(element.kind)} · {element.declaration}</text>
-                <text x={12} y={43} className="sysml-node-name">{element.name}</text>
+                {/* uniform hit area: the notation shapes leave corners free */}
+                <rect width={NODE_WIDTH} height={NODE_HEIGHT} fill="transparent" />
+                <NodeBody kind={element.kind} fill={color.fill} stroke={color.stroke} />
+                <text x={12} y={24} className="sysml-node-kind">{stereotypeFor(element)}</text>
+                <text x={12} y={44} className="sysml-node-name">{element.name}</text>
+                <CornerMark kind={element.kind} fill={color.fill} stroke={color.stroke} />
               </g>
             );
           })}

@@ -3,6 +3,7 @@ import { Code2, RefreshCw } from 'lucide-react';
 import { SysMLCanvas } from './SysMLCanvas';
 import { sysmlLayoutPath } from './sysmlProjection';
 import { useSysMLStore } from '../state/sysmlStore';
+import { SysMLFileIcon } from './sysmlIcons';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { readProjectFile } from '../state/tauriFs';
@@ -83,7 +84,9 @@ export function SysMLWorkspace() {
     <div className="sysml-workspace">
       <div className="sysml-workspace-header">
         <div>
-          <span className="sysml-workspace-title">SysML v2 projection</span>
+          <span className="sysml-workspace-title">
+            <SysMLFileIcon size={13} /> SysML v2 projection
+          </span>
           <span className="sysml-workspace-path">{currentPath ?? activeFile}</span>
         </div>
         <div className="sysml-workspace-actions">

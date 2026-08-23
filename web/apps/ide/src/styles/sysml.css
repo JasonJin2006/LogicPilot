@@ -144,12 +144,14 @@
   cursor: var(--cursor-grab);
 }
 
-.sysml-node rect {
+/* Notation body shapes only (rect/path/ellipse carrying the shape class);
+   the transparent hit rect and corner marks stay unfiltered. */
+.sysml-node .sysml-node-shape {
   stroke-width: 1.4;
   filter: drop-shadow(0 2px 3px rgb(0 0 0 / 16%));
 }
 
-.sysml-node.selected rect {
+.sysml-node.selected .sysml-node-shape {
   stroke: var(--accent);
   stroke-width: 2.4;
 }

@@ -91,6 +91,5 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
   E2E 不受影响);
 - `.verify/` 为未跟踪 scratch 目录(E2E 输出/临时脚本);`.playwright-cli/` 是历史 console 日志;
 - 测试基线数字:IDE vitest 38 文件 248 用例、editor 73、kernel ctest 492(clean 时);
-- 截图人工复核:全局规则要求走 claude-vision-skill 的 `vision.js`,但该脚本当前
-  在本机缺失(`~/.zcode/skills` 为空);替代方案 = DOM 断言 + 像素统计
-  (`.verify/screenshot-sanity.mjs`),截图仍落在 `.verify/out/` 留给人工复核。
+- 截图人工复核:模型可直接用 Read 工具读 `.verify/out/*.png`(旧 vision.js
+  流程已按用户要求废弃);`.verify/screenshot-sanity.mjs` 的像素统计仍可作辅助。
