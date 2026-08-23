@@ -39,7 +39,11 @@ void print_usage() {
   fmt::print(
       "LogicPilot WebSocket gateway (lp-server)\n"
       "usage: lp-server [options]\n"
-      "  --model-file <path>  FlatBuffers IR (.lpir/.ir.bin); default is the\n"
+      "Executes any model the session loads; every method runtime streams\n"
+      "live telemetry.\n"
+      "  --model-file <path>  FlatBuffers IR (.lpir/.ir.bin); when omitted, the\n"
+      "                       gateway serves the built-in M/M/1 demo model\n"
+      "                       until a session loads one\n"
       "                       built-in M/M/1 model\n"
       "  --port <n>           listen port (default 8089; ws://127.0.0.1:P/sim)\n"
       "  --session-token <s>  require this token in the WebSocket /sim URL\n"
@@ -49,8 +53,8 @@ void print_usage() {
       "  --warmup <n>         warmup arrivals (default 400)\n"
       "  --max-events <n>     scheduler events per replication (default 50000000)\n"
       "  --confidence <x>     CI confidence level (default 0.95)\n"
-      "  --lambda <x>         arrival rate, built-in mm1 only (default 0.8)\n"
-      "  --mu <x>             service rate, built-in mm1 only (default 1.0)\n"
+      "  --lambda <x>         arrival rate for the built-in M/M/1 demo (default 0.8)\n"
+      "  --mu <x>             service rate for the built-in M/M/1 demo (default 1.0)\n"
       "  --speed <x>          wall-clock pacing multiplier (default 1.0)\n"
       "  --trace              mirror every binary frame as JSON on stdout\n"
       "  --help               show this message\n");
