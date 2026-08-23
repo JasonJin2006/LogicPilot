@@ -129,9 +129,24 @@ export function moveNode(document: ModelDocument, id: string, x: number, y: numb
 }
 
 export function renameNode(document: ModelDocument, id: string, name: string): ModelDocument {
+  const target = document.nodes.find((node) => node.id === id);
+  if (!target || target.name === name) {
+    return {
+      ...document,
+      nodes: document.nodes.map((node) => (node.id === id ? { ...node, name } : node)),
+    };
+  }
+  // Children link to their container by name, so a container rename must
+  // re-point them or they orphan out of the subgraph (canvas view, DSL
+  // generation). This cascade is the name-based identity tax until stable
+  // ElementRef linkage replaces it (workbench-architecture-plan.md §9.5).
   return {
     ...document,
-    nodes: document.nodes.map((node) => (node.id === id ? { ...node, name } : node)),
+    nodes: document.nodes.map((node) => {
+      if (node.id === id) return { ...node, name };
+      if (node.container === target.name) return { ...node, container: name };
+      return node;
+    }),
   };
 }
 

@@ -21,7 +21,7 @@ Registry 只是路由元数据的最小骨架**，Workbench 核心仍存在多�
 | F3 | 新建文件模板硬编码 `` path.endsWith('.lp') ? `model …{}` : '' `` | `layout/ExplorerPanel.tsx` | §13 | 中（已修） |
 | F4 | `validateDesModel()` 被 4 处直接 import：画布徽标、Properties、Run 门禁、AI preflight——Process 校验位于全局路径，新增校验器需改每个消费方 | `model/ModelCanvas.tsx`、`model/PropertiesPanel.tsx`、`run/RunDialog.tsx`、`ai/capabilities/logicpilot-modeling/compile.ts` | §9.1 全局 Process 校验迁为 DiagnosticProvider | 高（已修） |
 | F5 | AI 工具静态全量挂载：SYSML_TOOLS 与 DSL mutation 工具对任何活动文档都可见 | `ai/capabilities/logicpilot-modeling/registry.ts` | §7 按活动文档动态发现 | 高（已修） |
-| F6 | 容器身份是**名字**：`container` 字段存容器名，同名嵌套容器靠 LP3103 警告兜底 | `web/packages/editor/src/graph.ts`、`parseDsl.ts`、`dsl.ts`、`modelPatch.ts` | §13 稳定 ID，显示名不承担引用身份 | 高（未修） |
+| F6 | 容器身份是**名字**：`container` 字段存容器名，同名嵌套容器靠 LP3103 警告兜底；且 `renameNode` 不级联子节点——重命名容器会把全部子成员孤立出子图（画布视图、DSL 生成、布局键同步漂移） | `web/packages/editor/src/graph.ts`、`parseDsl.ts`、`dsl.ts`、`modelPatch.ts`、`project.ts nodePath` | §13 稳定 ID，显示名不承担引用身份 | 高（级联修复已落地；ElementRef 迁移待做） |
 | F7 | Palette 直接 import 固定 `BLOCK_DEFS/LIBRARIES` union | `layout/PalettePanel.tsx` | §9.3 PaletteProvider | 中（未修） |
 | F8 | `PanelId` 为含 `'sysml'/'sysmlProperties'` 的硬编码 union；第三种文档类型需要改 core 面板表 | `layout/panels.tsx` | §13 | 中（未修） |
 | F9 | Project Outline 面板自行解析 `.lp` 并按元素种类渲染（含 `path.endsWith('.lp')` 分支） | `layout/ModelInfoPanel.tsx` | §9.2 通用 Outline host | 中（未修） |
@@ -66,13 +66,25 @@ preflight。
 
 ## 4. 后续迁移切片（按计划 §9 顺序）
 
-1. **稳定 ElementRef**（F6）：editor 包 `container` 名字链路替换为稳定 ID；
-   这是跨视图/重命名/多文件的根，优先级最高；
+1. **稳定 ElementRef**（F6）：editor 包 `container` 名字链路替换为稳定 ID。
+   现状缓解：`renameNode` 已级联子节点 `container` 指针（浏览器实测
+   Drone→Falcon 重命名后 on_tick 子成员仍在子图内）；项目层已有
+   `sceneUid` + `manifest.containerIds` 稳定场景身份，布局键经
+   `nodePath()` 由名字链推导。剩余工作：`container` 字段改存容器节点 ID、
+   canvas view 的 `{kind,name}` 键改用 ID（重命名后残留旧名空视图标签）、
+   `diffModelDocuments` 匹配键迁移；这是跨视图/重命名/多文件的根，优先级最高；
 2. **通用 Outline host**（F9）：Project 面板降级为宿主，语义树由贡献方提供；
 3. **PaletteProvider**（F7）：块目录改为贡献注册，Palette 只做搜索/拖放宿主;
 4. **DiagramProvider 拆分**（F8/F10）：`ModelCanvas` 拆图引擎与语言投影，
    PanelId 动态化；
 5. **DocumentSession 统一**：`.lp` 文本、画布、模型树接同一权威 revision。
+
+### 3.4 容器重命名级联（修 F6 的正确性缺陷）
+
+`renameNode` 现在把名字链上的子成员一并重指向新名（与 `removeNode` 的级联语义
+一致），AI patch 的 `update_block` 重命名路径同样受益。验证：editor 68 vitest
+（含新增回归测试）+ IDE 234 vitest + Playwright 实测（导入 agents.lp →
+Drone 改名 Falcon → 子图内 on_tick 成员保留，截图复核）。
 
 ## 5. 本批验证证据
 

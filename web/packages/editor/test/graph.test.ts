@@ -185,4 +185,19 @@ describe('graph document operations', () => {
     expect(doc.nodes[0]!.params['state priority: float']).toBeUndefined();
     expect(doc.nodes[0]!.params['state kind: int']).toBe(3);
   });
+
+  it('renaming a container keeps its children linked (name-based container)', () => {
+    let doc = createDocument();
+    doc = addNode(doc, { kind: 'process', name: 'Flow', x: 0, y: 0 });
+    const flowId = doc.nodes[0]!.id;
+    doc = addNode(doc, { kind: 'source', name: 'S', x: 1, y: 1, container: 'Flow' });
+    doc = addNode(doc, { kind: 'sink', name: 'D', x: 2, y: 1, container: 'Flow' });
+    doc = renameNode(doc, flowId, 'Pipeline');
+    const flow = doc.nodes.find((node) => node.id === flowId)!;
+    expect(flow.name).toBe('Pipeline');
+    // Children must follow the rename, or they orphan out of the subgraph.
+    for (const child of doc.nodes.filter((node) => node.kind !== 'process')) {
+      expect(child.container).toBe('Pipeline');
+    }
+  });
 });
