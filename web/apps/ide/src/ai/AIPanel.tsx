@@ -594,7 +594,10 @@ export function AIPanel() {
     appendConversation(currentAssistantScope(), {
       user: requestPrompt,
       assistant:
-        '我可以继续和你对话。当前窗口还没有打开 Workspace，所以暂时不能创建、修改、编译或运行模型。请先打开一个文件夹或创建 Workspace，然后我就能继续处理刚才的请求。',
+        '当前没有打开工程，所以 .lp 模型的创建/修改/编译/运行暂时不可用。可以这样开始：' +
+        '菜单 File > New Project 新建工程，或 File > Open 打开 .lpproj/.lp；' +
+        '外部 .sysml 文件可直接从 Explorer 打开，投影/执行/降载（lowering）不需要工程。' +
+        '另外，当前未配置在线模型，我只能响应内置的确定性建模指令（例如“建一个 M/M/c 模型，服务台 2 个”），自由对话不会触发建模。',
       patch: { version: 1, operations: [] },
       outcome: 'completed',
     });
@@ -656,7 +659,7 @@ export function AIPanel() {
     const context = buildAssistantContext({
       projectName: workspaceOpen
         ? (workspaceName ?? projectPath ?? document.name)
-        : '当前未打开工作区。你仍然可以正常对话；创建或修改模型前请先打开工作区。',
+        : '当前未打开工程。创建/修改/编译/运行 .lp 模型前请先新建或打开工程；外部 .sysml 文件可直接打开，无需工程。',
       document: current,
       workspaceRoot: projectPath ?? undefined,
       selectedId: useModelStore.getState().selectedId,
