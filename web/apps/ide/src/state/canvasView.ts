@@ -61,6 +61,55 @@ function sameView(a: CanvasView | null, b: CanvasView | null): boolean {
   return a !== null && b !== null && a.kind === b.kind && a.name === b.name;
 }
 
+/** Re-key the open views after one document revision transition. Views are
+ *  keyed by {kind, name}, so a container rename must carry its tab along
+ *  (undo carries it back) and a removed container must close its tab -
+ *  otherwise a stale empty tab lingers under the old name. Name-keyed by
+ *  necessity: stable ElementRef identity replaces this (plan §9.5). */
+export function syncCanvasViewsWithDocument(
+  next: ModelDocument,
+  previous: ModelDocument,
+): void {
+  const state = useCanvasView.getState();
+  const previousById = new Map(previous.nodes.map((node) => [node.id, node]));
+  const renames = new Map<string, string>();
+  for (const node of next.nodes) {
+    const before = previousById.get(node.id);
+    if (before && before.kind === node.kind && before.name !== node.name) {
+      renames.set(`${node.kind}\u0000${before.name}`, node.name);
+    }
+  }
+  const exists = new Set(next.nodes.map((node) => `${node.kind}\u0000${node.name}`));
+  const follow = (view: CanvasView): CanvasView => {
+    const renamed = renames.get(`${view.kind}\u0000${view.name}`);
+    return renamed === undefined ? view : { kind: view.kind, name: renamed };
+  };
+  const alive = (view: CanvasView) => exists.has(`${view.kind}\u0000${view.name}`);
+  // A rename onto an already-open name collapses into that tab instead of
+  // duplicating its key.
+  const seen = new Set<string>();
+  const views: CanvasView[] = [];
+  for (const candidate of state.views.map(follow)) {
+    if (!alive(candidate)) continue;
+    const key = `${candidate.kind}\u0000${candidate.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    views.push(candidate);
+  }
+  let view = state.view === null ? null : follow(state.view);
+  if (view !== null && !alive(view)) {
+    view = views.length > 0 ? views[views.length - 1]! : null;
+  }
+  const unchanged =
+    views.length === state.views.length &&
+    views.every((entry, index) => sameView(entry, state.views[index] ?? null)) &&
+    sameView(view, state.view);
+  if (unchanged) {
+    return;
+  }
+  useCanvasView.setState({ views, view });
+}
+
 export const useCanvasView = create<CanvasViewState>((set) => ({
   views: [],
   rootOpen: false,

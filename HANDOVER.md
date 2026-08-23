@@ -23,13 +23,12 @@
 | --- | --- |
 | `93b7f3d` | ① `.lp` 注册为 Document Contribution,Explorer 分类/图标/新建模板/标签栏路由全部经注册表解析(F1/F2/F3);② 新增 `workbench/diagnostics.ts` DiagnosticProvider 注册表,DES 图校验注册为 dsl 类型 provider,画布/Properties/RunDialog/AI preflight 四处消费方改走 seam(F4);③ AI 工具按活动文档作用域发现:`AgentToolScope.documentType`,sysml→仅 SYSML 投影工具,dsl/null→建模工具,无 scope 保持全量兼容(F5);④ 修复 E2E 文件选择器 accept 缺 `.sysml` 的 5 处失配 |
 | `81e332f` | `editor/graph.ts renameNode` 级联子节点 container 指针——修复"重命名容器导致子成员孤立出子图/DSL/布局键"的正确性缺陷;含 editor 回归测试与 Playwright 实测 |
-| (本轮,待提交) | **F7 PaletteProvider**:新增 `workbench/palette.ts` 注册表 + `model/paletteContributions.ts` 注册 7 个内建库(process 库只登记 executable 项),`PalettePanel.tsx` 改为纯宿主(不再 import BLOCK_DEFS/LIBRARIES union);新增 `workbench/palette.test.ts`;typecheck+237 vitest 通过,E2E 结果见提交前检查 |
+| `9110586` | **F7 PaletteProvider**:新增 `workbench/palette.ts` 注册表 + `model/paletteContributions.ts` 注册 7 个内建库(process 库只登记 executable 项),`PalettePanel.tsx` 改为纯宿主;新增 `workbench/palette.test.ts`(237 vitest) |
+| (本轮) | **A1 canvasView 同步**:`state/canvasView.ts` 新增 `syncCanvasViewsWithDocument(next, previous)`——容器改名时打开的视图标签跟随新名(undo 跟回旧名,改名撞已有标签去重),容器删除时关闭标签;接入 `App.tsx` 既有 modelStore 订阅,统一覆盖 renameBlock/AI patch/undo/redo。新增 5 个 vitest(共 242)+ `.verify/rename-tab-check.mjs` 浏览器实测 PASS |
 
 ## 4. 待办(按优先级,对应审查文档 §4)
 
-### A. 收尾中的小事(先做)
-- **容器改名后残留旧名空视图标签**:`state/canvasView.ts` 的 view 以 `{kind,name}` 为键;`modelStore.renameBlock` 改名容器时应同步更新 canvasView 中匹配该名的 open views(或关闭)。截图证据:`.verify/out/rename-container.png` 中 Model/Drone/Falcon 三 tab 并存。注意这仍是名字键的补丁,ElementRef 迁移后应改为 ID 键。
-- 提交本轮 palette 切片(若交接时仍未提交):文件为 `web/apps/ide/src/workbench/palette.ts`、`palette.test.ts`、`src/model/paletteContributions.ts`、`src/layout/PalettePanel.tsx`。
+### A. 收尾中的小事 —— ✅ 已全部完成(palette 见 §3,A1 见上)
 
 ### B. F6 稳定 ElementRef(架构根,优先级最高但工程量大)
 现状:`ModelNode.container` 存容器**名**(`web/packages/editor/src/graph.ts`);
@@ -80,6 +79,11 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
 
 ## 7. 当前环境快照
 
-- 后台服务:gateway(lpcli serve mm1.lp :8089)、vite(:5173)以 DSH 后台 job 运行中,断线就按 §5 重启;
+- 后台服务:gateway(lpcli serve mm1.lp :8089)、vite(:5173)已重启;注意本机
+  shell 有 HTTP(S)_PROXY=127.0.0.1:7890,curl 探活必须加 `--noproxy "*"`(浏览器
+  E2E 不受影响);
 - `.verify/` 为未跟踪 scratch 目录(E2E 输出/临时脚本);`.playwright-cli/` 是历史 console 日志;
-- 测试基线数字:IDE vitest 36 文件 237 用例、editor 68、kernel ctest 492(clean 时)。
+- 测试基线数字:IDE vitest 36 文件 242 用例、editor 68、kernel ctest 492(clean 时);
+- 截图人工复核:全局规则要求走 claude-vision-skill 的 `vision.js`,但该脚本当前
+  在本机缺失(`~/.zcode/skills` 为空);替代方案 = DOM 断言 + 像素统计
+  (`.verify/screenshot-sanity.mjs`),截图仍落在 `.verify/out/` 留给人工复核。

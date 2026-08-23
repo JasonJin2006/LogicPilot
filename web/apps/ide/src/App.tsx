@@ -17,7 +17,7 @@ import { StatusBar } from './run/StatusBar';
 import { useModelStore } from './state/modelStore';
 import { useLayoutStore } from './state/layoutStore';
 import { useProjectStore } from './state/projectStore';
-import { useCanvasView } from './state/canvasView';
+import { useCanvasView, syncCanvasViewsWithDocument } from './state/canvasView';
 import { useConnectionStore } from './state/connectionStore';
 import { useUiStore } from './state/uiStore';
 import { ThemeManager } from './theme/ThemeManager';
@@ -83,6 +83,9 @@ export default function App() {
     const unsubscribe = useModelStore.subscribe((state, previous) => {
       if (state.document !== previous.document) {
         useProjectStore.getState().markDirty();
+        // Renames/removals must re-key or close the open container tabs
+        // (undo/redo included), or stale empty views linger.
+        syncCanvasViewsWithDocument(state.document, previous.document);
       }
     });
     const { bundle } = useProjectStore.getState();
