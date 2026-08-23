@@ -51,7 +51,12 @@ export interface SysMLParseResult {
 }
 
 const DECLARATION =
-  /^(package|part|item|port|interface|requirement|action|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)\s+(?:(def|usage)\s+)?([A-Za-z_][A-Za-z0-9_]*)/;
+  /^(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)\s+(?:(def|usage)\s+)?([A-Za-z_][A-Za-z0-9_]*)/;
+
+/** `calc` is the common shorthand; both project to the 'calculation' kind. */
+function normalizeKind(raw: string): SysMLVisualKind {
+  return (raw === 'calc' ? 'calculation' : raw) as SysMLVisualKind;
+}
 
 // Reference tokens exclude terminators (';') so they survive line syntax.
 const REFERENCE = '[A-Za-z_][A-Za-z0-9_.:]*';
@@ -170,7 +175,7 @@ export function parseSysMLSource(source: string): SysMLParseResult {
       const ownerId = owner ? elementIdFor(owner.kind, owner.qualifiedName) : undefined;
 
       if (declaration && !/^\s*[{}]/.test(indented)) {
-        const kind = declaration[1] as SysMLVisualKind;
+        const kind = normalizeKind(declaration[1]!);
         const declarationKind =
           declaration[2] === 'def' ? 'definition' : declaration[2] === 'usage' ? 'usage' : 'unknown';
         const name = declaration[3]!;

@@ -13,9 +13,15 @@ export type SysMLEditResult =
 
 const KIND_TOKENS: ReadonlySet<string> = new Set([
   'package', 'part', 'item', 'port', 'interface', 'requirement', 'action',
-  'state', 'analysis', 'verification', 'attribute', 'constraint', 'usecase',
-  'view', 'viewpoint', 'enum', 'occurrence', 'stakeholder', 'flow',
+  'calculation', 'calc', 'state', 'analysis', 'verification', 'attribute',
+  'constraint', 'usecase', 'view', 'viewpoint', 'enum', 'occurrence',
+  'stakeholder', 'flow',
 ]);
+
+/** `calc` writes the full keyword so identity stays canonical. */
+function canonicalKindToken(kind: string): string {
+  return kind === 'calc' ? 'calculation' : kind;
+}
 
 function findElement(projection: SysMLProjection, query: string) {
   const normalized = query.trim().toLowerCase();
@@ -64,8 +70,8 @@ export function insertElement(
   projection: SysMLProjection,
   options: InsertElementOptions,
 ): SysMLEditResult & { elementId?: string } {
-  const kindToken = options.kind.trim();
-  if (!KIND_TOKENS.has(kindToken)) {
+  const kindToken = canonicalKindToken(options.kind.trim());
+  if (!KIND_TOKENS.has(canonicalKindToken(options.kind.trim()))) {
     return { ok: false, error: `unsupported element kind '${options.kind}'` };
   }
   const name = options.name.trim();

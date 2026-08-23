@@ -9,6 +9,10 @@ import {
   type SysMLProjection,
   type SysMLPosition,
 } from '../sysml/sysmlProjection';
+import {
+  runExecutionTarget,
+  type TraceStep,
+} from '../sysml/sysmlExecution';
 
 export type SysMLViewMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';
 
@@ -67,6 +71,12 @@ interface SysMLState {
   /** The source currently has error-level diagnostics; projection/layout hold
    *  the LAST VALID snapshot until the errors are fixed (plan §8 S1). */
   parseDirty: boolean;
+  /** Execution trace bound to one revision (plan §8 S2); cleared whenever a
+   *  new revision arrives so stale results are never shown as current. */
+  execution: { targetId: string; sourceHash: string; steps: TraceStep[]; result: number | null } | null;
+  runError: string | null;
+  runTarget: (targetId: string) => void;
+  clearExecution: () => void;
   past: SysMLLayout[];
   future: SysMLLayout[];
   load: (path: string, source: string, serialized?: string) => void;
@@ -91,6 +101,8 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   viewMode: 'all',
   layoutDirty: false,
   parseDirty: false,
+  execution: null,
+  runError: null,
   past: [],
   future: [],
   load: (path, source, serialized) => {
@@ -107,6 +119,8 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
       viewMode: 'all',
       layoutDirty: false,
       parseDirty: projection.diagnostics.some((d) => d.severity === 'error'),
+      execution: null,
+      runError: null,
       past: [],
       future: [],
     });
@@ -138,11 +152,32 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
       selectedId: null,
       layoutDirty: false,
       parseDirty: false,
+      execution: null,
+      runError: null,
       past: [],
       future: [],
     });
   },
   select: (id) => set({ selectedId: id }),
+  runTarget: (targetId) => {
+    const state = get();
+    if (!state.projection) return;
+    const result = runExecutionTarget(state.source, state.projection, targetId);
+    if (!result.ok || !result.steps) {
+      set({ runError: result.error ?? 'execution failed', execution: null });
+      return;
+    }
+    set({
+      execution: {
+        targetId,
+        sourceHash: state.projection.sourceHash,
+        steps: result.steps,
+        result: result.result ?? null,
+      },
+      runError: null,
+    });
+  },
+  clearExecution: () => set({ execution: null, runError: null }),
   setViewMode: (mode) => set({ viewMode: mode, selectedId: null }),
   checkpoint: () => {
     const state = get();
@@ -184,5 +219,5 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   },
   markLayoutPersisted: () => set({ layoutDirty: false }),
   clear: () =>
-    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, past: [], future: [] }),
+    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, execution: null, runError: null, past: [], future: [] }),
 }));

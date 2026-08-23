@@ -344,3 +344,29 @@
   font-size: 10px;
   font-weight: 500;
 }
+
+.sysml-trace {
+  position: absolute;
+  z-index: 3;
+  left: 10px;
+  bottom: 10px;
+  max-width: min(520px, 60%);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-strong) 94%, transparent);
+  box-shadow: var(--shadow);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.sysml-trace .sysml-trace-head {
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.sysml-run-error {
+  border-color: color-mix(in srgb, #f0a294 55%, transparent);
+}

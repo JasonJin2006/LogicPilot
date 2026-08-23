@@ -21,6 +21,7 @@ export type SysMLVisualKind =
   | 'interface'
   | 'requirement'
   | 'action'
+  | 'calculation'
   | 'state'
   | 'analysis'
   | 'verification'

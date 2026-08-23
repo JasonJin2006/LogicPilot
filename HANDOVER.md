@@ -33,6 +33,7 @@
 | (本轮) | **D2/SysML AI typed edits**:新建 `sysmlEdits.ts`(insertElement/renameElement/addRelationStatement 纯函数——嵌套插入带缩进、单行 `{ }` 父块自动展开、rename 只替换 nameSpan token、同作用域重名拒绝、括号失衡拒追关系);工具侧 `commitEdit` 写前用 parser 重验证(会引入 SY error 的输出直接拒绝且不动文件),读取走权威存储而非滞后的 store.source。新增 7 个纯函数测试 + 4 个真实 store 集成测试(共 270 vitest) |
 | (本轮) | **D3/SysML 语言服务**:新建 `sysmlLanguage.ts`——completionsAt(by/to/from 后给元素名,否则按前缀过滤声明关键字)、hoverAt(最内层包含块)、definitionAt(声明处=自身;引用词走唯一名/::尾解析)、referencesOf、renameAt;uiStore 新增 sourceReveal 请求,DslEditor 聚焦并选中 span(浏览器自动滚动到可见),属性面板与画布选中卡加 Open in source 按钮;AI 侧新增 find_sysml_definition/find_sysml_references。renameElement 升级:除声明 token 外,所有能解析到该元素的裸名/限定尾引用一并替换(其他作用域同名不受影响)。语言测试 6 例(共 276 vitest) |
 | (本轮) | **S1 补齐**:① `DocumentContribution.completions(source,offset)` 缝隙,SysML 贡献方注册(元素上下文/关键字),DslEditor 通用 Ctrl+Space 弹层(方向键/Enter/Esc、输入续排、点击接受,disk 模式同样落盘);② `sysmlProjectIndex.ts` 聚合全部 .sysml——唯一名/限定名/::尾三级解析,歧义返回 null,诊断按路径聚合;find_sysml_definition 增加 projectFiles 列表与跨文件回退。新增 4 索引测试 + 语言上下文用例扩展(共 280 vitest);`.verify/completion-check.mjs` 实测弹层→点选 Power→token 落盘 PASS |
+| (本轮) | **S2-a/SysML 语义执行 0.1**:新建 `sysmlExecution.ts`——`extractExecutionTargets`(action/calculation/state/analysis/verification usage → 显式 target,含不支持原因;纯结构模型为空表)+ 版本化 `SYSML_CONFORMANCE_MATRIX`(supported/planned/unsupported 三档,测试钉住)+ 无 eval 的递归下降表达式求值器(优先级/括号/一元负/兄弟引用/除零与未知标识符确定性报错带行号);parser 新增 calculation/calc 关键字(calc 归一化);store 增加 execution/runError(runTarget),任何新 revision 到达即失效;画布工具条仅当存在受支持目标时渲染目标选择+Run,trace 条显示步骤/result/revision。6 个执行测试(共 286 vitest);`.verify/run-check.mjs` 实测计算 result=38/action 序列/纯需求模型零入口 PASS |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -62,6 +63,8 @@
 - ✅ **D3 语言服务**(见 §3):`sysml/sysmlLanguage.ts`(completionsAt/hoverAt/definitionAt/referencesOf/renameAt)+ uiStore `sourceReveal` 管道(属性面板/画布选中小卡 "Open in source" 直达 token)+ AI 导航工具 find_sysml_definition/find_sysml_references;rename 升级为**引用同步替换**(逐词重解析判定归属,跨作用域同名不动);
 - ✅ **S1 收尾**(见 §3):`DocumentContribution.completions` 缝隙 + DslEditor 通用补全弹层(Ctrl+Space);`sysmlProjectIndex.ts` 多文件项目级索引(definition 跨文件回退、歧义即 null、诊断带路径聚合);
 - **S1 至此功能面补齐**。遗留(非阻塞):跨文件 relation 抽取(需要合并虚拟文档)、索引未接入 referencesOf。
+- ✅ **S2-a 语义执行子集 0.1**(见 §3):ExecutionTargetRef 提取 + 版本化 conformance matrix + 表达式/calculation/action 赋值序列解释器 + trace 绑定 revision;纯结构/需求模型零 Run 入口(验收红线已测);
+- S2 剩余:state 转移与 time trigger(0.2 计划)、lowering 到 Statechart/DEVS runtime、evidence 持久化、外部 analysis adapter。
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)

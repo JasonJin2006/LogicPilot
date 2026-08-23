@@ -3,6 +3,7 @@ import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
+import { extractExecutionTargets } from './sysmlExecution';
 import type { SysMLElement, SysMLPosition, SysMLRelationKind, SysMLVisualKind } from './sysmlProjection';
 
 const NODE_WIDTH = 196;
@@ -16,6 +17,7 @@ const COLORS: Record<SysMLVisualKind, { fill: string; stroke: string }> = {
   interface: { fill: '#3e3448', stroke: '#d5a7ef' },
   requirement: { fill: '#4a3528', stroke: '#f0bc78' },
   action: { fill: '#333b55', stroke: '#9fb7f7' },
+  calculation: { fill: '#2f3e46', stroke: '#9fd6c0' },
   state: { fill: '#3d344d', stroke: '#c7a7ef' },
   analysis: { fill: '#3a3c2c', stroke: '#d5d788' },
   verification: { fill: '#43312f', stroke: '#f0a294' },
@@ -180,6 +182,10 @@ export function SysMLCanvas() {
   const layout = useSysMLStore((state) => state.layout);
   const parseDirty = useSysMLStore((state) => state.parseDirty);
   const currentPath = useSysMLStore((state) => state.path);
+  const source = useSysMLStore((state) => state.source);
+  const execution = useSysMLStore((state) => state.execution);
+  const runError = useSysMLStore((state) => state.runError);
+  const runTarget = useSysMLStore((state) => state.runTarget);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
   const pastLength = useSysMLStore((state) => state.past.length);
@@ -192,6 +198,7 @@ export function SysMLCanvas() {
   const undo = useSysMLStore((state) => state.undo);
   const redo = useSysMLStore((state) => state.redo);
   const [camera, setCamera] = useState<Camera>({ scale: 1, x: 0, y: 0 });
+  const [runTargetId, setRunTargetId] = useState<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const documentRef = useRef<SVGSVGElement>(null);
 
@@ -218,6 +225,11 @@ export function SysMLCanvas() {
     [projection, visibleElements, positions],
   );
   const selected = projection?.elements.find((element) => element.id === selectedId) ?? null;
+  const execTargets = useMemo(
+    () => (projection === null ? [] : extractExecutionTargets(source, projection)),
+    [projection, source],
+  );
+  const supportedTargets = execTargets.filter((target) => target.supported);
 
   if (!projection || !layout) {
     return <div className="sysml-empty">Open a .sysml file to visualize its model.</div>;
@@ -293,7 +305,47 @@ export function SysMLCanvas() {
           <option value="traceability">Traceability</option>
         </select>
         <span className="sysml-canvas-count">{visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length} relations</span>
+        {supportedTargets.length > 0 && (
+          <>
+            <select
+              className="sysml-view-mode"
+              aria-label="Execution target"
+              value={runTargetId ?? supportedTargets[0]!.id}
+              onChange={(event) => setRunTargetId(event.target.value)}
+            >
+              {supportedTargets.map((target) => (
+                <option key={target.id} value={target.id}>{target.qualifiedName}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              title="Execute the selected target (subset 0.1)"
+              onClick={() => {
+                const id = runTargetId ?? supportedTargets[0]!.id;
+                setRunTargetId(id);
+                runTarget(id);
+              }}
+            >
+              Run
+            </button>
+          </>
+        )}
       </div>
+      {runError !== null && (
+        <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
+      )}
+      {execution !== null && (
+        <div className="sysml-trace">
+          <div className="sysml-trace-head">
+            trace · {execution.steps.length} step(s){execution.result !== null && ` · result ${execution.result}`} · rev {execution.sourceHash}
+          </div>
+          {execution.steps.map((step) => (
+            <div key={step.index} className="sysml-trace-step">
+              [{step.index + 1}] {step.description}{step.line !== undefined && ` (line ${step.line})`} → {step.value}
+            </div>
+          ))}
+        </div>
+      )}
       <svg
         ref={documentRef}
         className="sysml-svg"
