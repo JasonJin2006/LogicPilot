@@ -21,7 +21,6 @@ import {
   Pin,
   RotateCcw,
   SendHorizontal,
-  Settings2,
   ShieldCheck,
   Sparkles,
   Square,
@@ -177,8 +176,8 @@ export function AIPanel() {
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState('');
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('Workspace');
-  const [toolsEnabled, setToolsEnabled] = useState(true);
-  const [sourceEditingEnabled, setSourceEditingEnabled] = useState(false);
+  const toolsEnabled = useUiStore((s) => s.aiToolsEnabled);
+  const sourceEditingEnabled = useUiStore((s) => s.aiSourceEditingEnabled);
   const [modelLabel, setModelLabel] = useState('Auto');
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -1854,43 +1853,6 @@ export function AIPanel() {
                   <strong>设置</strong>
                   <small>打开 Settings → AI &amp; Models 切换 provider 或模型</small>
                 </button>
-              </div>
-            </details>
-            <details className="ai-composer-select ai-configure-tools">
-              <summary title="配置工具">
-                <Settings2 size={14} />
-                <span>配置</span>
-              </summary>
-              <div className="ai-tools-popover ai-select-popover">
-                <button
-                  type="button"
-                  className="ai-tool-toggle"
-                  onClick={() => setToolsEnabled((enabled) => !enabled)}
-                >
-                  <span>
-                    <strong>LogicPilot 建模</strong>
-                    <small>检查、编辑、编译与模拟</small>
-                  </span>
-                  <span className={`ai-toggle ${toolsEnabled ? 'on' : ''}`} aria-hidden>
-                    <i />
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="ai-tool-toggle"
-                  onClick={() => setSourceEditingEnabled((enabled) => !enabled)}
-                >
-                  <span>
-                    <strong>源代码编辑</strong>
-                    <small>读取并修改工作区内的受限源文件</small>
-                  </span>
-                  <span className={`ai-toggle ${sourceEditingEnabled ? 'on' : ''}`} aria-hidden>
-                    <i />
-                  </span>
-                </button>
-                <p className="ai-tools-note">
-                  配置后 MCP 工具会被自动发现。
-                </p>
               </div>
             </details>
             {conversation.length > 0 && (

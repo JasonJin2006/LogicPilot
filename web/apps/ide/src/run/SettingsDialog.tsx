@@ -36,6 +36,10 @@ export function SettingsDialog() {
   const connect = useConnectionStore((state) => state.connect);
   const disconnect = useConnectionStore((state) => state.disconnect);
   const closeSettings = useUiStore((state) => state.closeSettings);
+  const aiToolsEnabled = useUiStore((state) => state.aiToolsEnabled);
+  const aiSourceEditingEnabled = useUiStore((state) => state.aiSourceEditingEnabled);
+  const setAiToolsEnabled = useUiStore((state) => state.setAiToolsEnabled);
+  const setAiSourceEditingEnabled = useUiStore((state) => state.setAiSourceEditingEnabled);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
 
@@ -427,6 +431,38 @@ export function SettingsDialog() {
                   browser. Model IDs are editable, so new and self-hosted models do not require an
                   app update.
                 </p>
+                <div className="settings-group">
+                  <div className="settings-control-label">
+                    <strong>Copilot 工具</strong>
+                    <span>默认启用建模工具;源代码编辑默认关闭。MCP 工具配置后自动发现。</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="ai-tool-toggle settings-ai-tool-toggle"
+                    onClick={() => setAiToolsEnabled(!aiToolsEnabled)}
+                  >
+                    <span>
+                      <strong>LogicPilot 建模</strong>
+                      <small>检查、编辑、编译与模拟</small>
+                    </span>
+                    <span className={`ai-toggle ${aiToolsEnabled ? 'on' : ''}`} aria-hidden>
+                      <i />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="ai-tool-toggle settings-ai-tool-toggle"
+                    onClick={() => setAiSourceEditingEnabled(!aiSourceEditingEnabled)}
+                  >
+                    <span>
+                      <strong>源代码编辑</strong>
+                      <small>读取并修改工作区内的受限源文件</small>
+                    </span>
+                    <span className={`ai-toggle ${aiSourceEditingEnabled ? 'on' : ''}`} aria-hidden>
+                      <i />
+                    </span>
+                  </button>
+                </div>
               </section>
             )}
 

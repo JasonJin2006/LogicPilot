@@ -50,6 +50,11 @@ interface UiState {
   closeConfirm: () => void;
   openInfo: (title: string, body: string) => void;
   closeInfo: () => void;
+  /** AI panel tool switches (here so Settings can change them too). */
+  aiToolsEnabled: boolean;
+  aiSourceEditingEnabled: boolean;
+  setAiToolsEnabled: (enabled: boolean) => void;
+  setAiSourceEditingEnabled: (enabled: boolean) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -107,4 +112,8 @@ export const useUiStore = create<UiState>((set) => ({
   closeConfirm: () => set({ confirm: null }),
   openInfo: (title, body) => set({ info: { title, body } }),
   closeInfo: () => set({ info: null }),
+  aiToolsEnabled: true,
+  aiSourceEditingEnabled: false,
+  setAiToolsEnabled: (aiToolsEnabled) => set({ aiToolsEnabled }),
+  setAiSourceEditingEnabled: (aiSourceEditingEnabled) => set({ aiSourceEditingEnabled }),
 }));
