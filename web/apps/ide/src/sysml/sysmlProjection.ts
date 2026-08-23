@@ -11,6 +11,7 @@ import {
   elementIdFor,
   fnv1aHex,
   parseSysMLSource,
+  type RelationTrigger,
 } from './sysmlParser';
 
 export type SysMLVisualKind =
@@ -82,6 +83,9 @@ export interface SysMLRelation {
   to: string;
   label: string;
   line: number;
+  /** Time trigger carried by a `transition ... after/at <n>` statement
+   *  (execution subset 0.2); absent for plain successions. */
+  trigger?: RelationTrigger;
 }
 
 export interface SysMLProjectionDiagnostic {
@@ -174,6 +178,7 @@ export function projectSysML(source: string): SysMLProjection {
       to: to.id,
       label: candidate.label,
       line: candidate.line,
+      ...(candidate.trigger ? { trigger: candidate.trigger } : {}),
     });
   }
 

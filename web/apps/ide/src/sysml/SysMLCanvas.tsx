@@ -320,7 +320,7 @@ export function SysMLCanvas() {
             </select>
             <button
               type="button"
-              title="Execute the selected target (subset 0.1)"
+              title="Execute the selected target (subset 0.2: expressions, action successions, state/time-trigger machines)"
               onClick={() => {
                 const id = runTargetId ?? supportedTargets[0]!.id;
                 setRunTargetId(id);
@@ -342,7 +342,9 @@ export function SysMLCanvas() {
           </div>
           {execution.steps.map((step) => (
             <div key={step.index} className="sysml-trace-step">
-              [{step.index + 1}] {step.description}{step.line !== undefined && ` (line ${step.line})`} → {step.value}
+              [{step.index + 1}] {step.description}
+              {step.time !== undefined && ` · t=${step.time}`}
+              {step.line !== undefined && ` (line ${step.line})`} → {step.value}
             </div>
           ))}
         </div>

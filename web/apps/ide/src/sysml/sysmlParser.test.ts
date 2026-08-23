@@ -101,4 +101,27 @@ requirement R;
     expect(parsed.diagnostics.some((d) => d.code === 'SY0005')).toBe(true);
     expect(parsed.elements).toHaveLength(0);
   });
+
+  it('captures numeric after/at triggers on transition statements (execution 0.2)', () => {
+    const parsed = parseSysMLSource(
+      `state def M {\n  state a;\n  state b;\n  state c;\n  transition a then b after 5 s;\n  transition b then c at 30 min;\n  transition c then a;\n}\n`,
+    );
+    const transitions = parsed.pending.filter((relation) => relation.kind === 'transitions');
+    expect(transitions).toHaveLength(3);
+    expect(transitions[0]!.trigger).toEqual({ kind: 'after', amount: 5, unit: 's' });
+    expect(transitions[1]!.trigger).toEqual({ kind: 'at', amount: 30, unit: 'min' });
+    expect(transitions[2]!.trigger).toBeUndefined();
+    // No syntax diagnostics for any of the supported forms.
+    expect(parsed.diagnostics).toHaveLength(0);
+  });
+
+  it('rejects unsupported trigger forms explicitly instead of truncating them (SY0001)', () => {
+    const parsed = parseSysMLSource(
+      `state def M {\n  state a;\n  state b;\n  transition a when x > 0 then b;\n  transition b then a after timeout;\n}\n`,
+    );
+    const errors = parsed.diagnostics.filter((d) => d.code === 'SY0001');
+    expect(errors).toHaveLength(2); // guard clause + expression duration
+    expect(errors[0]!.line).toBe(4);
+    expect(errors[1]!.line).toBe(5);
+  });
 });

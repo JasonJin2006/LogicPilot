@@ -36,12 +36,22 @@ export interface ParsedElement {
   nameSpan: SysMLSourceSpan;
 }
 
+/** A time trigger on a transition (`after 5 s` / `at 10`). Execution 0.2
+ *  accepts NUMERIC literal amounts only; units are recorded verbatim and
+ *  never converted - mixing units in one machine is not interpreted. */
+export interface RelationTrigger {
+  kind: 'after' | 'at';
+  amount: number;
+  unit?: string;
+}
+
 export interface PendingRelation {
   kind: SysMLRelationKind;
   from: string;
   to: string;
   label: string;
   line: number;
+  trigger?: RelationTrigger;
 }
 
 export interface SysMLParseResult {
@@ -82,8 +92,28 @@ const RELATION_LINE_PATTERNS: Array<{
     build: (m) => ({ kind: 'connects', from: m[1]!, to: m[2]!, label: 'connects' }),
   },
   {
-    re: new RegExp(`^transition\\s+(?:first\\s+)?(${REFERENCE})\\s+then\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'transitions', from: m[1]!, to: m[2]!, label: 'transitions' }),
+    // Anchored to end-of-statement so unsupported trigger forms (guard
+    // clauses, expression durations) fall through to SY0001 instead of
+    // being silently truncated. Numeric literal durations only (0.2).
+    re: new RegExp(
+      `^transition\\s+(?:first\\s+)?(${REFERENCE})\\s+then\\s+(${REFERENCE})` +
+        `(?:\\s+(after|at)\\s+([0-9]+(?:\\.[0-9]+)?)\\s*([A-Za-z_][A-Za-z0-9_]*)?)?\\s*;?$`,
+    ),
+    build: (m) => ({
+      kind: 'transitions' as const,
+      from: m[1]!,
+      to: m[2]!,
+      label: 'transitions',
+      ...(m[3]
+        ? {
+            trigger: {
+              kind: m[3] as 'after' | 'at',
+              amount: Number(m[4]),
+              ...(m[5] ? { unit: m[5] } : {}),
+            },
+          }
+        : {}),
+    }),
   },
   {
     re: new RegExp(`^trace\\s+(${REFERENCE})\\s+(?:to|from)\\s+(${REFERENCE})`),
