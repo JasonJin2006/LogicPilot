@@ -37,9 +37,11 @@ export function insertBlockAt(
     kind !== 'resource' &&
     (library === undefined || library === 'process' || library === 'statechart');
   let container: string | undefined;
+  let containerId: string | undefined;
   if (isStage) {
     if (view) {
       container = view.name;
+      containerId = view.containerId;
     }
     // At the model root (no focused container) process blocks land directly
     // in the root scope (agent-centric), so they render on the root canvas.
@@ -52,6 +54,7 @@ export function insertBlockAt(
     params: BLOCK_DEFAULTS[kind],
     library,
     container,
+    containerId,
     // Presentation shapes start as real vector objects (resizable, styleable)
     // instead of the old fixed 120x80 placeholder.
     ...(PRESENTATION_KINDS.has(kind)

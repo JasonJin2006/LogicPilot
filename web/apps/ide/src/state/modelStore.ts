@@ -639,6 +639,7 @@ export const useModelStore = create<ModelState>()((set, get) => ({
       params: {},
       library: 'presentation',
       container: from.container,
+      containerId: from.containerId,
       presentation: {
         type: 'shape',
         transform: route.transform,

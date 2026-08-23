@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   addNode,
+  childrenOfContainer,
   connect,
   createDocument,
   createGraphicNode,
   disconnect,
+  isRootMember,
   moveNode,
   normalizeGraphicNode,
+  parentOfNode,
+  parseDsl,
   removeParam,
   removeNode,
   renameNode,
@@ -199,5 +203,71 @@ describe('graph document operations', () => {
     for (const child of doc.nodes.filter((node) => node.kind !== 'process')) {
       expect(child.container).toBe('Pipeline');
     }
+  });
+});
+
+describe('stable container linkage (containerId)', () => {
+  it('parses nested members with containerId pointing at the parent node', () => {
+    const source = `model Swarm {
+  agent Drone {
+    count = 3
+    on_tick { flip active }
+  }
+}
+`;
+    const parsed = parseDsl(source);
+    expect(parsed.ok).toBe(true);
+    const drone = parsed.document.nodes.find((node) => node.name === 'Drone')!;
+    const tick = parsed.document.nodes.find((node) => node.kind === 'on_tick')!;
+    const flip = parsed.document.nodes.find((node) => node.name === 'flip active')!;
+    expect(tick.containerId).toBe(drone.id);
+    expect(tick.container).toBe('Drone');
+    // The behavior's effect children link to the BEHAVIOR node.
+    expect(flip.containerId).toBe(tick.id);
+    expect(childrenOfContainer(parsed.document, drone).map((node) => node.kind)).toEqual([
+      'on_tick',
+    ]);
+    expect(parentOfNode(parsed.document, tick)?.id).toBe(drone.id);
+    expect(isRootMember(drone)).toBe(true);
+    expect(isRootMember(tick)).toBe(false);
+  });
+
+  it('removing an id-linked agent container removes its whole subgraph', () => {
+    const parsed = parseDsl(`model Swarm {
+  resource Base { capacity = 1 }
+  agent Drone {
+    on_tick { bounce }
+  }
+}
+`);
+    expect(parsed.ok).toBe(true);
+    const doc = parsed.document;
+    const droneId = doc.nodes.find((node) => node.name === 'Drone')!.id;
+    const next = removeNode(doc, droneId);
+    // The agent's behavior and its effects used to orphan (invisible on the
+    // root canvas, dropped by DSL emission); they must go with the agent.
+    expect(next.nodes.map((node) => node.name)).toEqual(['Base']);
+  });
+
+  it('renaming re-syncs only the name field of id-linked children', () => {
+    let doc = addNode(createDocument('M'), { kind: 'agent', name: 'Worker', x: 0, y: 0 });
+    doc = addNode(doc, { kind: 'queue', name: 'Q', x: 1, y: 1, container: 'Worker' });
+    const worker = doc.nodes[0]!;
+    const queue = doc.nodes[1]!;
+    expect(queue.containerId).toBeUndefined(); // legacy hand-built child
+    doc = renameNode(doc, worker.id, 'Falcon');
+    // Legacy name-only children still follow the cascade...
+    expect(doc.nodes[1]!.container).toBe('Falcon');
+    // ...while an id-linked child keeps its link across renames untouched.
+    const relinked = {
+      ...doc,
+      nodes: doc.nodes.map((node) =>
+        node.id === queue.id ? { ...node, containerId: worker.id } : node,
+      ),
+    };
+    const after = renameNode(relinked, worker.id, 'Goliath');
+    expect(after.nodes[1]!.containerId).toBe(worker.id);
+    expect(after.nodes[1]!.container).toBe('Goliath');
+    expect(childrenOfContainer(after, after.nodes[0]!).map((node) => node.name)).toEqual(['Q']);
   });
 });

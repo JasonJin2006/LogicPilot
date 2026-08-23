@@ -11,6 +11,9 @@ import type { ModelDocument } from '@logicpilot/editor';
 export interface CanvasView {
   kind: string;
   name: string;
+  /** The container node's stable id; membership filtering follows this and
+   *  survives renames. Views opened before it existed match by name. */
+  containerId?: string;
 }
 
 /** Filter a document to one container Node's subgraph (its children); null
@@ -18,16 +21,13 @@ export interface CanvasView {
  *  container - resources, container Nodes, canvas annotations). Stages of a
  *  process container never leak onto the root canvas. */
 export function documentForView(document: ModelDocument, view: CanvasView | null): ModelDocument {
-  if (!view) {
-    const nodes = document.nodes.filter((node) => !node.container);
-    const ids = new Set(nodes.map((node) => node.id));
-    return {
-      name: document.name,
-      nodes,
-      edges: document.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
-    };
-  }
-  const nodes = document.nodes.filter((node) => node.container === view.name);
+  const inContainer = (node: ModelDocument['nodes'][number]): boolean =>
+    view === null
+      ? node.containerId === undefined && !node.container
+      : view.containerId !== undefined
+        ? node.containerId === view.containerId
+        : !node.containerId && node.container === view.name;
+  const nodes = document.nodes.filter(inContainer);
   const ids = new Set(nodes.map((node) => node.id));
   return {
     name: document.name,
@@ -58,49 +58,77 @@ interface CanvasViewState {
 }
 
 function sameView(a: CanvasView | null, b: CanvasView | null): boolean {
-  return a !== null && b !== null && a.kind === b.kind && a.name === b.name;
+  return (
+    a !== null &&
+    b !== null &&
+    a.kind === b.kind &&
+    a.name === b.name &&
+    a.containerId === b.containerId
+  );
 }
 
-/** Re-key the open views after one document revision transition. Views are
- *  keyed by {kind, name}, so a container rename must carry its tab along
- *  (undo carries it back) and a removed container must close its tab -
- *  otherwise a stale empty tab lingers under the old name. Name-keyed by
- *  necessity: stable ElementRef identity replaces this (plan §9.5). */
+/** Re-resolve the open views across one document revision transition.
+ *  Id-keyed views keep their container across renames (only the label
+ *  refreshes); legacy name-only views adopt the container's id when found,
+ *  follow it through a rename via the previous revision, and close when the
+ *  container is gone - so no stale empty tab lingers under an old name. */
 export function syncCanvasViewsWithDocument(
   next: ModelDocument,
-  previous: ModelDocument,
+  previous?: ModelDocument,
 ): void {
   const state = useCanvasView.getState();
-  const previousById = new Map(previous.nodes.map((node) => [node.id, node]));
-  const renames = new Map<string, string>();
-  for (const node of next.nodes) {
-    const before = previousById.get(node.id);
-    if (before && before.kind === node.kind && before.name !== node.name) {
-      renames.set(`${node.kind}\u0000${before.name}`, node.name);
+  const keyOf = (entry: CanvasView): string =>
+    entry.containerId ?? `${entry.kind}\u0000${entry.name}`;
+  const resolve = (entry: CanvasView): CanvasView | null => {
+    if (entry.containerId !== undefined) {
+      const node = next.nodes.find((candidate) => candidate.id === entry.containerId);
+      return node ? { kind: node.kind, name: node.name, containerId: node.id } : null;
     }
-  }
-  const exists = new Set(next.nodes.map((node) => `${node.kind}\u0000${node.name}`));
-  const follow = (view: CanvasView): CanvasView => {
-    const renamed = renames.get(`${view.kind}\u0000${view.name}`);
-    return renamed === undefined ? view : { kind: view.kind, name: renamed };
+    const byName = next.nodes.find(
+      (candidate) => candidate.kind === entry.kind && candidate.name === entry.name,
+    );
+    if (byName) {
+      return { kind: byName.kind, name: byName.name, containerId: byName.id };
+    }
+    // Renamed while this view was still name-keyed: find the same node in
+    // the previous revision and follow it into `next` by id.
+    const before = previous?.nodes.find(
+      (candidate) => candidate.kind === entry.kind && candidate.name === entry.name,
+    );
+    if (before !== undefined) {
+      const after = next.nodes.find((candidate) => candidate.id === before.id);
+      if (after) {
+        return { kind: after.kind, name: after.name, containerId: after.id };
+      }
+    }
+    return null;
   };
-  const alive = (view: CanvasView) => exists.has(`${view.kind}\u0000${view.name}`);
-  // A rename onto an already-open name collapses into that tab instead of
-  // duplicating its key.
   const seen = new Set<string>();
   const views: CanvasView[] = [];
-  for (const candidate of state.views.map(follow)) {
-    if (!alive(candidate)) continue;
-    const key = `${candidate.kind}\u0000${candidate.name}`;
-    if (seen.has(key)) continue;
+  let collapsed = false;
+  for (const entry of state.views) {
+    const resolved = resolve(entry);
+    if (resolved === null) {
+      collapsed = true;
+      continue;
+    }
+    const key = keyOf(resolved);
+    if (seen.has(key)) {
+      collapsed = true; // e.g. a rename landed on an already-open view
+      continue;
+    }
     seen.add(key);
-    views.push(candidate);
+    views.push(resolved);
   }
-  let view = state.view === null ? null : follow(state.view);
-  if (view !== null && !alive(view)) {
-    view = views.length > 0 ? views[views.length - 1]! : null;
+  let view: CanvasView | null = null;
+  if (state.view !== null) {
+    const activeKey = keyOf(resolve(state.view) ?? state.view);
+    view =
+      views.find((entry) => keyOf(entry) === activeKey) ??
+      (views.length > 0 ? views[views.length - 1]! : null);
   }
   const unchanged =
+    !collapsed &&
     views.length === state.views.length &&
     views.every((entry, index) => sameView(entry, state.views[index] ?? null)) &&
     sameView(view, state.view);

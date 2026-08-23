@@ -123,6 +123,22 @@ export function applyModelPatch(document: ModelDocument, patch: ModelPatch): Mod
       ) {
         return failure(index, 'MP1003', `block '${operation.name}' already exists`);
       }
+      // Patches address containers by NAME (the wire format); resolve it to
+      // the stable containerId here so the new block is linked by id.
+      let containerId: string | undefined;
+      if (operation.container !== undefined) {
+        const candidates = next.nodes.filter((node) => node.name === operation.container);
+        if (candidates.length !== 1) {
+          return failure(
+            index,
+            'MP2005',
+            candidates.length === 0
+              ? `unknown container '${operation.container}'`
+              : `container name '${operation.container}' is ambiguous; use a unique name`,
+          );
+        }
+        containerId = candidates[0]!.id;
+      }
       const processNodes = next.nodes.filter((node) => (node.library ?? 'process') === 'process');
       const defaultX =
         processNodes.length === 0 ? 80 : Math.max(...processNodes.map((n) => n.x)) + 160;
@@ -133,6 +149,7 @@ export function applyModelPatch(document: ModelDocument, patch: ModelPatch): Mod
         y: operation.y ?? 120,
         params: operation.params,
         container: operation.container,
+        containerId,
         library: operation.library ?? 'process',
       });
       continue;
@@ -204,7 +221,13 @@ export function applyModelPatch(document: ModelDocument, patch: ModelPatch): Mod
 /** Build an incremental patch that makes `current` structurally match
  * `desired`. Matching blocks keep their ids and canvas positions when kind
  * and container are unchanged, so AI regeneration does not destroy editor
- * identity or layout unnecessarily. */
+ * identity or layout unnecessarily.
+ *
+ * Matching is deliberately NAME-keyed (`name` + kind + container name): the
+ * two documents usually come from different parse generations, so node ids
+ * (and therefore containerIds) do not correspond. Names are the DSL-level
+ * identity that survives a parse boundary; in-session linkage uses
+ * `containerId`, but this diff cannot. */
 export function diffModelDocuments(current: ModelDocument, desired: ModelDocument): ModelPatch {
   const operations: ModelPatchOperation[] = [];
   if (current.name !== desired.name) operations.push({ op: 'rename_model', name: desired.name });

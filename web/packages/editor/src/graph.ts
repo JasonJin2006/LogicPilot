@@ -12,8 +12,10 @@ import type { GraphicNode } from './presentation.js';
 // placeholder nodes so the canvas never drops DSL members).
 export type BlockKind = string;
 
-/** Block kinds that are containers: their children (nodes whose `container`
- *  equals the container's name) form a subgraph edited on its own canvas. */
+/** Block kinds that are containers: their children form a subgraph edited
+ *  on its own canvas. Membership is decided by `isChildOf` (containerId
+ *  first); this list only marks which kinds the palette/tree treat as
+ *  containers and keeps the legacy name-cascade rule scoped. */
 export const CONTAINER_KINDS: readonly string[] = ['process'];
 
 /** One block instance on the canvas. `params` are field values keyed by
@@ -26,8 +28,13 @@ export interface ModelNode {
   y: number;
   params: Record<string, string | number | boolean>;
   /** The containing process block's name (e.g. 'Flow'); undefined = model
-   *  level. The canvas can focus on one container's subgraph. */
+   *  level. Display/serialization metadata kept in sync on renames - the
+   *  authoritative subgraph linkage is `containerId`. */
   container?: string;
+  /** Stable id of the containing node; undefined = model level. Unlike the
+   *  name, it survives renames, so subgraph membership, canvas views and
+   *  tree walks follow this link (workbench-architecture-plan.md §13). */
+  containerId?: string;
   /** The palette library the block came from ('process', 'presentation',
    *  'statechart', 'action', ...). Process-flow blocks emit into the DSL;
    *  drawing/behavior elements do not. Legacy nodes leave it undefined. */
@@ -66,6 +73,7 @@ export interface AddNodeInput {
   y: number;
   params?: Record<string, string | number | boolean>;
   container?: string;
+  containerId?: string;
   library?: string;
   /** Vector drawing object for presentation-library nodes. */
   presentation?: GraphicNode;
@@ -86,6 +94,36 @@ export function findNode(document: ModelDocument, id: string): ModelNode | undef
   return document.nodes.find((node) => node.id === id);
 }
 
+/** Whether `child` belongs to `parent`'s subgraph. Id linkage is
+ *  authoritative; nodes without a `containerId` (hand-built legacy docs)
+ *  fall back to the name match, which is why renames keep cascading the
+ *  `container` field. */
+export function isChildOf(child: ModelNode, parent: ModelNode): boolean {
+  if (child.containerId !== undefined) return child.containerId === parent.id;
+  return child.container === parent.name;
+}
+
+/** Whether the node sits at the model root (no parent link at all). */
+export function isRootMember(node: ModelNode): boolean {
+  return node.containerId === undefined && node.container === undefined;
+}
+
+/** The subgraph members of one container node, in document order. */
+export function childrenOfContainer(document: ModelDocument, parent: ModelNode): ModelNode[] {
+  return document.nodes.filter((node) => isChildOf(node, parent));
+}
+
+/** Resolve a node's containing node; undefined = model level. A dangling
+ *  containerId (parent removed elsewhere) resolves to nothing - callers
+ *  must not fall back to guessing by name in that case. */
+export function parentOfNode(document: ModelDocument, node: ModelNode): ModelNode | undefined {
+  if (node.containerId !== undefined) {
+    return findNode(document, node.containerId);
+  }
+  if (node.container === undefined) return undefined;
+  return document.nodes.find((candidate) => candidate.name === node.container);
+}
+
 export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocument {
   const node: ModelNode = {
     id: freshId(input.kind),
@@ -95,6 +133,7 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
     y: input.y,
     params: { ...input.params },
     container: input.container,
+    containerId: input.containerId,
     library: input.library,
     presentation: input.presentation,
   };
@@ -103,14 +142,26 @@ export function addNode(document: ModelDocument, input: AddNodeInput): ModelDocu
 
 export function removeNode(document: ModelDocument, id: string): ModelDocument {
   const node = findNode(document, id);
+  // Removing a container removes its whole subgraph (descendants of any
+  // depth + their couplings), matching the Node-tree semantics: a container
+  // Node is its scene file, so deleting it deletes the scene. The id link
+  // decides membership (any kind with children qualifies - agent containers
+  // and behavior blocks included); legacy name-only children cascade exactly
+  // when the old process-kind rule would have.
   const removed = new Set([id]);
-  if (node && CONTAINER_KINDS.includes(node.kind)) {
-    // Removing a container removes its whole subgraph (children + their
-    // couplings), matching the Node-tree semantics: a container Node is its
-    // scene file, so deleting it deletes the scene.
-    for (const child of document.nodes) {
-      if (child.container === node.name) {
-        removed.add(child.id);
+  if (node) {
+    const idLinked = document.nodes.some((child) => child.containerId === node.id);
+    if (idLinked || CONTAINER_KINDS.includes(node.kind)) {
+      let frontier: ModelNode[] = [node];
+      while (frontier.length > 0) {
+        const nextFrontier: ModelNode[] = [];
+        for (const child of document.nodes) {
+          if (!removed.has(child.id) && frontier.some((parent) => isChildOf(child, parent))) {
+            removed.add(child.id);
+            nextFrontier.push(child);
+          }
+        }
+        frontier = nextFrontier;
       }
     }
   }
@@ -136,15 +187,18 @@ export function renameNode(document: ModelDocument, id: string, name: string): M
       nodes: document.nodes.map((node) => (node.id === id ? { ...node, name } : node)),
     };
   }
-  // Children link to their container by name, so a container rename must
-  // re-point them or they orphan out of the subgraph (canvas view, DSL
-  // generation). This cascade is the name-based identity tax until stable
-  // ElementRef linkage replaces it (workbench-architecture-plan.md §9.5).
+  // Subgraph membership itself follows containerId and needs no repair on a
+  // rename. The cascade below only re-syncs the legacy `container` NAME
+  // field (DSL generation metadata) for children still matched by name -
+  // the last remnant of name-based identity (plan §9.5).
   return {
     ...document,
     nodes: document.nodes.map((node) => {
       if (node.id === id) return { ...node, name };
-      if (node.container === target.name) return { ...node, container: name };
+      if (node.containerId === undefined && node.container === target.name) {
+        return { ...node, container: name };
+      }
+      if (node.containerId === id) return { ...node, container: name };
       return node;
     }),
   };

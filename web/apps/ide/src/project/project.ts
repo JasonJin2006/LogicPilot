@@ -387,15 +387,23 @@ export function createProjectBundle(document: ModelDocument): ProjectBundle {
 /** A stable, path-like identity for a node (root `name`, nested
  *  `container/name`). The layout file keys positions/edges by this instead
  *  of runtime ids, so a round trip through parse/generate restores the
- *  canvas even though node ids are regenerated on load. */
+ *  canvas even though node ids are regenerated on load. The parent walk
+ *  follows stable containerIds; name matching remains only for legacy
+ *  nodes that never got one. */
 export function nodePath(node: ModelNode, nodes: ModelNode[]): string {
-  if (node.container === undefined) {
+  if (node.containerId === undefined && node.container === undefined) {
     // Agent-centric root: every member at the model root uses its name
     // (process blocks included).
     return node.name;
   }
-  const parent = nodes.find((candidate) => candidate.name === node.container);
-  const prefix = parent ? nodePath(parent, nodes) : node.container;
+  const parent = nodes.find(
+    (candidate) =>
+      (node.containerId !== undefined && candidate.id === node.containerId) ||
+      (node.containerId === undefined &&
+        node.container !== undefined &&
+        candidate.name === node.container),
+  );
+  const prefix = parent ? nodePath(parent, nodes) : (node.container ?? node.containerId!);
   return `${prefix}/${node.name}`;
 }
 

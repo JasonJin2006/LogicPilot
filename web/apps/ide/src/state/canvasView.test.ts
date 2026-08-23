@@ -14,6 +14,8 @@ import { documentForView, syncCanvasViewsWithDocument, useCanvasView } from './c
 function agentDocument(): ModelDocument {
   let document = createDocument('M');
   document = addNode(document, { kind: 'agent', name: 'Worker', x: 0, y: 0, params: {} });
+  const workerId = document.nodes[0]!.id;
+  // Children carry containerId like every IDE creation path does now.
   document = addNode(document, {
     kind: 'source',
     name: 'S',
@@ -21,6 +23,7 @@ function agentDocument(): ModelDocument {
     y: 0,
     params: {},
     container: 'Worker',
+    containerId: workerId,
   });
   document = addNode(document, {
     kind: 'queue',
@@ -29,6 +32,7 @@ function agentDocument(): ModelDocument {
     y: 0,
     params: {},
     container: 'Worker',
+    containerId: workerId,
   });
   return document;
 }
@@ -224,16 +228,21 @@ describe('canvas view store (parallel tabs)', () => {
   });
 });
 
-describe('syncCanvasViewsWithDocument (rename/remove re-keying)', () => {
-  it('a container rename carries its open tab and active view along', () => {
+describe('syncCanvasViewsWithDocument (id re-keying)', () => {
+  it('a container rename keeps its open tab via containerId and refreshes the label', () => {
     const previous = agentDocument();
     const workerId = previous.nodes[0]!.id;
-    const next = renameNode(previous, workerId, 'Falcon');
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView({ kind: 'agent', name: 'Worker' });
-    syncCanvasViewsWithDocument(next, previous);
-    expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Falcon']);
-    expect(useCanvasView.getState().view).toEqual({ kind: 'agent', name: 'Falcon' });
+    syncCanvasViewsWithDocument(renameNode(previous, workerId, 'Falcon'), previous);
+    expect(useCanvasView.getState().views).toEqual([
+      { kind: 'agent', name: 'Falcon', containerId: workerId },
+    ]);
+    expect(useCanvasView.getState().view).toEqual({
+      kind: 'agent',
+      name: 'Falcon',
+      containerId: workerId,
+    });
   });
 
   it('undoing the rename carries the tab back to the old name', () => {
@@ -245,20 +254,29 @@ describe('syncCanvasViewsWithDocument (rename/remove re-keying)', () => {
     syncCanvasViewsWithDocument(renamed, previous);
     syncCanvasViewsWithDocument(previous, renamed); // undo
     expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Worker']);
-    expect(useCanvasView.getState().view).toEqual({ kind: 'agent', name: 'Worker' });
+    expect(useCanvasView.getState().view).toEqual({
+      kind: 'agent',
+      name: 'Worker',
+      containerId: workerId,
+    });
   });
 
   it('removing the container closes its tab and falls back', () => {
     let document = agentDocument();
     document = addNode(document, { kind: 'agent', name: 'Other', x: 0, y: 0, params: {} });
     const workerId = document.nodes[0]!.id;
-    const next = removeNode(document, workerId);
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView({ kind: 'agent', name: 'Worker' });
     useCanvasView.getState().setView({ kind: 'agent', name: 'Other' });
-    syncCanvasViewsWithDocument(next, document);
+    const after = removeNode(document, workerId);
+    syncCanvasViewsWithDocument(after, document);
+    const otherId = after.nodes.find((node) => node.name === 'Other')!.id;
     expect(useCanvasView.getState().views.map((view) => view.name)).toEqual(['Other']);
-    expect(useCanvasView.getState().view).toEqual({ kind: 'agent', name: 'Other' });
+    expect(useCanvasView.getState().view).toEqual({
+      kind: 'agent',
+      name: 'Other',
+      containerId: otherId,
+    });
   });
 
   it('renaming onto an already-open name collapses into one tab', () => {
@@ -271,25 +289,24 @@ describe('syncCanvasViewsWithDocument (rename/remove re-keying)', () => {
       y: 0,
       params: {},
     });
-    const next = renameNode(withGuard, workerId, 'Guard');
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView({ kind: 'agent', name: 'Worker' });
     useCanvasView.getState().setView({ kind: 'agent', name: 'Guard' });
-    syncCanvasViewsWithDocument(next, withGuard);
+    syncCanvasViewsWithDocument(renameNode(withGuard, workerId, 'Guard'), withGuard);
     const names = useCanvasView.getState().views.map((view) => view.name);
     expect(names).toEqual(['Guard']);
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('leaves the views alone when nothing matched changes', () => {
-    const previous = agentDocument();
-    const source = previous.nodes.find((node) => node.name === 'S')!;
-    const next = renameNode(previous, source.id, 'Arrivals');
+  it('adopts containerId for a legacy view whose container is unchanged', () => {
+    const document = agentDocument();
+    const workerId = document.nodes[0]!.id;
+    const source = document.nodes.find((node) => node.name === 'S')!;
     useCanvasView.getState().resetCanvasViews();
     useCanvasView.getState().setView({ kind: 'agent', name: 'Worker' });
-    const before = useCanvasView.getState();
-    syncCanvasViewsWithDocument(next, previous);
-    expect(useCanvasView.getState().views).toBe(before.views);
-    expect(useCanvasView.getState().view).toBe(before.view);
+    syncCanvasViewsWithDocument(renameNode(document, source.id, 'Arrivals'));
+    expect(useCanvasView.getState().views).toEqual([
+      { kind: 'agent', name: 'Worker', containerId: workerId },
+    ]);
   });
 });

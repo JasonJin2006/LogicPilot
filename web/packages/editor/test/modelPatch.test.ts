@@ -7,6 +7,8 @@ import {
   createDocument,
   diffModelDocuments,
   generateDsl,
+  MODEL_PATCH_VERSION,
+  parseDsl,
   type ModelPatch,
 } from '../src/index.js';
 
@@ -193,5 +195,46 @@ describe('ModelPatch', () => {
     const result = applyModelPatch(current, patch);
     expect(result.ok).toBe(true);
     expect(result.document.edges[0]!.id).toBe(originalEdgeId);
+  });
+
+  it('resolves add_block container names to stable containerIds', () => {
+    const source = `model Swarm {
+  agent Drone {
+    on_tick { bounce }
+  }
+}
+`;
+    const parsed = parseDsl(source);
+    expect(parsed.ok).toBe(true);
+    const droneId = parsed.document.nodes.find((node) => node.name === 'Drone')!.id;
+    const result = applyModelPatch(parsed.document, {
+      version: MODEL_PATCH_VERSION,
+      operations: [{ op: 'add_block', kind: 'queue', name: 'Q', container: 'Drone' }],
+    });
+    expect(result.ok).toBe(true);
+    const added = result.document.nodes.find((node) => node.name === 'Q')!;
+    expect(added.container).toBe('Drone');
+    expect(added.containerId).toBe(droneId);
+  });
+
+  it('rejects add_block into an unknown or ambiguous container name', () => {
+    const base = createDocument('M');
+    const unknown = applyModelPatch(base, {
+      version: MODEL_PATCH_VERSION,
+      operations: [{ op: 'add_block', kind: 'source', name: 'A', container: 'Ghost' }],
+    });
+    expect(unknown.ok).toBe(false);
+    expect(unknown.diagnostics[0]!.code).toBe('MP2005');
+
+    const withDupes = addNode(
+      addNode(createDocument('M'), { kind: 'agent', name: 'Hub', x: 0, y: 0 }),
+      { kind: 'process', name: 'Hub', x: 10, y: 0 },
+    );
+    const ambiguous = applyModelPatch(withDupes, {
+      version: MODEL_PATCH_VERSION,
+      operations: [{ op: 'add_block', kind: 'source', name: 'A', container: 'Hub' }],
+    });
+    expect(ambiguous.ok).toBe(false);
+    expect(ambiguous.diagnostics[0]!.code).toBe('MP2005');
   });
 });

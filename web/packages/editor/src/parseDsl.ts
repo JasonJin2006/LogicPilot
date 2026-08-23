@@ -500,7 +500,7 @@ export function parseDsl(source: string): ParseResult {
     return { x, y };
   };
 
-  const flatten = (member: BodyMember, parent: string | undefined): void => {
+  const flatten = (member: BodyMember, parent: ModelNode | undefined): void => {
     const isBehavior = member.kind.startsWith('on_');
     if (
       !isBehavior &&
@@ -508,7 +508,7 @@ export function parseDsl(source: string): ParseResult {
       member.kind !== 'field' &&
       member.kind !== 'effect'
     ) {
-      const scope = parent ?? '';
+      const scope = parent?.name ?? '';
       const seen = seenNames.get(scope) ?? new Set<string>();
       if (seen.has(member.name)) {
         diagnostics.push({
@@ -538,7 +538,8 @@ export function parseDsl(source: string): ParseResult {
         x: pos.x,
         y: pos.y,
         params: { ...member.params },
-        container: parent,
+        container: parent?.name,
+        containerId: parent?.id,
         placeholder: true,
       });
       return;
@@ -551,7 +552,8 @@ export function parseDsl(source: string): ParseResult {
         x: pos.x,
         y: pos.y,
         params: { ...member.params },
-        container: parent,
+        container: parent?.name,
+        containerId: parent?.id,
         placeholder: !CANVAS_KINDS.has(member.kind),
       });
       return;
@@ -560,18 +562,20 @@ export function parseDsl(source: string): ParseResult {
       const count = (behaviorCounts.get(member.kind) ?? 0) + 1;
       behaviorCounts.set(member.kind, count);
       const behaviorName = count === 1 ? member.kind : `${member.kind}#${count}`;
-      nodes.push({
+      const behaviorNode: ModelNode = {
         id: freshId('behavior'),
         kind: member.kind,
         name: behaviorName,
         x: pos.x,
         y: pos.y,
         params: { ...member.params },
-        container: parent,
+        container: parent?.name,
+        containerId: parent?.id,
         placeholder: true,
-      });
+      };
+      nodes.push(behaviorNode);
       for (const child of member.children) {
-        flatten(child, behaviorName);
+        flatten(child, behaviorNode);
       }
       return;
     }
@@ -605,13 +609,14 @@ export function parseDsl(source: string): ParseResult {
       x: pos.x,
       y: pos.y,
       params,
-      container: parent,
+      container: parent?.name,
+      containerId: parent?.id,
       placeholder: !CANVAS_KINDS.has(member.kind),
       library: STATECHART_KINDS.has(member.kind) ? 'statechart' : undefined,
     };
     nodes.push(node);
     for (const child of nested) {
-      flatten(child, member.name);
+      flatten(child, node);
     }
   };
 

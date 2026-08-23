@@ -7,7 +7,14 @@
 // follows the coupling edges when present (topological flow order), falling
 // back to canvas x position.
 
-import { findNode, type ModelDocument, type ModelEdge, type ModelNode } from './graph.js';
+import {
+  findNode,
+  isChildOf,
+  isRootMember,
+  type ModelDocument,
+  type ModelEdge,
+  type ModelNode,
+} from './graph.js';
 
 /** Container kinds emit as nested `kind name { ... }` blocks. */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
@@ -92,9 +99,9 @@ export function generateDsl(document: ModelDocument): string {
   // canvas-only and never emit; process and statechart members do.
   const emitCandidate = (node: ModelNode): boolean =>
     node.library === undefined || node.library === 'process' || node.library === 'statechart';
-  const childrenOf = (name: string, excludeId?: string): ModelNode[] =>
+  const childrenOf = (parent: ModelNode, excludeId?: string): ModelNode[] =>
     document.nodes.filter(
-      (node) => node.container === name && node.id !== excludeId && emitCandidate(node),
+      (node) => isChildOf(node, parent) && node.id !== excludeId && emitCandidate(node),
     );
 
   // Explicit couplings for a container's subgraph: every edge whose
@@ -102,16 +109,25 @@ export function generateDsl(document: ModelDocument): string {
   // (multi-output blocks, conditional ports, branches) the compiler needs
   // the explicit `couple` lines; emitting them for every edge keeps the
   // canvas graph identical to the compiled IR.
-  const emitCouplings = (container: string | undefined, indent: string) => {
+  const emitCouplings = (container: ModelNode | undefined, indent: string) => {
     const members = new Set(
-      document.nodes
-        .filter((node) => node.container === container && emitCandidate(node))
+      (container === undefined
+        ? document.nodes.filter((node) => isRootMember(node))
+        : document.nodes.filter((node) => isChildOf(node, container))
+      )
+        .filter(emitCandidate)
         .map((node) => node.name),
     );
     for (const edge of document.edges) {
       const from = findNode(document, edge.from);
       const to = findNode(document, edge.to);
-      if (!from || !to || from.container !== container || to.container !== container) {
+      if (!from || !to) {
+        continue;
+      }
+      const fromInside =
+        container === undefined ? isRootMember(from) : isChildOf(from, container);
+      const toInside = container === undefined ? isRootMember(to) : isChildOf(to, container);
+      if (!fromInside || !toInside) {
         continue;
       }
       if (!members.has(from.name) || !members.has(to.name)) {
@@ -147,13 +163,13 @@ export function generateDsl(document: ModelDocument): string {
     if (node.kind.startsWith('on_')) {
       const port = typeof node.params['port'] === 'string' ? node.params['port'] : undefined;
       lines.push(`${indent}${node.kind}${port ? ` ${port}` : ''} {`);
-      for (const child of childrenOf(node.name, node.id)) {
+      for (const child of childrenOf(node, node.id)) {
         emitNode(child, `${indent}  `);
       }
       lines.push(`${indent}}`);
       return;
     }
-    const children = childrenOf(node.name, node.id);
+    const children = childrenOf(node, node.id);
     if (node.kind === 'statechart') {
       // The statechart's initial state comes from the entry point's Target
       // property, falling back to an edge leaving the entry point (or
@@ -161,7 +177,7 @@ export function generateDsl(document: ModelDocument): string {
       const pointers = document.nodes.filter(
         (entry) =>
           (entry.kind === 'statechartEntryPoint' || entry.kind === 'initialStatePointer') &&
-          entry.container === node.name,
+          isChildOf(entry, node),
       );
       const targetName = String(
         pointers.find((entry) => typeof entry.params['target'] === 'string')?.params['target'] ??
@@ -173,7 +189,7 @@ export function generateDsl(document: ModelDocument): string {
           .map((edge) => {
             const from = findNode(document, edge.from);
             const to = findNode(document, edge.to);
-            if (!from || !to || from.container !== node.name) return null;
+            if (!from || !to || !isChildOf(from, node)) return null;
             if (from.kind !== 'statechartEntryPoint' && from.kind !== 'initialStatePointer') {
               return null;
             }
@@ -206,7 +222,7 @@ export function generateDsl(document: ModelDocument): string {
       emitNode(child, `${indent}  `);
     }
     if (CONTAINER_KINDS.has(node.kind)) {
-      emitCouplings(node.name, `${indent}  `);
+      emitCouplings(node, `${indent}  `);
     }
     lines.push(`${indent}}`);
   };
@@ -220,7 +236,7 @@ export function generateDsl(document: ModelDocument): string {
     !node.kind.startsWith('on_') &&
     !CONTAINER_KINDS.has(node.kind);
 
-  const topLevel = document.nodes.filter((node) => !node.container && emitCandidate(node));
+  const topLevel = document.nodes.filter((node) => isRootMember(node) && emitCandidate(node));
   // Agent-centric emission: process-library blocks at the model root are
   // emitted directly (no `process Flow` wrapper) with their model-level
   // couplings.

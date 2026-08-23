@@ -25,10 +25,15 @@
 | `81e332f` | `editor/graph.ts renameNode` 级联子节点 container 指针——修复"重命名容器导致子成员孤立出子图/DSL/布局键"的正确性缺陷;含 editor 回归测试与 Playwright 实测 |
 | `9110586` | **F7 PaletteProvider**:新增 `workbench/palette.ts` 注册表 + `model/paletteContributions.ts` 注册 7 个内建库(process 库只登记 executable 项),`PalettePanel.tsx` 改为纯宿主;新增 `workbench/palette.test.ts`(237 vitest) |
 | (本轮) | **A1 canvasView 同步**:`state/canvasView.ts` 新增 `syncCanvasViewsWithDocument(next, previous)`——容器改名时打开的视图标签跟随新名(undo 跟回旧名,改名撞已有标签去重),容器删除时关闭标签;接入 `App.tsx` 既有 modelStore 订阅,统一覆盖 renameBlock/AI patch/undo/redo。新增 5 个 vitest(共 242)+ `.verify/rename-tab-check.mjs` 浏览器实测 PASS |
+| (本轮) | **B/F6 稳定链接(containerId)**:editor `ModelNode` 新增 `containerId?`(权威父子链接)+ `isChildOf/isRootMember/childrenOfContainer/parentOfNode` 辅助;parseDsl 双写 container/containerId;dsl.ts 子图查找换辅助;removeNode 改 id 驱动**传递性**级联(修复删 agent/behavior 容器孤儿化子成员的缺陷);modelPatch `add_block.container`(wire 名字)apply 时解析为 id,未知/歧义容器报 MP2005。IDE:canvasView 视图携 containerId(id 解析+前代回溯),canvasInsert/dblclick/connectPresentationShapes/nodePath 全部传/走 id。diffModelDocuments 与 syncEngine structureSignature **有意保留名字键**(跨 parse 边界,id 不对应,已注释说明)。editor 73(+5)ide 242 typecheck build 全绿,E2E PASS |
 
 ## 4. 待办(按优先级,对应审查文档 §4)
 
 ### A. 收尾中的小事 —— ✅ 已全部完成(palette 见 §3,A1 见上)
+
+### B. F6 稳定 ElementRef —— 会话内链接已迁 id;剩余收口
+- 已完成:`containerId` 权威链接 + 双写过渡、消费方切换(canvasView/nodePath/创建路径)、removeNode 级联缺陷修复;
+- 剩余:IDE 手工建块的路径已传 id,但 ModelInfoPanel(F9 文本 Outline)开的视图仍是名字式(sync 兼容);`container` 名字字段仍保留作 DSL 序列化元数据——彻底删除需等 patch wire/dsl 文本格式演进,非近期必须。
 
 ### B. F6 稳定 ElementRef(架构根,优先级最高但工程量大)
 现状:`ModelNode.container` 存容器**名**(`web/packages/editor/src/graph.ts`);
