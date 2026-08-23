@@ -53,11 +53,10 @@ check(
   (await page.locator('.ai-provider-error').count()) === 0,
   'no persistent unconfigured banner',
 );
-await page
-  .locator('.ai-model-select summary span')
-  .filter({ hasText: 'Not configured' })
-  .waitFor({ timeout: 10000 });
-check(true, 'model label reads "Not configured"');
+check(
+  '未配置' === (await page.locator('.ai-model-select summary span').first().innerText()),
+  'model label reads 未配置',
+);
 
 const turnsBefore = await page.locator('.ai-turn').count();
 await page.fill('.ai-input', 'hello');

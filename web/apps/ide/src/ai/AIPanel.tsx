@@ -158,7 +158,7 @@ function relativeSessionTime(value: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} hr ago`;
   const days = Math.floor(hours / 24);
-  return `${days} day${days === 1 ? '' : 's'} ago`;
+  return `${days} 天前`;
 }
 
 // Each WebView/window gets its own fallback scope when no workspace is open.
@@ -380,8 +380,8 @@ export function AIPanel() {
         assistant: [
           acceptedDescription,
           appliedRun.ok
-            ? 'Validation and simulation completed.'
-            : 'The accepted patch did not run successfully.',
+            ? '验证与模拟已完成。'
+            : '已应用的修改未成功运行。',
           ...(comparisonResult?.findings ?? []),
         ]
           .filter(Boolean)
@@ -463,7 +463,7 @@ export function AIPanel() {
         );
       } else if (kind === 'explain') {
         if (completedMetrics == null) {
-          setError('Run and apply a model before asking a result question.');
+          setError('请先运行并应用模型,再来提问结果问题。');
         } else {
           setExplained(
             await aiQueryMetrics(
@@ -496,12 +496,12 @@ export function AIPanel() {
           const proposed = await aiProposePatch(requestPrompt, current, conversation);
           if (!proposed.supported) {
             setError(
-              'No safe structured change could be inferred. Name the target block and requested operation.',
+              '无法推断出安全的结构化修改。请说出目标块以及要执行的操作。',
             );
           } else {
             const nextProposal = createPatchProposal(current, proposed.patch);
             if (!nextProposal.ok || nextProposal.candidateDocument === null) {
-              setError(nextProposal.error ?? 'invalid model proposal');
+              setError(nextProposal.error ?? '无效的模型修改方案');
             } else {
               const candidateDsl = generateDsl(nextProposal.candidateDocument);
               const validation = await aiValidateDsl(candidateDsl);
@@ -525,7 +525,7 @@ export function AIPanel() {
             const nextProposal = createModelProposal(current, built.dsl);
             setProposal(nextProposal);
             setProposalPrompt(requestPrompt);
-            if (!nextProposal.ok) setError(nextProposal.error ?? 'invalid model proposal');
+            if (!nextProposal.ok) setError(nextProposal.error ?? '无效的模型修改方案');
           }
         }
       }
@@ -539,11 +539,11 @@ export function AIPanel() {
   const defaultPromptFor = (action: AiAction): string => {
     switch (action) {
       case 'optimize':
-        return 'Optimize the current model.';
+        return '优化当前模型。';
       case 'variation':
-        return 'Run a parameter study for the current model.';
+        return '对当前模型运行参数扫描。';
       case 'explain':
-        return 'Explain the last simulation results.';
+        return '解释最近的模拟结果。';
       default:
         return '';
     }
@@ -552,7 +552,7 @@ export function AIPanel() {
   const dispatchAction = (action: AiAction, candidatePrompt = prompt) => {
     const requestPrompt = candidatePrompt.trim() || defaultPromptFor(action);
     if (requestPrompt === '') {
-      setError('Describe the model or change you want Copilot to make.');
+      setError('请描述你想让 Copilot 做的模型修改。');
       return;
     }
     setPrompt('');
@@ -605,7 +605,7 @@ export function AIPanel() {
   ) => {
     appendConversation(scope, {
       user: userText,
-      assistant: 'The request did not complete.',
+      assistant: '请求未完成。',
       patch: { version: 1, operations: [] },
       outcome: 'run_failed',
       assistantRecord: { steps, error: NOT_CONFIGURED_MESSAGE },
@@ -616,7 +616,7 @@ export function AIPanel() {
   // execution.
   const sendAssistant = async (resume = false, explicitRequest?: string) => {
     const request = resume
-      ? 'Resume the unfinished Agent turn.'
+      ? '继续未完成的 Agent 回合。'
       : (explicitRequest ?? prompt.trim());
     if ((!resume && request === '') || busy) {
       return;
@@ -640,7 +640,7 @@ export function AIPanel() {
       .reverse()
       .find((message: AssistantTurnMessage) => message.role === 'user')?.content;
     const resumedRequest = resume
-      ? (resumedMessage ?? 'Resume the unfinished Agent turn.')
+      ? (resumedMessage ?? '继续未完成的 Agent 回合。')
       : request;
     if (resume && pendingCheckpoint === undefined) return;
     const session = sessionForScope(scope);
@@ -708,7 +708,7 @@ export function AIPanel() {
         const currentDocument = useModelStore.getState().document;
         const nextProposal = createPatchProposal(currentDocument, request.patch);
         if (!nextProposal.ok || nextProposal.candidateDocument === null) {
-          setError(nextProposal.error ?? 'The proposed model change is invalid.');
+          setError(nextProposal.error ?? '建议的模型修改无效。');
           resolve(false);
           return;
         }
@@ -773,7 +773,7 @@ export function AIPanel() {
     setLiveSteps([]);
     if (!result.cancelled) clearCheckpoint(scope);
     if (result.cancelled) {
-      setError('Assistant step cancelled.');
+      setError('助手步骤已取消。');
       return;
     }
     if (!result.ok && isAssistantNotConfiguredError(result.error ?? '')) {
@@ -786,12 +786,12 @@ export function AIPanel() {
     appendConversation(scope, {
       user: resumedRequest,
       assistant: result.declined
-        ? 'Change declined. The canvas was left unchanged.'
+        ? '已放弃修改,模型画布未改变。'
         : result.message !== ''
           ? result.message
           : result.ok
-            ? 'Done.'
-            : 'The request did not complete.',
+            ? '完成。'
+            : '请求未完成。',
       patch: session.lastPatch ?? { version: 1, operations: [] },
       outcome: result.declined
         ? 'declined'
@@ -824,7 +824,7 @@ export function AIPanel() {
     const session = sessionForScope(conversationScope);
     const undone = undoAssistantChange(session, tokenId);
     if (!undone.ok) {
-      setError(undone.error ?? 'This AI change can no longer be undone safely.');
+      setError(undone.error ?? '该 AI 修改已无法安全撤销。');
       return;
     }
     session.lastPatch = null;
@@ -933,8 +933,8 @@ export function AIPanel() {
       <details className="ai-activity">
         <summary>
           <ListChecks size={12} />
-          {completed > 0 ? `${completed} tool step${completed === 1 ? '' : 's'}` : 'Activity'}
-          {failures > 0 ? ` · ${failures} issue${failures === 1 ? '' : 's'}` : ''}
+          {completed > 0 ? `${completed} 个工具步骤` : '执行活动'}
+          {failures > 0 ? ` · ${failures} 处问题` : ''}
           <ChevronDown size={11} />
         </summary>
         {renderSteps(steps)}
@@ -942,11 +942,17 @@ export function AIPanel() {
     );
   };
 
+  const permissionLabel = (mode: PermissionMode) =>
+    mode === 'Full access' ? '完全访问' : mode === 'Workspace' ? '工作区' : '只读';
+
+  const displayModelLabel = (label: string) =>
+    label === 'Auto' ? '自动' : label === 'Not configured' ? '未配置' : label;
+
   const outcomeLabel = (outcome: 'applied' | 'completed' | 'run_failed' | 'declined') => {
-    if (outcome === 'applied') return 'Model updated';
-    if (outcome === 'completed') return 'Completed';
-    if (outcome === 'declined') return 'Change declined';
-    return 'Needs attention';
+    if (outcome === 'applied') return '模型已更新';
+    if (outcome === 'completed') return '已完成';
+    if (outcome === 'declined') return '已放弃修改';
+    return '需要处理';
   };
 
   const submitPrompt = () => {
@@ -973,7 +979,7 @@ export function AIPanel() {
     }
     if (command === '/build') {
       setPrompt('');
-      void sendAssistant(false, commandPrompt || 'Build the requested model.');
+      void sendAssistant(false, commandPrompt || '构建所请求的模型。');
       return;
     }
     void sendAssistant();
@@ -989,7 +995,7 @@ export function AIPanel() {
     try {
       await navigator.clipboard.writeText(message);
     } catch {
-      setError('Copy is unavailable in this runtime.');
+      setError('此运行环境下无法复制。');
     }
   };
 
@@ -1011,7 +1017,7 @@ export function AIPanel() {
     };
     const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!Recognition) {
-      setVoiceError('Voice input is not available in this desktop runtime.');
+      setVoiceError('此桌面运行环境不支持语音输入。');
       setVoiceState('error');
       window.setTimeout(() => setVoiceState('idle'), 3000);
       return;
@@ -1047,8 +1053,8 @@ export function AIPanel() {
     recognition.onerror = (event) => {
       setVoiceError(
         event.error === 'not-allowed'
-          ? 'Microphone permission was denied.'
-          : 'Voice recognition failed.',
+          ? '麦克风权限被拒绝。'
+          : '语音识别失败。',
       );
       setVoiceState('error');
       voiceRecognitionRef.current = null;
@@ -1061,7 +1067,7 @@ export function AIPanel() {
     try {
       recognition.start();
     } catch {
-      setVoiceError('Voice recognition could not be started.');
+      setVoiceError('语音识别无法启动。');
       setVoiceState('error');
       voiceRecognitionRef.current = null;
       window.setTimeout(() => setVoiceState('idle'), 3000);
@@ -1075,20 +1081,20 @@ export function AIPanel() {
           <div className="ai-session-header">
             <button
               type="button"
-              aria-label="Back to sessions"
-              title="Back to sessions"
+              aria-label="返回会话列表"
+              title="返回会话列表"
               onClick={leaveSession}
             >
               <ArrowLeft size={16} />
             </button>
             <strong>
-              {sessionItems.find((session) => session.id === activeSessionId)?.title ?? 'Session'}
+              {sessionItems.find((session) => session.id === activeSessionId)?.title ?? '会话'}
             </strong>
           </div>
         )}
         {activeSessionId === null && sessionItems.length > 0 && (
           <section className="ai-sessions" aria-label="Sessions">
-            <div className="ai-sessions-title">Sessions</div>
+            <div className="ai-sessions-title">会话</div>
             {sessionItems.map((session) => (
               <div className="ai-session-row" key={session.id}>
                 <button
@@ -1105,16 +1111,16 @@ export function AIPanel() {
                 <span className="ai-session-actions">
                   <button
                     type="button"
-                    aria-label="Archive session"
-                    title="Archive"
+                    aria-label="归档会话"
+                    title="归档"
                     onClick={() => archiveSession(session.id)}
                   >
                     <Archive size={13} />
                   </button>
                   <button
                     type="button"
-                    aria-label={session.pinned ? 'Unpin session' : 'Pin session'}
-                    title={session.pinned ? 'Unpin' : 'Pin'}
+              aria-label={session.pinned ? '取消置顶会话' : '置顶会话'}
+              title={session.pinned ? '取消置顶' : '置顶'}
                     onClick={() => pinSession(session.id, !session.pinned)}
                   >
                     <Pin size={13} />
@@ -1129,16 +1135,15 @@ export function AIPanel() {
             <span className="ai-welcome-mark" aria-hidden>
               <Bot size={20} />
             </span>
-            <h2>Build models by describing them</h2>
+            <h2>用描述构建模型</h2>
             <p>
-              I can create and edit simulation models, run experiments, and explain grounded results
-              without taking you out of the editor.
+              我可以创建和编辑仿真模型、运行实验,并解释有依据的结果,让你无需离开编辑器。
             </p>
             <div className="ai-suggestions" aria-label="Suggested prompts">
               {[
-                'Build a call center with two agents',
-                'Add a priority queue before service',
-                'Find the bottleneck in my last run',
+                '构建一个两坐席的呼叫中心',
+                '在服务台前加入优先队列',
+                '分析我上次运行的瓶颈',
               ].map((suggestion) => (
                 <button key={suggestion} onClick={() => setPrompt(suggestion)}>
                   {suggestion}
@@ -1155,7 +1160,7 @@ export function AIPanel() {
                   <UserRound size={13} />
                 </span>
                 <div>
-                  <strong>You</strong>
+                  <strong>你</strong>
                   <p>{turn.user}</p>
                 </div>
               </div>
@@ -1170,8 +1175,8 @@ export function AIPanel() {
                     <div className="ai-message-actions">
                       <button
                         type="button"
-                        aria-label="Retry latest response"
-                        title="Retry"
+                        aria-label="重试最新回复"
+                        title="重试"
                         disabled={busy}
                         onClick={() => retryTurn(turn)}
                       >
@@ -1179,8 +1184,8 @@ export function AIPanel() {
                       </button>
                       <button
                         type="button"
-                        aria-label="Copy response"
-                        title="Copy"
+                        aria-label="复制回复"
+                        title="复制"
                         onClick={() => void copyAssistantMessage(turn.assistant)}
                       >
                         <Copy size={13} />
@@ -1201,8 +1206,8 @@ export function AIPanel() {
                       <span className="ai-turn-actions">
                         {turn.patch != null && turn.patch.operations.length > 0 && (
                           <details className="ai-changes">
-                            <summary title="View the changes made by this turn">
-                              View changes <ChevronDown size={11} />
+                            <summary title="查看本轮修改">
+                              查看修改 <ChevronDown size={11} />
                             </summary>
                             <ul className="ai-findings">
                               {patchSummaryLines(turn.patch).map((line, index) => (
@@ -1220,9 +1225,9 @@ export function AIPanel() {
                             sessionForScope(conversationScope).activeUndo?.after !== document
                           }
                           onClick={() => undoLastChange(turn.assistantRecord!.undoTokenId!)}
-                          title="Undo the last AI-applied change"
+                          title="撤销 AI 上次应用的修改"
                         >
-                          Undo
+                          撤销
                         </button>
                       </span>
                     )}
@@ -1233,8 +1238,8 @@ export function AIPanel() {
         {!busy && checkpoints[conversationScope] !== undefined && (
           <div className="ai-checkpoint-card" role="status">
             <div>
-              <strong>Unfinished Agent turn</strong>
-              <small>You can resume the last checkpoint or discard it.</small>
+              <strong>未完成的 Agent 回合</strong>
+              <small>你可以继续上一个断点,或者丢弃它。</small>
             </div>
             <button className="secondary" onClick={() => void sendAssistant(true)}>
               Resume
@@ -1250,16 +1255,16 @@ export function AIPanel() {
               <span className="ai-step-spinner" aria-hidden />
               <div>
                 <strong>
-                  {assistantApproval === null ? 'Working on your model' : 'Approval needed'}
+                  {assistantApproval === null ? '正在处理你的模型' : '需要批准'}
                 </strong>
                 <small>
                   {assistantApproval === null
-                    ? 'Inspecting the canvas, compiling and running tools as needed'
-                    : 'The canvas is unchanged until you approve this patch'}
+                    ? '正在检查画布,按需编译并运行工具'
+                    : '在你批准该修改前,模型画布保持原样'}
                 </small>
               </div>
             </div>
-            {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>Reading the current model…</p>}
+            {liveSteps.length > 0 ? renderSteps(liveSteps) : <p>正在读取当前模型…</p>}
             {visibleLiveResponse(liveResponse) !== '' && (
               <p className="ai-live-response">{visibleLiveResponse(liveResponse)}</p>
             )}
@@ -1267,14 +1272,14 @@ export function AIPanel() {
               <section className="ai-approval-card" aria-label="Review proposed model change">
                 <header>
                   <AlertTriangle size={14} />
-                  <strong>Review model change</strong>
+                  <strong>检查模型修改</strong>
                 </header>
                 <p>{assistantApproval.summary}</p>
                 <div className="ai-approval-meta">
-                  <span>{assistantApproval.proposal.descriptions.length} operations</span>
+                  <span>{assistantApproval.proposal.descriptions.length} 个操作</span>
                   {assistantApproval.proposal.destructiveOperations > 0 && (
                     <span className="destructive">
-                      {assistantApproval.proposal.destructiveOperations} destructive
+                      {assistantApproval.proposal.destructiveOperations} 个破坏性
                     </span>
                   )}
                 </div>
@@ -1285,29 +1290,29 @@ export function AIPanel() {
                 </ul>
                 <footer>
                   <button className="secondary" onClick={() => settleAssistantApproval(false)}>
-                    <X size={13} /> Keep current model
+                    <X size={13} /> 保留当前模型
                   </button>
                   <button className="primary" onClick={() => settleAssistantApproval(true)}>
-                    <Check size={13} /> Apply and continue
+                    <Check size={13} /> 应用并继续
                   </button>
                 </footer>
               </section>
             )}
             {toolApproval !== null && (
-              <section className="ai-approval-card" aria-label="Approve tool call">
+              <section className="ai-approval-card" aria-label="批准工具调用">
                 <header>
                   <AlertTriangle size={14} />
-                  <strong>Approve tool call</strong>
+                  <strong>批准工具调用</strong>
                 </header>
                 <p>{toolApproval.summary}</p>
                 <code>{toolApproval.toolName}</code>
                 <pre>{JSON.stringify(toolApproval.arguments, null, 2)}</pre>
                 <footer>
                   <button className="secondary" onClick={() => settleToolApproval(false)}>
-                    <X size={13} /> Deny
+                    <X size={13} /> 拒绝
                   </button>
                   <button className="primary" onClick={() => settleToolApproval(true)}>
-                    <Check size={13} /> Allow
+                    <Check size={13} /> 允许
                   </button>
                 </footer>
               </section>
@@ -1318,16 +1323,16 @@ export function AIPanel() {
         {variation !== null && (
           <div className="ai-result">
             <p className="ai-meta">
-              {variation.name}: {variation.pointCount} parameter combinations; metric{' '}
+              {variation.name}: {variation.pointCount} 个参数组合;指标{' '}
               {variation.metric}
             </p>
-            <table className="ai-scores" aria-label="Parameter variation results">
+            <table className="ai-scores" aria-label="参数扫描结果">
               <thead>
                 <tr>
-                  <th>Parameters</th>
-                  <th>Mean</th>
-                  <th>CI</th>
-                  <th>Reps</th>
+                  <th>参数</th>
+                  <th>均值</th>
+                  <th>置信区间</th>
+                  <th>次数</th>
                 </tr>
               </thead>
               <tbody>
@@ -1360,30 +1365,30 @@ export function AIPanel() {
               <>
                 <p className="ai-meta">
                   {result.mode === 'validated'
-                    ? 'validated structured ModelPatch candidate'
+                    ? '已验证的结构化 ModelPatch 候选方案'
                     : result.iterations > 0
-                      ? `compiled in ${result.iterations} iteration(s)`
-                      : 'validated and ran the applied canvas model'}
+                      ? `编译了 ${result.iterations} 次迭代`
+                      : '已验证并运行了应用到画布的模型'}
                 </p>
                 {result.experiment != null && (
                   <p className="ai-meta">
-                    experiment: seed={result.experiment.seed}, reps={result.experiment.reps},
+                    实验:seed={result.experiment.seed}, reps={result.experiment.reps},
                     arrivals=
                     {result.experiment.arrivals}, warmup={result.experiment.warmup},{' '}
-                    {(result.experiment.confidence * 100).toFixed(0)}% CI
+                    {(result.experiment.confidence * 100).toFixed(0)}% 置信区间
                   </p>
                 )}
                 {proposal?.patch != null && (
                   <div className="ai-patch-preview">
                     <p className="ai-meta">
-                      Proposed ModelPatch: {proposal.descriptions.length} operation(s)
+                      建议的 ModelPatch:{proposal.descriptions.length} 个操作
                       {proposal.destructiveOperations > 0
-                        ? ` — review ${proposal.destructiveOperations} destructive operation(s)`
-                        : ' — no destructive operations'}
+                        ? ` — 需检查 ${proposal.destructiveOperations} 个破坏性操作`
+                        : ' — 无破坏性操作'}
                     </p>
                     {proposalStale && (
                       <p className="ai-error">
-                        The canvas changed after this proposal. Generate it again before applying.
+                        建议之后模型画布已改变。应用前请重新生成。
                       </p>
                     )}
                     {proposal.descriptions.length > 0 ? (
@@ -1393,20 +1398,20 @@ export function AIPanel() {
                         ))}
                       </ul>
                     ) : (
-                      <p className="ai-meta">The current model already matches this request.</p>
+                      <p className="ai-meta">当前模型已符合该请求。</p>
                     )}
                     <button
                       className="ai-load"
                       disabled={busy || proposal.descriptions.length === 0 || proposalStale}
                       onClick={() => void loadToCanvas()}
                     >
-                      Apply model patch
+                      应用模型修改
                     </button>
                   </div>
                 )}
                 <details className="ai-artifact">
                   <summary>
-                    <Code2 size={13} /> Generated DSL <ChevronDown size={12} />
+                    <Code2 size={13} /> 生成的 DSL <ChevronDown size={12} />
                   </summary>
                   <ScrollArea className="ai-dsl-scroll" scrollRef={dslRef}>
                     <pre ref={dslRef} className="ai-dsl scroll-hidden">
@@ -1417,7 +1422,7 @@ export function AIPanel() {
                 {result.runSummary !== '' && (
                   <details className="ai-artifact">
                     <summary>
-                      <TerminalSquare size={13} /> Run log <ChevronDown size={12} />
+                      <TerminalSquare size={13} /> 运行日志 <ChevronDown size={12} />
                     </summary>
                     <ScrollArea className="ai-run-scroll" scrollRef={runRef}>
                       <pre ref={runRef} className="ai-run scroll-hidden">
@@ -1430,12 +1435,12 @@ export function AIPanel() {
                   <table className="ai-scores" aria-label="DES block statistics">
                     <thead>
                       <tr>
-                        <th>Block</th>
-                        <th>Out</th>
-                        <th>Mean size</th>
-                        <th>Stage wait</th>
-                        <th>Util.</th>
-                        <th>Timeout</th>
+                        <th>块</th>
+                        <th>出队</th>
+                        <th>平均大小</th>
+                        <th>阶段等待</th>
+                        <th>利用率</th>
+                        <th>超时</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1470,10 +1475,10 @@ export function AIPanel() {
         {optimized !== null && (
           <div className="ai-result">
             <p className="ai-meta">
-              best {optimized.variable}={optimized.best.value} ({optimized.objective}{' '}
+              最优 {optimized.variable}={optimized.best.value} ({optimized.objective}{' '}
               {optimized.metric} → {optimized.best.score},{optimized.strategy},{' '}
-              {optimized.evaluations.length} evaluations
-              {optimized.selection?.status === 'confidence-overlap' ? ', CI overlap' : ''})
+              {optimized.evaluations.length} 次评估
+              {optimized.selection?.status === 'confidence-overlap' ? ',置信区间重叠' : ''})
             </p>
             <OptimizeChart evaluations={optimized.evaluations} objective={optimized.objective} />
             <table className="ai-scores">
@@ -1481,7 +1486,7 @@ export function AIPanel() {
                 <tr>
                   <th>{optimized.variable}</th>
                   <th>{optimized.metric}</th>
-                  <th>95% CI</th>
+                  <th>95% 置信区间</th>
                 </tr>
               </thead>
               <tbody>
@@ -1493,7 +1498,7 @@ export function AIPanel() {
                       {entry.ciLow != null && entry.ciHigh != null
                         ? `[${entry.ciLow.toFixed(4)}, ${entry.ciHigh.toFixed(4)}]`
                         : '—'}
-                      {entry.uncertain ? ' · overlap' : ''}
+                      {entry.uncertain ? ' · 重叠' : ''}
                     </td>
                   </tr>
                 ))}
@@ -1515,23 +1520,23 @@ export function AIPanel() {
             <p className="ai-meta">
               evidence: {explained.evidence.blockCount} blocks
               {explained.evidence.busiestBlock !== null
-                ? `, busiest=${explained.evidence.busiestBlock}`
+                ? `,最忙=${explained.evidence.busiestBlock}`
                 : ''}
               {explained.evidence.largestQueue !== null
-                ? `, largest queue=${explained.evidence.largestQueue}`
+                ? `,最大队列=${explained.evidence.largestQueue}`
                 : ''}
             </p>
             {explained.evidence.blockFindings != null &&
               explained.evidence.blockFindings.length > 0 && (
-                <table className="ai-scores" aria-label="Per-block evidence">
+                <table className="ai-scores" aria-label="分块证据">
                   <thead>
                     <tr>
-                      <th>Block</th>
-                      <th>Util.</th>
-                      <th>Availability</th>
-                      <th>Mean size</th>
-                      <th>Stage wait</th>
-                      <th>Timeouts</th>
+                      <th>块</th>
+                      <th>利用率</th>
+                      <th>可用性</th>
+                      <th>平均大小</th>
+                      <th>阶段等待</th>
+                      <th>超时</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1550,12 +1555,12 @@ export function AIPanel() {
               )}
             {explained.evidence.causalChain != null &&
               explained.evidence.causalChain.length > 1 && (
-                <p className="ai-meta">causal path: {explained.evidence.causalChain.join(' → ')}</p>
+                <p className="ai-meta">因果路径:{explained.evidence.causalChain.join(' → ')}</p>
               )}
             {explained.evidence.causalEvidence != null && (
               <>
                 {explained.evidence.causalEvidence.relationships.length > 0 && (
-                  <ul className="ai-findings" aria-label="Observed causal relationships">
+                  <ul className="ai-findings" aria-label="观察到的因果关系">
                     {explained.evidence.causalEvidence.relationships.map((relationship) => (
                       <li key={`${relationship.from}:${relationship.to}`}>
                         {relationship.from} → {relationship.to}: {relationship.signals.join('; ')}
@@ -1565,8 +1570,8 @@ export function AIPanel() {
                 )}
                 <p className="ai-meta">
                   {explained.evidence.causalEvidence.status === 'topology-supported'
-                    ? 'causal evidence: topology + measured metrics'
-                    : 'causal evidence: insufficient measured coverage'}
+                    ? '因果证据:拓扑 + 实测指标'
+                    : '因果证据:实测覆盖不足'}
                   {' — '}
                   {explained.evidence.causalEvidence.caveat}
                 </p>
@@ -1576,25 +1581,24 @@ export function AIPanel() {
         )}
         {comparison !== null && (
           <div className="ai-result">
-            <p className="ai-meta">Before/after comparison using identical run settings</p>
+            <p className="ai-meta">使用相同运行设置的前后对比</p>
             <p className="ai-meta">
-              paired evidence: {comparison.statisticalEvidence.matchedReplicationPairs} matching
-              replication pair(s)
+              配对证据:{comparison.statisticalEvidence.matchedReplicationPairs} 对重复
             </p>
             <ul className="ai-findings">
               {comparison.findings.map((finding, index) => (
                 <li key={index}>{finding}</li>
               ))}
             </ul>
-            <table className="ai-scores" aria-label="DES before and after comparison">
+            <table className="ai-scores" aria-label="DES 前后对比">
               <thead>
                 <tr>
-                  <th>Block</th>
-                  <th>Status</th>
-                  <th>Δ out</th>
-                  <th>Δ size</th>
-                  <th>Δ stage wait</th>
-                  <th>Δ util.</th>
+                  <th>块</th>
+                  <th>状态</th>
+                  <th>Δ 出队</th>
+                  <th>Δ 大小</th>
+                  <th>Δ 阶段等待</th>
+                  <th>Δ 利用率</th>
                 </tr>
               </thead>
               <tbody>
@@ -1611,13 +1615,13 @@ export function AIPanel() {
               </tbody>
             </table>
             {comparison.statistical.length > 0 && (
-              <table className="ai-scores" aria-label="Paired statistical comparison">
+              <table className="ai-scores" aria-label="配对统计对比">
                 <thead>
                   <tr>
-                    <th>Metric</th>
-                    <th>Mean Δ</th>
-                    <th>CI</th>
-                    <th>Conclusion</th>
+                    <th>指标</th>
+                    <th>均值差</th>
+                    <th>置信区间</th>
+                    <th>结论</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1643,7 +1647,7 @@ export function AIPanel() {
             <div
               className="ai-composer-suggestions"
               role="listbox"
-              aria-label="Composer suggestions"
+              aria-label="输入建议"
             >
               {(commandSuggestions.length > 0 ? commandSuggestions : mentionSuggestions).map(
                 (item) => (
@@ -1651,16 +1655,16 @@ export function AIPanel() {
                     <code>{item}</code>
                     <span>
                       {item === '/build'
-                        ? 'Build or edit the current model'
+                        ? '构建或编辑当前模型'
                         : item === '/optimize'
-                          ? 'Search for a better parameter value'
+                          ? '搜索更优参数值'
                           : item === '/sweep'
-                            ? 'Run a parameter study'
+                            ? '运行参数扫描'
                             : item === '/explain'
-                              ? 'Explain the latest run'
+                              ? '解释最近一次运行'
                               : item === '/clear'
-                                ? 'Clear this conversation'
-                                : 'Attach this workspace context'}
+                                ? '清空当前对话'
+                                : '附加当前工作区上下文'}
                     </span>
                   </button>
                 ),
@@ -1674,8 +1678,8 @@ export function AIPanel() {
             rows={3}
             placeholder={
               document.nodes.length > 0
-                ? 'Ask Copilot to change, run, or explain this model…'
-                : 'Describe the system you want to simulate…'
+                ? '让 Copilot 修改、运行或解释这个模型…'
+                : '描述你想要模拟的系统…'
             }
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={(event) => {
@@ -1687,50 +1691,50 @@ export function AIPanel() {
           />
           <div className="ai-composer-actions">
             <details className="ai-composer-add">
-              <summary aria-label="Add context or command" title="Add context or command">
+              <summary aria-label="添加上下文或命令" title="添加上下文或命令">
                 <Plus size={16} />
               </summary>
               <div className="ai-tools-popover ai-add-popover">
                 <button type="button" onClick={() => chooseComposerToken('@model')}>
                   <span>
                     <strong>@model</strong>
-                    <small>Attach the current model</small>
+                    <small>附加当前模型</small>
                   </span>
                 </button>
                 <button type="button" onClick={() => chooseComposerToken('@selection')}>
                   <span>
                     <strong>@selection</strong>
-                    <small>Attach the selected block</small>
+                    <small>附加选中的块</small>
                   </span>
                 </button>
                 <button type="button" onClick={() => chooseComposerToken('/explain')}>
                   <span>
                     <strong>/explain</strong>
-                    <small>Explain the latest run</small>
+                    <small>解释最近一次运行</small>
                   </span>
                 </button>
               </div>
             </details>
             <details className="ai-composer-select ai-model-select">
-              <summary title="Switch model">
-                <span>{modelLabel}</span>
+              <summary title="切换模型">
+                <span>{displayModelLabel(modelLabel)}</span>
                 <ChevronDown size={11} />
               </summary>
               <div className="ai-tools-popover ai-select-popover">
                 <button type="button" onClick={() => useUiStore.getState().openSettings()}>
-                  <strong>{modelLabel}</strong>
-                  <small>Open Settings → AI &amp; Models to switch provider or model</small>
+                  <strong>{displayModelLabel(modelLabel)}</strong>
+                  <small>打开 Settings → AI &amp; Models 切换 provider 或模型</small>
                 </button>
                 <button type="button" onClick={() => setModelLabel('Auto')}>
-                  <strong>Auto</strong>
-                  <small>Use the configured provider</small>
+                  <strong>自动</strong>
+                  <small>使用已配置的 provider</small>
                 </button>
               </div>
             </details>
             <details className="ai-composer-select ai-configure-tools">
-              <summary title="Configure tools">
+              <summary title="配置工具">
                 <Settings2 size={14} />
-                <span>Configure</span>
+                <span>配置</span>
               </summary>
               <div className="ai-tools-popover ai-select-popover">
                 <button
@@ -1739,8 +1743,8 @@ export function AIPanel() {
                   onClick={() => setToolsEnabled((enabled) => !enabled)}
                 >
                   <span>
-                    <strong>LogicPilot modeling</strong>
-                    <small>Inspect, edit, compile and simulate</small>
+                    <strong>LogicPilot 建模</strong>
+                    <small>检查、编辑、编译与模拟</small>
                   </span>
                   <span className={`ai-toggle ${toolsEnabled ? 'on' : ''}`} aria-hidden>
                     <i />
@@ -1752,23 +1756,23 @@ export function AIPanel() {
                   onClick={() => setSourceEditingEnabled((enabled) => !enabled)}
                 >
                   <span>
-                    <strong>Source editing</strong>
-                    <small>Read and patch bounded workspace source files</small>
+                    <strong>源代码编辑</strong>
+                    <small>读取并修改工作区内的受限源文件</small>
                   </span>
                   <span className={`ai-toggle ${sourceEditingEnabled ? 'on' : ''}`} aria-hidden>
                     <i />
                   </span>
                 </button>
                 <p className="ai-tools-note">
-                  MCP tools are discovered automatically when configured.
+                  配置后 MCP 工具会被自动发现。
                 </p>
               </div>
             </details>
             {conversation.length > 0 && (
               <button
                 className="ai-icon-button"
-                aria-label="Clear conversation"
-                title="Clear conversation"
+                aria-label="清空对话"
+                title="清空对话"
                 disabled={busy}
                 onClick={() => {
                   clearConversation(conversationScope);
@@ -1779,25 +1783,25 @@ export function AIPanel() {
               </button>
             )}
             {document.nodes.length > 0 && (
-              <span className="ai-context-pill">{document.nodes.length} blocks</span>
+              <span className="ai-context-pill">{document.nodes.length} 个块</span>
             )}
             <button
               className={`ai-voice-button ${voiceState}`}
               aria-label={
                 voiceState === 'listening'
-                  ? 'Stop listening'
+                  ? '停止聆听'
                   : voiceState === 'transcribing'
-                    ? 'Transcribing voice input'
-                    : 'Voice input'
+                    ? '正在转写语音'
+                    : '语音输入'
               }
               title={
                 voiceState === 'listening'
-                  ? 'Listening… click to stop'
+                  ? '聆听中…点击停止'
                   : voiceState === 'transcribing'
-                    ? 'Transcribing…'
+                    ? '转写中…'
                     : voiceState === 'error'
                       ? voiceError
-                      : 'Voice input'
+                      : '语音输入'
               }
               disabled={busy && voiceState === 'idle'}
               onClick={startVoiceInput}
@@ -1807,8 +1811,8 @@ export function AIPanel() {
             {busy ? (
               <button
                 className="ai-send"
-                aria-label="Stop assistant"
-                title="Stop"
+                aria-label="停止助手"
+                title="停止"
                 onClick={cancelAssistant}
               >
                 <Square size={14} />
@@ -1816,8 +1820,8 @@ export function AIPanel() {
             ) : (
               <button
                 className="ai-send"
-                aria-label="Send to Copilot"
-                title="Send (Enter)"
+                aria-label="发送给 Copilot"
+                title="发送 (Enter)"
                 disabled={prompt.trim() === ''}
                 onClick={submitPrompt}
               >
@@ -1827,12 +1831,12 @@ export function AIPanel() {
           </div>
         </div>
         <div className="ai-composer-status">
-          <button type="button" className="ai-status-button" title="Local runtime">
-            <span className="ai-status-dot" /> Local <ChevronDown size={10} />
+          <button type="button" className="ai-status-button" title="本地运行">
+            <span className="ai-status-dot" /> 本地 <ChevronDown size={10} />
           </button>
           <details className="ai-status-permission">
-            <summary title="Permission mode">
-              <ShieldCheck size={12} /> {permissionMode} <ChevronDown size={10} />
+            <summary title="权限模式">
+              <ShieldCheck size={12} /> {permissionLabel(permissionMode)} <ChevronDown size={10} />
             </summary>
             <div className="ai-tools-popover ai-select-popover">
               {(['Full access', 'Workspace', 'Read only'] as const).map((mode) => (
@@ -1842,13 +1846,13 @@ export function AIPanel() {
                   className={permissionMode === mode ? 'selected' : ''}
                   onClick={() => changePermissionMode(mode)}
                 >
-                  <strong>{mode}</strong>
+                  <strong>{permissionLabel(mode)}</strong>
                   <small>
                     {mode === 'Full access'
-                      ? 'Allow host actions'
+                      ? '允许宿主操作'
                       : mode === 'Workspace'
-                        ? 'Restrict changes to this workspace'
-                        : 'Inspect and answer only'}
+                        ? '仅限当前工作区的修改'
+                        : '仅检查与回答'}
                   </small>
                 </button>
               ))}
