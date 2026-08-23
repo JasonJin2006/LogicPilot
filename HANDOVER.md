@@ -37,6 +37,7 @@
 | (本轮) | **视觉切片/ELK 排版+主题**:依赖 elkjs@0.9.2(仓库根 .npmrc 固定 virtual-store-dir-max-length=60 对齐存量存储);新建 `sysmlAutoLayoutElk.ts`——buildElkGraph 把包含关系嵌套为 ELK 复合 children(`contains` 从边表消失)、其余关系参与全局分层(INCLUDE_CHILDREN),固定 randomSeed 确定性,direction=RIGHT 让同父兄弟纵向堆叠、深度向右;运行走 Web Worker(`?url` 引入经典 worker),失败降级主线程 bundled,再败回退同步树形首帧;ELK 返回的容器放大尺寸经 `SysMLLayout.sizes` 持久化并用于拉伸外框;坐标按祖先链累加为绝对值。配色删除硬编码 COLORS,节点 g 带 `data-kind`,CSS 用 currentColor+color-mix 映射主题 token(accent/warn/error/ok/surface),双主题一致。Auto layout 按钮→applyElkLayout(checkpoint 可撤销),无侧车新文件加载后自动精排。+4 测试(共 288 vitest);sysml-canvas/run-check 截图人工复核通过 |
 | (本轮) | **S2-d 收尾+视觉修复**:接手另一 AI 未提交的 evidence 切片并补全验证——`.verify/state-evidence-check.mjs` 实测红绿灯状态机(202 步,t=0→2675,预算停止)、evidence 面板逐 Run 累加(1→2 条)、跨容器 satisfies 渲染、浏览器控制台零 ELK 回退;修复两处:① `.sysml-node-kind/.sysml-node-name` 硬编码深色文字改 var(--text-secondary)/var(--text)(浅色主题下名字不可见的真凶);② ELK worker 在无 Worker 环境快速抛出走主线程兜底(消除单测告警刷屏)。309 vitest/build/E2E/专项检查全绿,截图人工复核 |
 | (本轮) | **S2-e/evidence AI 查询**:新增 query_sysml_evidence(target 子串/id、outcome=ok|failed、limit≤20 过滤,返回 revision/时长/步数/result/conformance 版本)与 explain_sysml_run(单条全 trace 含源码行与时钟时刻);工具测试 2 例(双 Run 入账+outcome 过滤+explain 全量字段,共 311 vitest) |
+| (本轮) | **S2-f/状态机 lowering**:新建 `sysmlLowering.ts`——`state def` + 子状态 + transition 关系生成等价 .lp statechart DSL(`initial = 首状态`;`after N [unit]`→`timeout` 秒换算 s/ms/min/h);语义不等价的变换一律拒绝并报稳定码:SL0001 目标非法/SL0002 嵌套子状态/SL0003 绝对触发(at)/SL0004 无触发/SL0005 未知单位/SL0006 越界转移/SL0007 内部自检;生成前 parseDsl 自检。AI 工具 lower_sysml_state_machine。**内核证明链**:单测钉字节级输出 → lpcli compile 通过(856B IR)→ lpcli run --model-file 在 StatechartRuntime 执行至终态 final_value=2(yellow),转移在内核时钟上真实发生。+9 测试(共 320 vitest) |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -72,7 +73,8 @@
 - ✅ **S2-c 正交路由**(另一 AI,`e4ade3b`):跨容器连线 Manhattan 路由,纯函数渲染时计算,对 ELK/树形/手动布局统一生效;
 - ✅ **S2-d evidence 日志**(本轮收尾提交):每次 Run 产出不可变记录(绑 revision/目标/trace/时长/conformance 版本),localStorage + bundle 侧车 `presentation/sysml/<hash>.evidence.json` 双持久化,上限 20 条,refresh 不清空(旧 revision 证据仍可查);画布 overlay 面板展示最近 5 条;
 - ✅ **S2-e evidence AI 查询**(见 §3):query_sysml_evidence(target/outcome/limit 过滤)+ explain_sysml_run(单条全 trace),agent 可回答"跑过哪些、结果如何、绑哪个 revision";
-- S2 剩余:lowering 到 Statechart/DEVS runtime、外部 analysis adapter。
+- ✅ **S2-f 状态机 lowering**(见 §3):SysML `state def` → 生成 .lp statechart DSL → 内核 StatechartRuntime 真执行(编译+运行均已证明);AI 工具 lower_sysml_state_machine;稳定码 SL0001–SL0007;
+- S2 剩余:外部 analysis adapter(FMI/RPC 边界);UI 一键 lowering 入口(当前经 AI 工具);内核侧 Process/Agent/SD checkpoint bundle。
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)

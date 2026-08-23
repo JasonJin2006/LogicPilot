@@ -15,6 +15,7 @@ import {
   type RelationVerb,
 } from '../../../sysml/sysmlEdits';
 import { definitionAt, referencesOf } from '../../../sysml/sysmlLanguage';
+import { lowerStateMachine } from '../../../sysml/sysmlLowering';
 import { buildSysMLProjectIndex, resolveInIndex } from '../../../sysml/sysmlProjectIndex';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
@@ -528,6 +529,50 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
         steps: record.steps ?? [],
         result: record.result ?? null,
         error: record.error ?? null,
+      };
+    },
+  },
+  {
+    name: 'lower_sysml_state_machine',
+    description:
+      'Lower one SysML state definition into equivalent .lp statechart DSL ' +
+      '(kernel StatechartRuntime). Refuses faithfully-unsupported constructs ' +
+      '(absolute triggers, nesting, trigger-less transitions) with stable SLxxxx codes.',
+    parameters: { query: { type: 'string', required: true } },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection) return 'no SysML projection is open';
+      const query = stringArg(args, 'query');
+      if (query === null) return 'query must name a state definition';
+      const normalized = query.toLowerCase();
+      const target = state.projection.elements.find(
+        (element) =>
+          element.id.toLowerCase() === normalized ||
+          element.name.toLowerCase() === normalized ||
+          element.qualifiedName.toLowerCase() === normalized,
+      );
+      if (target === undefined) return `no SysML element matches '${query}'`;
+      if (target.kind !== 'state' || target.declaration !== 'definition') {
+        return 'lowering target must be a `state def` element';
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const query = stringArg(args, 'query')!.toLowerCase();
+      const target = state.projection!.elements.find(
+        (element) =>
+          element.id.toLowerCase() === query ||
+          element.name.toLowerCase() === query ||
+          element.qualifiedName.toLowerCase() === query,
+      )!;
+      const result = lowerStateMachine(state.source, state.projection!, target.id);
+      return {
+        ok: result.ok,
+        modelName: result.modelName || null,
+        entryState: result.entryState,
+        dsl: result.dsl || null,
+        diagnostics: result.diagnostics,
       };
     },
   },

@@ -155,3 +155,40 @@ describe('SysML projection AI tools', () => {
       expect((detail.steps as unknown[]).length).toBeGreaterThan(0);
     });
   });
+
+  describe('lower_sysml_state_machine tool', () => {
+    beforeEach(() => {
+      useUiStore.setState({ openFiles: [], activeFile: null, diskFiles: {} });
+      useSysMLStore.getState().clear();
+      useSysMLStore
+        .getState()
+        .load(
+          'light.sysml',
+          'state def Light {\n  state red;\n  state green;\n  transition red then green after 30 s;\n}\n',
+        );
+    });
+
+    it('validates the target kind and returns kernel DSL', () => {
+      const lower = tool('lower_sysml_state_machine');
+      expect(lower.validate({ query: 'missing' })).toContain('no SysML element');
+      expect(lower.validate({ query: 'Light' })).toBeNull();
+      const result = lower.execute({ query: 'Light' }, {} as never) as Record<string, unknown>;
+      expect(result.ok).toBe(true);
+      expect(result.entryState).toBe('red');
+      expect(String(result.dsl)).toContain('statechart Light {');
+      expect(String(result.dsl)).toContain('triggeredBy = timeout; timeout = 30.0');
+    });
+
+    it('surfaces SLxxxx diagnostics for unsupported machines', () => {
+      useSysMLStore
+        .getState()
+        .load('abs.sysml', 'state def M {\n  state a;\n  transition a then b at 10;\n  state b;\n}\n');
+      const result = tool('lower_sysml_state_machine').execute(
+        { query: 'M' },
+        {} as never,
+      ) as Record<string, unknown>;
+      expect(result.ok).toBe(false);
+      const diagnostics = result.diagnostics as Array<{ code: string }>;
+      expect(diagnostics[0]!.code).toBe('SL0003');
+    });
+  });
