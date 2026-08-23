@@ -15,10 +15,12 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/runtime/method_registry.h"
+#include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/runtime_manager.h"
 #include "logicpilot/state/variable_store.h"
 #include "register.h"
 #include "statechart_replication.h"
+#include "statechart_network.h"
 #include "statechart_runtime.h"
 
 using namespace logicpilot;
@@ -139,6 +141,70 @@ TEST_CASE("statechart method: lifecycle API matches the batch path",
   REQUIRE(lifecycle.departures == baseline.departures);
   REQUIRE(lifecycle.final_value == baseline.final_value);
   REQUIRE(lifecycle.horizon_seconds == baseline.horizon_seconds);
+}
+
+TEST_CASE("statechart scheduler enforces the shared event budget",
+          "[runtime][statechart][safety]") {
+  const IrLoadResult model = load_statechart();
+  std::string error;
+  StatechartReplicationModel chart(model.file.v2_root->root(), &error);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.arrivals = 10;
+  config.max_events = 1;
+  chart.reset(config);
+  REQUIRE(chart.advance(SimTime::infinity(), nullptr) == 1);
+  REQUIRE(chart.failed());
+  REQUIRE(chart.failure_reason().find("KR1017") != std::string::npos);
+
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(chart.checkpoint_save(checkpoint));
+  REQUIRE(chart.checkpoint_restore(checkpoint));
+  REQUIRE(chart.failed());
+
+  StatechartNetworkReplicationModel network(model.file.v2_root->root(),
+                                             &error);
+  REQUIRE(error.empty());
+  REQUIRE(network.reset(config));
+  REQUIRE(network.advance(SimTime::infinity()) == 1);
+  REQUIRE(network.failed());
+  REQUIRE(network.failure_reason().find("KR1017") != std::string::npos);
+}
+
+TEST_CASE("statechart checkpoint restores machine state and timers",
+          "[runtime][statechart][checkpoint]") {
+  const IrLoadResult model = load_statechart();
+  std::string error;
+  StatechartReplicationModel chart(model.file.v2_root->root(), &error);
+  REQUIRE(error.empty());
+
+  SimulationClock clock;
+  BinaryHeapScheduler scheduler{64};
+  EventHandlerRegistry handlers;
+  VariableStore variables;
+  ReplicationConfig config;
+  config.seed = 42;
+  config.arrivals = 10;
+  RuntimeContext context{clock, scheduler, handlers, variables, config};
+  chart.attach(context);
+  chart.reset(config);
+  REQUIRE(chart.advance(1_s, nullptr) == 1);
+  REQUIRE(chart.current_state_name() == "active");
+
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(chart.checkpoint_save(checkpoint));
+  REQUIRE(!checkpoint.empty());
+
+  REQUIRE(chart.advance(3_s, nullptr) == 1);
+  REQUIRE(chart.current_state_name() == "done");
+
+  clock.reset(1_s);
+  REQUIRE(chart.checkpoint_restore(checkpoint));
+  REQUIRE(chart.current_state_name() == "active");
+  REQUIRE(chart.advance(3_s, nullptr) == 1);
+  REQUIRE(chart.current_state_name() == "done");
+  REQUIRE(chart.metrics().final_value == 2.0);
 }
 
 TEST_CASE("statechart method: rate-triggered transitions fire",

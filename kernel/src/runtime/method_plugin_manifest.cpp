@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <utility>
 
+#include "logicpilot/runtime/artifact_digest.h"
+
 namespace logicpilot {
 namespace {
 
@@ -109,6 +111,16 @@ MethodPluginManifestResult parse_method_plugin_manifest(std::string_view text) {
       return fail("MP1009: runtime.artifact must be a string");
     manifest.artifact = artifact->get<std::string>();
   }
+  if (const auto hash = runtime->find("artifactSha256"); hash != runtime->end()) {
+    if (!hash->is_string() || !ArtifactDigest::is_sha256_hex(hash->get<std::string>())) {
+      return fail("MP1013: runtime.artifactSha256 must be a 64-character SHA-256 hex string");
+    }
+    manifest.artifact_sha256 = hash->get<std::string>();
+    std::transform(manifest.artifact_sha256.begin(), manifest.artifact_sha256.end(),
+                   manifest.artifact_sha256.begin(), [](unsigned char character) {
+                     return static_cast<char>(std::tolower(character));
+                   });
+  }
   if (manifest.runtime_kind != PluginRuntimeKind::kLinked && manifest.artifact.empty()) {
     return fail("MP1010: c-abi and wasm runtimes require runtime.artifact");
   }
@@ -122,6 +134,23 @@ MethodPluginManifestResult parse_method_plugin_manifest(std::string_view text) {
       }
       manifest.dsl_libraries.push_back(library.get<std::string>());
     }
+  }
+  if (const auto family = root.find("family"); family != root.end()) {
+    if (!family->is_string() ||
+        (family->get<std::string>() != "discrete_event" &&
+         family->get<std::string>() != "agent" &&
+         family->get<std::string>() != "system_dynamics")) {
+      return fail("MP1016: family must be discrete_event, agent, or system_dynamics");
+    }
+    manifest.family = family->get<std::string>();
+  }
+  if (const auto formalism = root.find("formalism"); formalism != root.end()) {
+    if (!formalism->is_string() ||
+        parse_method_formalism(formalism->get<std::string>()) ==
+            MethodFormalism::kUnknown) {
+      return fail("MP1017: formalism is not a recognized method formalism");
+    }
+    manifest.formalism = formalism->get<std::string>();
   }
   return result;
 }

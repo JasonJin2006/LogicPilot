@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <cstddef>
 #include <new>
 
 #include "logicpilot/runtime/method_plugin_abi.h"
@@ -35,6 +36,10 @@ int32_t initialize(void* instance, const uint8_t* ir, size_t ir_size,
   lp_event_token_v1 cancelled{};
   if (host->schedule(host->context, 1'000'000, 799, 0, &cancelled) == 0 ||
       host->cancel(host->context, &cancelled) == 0)
+    return 0;
+  if (host->register_message_type == nullptr ||
+      host->register_message_type(host->context, "test://cabi/initialized", 1,
+                                   "application/octet-stream") == 0)
     return 0;
   const std::uint8_t payload[]{1, 2, 3};
   if (host->publish_message(host->context, "test://cabi/initialized", 1, "application/octet-stream",

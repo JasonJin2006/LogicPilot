@@ -1,5 +1,6 @@
 // Continuous (ODE) engine - Phase D: structured equations execute via a
-// fixed-step RK4 integrator. v0 RHS grammar: numbers, identifiers (node
+// fixed-step RK4 integrator, with an opt-in adaptive step-doubling mode.
+// v0 RHS grammar: numbers, identifiers (node
 // params + state variables), + - * / and parentheses, e.g. "-k*y" (exponential
 // decay) or "r*y*(1-y/K)" (logistic). Functions: exp, log, sqrt, sin, cos;
 // "t" is reserved for the current simulation time. Deterministic: no RNG.
@@ -10,14 +11,21 @@
 //     params feed the RHS identifiers;
 //   * v1 compatibility: an ir::EquationModel (variables -> initial values,
 //     equations -> rhs_text).
-// ReplicationConfig.arrivals is the number of integration steps (dt = 0.01).
+// ReplicationConfig.arrivals is the number of fixed integration steps
+// (dt = 0.01). A continuous node may opt into adaptive step-doubling RK4 by
+// declaring numeric params `adaptive = 1`, `absolute_tolerance`,
+// `relative_tolerance`, `minimum_step`, `maximum_step`, and optional `horizon`.
+// `stop_at_zero_crossings = 1` additionally clips an adaptive step at the
+// first detected zero crossing (requires `detect_zero_crossings = 1`).
 #pragma once
 
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "logicpilot/devs/replication.h"
@@ -80,6 +88,19 @@ private:
   std::unique_ptr<Node> root_;
 };
 
+enum class ZeroCrossingDirection : std::uint8_t {
+  kUpward,
+  kDownward,
+};
+
+struct ContinuousZeroCrossing {
+  std::string variable;
+  double at{0.0};
+  double before{0.0};
+  double after{0.0};
+  ZeroCrossingDirection direction{ZeroCrossingDirection::kUpward};
+};
+
 class ContinuousReplicationModel final : public ReplicationModel {
 public:
   // Fixed RK4 integration interval used by the v2 continuous runtime.
@@ -92,11 +113,33 @@ public:
 
   bool reset(const ReplicationConfig& config);
   bool step();
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const;
+  bool checkpoint_restore(std::span<const std::uint8_t> state);
   [[nodiscard]] bool done() const;
-  [[nodiscard]] bool failed() const { return !error_.empty(); }
+  [[nodiscard]] bool failed() const {
+    return budget_exhausted_ || !error_.empty();
+  }
   [[nodiscard]] const std::string& last_error() const { return error_; }
   [[nodiscard]] std::uint64_t step_count() const { return step_index_; }
   [[nodiscard]] double sim_time_seconds() const { return current_t_; }
+  // Delay until the next shared-scheduler integration event. Fixed-step
+  // models return 0.01; adaptive models return their current proposed step.
+  [[nodiscard]] double next_step_seconds() const;
+  // Preflight the next adaptive step before a shared-scheduler event is
+  // timestamped. This prevents a rejected trial from making continuous time
+  // outrun the kernel clock.
+  bool prepare_next_step();
+  [[nodiscard]] bool adaptive_solver() const { return adaptive_; }
+  [[nodiscard]] double max_local_error() const { return max_local_error_; }
+  [[nodiscard]] const std::vector<ContinuousZeroCrossing>& zero_crossings() const {
+    return zero_crossings_;
+  }
+  using ZeroCrossingObserver =
+      std::function<void(const ContinuousZeroCrossing&)>;
+  void set_zero_crossing_observer(ZeroCrossingObserver observer) {
+    zero_crossing_observer_ = std::move(observer);
+  }
   ReplicationMetrics finish(TraceRecorder* trace = nullptr);
 
   // Final integrated state (test inspection).
@@ -117,6 +160,14 @@ private:
     double initial{0.0};
   };
 
+  bool adaptive_step();
+  void record_accepted_step_trace();
+  bool rk4_trial(const std::vector<double>& input, double t, double h,
+                 std::vector<double>& output, std::string* error) const;
+  void record_zero_crossings(const std::vector<double>& before,
+                             const std::vector<double>& after,
+                             double start_time, double step_seconds);
+
   std::vector<std::uint8_t> bytes_;
   const ir::v2::Node* v2_root_{nullptr};
   std::vector<Ode> odes_;
@@ -128,10 +179,28 @@ private:
   std::unordered_map<std::string, double> state_;
   std::vector<double> y_;
   std::uint64_t step_budget_{0};
+  std::uint64_t requested_step_budget_{0};
   std::uint64_t step_index_{0};
   double current_t_{0.0};
+  bool adaptive_{false};
+  double absolute_tolerance_{1e-9};
+  double relative_tolerance_{1e-6};
+  double minimum_step_{1e-12};
+  double maximum_step_{0.01};
+  double proposed_step_{0.01};
+  double prepared_step_{0.0};
+  double target_horizon_{0.0};
+  std::uint64_t maximum_step_count_{0};
+  double last_step_seconds_{0.0};
+  double max_local_error_{0.0};
+  bool detect_zero_crossings_{false};
+  bool stop_at_zero_crossings_{false};
+  std::vector<ContinuousZeroCrossing> zero_crossings_;
+  ZeroCrossingObserver zero_crossing_observer_;
   bool active_{false};
+  bool budget_exhausted_{false};
   std::string error_;
+  TraceRecorder* trace_{nullptr};
 };
 
 }  // namespace logicpilot

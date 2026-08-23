@@ -17,6 +17,8 @@
 #include <string>
 #include <vector>
 
+#include "logicpilot/runtime/method_identity.h"
+
 namespace logicpilot {
 
 class SimulationMethod;
@@ -31,6 +33,8 @@ public:
     // enforced against SemanticsRef.version before a model is initialized.
     std::string runtime_version{"1"};
     std::vector<std::string> semantics_versions{"1"};
+    MethodFamily family{MethodFamily::kUnknown};
+    MethodFormalism formalism{MethodFormalism::kUnknown};
   };
 
   static MethodRegistry& instance();

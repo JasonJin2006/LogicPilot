@@ -19,7 +19,9 @@
 #include <string_view>
 
 #include "logicpilot/core/time/sim_time.h"
+#include "logicpilot/devs/checkpoint.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/method_checkpoint.h"
 
 namespace logicpilot {
 
@@ -70,6 +72,55 @@ public:
   // The kernel checks this after shutdown so a runtime failure cannot be
   // returned as an apparently successful metric set.
   [[nodiscard]] virtual std::string runtime_error() const { return {}; }
+
+  // Optional method-level state checkpoint. The default is explicit refusal;
+  // a session must never claim to restore a method whose state contract is
+  // unknown.
+  [[nodiscard]] virtual bool save_checkpoint(
+      DevsCheckpoint&, std::string* error = nullptr) const {
+    if (error != nullptr) {
+      *error = "method does not support checkpoint_save";
+    }
+    return false;
+  }
+  virtual bool restore_checkpoint(const DevsCheckpoint&,
+                                  std::string* error = nullptr) {
+    if (error != nullptr) {
+      *error = "method does not support checkpoint_restore";
+    }
+    return false;
+  }
+
+  [[nodiscard]] virtual bool save_method_checkpoint(
+      MethodCheckpoint&, std::string* error = nullptr) const {
+    if (error != nullptr) {
+      *error = "method does not support a versioned state bundle";
+    }
+    return false;
+  }
+  virtual bool restore_method_checkpoint(const MethodCheckpoint&,
+                                         std::string* error = nullptr) {
+    if (error != nullptr) {
+      *error = "method does not support a versioned state bundle";
+    }
+    return false;
+  }
+
+  // Current schema accepted by this runtime. A mismatch is never decoded by
+  // accident; migrate_method_checkpoint is the explicit compatibility seam.
+  [[nodiscard]] virtual std::uint32_t checkpoint_schema_version() const {
+    return 1;
+  }
+  virtual bool migrate_method_checkpoint(const MethodCheckpoint& source,
+                                         std::uint32_t target_schema,
+                                         MethodCheckpoint& migrated,
+                                         std::string* error = nullptr) const {
+    (void)source;
+    (void)target_schema;
+    (void)migrated;
+    if (error != nullptr) *error = "method checkpoint migration unavailable";
+    return false;
+  }
 
   // Batch compatibility adapter: lowers `model` to the legacy
   // ReplicationModel contract so existing drivers (lpcli run, lp-server

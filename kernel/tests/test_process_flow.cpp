@@ -32,6 +32,7 @@ using logicpilot::ReplicationConfig;
 using logicpilot::ReplicationMetrics;
 using logicpilot::ReplicationSummary;
 using logicpilot::BlockMetrics;
+using logicpilot::SimTime;
 using logicpilot::summarize_replications;
 using namespace logicpilot::ir::v2;
 
@@ -169,6 +170,674 @@ TEST_CASE("process flow: source -> delay -> sink holds tokens for the delay",
   // Wq = rho^2 / (2 lambda (1-rho)) = 0.25, so W ~ 0.75.
   REQUIRE(metrics.mean_sojourn > 0.5);
   REQUIRE(metrics.mean_sojourn < 1.0);
+}
+
+TEST_CASE("process flow: basic source queue sink checkpoint resumes",
+          "[process_flow][checkpoint]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto queue = block(builder, "Q", "queue",
+                           {var_int(builder, "capacity", 10)}, {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, queue, sink},
+                     {couple(builder, "In", "out", "Q", "in"),
+                      couple(builder, "Q", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 19;
+  config.arrivals = 5;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(!checkpoint.empty());
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.arrivals == first.arrivals);
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_wait == first.mean_wait);
+}
+
+TEST_CASE("process flow: delay in-service checkpoint restores depart event",
+          "[process_flow][checkpoint][delay]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {0.5})),
+             var_int(builder, "capacity", 1)}, {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 23;
+  config.arrivals = 5;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
+}
+
+TEST_CASE("process flow: basic service checkpoint restores in-service task",
+          "[process_flow][checkpoint][service]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0}))}, {});
+  const auto service =
+      block(builder, "Work", "service",
+            {var_dist(builder, "time", dist(builder, 0, {0.5}))}, {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 31;
+  config.arrivals = 5;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
+}
+
+TEST_CASE("process flow: service timeout checkpoint restores waiting timeout",
+          "[process_flow][checkpoint][service][timeout]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto service =
+      block(builder, "Work", "service",
+            {var_dist(builder, "time", dist(builder, 0, {10.0})),
+             var_int(builder, "queueCapacity", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 1.0)}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto timed_out = block(builder, "TimedOut", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, service, done, timed_out},
+                     {couple(builder, "In", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Done", "in"),
+                      couple(builder, "Work", "outTimeout", "TimedOut", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 9;
+  config.arrivals = 3;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.blocks.size() == first.blocks.size());
+  REQUIRE(second.blocks[1].timed_out == first.blocks[1].timed_out);
+}
+
+TEST_CASE("process flow: seize timeout checkpoint restores waiting timeout",
+          "[process_flow][checkpoint][seize][timeout]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_string(builder, "arrivalType", "interarrival_time"),
+             var_dist(builder, "interarrivalTime", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "multipleEntitiesPerArrival", true),
+             var_int(builder, "agentsPerArrival", 5),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)}, {});
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto blocked = block(builder, "Blocked", "queue",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto seize =
+      block(builder, "Grab", "seize",
+            {var_string(builder, "resource", "Server"),
+             var_int(builder, "numberOfUnits", 1),
+             var_bool(builder, "enableTimeout", true),
+             var_float(builder, "timeout", 0.5)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  const auto timed_out = block(builder, "TimedOut", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, seize, blocked, sink, timed_out},
+                     {couple(builder, "In", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Blocked", "in"),
+                      couple(builder, "Grab", "outTimeout", "TimedOut", "in"),
+                      couple(builder, "Blocked", "out", "Done", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 37;
+  config.arrivals = 5;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.blocks.size() == first.blocks.size());
+  REQUIRE(second.blocks[1].timed_out == first.blocks[1].timed_out);
+}
+
+TEST_CASE("process flow: seize preemption checkpoint restores waiter identity",
+          "[process_flow][checkpoint][seize][preemption]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name, double first_time,
+                          std::int64_t priority) {
+    return block_with_state(
+        builder, name, "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "priority", priority)}, {});
+  };
+  const auto holder = source("Holder", 0.0, 0);
+  const auto low = source("Low", 1.0, 1);
+  const auto high = source("High", 2.0, 5);
+  const auto resource = block(builder, "Server", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto blocked = block(builder, "Blocked", "queue",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto seize = block(
+      builder, "Grab", "seize",
+      {var_string(builder, "resource", "Server"),
+       var_int(builder, "numberOfUnits", 1),
+       var_bool(builder, "enablePreemption", true)}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto preempted = block(builder, "Preempted", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {holder, low, high, seize, blocked, done,
+                               preempted},
+                     {couple(builder, "Holder", "out", "Grab", "in"),
+                      couple(builder, "Low", "out", "Grab", "in"),
+                      couple(builder, "High", "out", "Grab", "in"),
+                      couple(builder, "Grab", "out", "Blocked", "in"),
+                      couple(builder, "Grab", "outPreempted", "Preempted",
+                             "in"),
+                      couple(builder, "Blocked", "out", "Done", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 43;
+  config.arrivals = 3;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: combine checkpoint restores the waiting input port",
+          "[process_flow][checkpoint][combine]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name, double first_time) {
+    return block(builder, name, "source",
+                 {var_dist(builder, "arrival", dist(builder, 0, {100.0})),
+                  var_string(builder, "firstArrivalMode", "at_time"),
+                  var_float(builder, "firstArrivalTime", first_time),
+                  var_bool(builder, "limitArrivals", true),
+                  var_int(builder, "maxArrivals", 1)}, {});
+  };
+  const auto left = source("Left", 0.0);
+  const auto right = source("Right", 1.0);
+  const auto combine = block(builder, "Join", "combine",
+                             {var_string(builder, "combineMode", "new")}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {left, right, combine, sink},
+                     {couple(builder, "Left", "out", "Join", "in1"),
+                      couple(builder, "Right", "out", "Join", "in2"),
+                      couple(builder, "Join", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 47;
+  config.arrivals = 2;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: match checkpoint restores conditioned pair queues",
+          "[process_flow][checkpoint][match]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name, double first_time) {
+    return block_with_state(
+        builder, name, "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "kind", 7)}, {});
+  };
+  const auto left = source("Left", 0.0);
+  const auto right = source("Right", 1.0);
+  const auto match = block(builder, "Match", "match",
+                           {var_string(builder, "matchCondition", "kind")},
+                           {});
+  const auto out1 = block(builder, "Out1", "sink", {}, {});
+  const auto out2 = block(builder, "Out2", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {left, right, match, out1, out2},
+                     {couple(builder, "Left", "out", "Match", "in1"),
+                      couple(builder, "Right", "out", "Match", "in2"),
+                      couple(builder, "Match", "out1", "Out1", "in"),
+                      couple(builder, "Match", "out2", "Out2", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 53;
+  config.arrivals = 2;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: split checkpoint restores pending clone output",
+          "[process_flow][checkpoint][split]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_start"),
+       var_bool(builder, "multipleEntitiesPerArrival", true),
+       var_int(builder, "agentsPerArrival", 2),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto split = block(builder, "Fork", "split",
+                           {var_int(builder, "copies", 2)}, {});
+  const auto work = block(builder, "Work", "service",
+                          {var_dist(builder, "time", dist(builder, 0, {1.0}))},
+                          {});
+  const auto original = block(builder, "Original", "sink", {}, {});
+  const auto clone = block(builder, "Clone", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, split, work, original, clone},
+                     {couple(builder, "In", "out", "Fork", "in"),
+                      couple(builder, "Fork", "out", "Original", "in"),
+                      couple(builder, "Fork", "outCopy", "Work", "in"),
+                      couple(builder, "Work", "out", "Clone", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 59;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: selectOutput5 checkpoint restores waiting route",
+          "[process_flow][checkpoint][select]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_start"),
+       var_bool(builder, "multipleEntitiesPerArrival", true),
+       var_int(builder, "agentsPerArrival", 2),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto select = block(
+      builder, "Route", "selectOutput5",
+      {var_string(builder, "type", "conditions"),
+       var_string(builder, "condition1", "1")}, {});
+  const auto work = block(builder, "Work", "service",
+                          {var_dist(builder, "time", dist(builder, 0, {1.0}))},
+                          {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, select, work, done},
+                     {couple(builder, "In", "out", "Route", "in"),
+                      couple(builder, "Route", "out1", "Work", "in"),
+                      couple(builder, "Work", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 61;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: assembler checkpoint restores waiting parts",
+          "[process_flow][checkpoint][assembler]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name, double first_time) {
+    return block(builder, name, "source",
+                 {var_string(builder, "arrivalType", "interarrival_time"),
+                  var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+                  var_string(builder, "firstArrivalMode", "at_time"),
+                  var_float(builder, "firstArrivalTime", first_time),
+                  var_bool(builder, "limitArrivals", true),
+                  var_int(builder, "maxArrivals", 1)}, {});
+  };
+  const auto kit = source("Kit", 0.0);
+  const auto part = source("Part", 1.0);
+  const auto assembler = block(builder, "Build", "assembler",
+                               {var_int(builder, "quantity125", 1),
+                                var_float(builder, "delayTime", 1.0)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {kit, part, assembler, sink},
+                     {couple(builder, "Kit", "out", "Build", "in"),
+                      couple(builder, "Part", "out", "Build", "p1"),
+                      couple(builder, "Build", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 67;
+  config.arrivals = 2;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: assembler checkpoint restores in-service resource",
+          "[process_flow][checkpoint][assembler][resource]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name) {
+    return block(builder, name, "source",
+                 {var_string(builder, "arrivalType", "interarrival_time"),
+                  var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+                  var_string(builder, "firstArrivalMode", "at_start"),
+                  var_bool(builder, "limitArrivals", true),
+                  var_int(builder, "maxArrivals", 1)}, {});
+  };
+  const auto kit = source("Kit");
+  const auto part = source("Part");
+  const auto resource = block(builder, "Crew", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto assembler = block(
+      builder, "Build", "assembler",
+      {var_int(builder, "quantity125", 1),
+       var_float(builder, "delayTime", 1.0),
+       var_string(builder, "resourcePool", "Crew"),
+       var_int(builder, "numberOfUnits", 1)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {kit, part, assembler, sink},
+                     {couple(builder, "Kit", "out", "Build", "in"),
+                      couple(builder, "Part", "out", "Build", "p1"),
+                      couple(builder, "Build", "out", "Done", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 71;
+  config.arrivals = 2;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.availability == first.availability);
+}
+
+TEST_CASE("process flow: wait checkpoint restores timeout state",
+          "[process_flow][checkpoint][wait][timeout]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_start"),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto wait = block(
+      builder, "Wait", "wait",
+      {var_int(builder, "capacity", 1),
+       var_bool(builder, "enableTimeout", true),
+       var_float(builder, "timeout", 0.5)}, {});
+  const auto blocked = block(builder, "Blocked", "queue",
+                             {var_int(builder, "capacity", 0)}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto timed_out = block(builder, "TimedOut", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, wait, blocked, done, timed_out},
+                     {couple(builder, "In", "out", "Wait", "in"),
+                      couple(builder, "Wait", "out", "Blocked", "in"),
+                      couple(builder, "Wait", "outTimeout", "TimedOut", "in"),
+                      couple(builder, "Blocked", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 73;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.blocks[1].timed_out == first.blocks[1].timed_out);
+}
+
+TEST_CASE("process flow: exit checkpoint restores pending source event",
+          "[process_flow][checkpoint][exit]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_time"),
+       var_float(builder, "firstArrivalTime", 1.0),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto exit = block(builder, "Out", "exit", {}, {});
+  std::string error;
+  auto model = build(builder, {source, exit},
+                     {couple(builder, "In", "out", "Out", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 89;
+  config.arrivals = 1;
+  model->reset(config);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: local service preemption checkpoint restores victim state",
+          "[process_flow][checkpoint][service][preemption]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = [&](const char* name, double first_time,
+                          std::int64_t priority) {
+    return block_with_state(
+        builder, name, "source",
+        {var_dist(builder, "arrival", dist(builder, 0, {100.0})),
+         var_string(builder, "firstArrivalMode", "at_time"),
+         var_float(builder, "firstArrivalTime", first_time),
+         var_bool(builder, "limitArrivals", true),
+         var_int(builder, "maxArrivals", 1)},
+        {var_int(builder, "priority", priority)}, {});
+  };
+  const auto low = source("Low", 0.0, 1);
+  const auto high = source("High", 1.0, 5);
+  const auto service = block(
+      builder, "Work", "service",
+      {var_dist(builder, "time", dist(builder, 0, {10.0})),
+       var_int(builder, "queueCapacity", 10),
+       var_bool(builder, "enablePreemption", true),
+       var_bool(builder, "taskMayPreempt", true),
+       var_string(builder, "taskPreemptionPolicy", "pp_terminate")}, {});
+  const auto done = block(builder, "Done", "sink", {}, {});
+  const auto preempted = block(builder, "Preempted", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {low, high, service, done, preempted},
+                     {couple(builder, "Low", "out", "Work", "in"),
+                      couple(builder, "High", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Done", "in"),
+                      couple(builder, "Work", "outPreempted", "Preempted", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 41;
+  config.arrivals = 2;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
 }
 
 TEST_CASE("process flow: source honors first arrival, batch size, and limit",
@@ -847,6 +1516,37 @@ TEST_CASE("process flow: incremental advance matches a batch run",
   REQUIRE(sliced_trace.event_count() == batch_trace.event_count());
 }
 
+TEST_CASE("process flow: incremental scheduler enforces the shared event budget",
+          "[process_flow][incremental][safety]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.0}))}, {});
+  const auto delay =
+      block(builder, "D", "delay",
+            {var_dist(builder, "delayTime", dist(builder, 0, {1.0})),
+             var_int(builder, "capacity", -1)},
+            {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, delay, sink},
+                     {couple(builder, "In", "out", "D", "in"),
+                      couple(builder, "D", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+
+  ReplicationConfig config;
+  config.arrivals = 10;
+  config.warmup_arrivals = 0;
+  config.max_events = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) == 1);
+  REQUIRE(model->failed());
+  REQUIRE(model->failure_reason().find("KR1017") != std::string::npos);
+  REQUIRE(model->failure_reason().find("1 events") != std::string::npos);
+}
+
 TEST_CASE(
     "process flow: selectOutput runtime condition routes "
     "deterministically",
@@ -1134,6 +1834,99 @@ TEST_CASE("process flow: batch (temporary) then unbatch restores agents",
   const ReplicationMetrics metrics = run_once(*model, 7, 9, 0);
   // The temporary batch is split back into its 9 original agents.
   REQUIRE(metrics.departures == 9);
+}
+
+TEST_CASE("process flow: temporary batch contents survive checkpoint",
+          "[process_flow][checkpoint][batch]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 3)}, {});
+  const auto batch = block(
+      builder, "B", "batch",
+      {var_int(builder, "batchSize", 3), var_bool(builder, "permanent", false)},
+      {});
+  const auto unbatch = block(builder, "U", "unbatch", {}, {});
+  const auto sink = block(builder, "K", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, batch, unbatch, sink},
+                     {couple(builder, "In", "out", "B", "in"),
+                      couple(builder, "B", "out", "U", "in"),
+                      couple(builder, "U", "out", "K", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 61;
+  config.arrivals = 3;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(1'500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+}
+
+TEST_CASE("process flow: seize held resources survive checkpoint",
+          "[process_flow][checkpoint][seize][resource]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {1.0})),
+             var_string(builder, "firstArrivalMode", "at_start"),
+             var_bool(builder, "limitArrivals", true),
+             var_int(builder, "maxArrivals", 1)}, {});
+  const auto resource = block(builder, "Crew", "resource",
+                              {var_int(builder, "capacity", 1)}, {});
+  const auto seize = block(builder, "Grab", "seize",
+                           {var_string(builder, "resource", "Crew"),
+                            var_int(builder, "numberOfUnits", 1)}, {});
+  const auto delay = block(
+      builder, "Hold", "delay",
+      {var_dist(builder, "delayTime", dist(builder, 0, {1.0})),
+       var_int(builder, "capacity", 1)}, {});
+  const auto release = block(builder, "Free", "release", {}, {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(
+      builder, {source, seize, delay, release, sink},
+      {couple(builder, "In", "out", "Grab", "in"),
+       couple(builder, "Grab", "out", "Hold", "in"),
+       couple(builder, "Hold", "out", "Free", "in"),
+       couple(builder, "Free", "out", "Out", "in")},
+      root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 67;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
 }
 
 TEST_CASE("process flow: combine waits for both inputs and emits one",
@@ -2628,6 +3421,55 @@ TEST_CASE("process flow: shared failure pool interrupts every consumer "
   REQUIRE(again.availability == metrics.availability);
 }
 
+TEST_CASE("process flow: shared pool failure checkpoint restores down state",
+          "[process_flow][checkpoint][failure][resource]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source =
+      block(builder, "In", "source",
+            {var_dist(builder, "arrival", dist(builder, 0, {0.1}))}, {});
+  const auto resource = block(
+      builder, "Crew", "resource",
+      {var_int(builder, "capacity", 1),
+       var_float(builder, "failure_rate", 1.0),
+       var_float(builder, "repair_rate", 1.0)}, {});
+  const auto service = block(
+      builder, "Work", "service",
+      {var_dist(builder, "time", dist(builder, 0, {1.0})),
+       var_string(builder, "resource", "Crew")}, {});
+  const auto sink = block(builder, "Out", "sink", {}, {});
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{resource}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, service, sink},
+                     {couple(builder, "In", "out", "Work", "in"),
+                      couple(builder, "Work", "out", "Out", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 53;
+  config.arrivals = 5;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(250'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.availability == first.availability);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
+}
+
 TEST_CASE("process flow: in_service snapshots keep pool-preempted tasks "
           "visible",
           "[process_flow][failure][telemetry]") {
@@ -3734,6 +4576,119 @@ TEST_CASE("process flow: moveTo resolves a node destination",
   REQUIRE(metrics.mean_sojourn == 2.0);
 }
 
+TEST_CASE("process flow: moveTo checkpoint restores explicit trip",
+          "[process_flow][checkpoint][moveTo]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_start"),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto move = block(builder, "Move", "moveTo",
+                          {var_float(builder, "tripTime", 2.0)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  std::string error;
+  auto model = build(builder, {source, move, sink},
+                     {couple(builder, "In", "out", "Move", "in"),
+                      couple(builder, "Move", "out", "Done", "in")},
+                     flatbuffers::Offset<Node>{}, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 79;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
+}
+
+TEST_CASE("process flow: moveTo checkpoint restores path travel",
+          "[process_flow][checkpoint][moveTo][network]") {
+  flatbuffers::FlatBufferBuilder builder;
+  const auto build_node = [&](const char* name, double x, double y) {
+    return CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString(name), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
+            var_float(builder, "x", x), var_float(builder, "y", y)}),
+        0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("node"), 0, 0),
+        0, 0, 0, 0, 0);
+  };
+  const auto build_path = [&](const char* name, const char* a,
+                              const char* b) {
+    return CreateNode(
+        builder, CreateMetadata(builder, builder.CreateString(name), 0, 0, 0),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+        builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{
+            var_string(builder, "node1", a), var_string(builder, "node2", b)}),
+        0,
+        CreateSemanticsRef(builder, builder.CreateString("core"),
+                           builder.CreateString("path"), 0, 0),
+        0, 0, 0, 0, 0);
+  };
+  const auto source = block(
+      builder, "In", "source",
+      {var_string(builder, "arrivalType", "interarrival_time"),
+       var_dist(builder, "interarrivalTime", dist(builder, 0, {100.0})),
+       var_string(builder, "firstArrivalMode", "at_start"),
+       var_bool(builder, "limitArrivals", true),
+       var_int(builder, "maxArrivals", 1)}, {});
+  const auto move = block(builder, "Move", "moveTo",
+                          {var_string(builder, "node", "C"),
+                           var_float(builder, "speed", 10.0)}, {});
+  const auto sink = block(builder, "Done", "sink", {}, {});
+  const auto node_a = build_node("A", 0.0, 0.0);
+  const auto node_b = build_node("B", 10.0, 0.0);
+  const auto node_c = build_node("C", 10.0, 10.0);
+  const auto path_ab = build_path("AB", "A", "B");
+  const auto path_bc = build_path("BC", "B", "C");
+  const auto root = CreateNode(
+      builder, CreateMetadata(builder, builder.CreateString("M"), 0, 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Var>>{}), 0,
+      CreateSemanticsRef(builder, builder.CreateString("core"),
+                         builder.CreateString("model"), 0, 0),
+      builder.CreateVector(std::vector<flatbuffers::Offset<Node>>{
+          node_a, node_b, node_c, path_ab, path_bc}),
+      0, 0, 0, 0);
+  std::string error;
+  auto model = build(builder, {source, move, sink},
+                     {couple(builder, "In", "out", "Move", "in"),
+                      couple(builder, "Move", "out", "Done", "in")},
+                     root, &error);
+  REQUIRE(model != nullptr);
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.seed = 83;
+  config.arrivals = 1;
+  model->reset(config);
+  REQUIRE(model->advance(SimTime::from_ns(500'000'000), nullptr) > 0);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model->checkpoint_save(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics first = model->metrics();
+  REQUIRE(model->checkpoint_restore(checkpoint));
+  REQUIRE(model->advance(SimTime::infinity(), nullptr) > 0);
+  const ReplicationMetrics second = model->metrics();
+  REQUIRE(second.departures == first.departures);
+  REQUIRE(second.horizon_seconds == first.horizon_seconds);
+  REQUIRE(second.mean_sojourn == first.mean_sojourn);
+  REQUIRE(first.horizon_seconds == 2.0);
+}
+
 TEST_CASE("process flow: moveTo follows the path network's shortest route",
           "[process_flow][moveTo][network][des_blocks]") {
   const auto run = [&](bool with_paths) {
@@ -4455,6 +5410,31 @@ TEST_CASE("streaming driver: zero-arrival runs are empty and safe",
   REQUIRE(metrics.arrivals == 0);
   REQUIRE(metrics.departures == 0);
   REQUIRE(metrics.horizon_seconds == 0.0);
+}
+
+TEST_CASE("queueing flow: incremental scheduler enforces the shared event budget",
+          "[process_flow][incremental][safety]") {
+  logicpilot::QueueingFlowSpec spec;
+  spec.interarrival = [](logicpilot::Xoshiro256PlusPlus&) { return 0.0; };
+  spec.service = [](logicpilot::Xoshiro256PlusPlus&) { return 1.0; };
+  spec.servers = 1;
+  logicpilot::QueueingFlowSim flow{spec};
+
+  ReplicationConfig config;
+  config.arrivals = 2;
+  config.warmup_arrivals = 0;
+  config.max_events = 1;
+  flow.reset(config);
+  REQUIRE(flow.advance(SimTime::infinity(), nullptr) == 1);
+  REQUIRE(flow.failed());
+  REQUIRE(flow.failure_reason().find("KR1017") != std::string::npos);
+  REQUIRE(flow.failure_reason().find("1 events") != std::string::npos);
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(flow.checkpoint_save(checkpoint));
+  flow.reset(ReplicationConfig{});
+  REQUIRE(flow.checkpoint_restore(checkpoint));
+  REQUIRE(flow.failed());
+  REQUIRE(flow.failure_reason().find("1 events") != std::string::npos);
 }
 
 TEST_CASE("streaming driver: owned to external attach cannot replay tokens",

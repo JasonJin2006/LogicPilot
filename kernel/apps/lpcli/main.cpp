@@ -11,6 +11,7 @@
 #include "builtin_registry.h"
 #include "process_runtime.h"
 #include "run_command.h"
+#include "trace_compare_command.h"
 
 #ifdef LOGICPILOT_HAS_DSL
 #include "compile_command.h"
@@ -26,6 +27,7 @@ void print_root_usage() {
       "commands:\n"
       "  compile  compile a .lp DSL source to FlatBuffers IR\n"
       "  run      run replications of a model (lpcli run --help)\n"
+      "  trace-compare  compare two LPLT logical trace archives\n"
       "  serve    compile a model and serve it over WebSocket\n"
       "  help     show this message\n");
 }
@@ -48,6 +50,9 @@ int main(int argc, char** argv) {
 
   if (command == "run") {
     return logicpilot::cli::run_command(rest);
+  }
+  if (command == "trace-compare") {
+    return logicpilot::cli::trace_compare_command(rest);
   }
 #ifdef LOGICPILOT_HAS_DSL
   if (command == "compile") {

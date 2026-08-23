@@ -1,6 +1,7 @@
 #include "logicpilot/runtime/wasm_method_plugin.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
@@ -13,6 +14,7 @@
 #include <vector>
 
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/artifact_digest.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"
@@ -282,6 +284,14 @@ bool load_wasm_method_plugin(const MethodPluginManifest& manifest,
                                                            std::istreambuf_iterator<char>());
   if (bytes->empty())
     return fail("MP1202: WASM plugin artifact is empty");
+  if (!manifest.artifact_sha256.empty()) {
+    std::string actual = ArtifactDigest::sha256(*bytes);
+    std::string expected = manifest.artifact_sha256;
+    std::transform(expected.begin(), expected.end(), expected.begin(), [](unsigned char character) {
+      return static_cast<char>(std::tolower(character));
+    });
+    if (actual != expected) return fail("MP1211: WASM plugin artifact SHA-256 mismatch");
+  }
   MethodRegistry::Factory factory = [method = manifest.method, bytes] {
     return std::make_unique<WasmSimulationMethod>(method, bytes);
   };

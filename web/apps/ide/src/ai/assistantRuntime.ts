@@ -339,6 +339,11 @@ const TOOL_LABELS: Record<string, string> = {
   compare_runs: 'comparing completed runs',
   wait_for_run: 'waiting for run',
   undo_last_ai_change: 'undoing last change',
+  inspect_sysml_projection: 'inspecting SysML projection',
+  auto_layout_sysml_projection: 'arranging SysML projection',
+  set_sysml_projection_view: 'focusing SysML projection',
+  focus_sysml_element: 'focusing SysML element',
+  move_sysml_element: 'moving SysML element',
 };
 
 function toolLabel(name: string): string {

@@ -1,6 +1,6 @@
 # LogicPilot 总计划（Roadmap）
 
-状态：持续更新 · 维护者：`/root`（集成与发布） · 2026-08-22
+状态：持续更新 · 维护者：`/root`（集成与发布） · 2026-08-23
 
 本文档是**唯一的总计划入口**，汇总此前散落在各 spec/ADR 中的计划与状态
 （`docs/specs/ir-v2.md`、`docs/specs/dsl-spec.md`、`docs/specs/ai-loop.md`、
@@ -10,9 +10,13 @@
 
 ## 1. 产品目标
 
-Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Agent 的仿真平台。
-核心资产：**Simulation IR（薄契约 + 引擎注册表）**、**DSL（人与 AI 共用）**、
-**高性能仿真 Runtime**、**行业模型库**。
+工程建模与仿真 Workbench：AI 原生、Web 化、可扩展，并为高性能、多尺度、
+多物理、多 Agent 仿真提供可信运行平台。核心资产是：**Workbench 文档与贡献
+契约**、**稳定工程工件与追踪关系**、**建模语言/编辑器/AI 扩展**、**可选的
+Simulation Composition IR 与高性能 Runtime**、**行业模型库和外部求解器适配器**。
+SysML/C4 等工程模型是一等文档。SysML v2 的 behavior、calculation、analysis/
+verification case 可形成执行目标；纯结构/需求模型不需要进入仿真 runtime。详细决策见
+[`workbench-architecture-plan.md`](./workbench-architecture-plan.md)。
 
 ## 2. 现状总览（已完成）
 
@@ -69,6 +73,30 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    ✅ 已完成（`ca52e3f`，dsl-grammar job 跑 `tree-sitter test`，现 48 用例）。
 
 ### P1 — 核心功能（下一个开发主战场）
+
+#### P1-Next — 大一统 Workbench 与 SysML v2（最高优先级，2026-08-23 批准）
+
+LogicPilot 的产品边界提升为**工程建模与仿真领域的可扩展 Workbench**。统一的是
+文档生命周期、编辑器/Outline/诊断/属性/Palette/命令/AI contribution、稳定身份、
+跨工件追踪和可选运行时契约；不把全部语言压入 `.lp`、`ModelDocument` 或
+`SimulationMethod`。完整迁移与验收计划见
+[`workbench-architecture-plan.md`](./workbench-architecture-plan.md)。
+
+实施顺序：
+
+1. 建立无全局 runtime 假设的最小 Document/Outline/Diagnostic/Command/AI provider
+   seam 与可选 `ExecutionTargetRef`；
+2. 立即交付 SysML v2 文本建模 MVP（编辑、诊断、Outline、语言服务、AI typed edits）；
+3. 交付 SysML calculation/action/state/time-trigger 语义执行 MVP，产生 trace/evidence；
+4. 增加 SysML 结构/连接/需求追踪/行为视图和官方 API/JSON 交换；
+5. 打通 requirement → verification case/experiment → simulation → result/evidence；
+6. 将现有 Process/Statechart/DEVS 编辑能力迁入 provider，C4 作为第二个非仿真扩展；
+7. 通过 FMI/HLA/外部 adapter 为复杂工程求解器保留正式位置，不要求原生重写。
+
+SysML/C4 是可编辑、可诊断、可由 AI 操作的建模工件。SysML 文档不整体注册空
+scheduler 或伪 `SimulationMethod`；仅当选中受支持的可执行元素时，才创建显式
+execution target 并选择解释器/lowering backend。当前前端视觉设计保留，迁移发生在
+文档、语义和贡献边界。
 
 5. **DSL v2 重设计（含表达式）**
    现状：DSL 语法与绑定混乱（grammar.js 与 parser.c 脱节、同名魔法绑定、行为三套
@@ -350,10 +378,15 @@ Simulation OS：AI 原生、Web 化、高性能、多尺度、多物理、多 Ag
    interop/TS 的 v1 绑定全部删除；loader/process 路径原生吃 v2。
 
 10. **Method Runtime Layer（多方法仿真平台架构）**
-    现状：kernel 被 Process Flow 绑架——`process_flow.cpp`、Queue/Service
-    语义、IR 中 process 库解析逻辑全部内建在 kernel。目标是把 kernel 降级为
-    “仿真世界”（只负责时间/事件/调度/生命周期），Process / Agent /
-    System Dynamics / Statechart 变成同级方法插件（`docs/specs/method-runtime.md`）。
+    历史问题：kernel 曾被 Process Flow 绑架——`process_flow.cpp`、Queue/Service
+    语义、IR 中 process 库解析逻辑全部内建在 kernel。第一阶段通过统一生命周期
+    插件完成代码隔离，但“Process / Agent / System Dynamics / Statechart 是同级
+    顶层方法”的分类已由 Workbench 计划取代：`SimulationMethod` 仅表示可执行
+    runtime adapter；Process 是离散事件建模前端/组件库，Statechart 是可嵌入的
+    行为形式，Agent 是组织视角，SD/DEVS 有各自形式语义。SysML/C4 文档类型不直接
+    进入该注册表；SysML 可执行元素通过显式 target 选择 runtime（见
+    `docs/workbench-architecture-plan.md` 与
+    `docs/specs/method-runtime.md`）。
     **Phase 1（抽象隔离）✅ 已完成（2026-08-06）：** 新增 `kernel/runtime`
     （`SimulationMethod` 生命周期接口、`RuntimeContext`、`RuntimeManager`、
     `MethodRegistry` 插件注册表）与 `kernel/state`（`VariableStore` 跨方法

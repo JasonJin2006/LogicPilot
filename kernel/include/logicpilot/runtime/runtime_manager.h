@@ -34,8 +34,9 @@ class RuntimeManager {
   RuntimeManager(SimulationClock& clock, IEventScheduler& scheduler,
                  EventHandlerRegistry& handlers,
                  VariableStore& variables,
-                 const ReplicationConfig& config = ReplicationConfig{})
-      : context_(clock, scheduler, handlers, variables, config) {}
+                 const ReplicationConfig& config = ReplicationConfig{},
+                 DevsEvidenceRecorder* evidence = nullptr)
+      : context_(clock, scheduler, handlers, variables, config, evidence) {}
 
   RuntimeManager(const RuntimeManager&) = delete;
   RuntimeManager& operator=(const RuntimeManager&) = delete;
@@ -54,9 +55,14 @@ class RuntimeManager {
 
   [[nodiscard]] std::size_t method_count() const { return methods_.size(); }
   [[nodiscard]] RuntimeContext& context() { return context_; }
+  [[nodiscard]] VariableStore& variables() { return context_.variables(); }
+  [[nodiscard]] MessageStore& messages() { return context_.messages(); }
   // Read-only access to an attached method (for metrics collection after a
   // kernel-driven run).
   [[nodiscard]] const SimulationMethod* method(std::size_t index) const {
+    return index < methods_.size() ? methods_[index].get() : nullptr;
+  }
+  [[nodiscard]] SimulationMethod* method(std::size_t index) {
     return index < methods_.size() ? methods_[index].get() : nullptr;
   }
 

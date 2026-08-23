@@ -1,0 +1,338 @@
+/* External SysML v2 projection editor. The source file remains authoritative;
+   this view owns a local layout sidecar and never rewrites SysML syntax. */
+
+.sysml-workspace,
+.sysml-canvas {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.sysml-workspace {
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.sysml-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  min-height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-strong);
+}
+
+.sysml-workspace-title {
+  margin-right: 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sysml-workspace-path {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sysml-workspace-actions,
+.sysml-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sysml-workspace-actions button,
+.sysml-canvas-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sysml-workspace-actions button:hover,
+.sysml-canvas-toolbar button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.sysml-canvas-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sysml-view-mode {
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sysml-canvas {
+  overflow: hidden;
+  background: radial-gradient(circle at 50% -20%, var(--accent-dim), transparent 42%), var(--bg);
+  cursor: var(--cursor-grab);
+  user-select: none;
+  touch-action: none;
+}
+
+.sysml-canvas-toolbar {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-strong) 92%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.sysml-canvas-count {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sysml-svg {
+  width: 100%;
+  height: 100%;
+  cursor: var(--cursor-grab);
+}
+
+.sysml-svg:active,
+.sysml-node:active {
+  cursor: var(--cursor-grabbing);
+}
+
+.sysml-canvas-bg {
+  fill: transparent;
+  stroke: transparent;
+}
+
+.sysml-relation line {
+  fill: none;
+  stroke-width: 1.4;
+  opacity: 0.85;
+}
+
+.sysml-relation-label {
+  fill: var(--text-muted);
+  font-size: 10px;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.sysml-node {
+  cursor: var(--cursor-grab);
+}
+
+.sysml-node rect {
+  stroke-width: 1.4;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 16%));
+}
+
+.sysml-node.selected rect {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+}
+
+.sysml-node-kind {
+  fill: #b9c5d4;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.sysml-node-name {
+  fill: #f5f8fb;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sysml-selection,
+.sysml-diagnostics {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(420px, 50%);
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-strong) 94%, transparent);
+  box-shadow: var(--shadow);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sysml-selection strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.sysml-selection small {
+  color: var(--text-muted);
+}
+
+.sysml-diagnostics {
+  right: auto;
+  left: 10px;
+  bottom: 10px;
+  color: var(--warning, #e6b86d);
+}
+
+.sysml-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sysml-properties,
+.sysml-properties-empty {
+  width: 100%;
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sysml-outline-panel {
+  min-width: 0;
+  padding: 4px 0 10px;
+}
+
+.sysml-outline-header {
+  padding: 7px 8px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sysml-outline-kind {
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.sysml-outline-summary {
+  padding: 10px 8px 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sysml-properties h3 {
+  margin: 3px 0 12px;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.sysml-properties-kind {
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.sysml-property-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 7px 0;
+}
+
+.sysml-property-row code,
+.sysml-property-row strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.sysml-property-section-title {
+  margin: 14px 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.sysml-coordinate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 5px 0;
+}
+
+.sysml-coordinate input {
+  width: 100px;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.sysml-properties-muted {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.sysml-relation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sysml-relation-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.sysml-relation-list span {
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.sysml-relation-list strong {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 500;
+}

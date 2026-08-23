@@ -25,6 +25,9 @@ struct ReplicationConfig {
   std::uint64_t seed{42};
   std::uint64_t arrivals{20000};      // total arrivals per replication
   std::uint64_t warmup_arrivals{2000};  // excluded from per-customer stats
+  // Maximum shared-scheduler events dispatched by one run/advance call. A
+  // finite default prevents zero-time event storms from hanging the host.
+  std::uint64_t max_events{50'000'000};
 };
 
 // Per-block DES statistics shared by the CLI, IDE, and AI tools. A negative
@@ -68,6 +71,12 @@ struct ReplicationMetrics {
   std::vector<BlockMetrics> blocks;
 };
 
+struct LogicalStepRecord {
+  SimTime at{SimTime::zero()};
+  EventType type{0};
+  std::uint64_t payload{0};
+};
+
 // Deterministic FNV-1a (64-bit) streaming hash over the event trace.
 class TraceRecorder {
  public:
@@ -86,15 +95,56 @@ class TraceRecorder {
     }
   }
 
+  // Record a deterministic logical step that is not a scheduler event (for
+  // example an Agent tick or an accepted Continuous RK4 step). Keeping this
+  // channel separate preserves event_count() for legacy scheduler traces
+  // while extending the hash with cross-method execution evidence.
+  void record_logical_step(SimTime at, EventType type,
+                           std::uint64_t payload) {
+    absorb(kLogicalStepDomain);
+    absorb(static_cast<std::uint64_t>(at.as_ns()));
+    absorb(static_cast<std::uint64_t>(type));
+    absorb(payload);
+    ++logical_steps_;
+    if (logical_record_limit_ != 0) {
+      if (logical_records_.size() < logical_record_limit_) {
+        logical_records_.push_back(LogicalStepRecord{at, type, payload});
+      } else {
+        logical_records_truncated_ = true;
+      }
+    }
+  }
+
+  // Opt-in readable capture for debuggers and offline replay tools. The hash
+  // remains complete even when the bounded record list truncates.
+  void enable_logical_step_records(std::size_t limit) {
+    logical_record_limit_ = limit;
+    logical_records_.clear();
+    logical_records_truncated_ = false;
+  }
+
   [[nodiscard]] std::uint64_t hash() const { return hash_; }
   [[nodiscard]] std::size_t event_count() const { return events_; }
+  [[nodiscard]] std::size_t logical_step_count() const { return logical_steps_; }
+  [[nodiscard]] const std::vector<LogicalStepRecord>& logical_steps() const {
+    return logical_records_;
+  }
+  [[nodiscard]] bool logical_steps_truncated() const {
+    return logical_records_truncated_;
+  }
 
  private:
+  static constexpr std::uint64_t kLogicalStepDomain =
+      0x4C504C4F47494331ULL;  // LPLOGIC1
   static constexpr std::uint64_t kFnvOffset = 0xCBF29CE484222325ULL;
   static constexpr std::uint64_t kFnvPrime = 0x100000001B3ULL;
 
   std::uint64_t hash_{kFnvOffset};
   std::size_t events_{0};
+  std::size_t logical_steps_{0};
+  std::size_t logical_record_limit_{0};
+  bool logical_records_truncated_{false};
+  std::vector<LogicalStepRecord> logical_records_;
 };
 
 // One executable model: a single replication from seed to completion.

@@ -222,6 +222,8 @@ std::map<std::string, double> counters_to_map(
 struct RunCapture {
   bool ok{false};
   bool completed{false};
+  bool failed{false};
+  std::string failure_error;
   std::uint64_t binary_frames{0};
   std::uint64_t tick_count{0};
   std::uint64_t counters_count{0};
@@ -308,6 +310,10 @@ RunCapture capture_run(WsClient& client, const std::string& start_json) {
         REQUIRE(frame.run_finished != nullptr);
         capture.completed =
             frame.run_finished->status() == wire::RunStatus_Completed;
+        capture.failed = frame.run_finished->status() == wire::RunStatus_Failed;
+        if (frame.run_finished->error() != nullptr) {
+          capture.failure_error = frame.run_finished->error()->str();
+        }
         capture.stats = counters_to_map(frame.run_finished->stats());
         return true;
       }
@@ -554,7 +560,6 @@ TEST_CASE("lp-server fast mode: huge sim gaps cannot flood empty frames",
   logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
       compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
-
   logicpilot::server::ServerConfig config = make_test_config();
   logicpilot::server::SimServer server{config};
   std::string error;
@@ -1463,6 +1468,140 @@ TEST_CASE("lp-server start honors per-run model parameter overrides",
   server.stop();
 }
 
+TEST_CASE("lp-server reports streaming event budget exhaustion as failure",
+          "[server][integration][safety]") {
+  logicpilot::server::SimServer server{make_test_config()};
+  std::string error;
+  REQUIRE(server.start(&error));
+
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const RunCapture capture =
+      capture_run(client, R"({"cmd":"start","arrivals":10,"warmup":0,"maxEvents":0})");
+  REQUIRE(capture.ok);
+  REQUIRE_FALSE(capture.completed);
+  REQUIRE(capture.failed);
+  REQUIRE(capture.failure_error.find("KR1017") != std::string::npos);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server reports generic flow event budget exhaustion as failure",
+          "[server][integration][safety][flow]") {
+  const std::string source = R"(model BudgetFlow {
+  source In { arrival = constant(1.0) }
+  sink Out { }
+  couple In.out -> Out.in
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "budget-flow.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::IrLoadResult loaded = logicpilot::load_model_buffer(
+      compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  std::string build_error;
+  auto built = logicpilot::build_replication_model(loaded.file, &build_error);
+  REQUIRE(built != nullptr);
+  auto* flow = dynamic_cast<logicpilot::FlowEngine*>(built.get());
+  REQUIRE(flow != nullptr);
+  logicpilot::ReplicationConfig budget_config;
+  budget_config.arrivals = 10;
+  budget_config.warmup_arrivals = 0;
+  budget_config.max_events = 0;
+  flow->reset(budget_config);
+  flow->advance(logicpilot::SimTime::infinity(), nullptr);
+  REQUIRE(flow->failed());
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const RunCapture capture = capture_run(
+      client, R"({"cmd":"start","arrivals":10,"warmup":0,"maxEvents":0})");
+  REQUIRE(capture.ok);
+  REQUIRE_FALSE(capture.completed);
+  REQUIRE(capture.failed);
+  REQUIRE(capture.failure_error.find("KR1017") != std::string::npos);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server reports statechart event budget exhaustion as failure",
+          "[server][integration][safety][statechart]") {
+  const std::string source = R"(model BudgetChart {
+  statechart Light {
+    initial = Red
+    state Red { }
+    state Green { }
+    transition r_g { from = Red; to = Green; triggeredBy = timeout; timeout = 1.0 }
+    transition g_r { from = Green; to = Red; triggeredBy = timeout; timeout = 1.0 }
+  }
+}
+)";
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_source(source, "budget-chart.lp");
+  REQUIRE(compiled.ok);
+
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  client.send_text(
+      R"({"cmd":"start","arrivals":10,"warmup":0,"maxEvents":0})");
+  std::vector<std::string> buffered;
+  bool acknowledged = false;
+  for (int index = 0; index < 128 && !acknowledged; ++index) {
+    REQUIRE(client.read_one());
+    if (client.was_binary()) {
+      buffered.push_back(client.payload());
+    } else {
+      acknowledged = client.payload().find("\"ok\":true") != std::string::npos;
+    }
+  }
+  REQUIRE(acknowledged);
+  bool failed = false;
+  std::string failure_error;
+  const auto inspect = [&](const std::string& bytes) {
+    const ParsedFrame frame = parse_frame(bytes);
+    REQUIRE(frame.valid);
+    if (frame.kind != wire::FrameKind_RunFinished) return;
+    REQUIRE(frame.run_finished != nullptr);
+    failed = frame.run_finished->status() == wire::RunStatus_Failed;
+    if (frame.run_finished->error() != nullptr) {
+      failure_error = frame.run_finished->error()->str();
+    }
+  };
+  for (const std::string& bytes : buffered) {
+    inspect(bytes);
+  }
+  while (!failed && client.read_one()) {
+    if (!client.was_binary()) continue;
+    inspect(client.payload());
+  }
+  REQUIRE(failed);
+  REQUIRE(failure_error.find("KR1017") != std::string::npos);
+
+  client.abort_from_other_thread();
+  server.stop();
+}
+
 TEST_CASE("lp-server streams agent population ticks after compile",
           "[server][integration][agent]") {
   const std::string source = R"(model Swarm {
@@ -1516,6 +1655,32 @@ TEST_CASE("lp-server streams agent population ticks after compile",
   REQUIRE(completed);
   REQUIRE(saw_population_tick);
   REQUIRE(saw_agent_counters);
+  client.abort_from_other_thread();
+  server.stop();
+}
+
+TEST_CASE("lp-server reports agent tick budget exhaustion as failure",
+          "[server][integration][safety][agent]") {
+  const logicpilot::dsl::CompileResult compiled =
+      logicpilot::dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/agents.lp");
+  REQUIRE(compiled.ok);
+  logicpilot::server::ServerConfig config = make_test_config();
+  config.generic_model = true;
+  config.model_bytes.assign(compiled.v2_bytes.begin(), compiled.v2_bytes.end());
+  logicpilot::server::SimServer server{config};
+  std::string error;
+  REQUIRE(server.start(&error));
+  WsClient client;
+  REQUIRE(client.connect(server.port()));
+  Watchdog watchdog{client, std::chrono::seconds{60}};
+
+  const RunCapture capture = capture_run(
+      client, R"({"cmd":"start","arrivals":10,"warmup":0,"maxEvents":0})");
+  REQUIRE(capture.ok);
+  REQUIRE_FALSE(capture.completed);
+  REQUIRE(capture.failed);
+  REQUIRE(capture.failure_error.find("KR1017") != std::string::npos);
+
   client.abort_from_other_thread();
   server.stop();
 }
@@ -1931,6 +2096,23 @@ TEST_CASE("streaming driver is bit-exact against kernel QueueingFlowSim",
   REQUIRE(streamed.mean_in_queue == reference.mean_in_queue);
   REQUIRE(streamed.mean_sojourn == reference.mean_sojourn);
   REQUIRE(streamed.mean_wait == reference.mean_wait);
+}
+
+TEST_CASE("streaming driver enforces the shared scheduler event budget",
+          "[server][safety]") {
+  logicpilot::server::StreamRunConfig config;
+  config.arrivals = 100;
+  config.warmup_arrivals = 0;
+  config.max_events = 2;
+
+  logicpilot::server::SimRunner runner;
+  runner.reset(config);
+  runner.process_until(logicpilot::SimTime::infinity().as_ns());
+
+  REQUIRE(runner.failed());
+  REQUIRE(runner.finished());
+  REQUIRE(runner.failure_reason().find("KR1017") != std::string::npos);
+  REQUIRE(runner.failure_reason().find("2 events") != std::string::npos);
 }
 
 TEST_CASE("streaming driver is bit-exact under failures and multiple "

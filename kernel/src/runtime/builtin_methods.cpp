@@ -72,7 +72,7 @@ public:
   [[nodiscard]] std::string_view method_name() const override { return "devs"; }
 
   [[nodiscard]] MethodCapabilities capabilities() const override {
-    return MethodCapabilities{MethodExecutionMode::kSharedEventQueue, true, false};
+    return MethodCapabilities{MethodExecutionMode::kSharedEventQueue, true, true};
   }
 
   bool initialize(RuntimeContext& context, const IrModelFile& model, std::string* error) override {
@@ -94,6 +94,7 @@ public:
     }
     executor_ =
         std::make_unique<DevsExecutor>(context.scheduler(), context.clock(), context.handlers());
+    executor_->set_evidence_recorder(context.devs_evidence_recorder());
     executor_->set_internal_budget(static_cast<std::size_t>(context.config().arrivals));
     try {
       executor_->load(*tree_);
@@ -121,6 +122,24 @@ public:
 
   [[nodiscard]] ReplicationMetrics replication_metrics() const override { return last_metrics_; }
 
+  [[nodiscard]] bool save_checkpoint(DevsCheckpoint& checkpoint,
+                                     std::string* error) const override {
+    if (executor_ == nullptr) {
+      if (error != nullptr) *error = "DEVS runtime is not active";
+      return false;
+    }
+    return executor_->save_checkpoint(checkpoint, error);
+  }
+
+  bool restore_checkpoint(const DevsCheckpoint& checkpoint,
+                          std::string* error) override {
+    if (executor_ == nullptr) {
+      if (error != nullptr) *error = "DEVS runtime is not active";
+      return false;
+    }
+    return executor_->restore_checkpoint(checkpoint, error);
+  }
+
   std::unique_ptr<ReplicationModel> to_replication_model(const IrModelFile& model,
                                                          std::string* error) override {
     if (model.v2_root == nullptr || model.v2_root->root() == nullptr) {
@@ -145,7 +164,10 @@ private:
 
 void register_builtin_methods() {
   MethodRegistry& registry = MethodRegistry::instance();
-  registry.register_method("devs", [] { return std::make_unique<DevsMethod>(); });
+  registry.register_method(
+      "devs", [] { return std::make_unique<DevsMethod>(); },
+      MethodRegistry::Descriptor{"1", {"1"}, MethodFamily::kDiscreteEvent,
+                                 MethodFormalism::kDevs});
 }
 
 }  // namespace logicpilot

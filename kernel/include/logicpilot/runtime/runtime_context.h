@@ -15,15 +15,19 @@
 
 namespace logicpilot {
 
+class DevsEvidenceRecorder;
+
 class RuntimeContext {
 public:
   RuntimeContext(SimulationClock& clock, IEventScheduler& scheduler, EventHandlerRegistry& handlers,
-                 VariableStore& variables, const ReplicationConfig& config = ReplicationConfig{})
+                 VariableStore& variables, const ReplicationConfig& config = ReplicationConfig{},
+                 DevsEvidenceRecorder* evidence = nullptr)
       : clock_(clock),
         scheduler_(scheduler),
         handlers_(handlers),
         variables_(variables),
-        config_(config) {}
+        config_(config),
+        evidence_(evidence) {}
 
   [[nodiscard]] SimulationClock& clock() const { return clock_; }
   [[nodiscard]] IEventScheduler& scheduler() const { return scheduler_; }
@@ -36,6 +40,9 @@ public:
   // Replication parameters for this run (seed / arrivals / warmup), set by
   // the driver (SimulationKernel) or the RuntimeManager constructor.
   [[nodiscard]] const ReplicationConfig& config() const { return config_; }
+  [[nodiscard]] DevsEvidenceRecorder* devs_evidence_recorder() const {
+    return evidence_;
+  }
 
 private:
   SimulationClock& clock_;
@@ -44,6 +51,7 @@ private:
   VariableStore& variables_;
   MessageStore messages_;
   ReplicationConfig config_;
+  DevsEvidenceRecorder* evidence_{nullptr};
 };
 
 }  // namespace logicpilot

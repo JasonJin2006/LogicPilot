@@ -43,6 +43,19 @@ double folded_double(const Value& value) {
   return value.kind == ValueKind::kInt ? static_cast<double>(value.int_value) : value.float_value;
 }
 
+// Port types are part of the library contract, not documentation only. An
+// omitted type is the historical untyped/entity port and remains compatible
+// with every endpoint so old libraries continue to load. `any` and `message`
+// are explicit wildcard contracts for libraries that intentionally accept
+// heterogeneous payloads; all other declared types require an exact match.
+bool port_types_compatible(const std::string& from, const std::string& to) {
+  if (from.empty() || to.empty() || from == "any" || to == "any" ||
+      from == "message" || to == "message") {
+    return true;
+  }
+  return from == to;
+}
+
 bool value_is_constant(const Value& value) {
   return value.kind == ValueKind::kBool || value.kind == ValueKind::kInt ||
          value.kind == ValueKind::kFloat || value.kind == ValueKind::kString;
@@ -1006,6 +1019,35 @@ private:
         }
       }
     }
+    // LP5008: a Queue/Wait with literal capacity zero can never admit an
+    // entity. Queue preemption is the one deliberate exception: a full
+    // preempting Queue accepts the newcomer and routes an agent through
+    // outPreempted instead of deadlocking upstream.
+    for (const auto& [name, stage] : stages) {
+      if (stage->kind != "queue" && stage->kind != "wait") continue;
+      const bool has_incoming = std::any_of(
+          couplings.begin(), couplings.end(), [&name](const CoupleDecl& couple) {
+            return couple.to_model == name;
+          });
+      if (!has_incoming) continue;
+      const Field* capacity = field_of(*stage, "capacity");
+      if (capacity == nullptr || capacity->value.kind != ValueKind::kInt ||
+          capacity->value.int_value != 0) {
+        continue;
+      }
+      const Field* preemption = field_of(*stage, "enablePreemption");
+      const bool queue_preemption =
+          stage->kind == "queue" && preemption != nullptr &&
+          preemption->value.kind == ValueKind::kBool &&
+          preemption->value.bool_value;
+      if (!queue_preemption) {
+        error("LP5008",
+              "process stage '" + name +
+                  "' has capacity 0 and cannot admit any entity; this would "
+                  "deadlock upstream flow",
+              capacity->span);
+      }
+    }
     for (const CoupleDecl& couple : couplings) {
       const auto from = stages.find(couple.from_model);
       const auto to = stages.find(couple.to_model);
@@ -1790,6 +1832,32 @@ private:
             "coupling port '" + couple.to_model + "." + couple.to_port + "' is not an input port",
             couple.span);
     }
+
+    // Atomic ports carry their message type directly in the model AST. Only
+    // compare types when both declarations are present; LP5003 remains the
+    // authoritative diagnostic for a missing port declaration/handler.
+    const PortDecl* from_port = nullptr;
+    for (const PortDecl& port : from.ports) {
+      if (port.name == couple.from_port) {
+        from_port = &port;
+        break;
+      }
+    }
+    const PortDecl* to_port = nullptr;
+    for (const PortDecl& port : to.ports) {
+      if (port.name == couple.to_port) {
+        to_port = &port;
+        break;
+      }
+    }
+    if (from_port != nullptr && to_port != nullptr &&
+        !port_types_compatible(from_port->type, to_port->type)) {
+      error("LP5009",
+            "coupling port types are incompatible: '" + from.name + "." +
+                couple.from_port + "' emits '" + from_port->type + "' but '" +
+                to.name + "." + couple.to_port + "' accepts '" + to_port->type + "'",
+            couple.span);
+    }
   }
 
   // Process flow coupling validation against the registered block shapes:
@@ -1822,6 +1890,18 @@ private:
       } else {
         check_port_condition(to, *port, couple.to_model, couple.span);
       }
+    }
+    const BlockPortSpec* from_port =
+        from_shape == nullptr ? nullptr : from_shape->port(couple.from_port);
+    const BlockPortSpec* to_port =
+        to_shape == nullptr ? nullptr : to_shape->port(couple.to_port);
+    if (from_port != nullptr && to_port != nullptr &&
+        !port_types_compatible(from_port->type, to_port->type)) {
+      error("LP5009",
+            "coupling port types are incompatible: '" + from.name + "." +
+                couple.from_port + "' emits '" + from_port->type + "' but '" +
+                to.name + "." + couple.to_port + "' accepts '" + to_port->type + "'",
+            couple.span);
     }
   }
 

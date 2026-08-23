@@ -305,6 +305,86 @@ class WaitBlock final : public BufferedBlock {
     alt_outgoing_.clear();
   }
 
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C505751U);  // LPWQ
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(timed_.size()));
+    std::vector<std::uint64_t> timed(timed_.begin(), timed_.end());
+    std::sort(timed.begin(), timed.end());
+    for (const std::uint64_t entity_id : timed) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(queued_.size()));
+    std::vector<std::uint64_t> queued(queued_.begin(), queued_.end());
+    std::sort(queued.begin(), queued.end());
+    for (const std::uint64_t entity_id : queued) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(alt_outgoing_.size()));
+    for (const auto& [entity, port] : alt_outgoing_) {
+      append_entity(state, entity);
+      append_string(state, port);
+    }
+    append_u64(state, last_received_id_);
+    append_u64(state, timed_out_count_);
+    append_u64(state, preempted_count_);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C505751U ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    const auto read_ids = [&](std::unordered_set<std::uint64_t>& ids) {
+      std::uint32_t count = 0;
+      if (!read_count(state, offset, count)) return false;
+      for (std::uint32_t index = 0; index < count; ++index) {
+        std::uint64_t entity_id = 0;
+        if (!read_u64(state, offset, entity_id) ||
+            !ids.insert(entity_id).second)
+          return false;
+      }
+      return true;
+    };
+    std::unordered_set<std::uint64_t> timed;
+    std::unordered_set<std::uint64_t> queued;
+    if (!read_ids(timed) || !read_ids(queued)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<std::pair<Entity, std::string>> alt_outgoing;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      std::string port;
+      if (!read_entity(state, offset, entity) ||
+          !read_string(state, offset, port) ||
+          (port != "out" && port != "outTimeout" && port != "outPreempted"))
+        return false;
+      alt_outgoing.push_back({std::move(entity), std::move(port)});
+    }
+    std::uint64_t last_received = 0, timed_out = 0, preempted = 0;
+    if (!read_u64(state, offset, last_received) ||
+        !read_u64(state, offset, timed_out) ||
+        !read_u64(state, offset, preempted) || offset != state.size())
+      return false;
+    timed_ = std::move(timed);
+    queued_ = std::move(queued);
+    alt_outgoing_ = std::move(alt_outgoing);
+    last_received_id_ = last_received;
+    timed_out_count_ = timed_out;
+    preempted_count_ = preempted;
+    return true;
+  }
+
   void reset_stats() override {
     BufferedBlock::reset_stats();
     timed_out_count_ = 0;
@@ -496,6 +576,45 @@ class DelayBlock final : public BufferedBlock {
     BufferedBlock::accumulate_areas(dt_ns);
     area_busy_ += static_cast<double>(dt_ns) *
                   static_cast<double>(in_service_.size());
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C50444CU);  // LPDL
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(in_service_.size()));
+    for (const Entity& entity : in_service_) append_entity(state, entity);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C50444CU ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) ||
+        base_size > state.size() - offset) return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> in_service;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      in_service.push_back(std::move(entity));
+    }
+    if (offset != state.size()) return false;
+    in_service_ = std::move(in_service);
+    return true;
   }
 
   void clear_buffers() override {
@@ -801,6 +920,117 @@ class ServiceBlock final : public BufferedBlock {
     alt_outgoing_.clear();
   }
 
+  [[nodiscard]] bool checkpoint_eligible() const {
+    const bool local_failure_disabled = !failure_ && !repair_;
+    const bool shared_pool_failure = shared_pool_ && failure_ && repair_;
+    const bool preemption_contract =
+        !enable_preemption_ ||
+        (task_may_preempt_ && preemption_policy_ != "pp_no_preemption");
+    return !seize_ && (local_failure_disabled || shared_pool_failure) &&
+           !(enable_preemption_ && enable_timeout_) && preemption_contract;
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    if (!checkpoint_eligible()) return false;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C505356U);  // LPSV
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u64(state, static_cast<std::uint64_t>(units_in_use_));
+    append_u64(state, static_cast<std::uint64_t>(busy_));
+    append_u64(state, timed_out_count_);
+    append_u32(state, static_cast<std::uint32_t>(timed_.size()));
+    std::vector<std::uint64_t> timed(timed_.begin(), timed_.end());
+    std::sort(timed.begin(), timed.end());
+    for (const std::uint64_t entity_id : timed) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(down_.size()));
+    std::vector<std::uint64_t> down(down_.begin(), down_.end());
+    std::sort(down.begin(), down.end());
+    for (const std::uint64_t entity_id : down) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(in_service_.size()));
+    for (const Entity& entity : in_service_) append_entity(state, entity);
+    append_u64(state, preempted_count_);
+    append_u32(state, static_cast<std::uint32_t>(alt_outgoing_.size()));
+    for (const auto& [entity, port] : alt_outgoing_) {
+      append_entity(state, entity);
+      append_string(state, port);
+    }
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    if (!checkpoint_eligible()) return false;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C505356U ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint64_t units = 0, busy = 0, timed_out = 0;
+    if (!read_u64(state, offset, units) || !read_u64(state, offset, busy) ||
+        !read_u64(state, offset, timed_out))
+      return false;
+    std::uint32_t timed_count = 0;
+    if (!read_count(state, offset, timed_count)) return false;
+    std::unordered_set<std::uint64_t> timed;
+    for (std::uint32_t index = 0; index < timed_count; ++index) {
+      std::uint64_t entity_id = 0;
+      if (!read_u64(state, offset, entity_id) ||
+          !timed.insert(entity_id).second) return false;
+    }
+    std::uint32_t down_count = 0;
+    if (!read_count(state, offset, down_count)) return false;
+    std::unordered_set<std::uint64_t> down;
+    for (std::uint32_t index = 0; index < down_count; ++index) {
+      std::uint64_t entity_id = 0;
+      if (!read_u64(state, offset, entity_id) ||
+          !down.insert(entity_id).second) return false;
+    }
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> in_service;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      in_service.push_back(std::move(entity));
+    }
+    std::uint64_t preempted = 0;
+    if (!read_u64(state, offset, preempted)) return false;
+    std::uint32_t alt_count = 0;
+    if (!read_count(state, offset, alt_count)) return false;
+    std::deque<std::pair<Entity, std::string>> alt_outgoing;
+    for (std::uint32_t index = 0; index < alt_count; ++index) {
+      Entity entity;
+      std::string port;
+      if (!read_entity(state, offset, entity) ||
+          !read_string(state, offset, port)) return false;
+      alt_outgoing.push_back({std::move(entity), std::move(port)});
+    }
+    if (offset != state.size() ||
+        units > static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max()) ||
+        busy > static_cast<std::uint64_t>(
+                    std::numeric_limits<std::int64_t>::max())) return false;
+    units_in_use_ = static_cast<std::int64_t>(units);
+    busy_ = static_cast<std::int64_t>(busy);
+    timed_out_count_ = timed_out;
+    timed_ = std::move(timed);
+    down_ = std::move(down);
+    in_service_ = std::move(in_service);
+    preempted_count_ = preempted;
+    alt_outgoing_ = std::move(alt_outgoing);
+    return true;
+  }
+
   bool retry_outgoing(BlockContext& ctx) override {
     if (!alt_outgoing_.empty()) {
       const auto entry = alt_outgoing_.front();
@@ -996,6 +1226,58 @@ class AssemblerBlock final : public BufferedBlock {
     in_service_.clear();
   }
 
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C504153U);  // LPAS
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(main_.size()));
+    for (const Entity& entity : main_) append_entity(state, entity);
+    append_u32(state, static_cast<std::uint32_t>(parts_.size()));
+    for (const Entity& entity : parts_) append_entity(state, entity);
+    append_u32(state, static_cast<std::uint32_t>(in_service_.size()));
+    for (const Entity& entity : in_service_) append_entity(state, entity);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C504153U ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    const auto read_entities = [&](std::deque<Entity>& destination) {
+      std::uint32_t count = 0;
+      if (!read_count(state, offset, count)) return false;
+      for (std::uint32_t index = 0; index < count; ++index) {
+        Entity entity;
+        if (!read_entity(state, offset, entity)) return false;
+        destination.push_back(std::move(entity));
+      }
+      return true;
+    };
+    std::deque<Entity> main;
+    std::deque<Entity> parts;
+    std::deque<Entity> in_service;
+    if (!read_entities(main) || !read_entities(parts) ||
+        !read_entities(in_service) || offset != state.size())
+      return false;
+    main_ = std::move(main);
+    parts_ = std::move(parts);
+    in_service_ = std::move(in_service);
+    return true;
+  }
+
  private:
   std::int64_t delay_ns_{0};
   std::int64_t parts_needed_{1};
@@ -1087,6 +1369,45 @@ class MoveToBlock final : public BufferedBlock {
   void clear_buffers() override {
     BufferedBlock::clear_buffers();
     in_service_.clear();
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C504D56U);  // LPMV
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(in_service_.size()));
+    for (const Entity& entity : in_service_) append_entity(state, entity);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C504D56U ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> in_service;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      in_service.push_back(std::move(entity));
+    }
+    if (offset != state.size()) return false;
+    in_service_ = std::move(in_service);
+    return true;
   }
 
  private:
@@ -1213,6 +1534,51 @@ class GenericBlock final : public BufferedBlock {
   void clear_buffers() override {
     BufferedBlock::clear_buffers();
     clone_outgoing_.clear();
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C50474EU);  // LPGN
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(clone_outgoing_.size()));
+    for (const auto& [entity, port] : clone_outgoing_) {
+      append_entity(state, entity);
+      append_string(state, port);
+    }
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C50474EU ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<std::pair<Entity, std::string>> clone_outgoing;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      std::string port;
+      if (!read_entity(state, offset, entity) ||
+          !read_string(state, offset, port) || port != "outCopy")
+        return false;
+      clone_outgoing.push_back({std::move(entity), std::move(port)});
+    }
+    if (offset != state.size()) return false;
+    clone_outgoing_ = std::move(clone_outgoing);
+    return true;
   }
 
  private:
@@ -1488,6 +1854,87 @@ class SeizeBlock final : public BufferedBlock {
     alt_outgoing_.clear();
   }
 
+  [[nodiscard]] bool checkpoint_eligible() const {
+    // Queue timeouts are represented by the engine's block-event table plus
+    // the timed entity ids below.  Waiting-queue preemption is also safe to
+    // resume once queued_ is persisted; Seize never preempts an already-held
+    // resource, so no additional in-service state is required here.
+    return true;
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    if (!checkpoint_eligible()) return false;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C50535AU);  // LPSZ
+    state.push_back(2);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(timed_.size()));
+    std::vector<std::uint64_t> timed(timed_.begin(), timed_.end());
+    std::sort(timed.begin(), timed.end());
+    for (const std::uint64_t entity_id : timed) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(queued_.size()));
+    std::vector<std::uint64_t> queued(queued_.begin(), queued_.end());
+    std::sort(queued.begin(), queued.end());
+    for (const std::uint64_t entity_id : queued) append_u64(state, entity_id);
+    append_u32(state, static_cast<std::uint32_t>(alt_outgoing_.size()));
+    for (const auto& [entity, port] : alt_outgoing_) {
+      append_entity(state, entity);
+      append_string(state, port);
+    }
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    if (!checkpoint_eligible()) return false;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C50535AU ||
+        offset >= state.size() || state[offset++] != 2 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+
+    std::uint32_t timed_count = 0;
+    if (!read_count(state, offset, timed_count)) return false;
+    std::unordered_set<std::uint64_t> timed;
+    for (std::uint32_t index = 0; index < timed_count; ++index) {
+      std::uint64_t entity_id = 0;
+      if (!read_u64(state, offset, entity_id) ||
+          !timed.insert(entity_id).second) return false;
+    }
+    std::uint32_t queued_count = 0;
+    if (!read_count(state, offset, queued_count)) return false;
+    std::unordered_set<std::uint64_t> queued;
+    for (std::uint32_t index = 0; index < queued_count; ++index) {
+      std::uint64_t entity_id = 0;
+      if (!read_u64(state, offset, entity_id) ||
+          !queued.insert(entity_id).second) return false;
+    }
+    std::uint32_t alt_count = 0;
+    if (!read_count(state, offset, alt_count)) return false;
+    std::deque<std::pair<Entity, std::string>> alt_outgoing;
+    for (std::uint32_t index = 0; index < alt_count; ++index) {
+      Entity entity;
+      std::string port;
+      if (!read_entity(state, offset, entity) ||
+          !read_string(state, offset, port)) return false;
+      alt_outgoing.push_back({std::move(entity), std::move(port)});
+    }
+    if (offset != state.size()) return false;
+    timed_ = std::move(timed);
+    queued_ = std::move(queued);
+    alt_outgoing_ = std::move(alt_outgoing);
+    return true;
+  }
+
   [[nodiscard]] std::string pool_resource() const override { return resource_; }
 
  private:
@@ -1704,6 +2151,55 @@ class CombineBlock final : public BufferedBlock {
     return true;
   }
 
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C504342U);  // LPCB
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(input1_.size()));
+    for (const Entity& entity : input1_) append_entity(state, entity);
+    append_u32(state, static_cast<std::uint32_t>(input2_.size()));
+    for (const Entity& entity : input2_) append_entity(state, entity);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C504342U ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> input1;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      input1.push_back(std::move(entity));
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> input2;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      input2.push_back(std::move(entity));
+    }
+    if (offset != state.size()) return false;
+    input1_ = std::move(input1);
+    input2_ = std::move(input2);
+    return true;
+  }
+
   void accumulate_areas(std::int64_t dt_ns) override {
     BufferedBlock::accumulate_areas(dt_ns);
     area_occupancy_ += static_cast<double>(dt_ns) *
@@ -1804,6 +2300,63 @@ class MatchBlock final : public BufferedBlock {
       return true;
     }
     return false;
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    std::vector<std::uint8_t> base;
+    if (!BufferedBlock::checkpoint_save(base)) return false;
+    state.clear();
+    append_u32(state, 0x4C50434DU);  // LPCM
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(base.size()));
+    state.insert(state.end(), base.begin(), base.end());
+    append_u32(state, static_cast<std::uint32_t>(input1_.size()));
+    for (const Entity& entity : input1_) append_entity(state, entity);
+    append_u32(state, static_cast<std::uint32_t>(input2_.size()));
+    for (const Entity& entity : input2_) append_entity(state, entity);
+    append_u64(state, pending_new_.id);
+    append_u32(state, static_cast<std::uint32_t>(pending_new_.port));
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, base_size = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C50434DU ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_u32(state, offset, base_size) || base_size > state.size() - offset)
+      return false;
+    const auto base = state.subspan(offset, base_size);
+    offset += base_size;
+    if (!BufferedBlock::checkpoint_restore(base)) return false;
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> input1;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      input1.push_back(std::move(entity));
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> input2;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      input2.push_back(std::move(entity));
+    }
+    std::uint64_t pending_id = 0;
+    std::uint32_t pending_port = 0;
+    if (!read_u64(state, offset, pending_id) ||
+        !read_u32(state, offset, pending_port) || pending_port > 2 ||
+        offset != state.size())
+      return false;
+    input1_ = std::move(input1);
+    input2_ = std::move(input2);
+    pending_new_ = {pending_id, static_cast<int>(pending_port)};
+    return true;
   }
 
   void accumulate_areas(std::int64_t dt_ns) override {

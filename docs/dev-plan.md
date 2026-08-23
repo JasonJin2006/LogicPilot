@@ -1,13 +1,41 @@
-# LogicPilot 工程化路线计划（以建模仿真为核心）
+# LogicPilot 工程化路线计划（工程建模与仿真 Workbench）
 
 状态：已定稿（2026-08-06）· 维护者：`/root` · 参考：`docs/roadmap.md`
 
 ## 0. 定位校准
 
-LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE + AI 建模闭环），
-不是逻辑推理/规则引擎。外部评审提出的「AI Logic Agent Runtime / 逻辑规则 DSL /
-知识推理」方向判定为**不适用，不纳入**；其建议按仿真平台的真实缺口重新翻译，
-按 P0 → P3 分阶段推进。
+LogicPilot 是**可扩展工程建模与仿真 Workbench**：统一文档、编辑器、模型树、
+画布、属性、诊断、命令、AI、实验与可信运行基础设施。时间推进是可选能力，
+不是进入 Workbench 的前提；SysML/C4 等工程模型与 DEVS/Process/Agent/SD 等
+仿真模型均是一等文档。SysML v2 的 behavior、calculation、analysis/verification
+case 可以选择成为执行目标，但纯结构/需求模型不需要 runtime。平台不发展为通用逻辑推理引擎，也不把所有语言塞入同一
+DSL、同一 `ModelDocument` 或同一 runtime。
+
+统一 Workbench 迁移、运行时层级修正和 SysML v2 高优先级垂直切片见
+[`workbench-architecture-plan.md`](./workbench-architecture-plan.md)。该计划自
+2026-08-23 起是新增编辑器、模型类型和 AI 建模能力的架构入口；既有 P0-P3 条目
+保留为历史交付与兼容基线。
+
+## P1-Next 大一统 Workbench + SysML v2（最高优先级，已批准）
+
+- **先建立最小扩展 seam**：DocumentType、Outline、Diagnostic、Command、AI
+  contribution、稳定 ElementRef、ExecutionTarget 和跨工件关系；没有选定执行目标
+  的编辑/诊断流程不得创建 runtime/clock/scheduler。
+- **紧接着交付 SysML v2 文本建模 MVP**：`.sysml` 编辑、parser/语义索引、
+  稳定诊断、Outline、completion/hover/引用/重命名，以及面向 requirement、part、
+  port、connection、trace、action/state、analysis/verification case 的 AI 建模工具。
+- **随后交付 SysML 语义执行 MVP**：calculation/constraint、action succession、
+  state/event/time trigger 形成显式 execution target，可解释执行或 lowering 到
+  Statechart/DEVS/continuous backend，并产生可重复 trace/evidence。
+- **再扩展 SysML 多视图和数字线程**：结构/连接/需求追踪/行为视图，对齐 OMG
+  machine-readable schema 与 Systems Modeling API，并将 requirement → experiment
+  → simulation → result/evidence 串联起来。
+- **现有前端渐进迁移**：保留视觉和交互，把 Model tree、Palette、Properties、
+  Process/Statechart 画布和全局校验分别迁为 provider；C4 作为 SysML MVP 后的
+  第二个非仿真扩展。
+- **运行时只服务可执行工件**：`SimulationMethod` 逐步收敛为 runtime adapter；
+  Process 是离散事件建模前端/库，现有 ProcessFlow runtime 是兼容与优化路径，
+  不再充当平台顶层方法分类。
 
 ## P0 核心闭环补齐（✅ 已落地 2026-08-06）
 
@@ -47,9 +75,15 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
   examples/*.expect.json 验收规则）；`ai-build.mjs` 运行后自动校验并把
   `verification` 报告并入输出；新增 `verify_run_smoke` ctest。
 - 后续：死锁（服务前无源/队列容量 0 语义）等更深静态检查。
+- **零容量死锁检查 ✅（LP5008）**：`wait` 或非抢占 `queue` 的字面量
+  `capacity = 0` 在语义阶段直接诊断；启用 Queue preemption 的溢出路由保留为
+  合法例外，避免把运行时永久阻塞推迟到仿真阶段。
 - **条件字段标识符校验 ✅（LP5006）**：`selectOutput.condition` /
   `hold.blockingCondition` 只允许 `t`/`time` 与块自身数值字段，未知标识符
   报 LP5006（此前静默按 0.0 处理）。
+- **端口类型兼容检查 ✅（LP5009）**：Process library 与 Atomic coupling
+  的静态端口声明现在在编译期校验；普通类型要求精确匹配，空类型与显式
+  `any`/`message` 保留为通配契约，避免不兼容消息进入 IR/运行时。
 
 ## 运行时执行策略决策（✅ 已落地 2026-08-06）
 
@@ -187,3 +221,91 @@ LogicPilot 是**多方法建模仿真平台**（DSL → C++ 内核 → Web IDE +
 - 每阶段保持当前 ctest 基线全绿、docs 构建通过、CI 全绿。
 - 每阶段独立可交付、可回退；P0 增量聚焦结构化诊断/调试/剖析 + 测试基准
   扩展 + DSL 冻结文档。
+
+## 深核实施增量（2026-08-22 起）
+
+以下能力已在现有路线之上落地，并以 clean Windows CTest 作为持续门禁：
+
+- **DEVS/PDEVS 执行内核**：运行时路由计划、PDEVS bag/confluent 语义、因果
+  evidence hash、版本化 atom checkpoint，以及固定分区的保守时间戳屏障并行。
+- **流程引擎状态完整性**：Process 的 Seize/Wait/Assembler/MoveTo/Combine/Match/
+  Split/Select/Batch 等私有队列、资源持有、timeout、抢占和空间旅行状态均显式
+  编解码；不支持的块组合保持显式拒绝。
+- **跨分区恢复基础设施**：确定性 partition transport、版本化事件帧、固定容量
+  原子 ring、peer epoch/heartbeat、replay window、checkpoint recovery epoch。
+- **持久化与演进**：LPCD/LPAE/LPMC archive、append-only journal 与 compaction、
+  RLE reference transform、原子 blob store、混合方法 shared variable/message
+  快照，以及显式单跳/多跳 method schema migration registry。
+- **多方法协调**：Process、Statechart（含 composite network）、Agent、SD/DEVS
+  的 session bundle 在共享 clock/scheduler 上进行一致性 replay；模型 fingerprint
+  防止跨模型误恢复。
+- **DEVS 运行时端口类型防线 ✅**：LP5009 的静态 coupling 检查之外，IR v2
+  `Port.event_type` 现在保存在 `AtomicModel`，`DevsRuntimePlan` 装载时对最终
+  output→input 路由执行二次类型校验，防止手工 IR/原生插件绕过 DSL 契约。
+- **跨方法消息契约 ✅**：`MessageStore` 支持注册 URI/schema/encoding 契约；已知
+  类型在 publish 与 session checkpoint restore 时拒绝版本或编码漂移，未注册 URI
+  保留为旧插件兼容扩展点。
+- **连续时间误差控制 ✅**：SD 默认固定 RK4 保持黄金值兼容；连续节点可通过
+  `adaptive`、容差、步长和 `horizon` 参数启用确定性的 step-doubling RK4，
+  checkpoint 保存控制器状态，shared scheduler 按预检后的实际接受步长调度。
+- **DEVS evidence 归档 ✅**：新增版本化 LPEV 编解码、FNV 校验和、记录/事件/字节
+  上限及 recorder restore 校验，可将因果 evidence 从内存安全地交给离线复盘工具。
+- **连续零交叉观测 ✅**：连续节点设置 `detect_zero_crossings` 后记录每个状态的
+  过零方向、步内线性定位时间与前后值，并纳入 checkpoint；离散回调接入仍保留
+  为后续混合仿真边界；新增 cold-path observer hook 供方法适配器消费。
+- **零交叉步长裁剪 ✅**：adaptive SD 可用 `stop_at_zero_crossings` 在预检阶段把
+  下一步裁到首个 crossing，使 shared scheduler 停在边界时间；完整 rollback/event
+  语义仍保持明确边界。
+- **事务式 session restore ✅**：恢复前保存方法/变量/消息/时钟 rollback image，
+  通过方法 token 取消保持事件序列确定性；任一方法失败即回滚完整共享世界并返回 KR1016。
+- **插件 artifact 完整性 pin ✅**：method manifest 可选 `artifactSha256`，C ABI/WASM
+  loader 在加载前执行 SHA-256 比对并拒绝 MP1108/MP1211 mismatch；未提供时保持旧版
+  兼容，数字签名/信任链仍不在此层伪造。
+- **DEVS evidence 文件存储 ✅**：`FileEvidenceArchiveStore` 以临时文件/备份/替换
+  方式持久化 LPEV，并在 load 时执行大小、checksum、序列和因果 cardinality 校验。
+- **共享 scheduler event budget ✅**：`ReplicationConfig.max_events` 默认 5000 万，
+  `SimulationKernel`/`SimulationSession` 超限返回 KR1017，避免零时刻事件风暴挂死宿主。
+- **流式 gateway 预算对齐 ✅**：`lp-server` 的 `SimRunner` 现在共享同一事件预算，
+  `start.maxEvents` / `--max-events` 可按 replication 限制 dispatch；耗尽以
+  `RunFinished{Failed, KR1017}` 暴露，不再误报为取消。
+- **泛型流引擎预算对齐 ✅**：增量 `QueueingFlowSim`/`ProcessFlowSim` 热循环现在
+  累计 dispatch 计数并返回同一 KR1017 诊断；Process/Queueing checkpoint 同时保存
+  budget 配置与累计计数，恢复不会悄悄重置安全边界。
+- **Statechart 预算对齐 ✅**：定时器、条件轮询和即时 branch/history transition
+  共享累计预算；复合网络按子图确定性分配上限，checkpoint 与 live gateway 均传播
+  `Failed/KR1017`，避免零时刻状态循环吞噬 worker。
+- **Agent/Continuous 计算预算对齐 ✅**：Agent 将 `max_events` 映射为 accepted
+  tick 上限，Continuous 映射为 accepted RK4 step 上限（不干扰 adaptive trial
+  retry）；两者 checkpoint 恢复预算/失败状态，Agent gateway 与 Continuous
+  runtime 均可区分 `KR1017` 和普通数值错误。
+- **跨方法 logical-step trace ✅**：`TraceRecorder` 新增独立 logical-step 通道，
+  Agent tick 与 Continuous accepted RK4 step 进入确定性 hash，同时保持旧
+  scheduler `event_count()` 兼容，支持跨方法同 seed 差异定位。
+- **bounded trace 差异诊断 ✅**：logical-step 可选有界可读记录，截断不影响完整
+  hash；`LogicalTraceComparator` 输出首个时间/type/payload 差异，避免调试捕获本身
+  成为长仿真的内存风险。
+- **logical trace 便携归档 ✅**：新增 LPLT 版本化编解码、archive byte/record 限额和
+  FNV 校验，Agent/Continuous step 证据可安全交给 CI 或离线 replay 工具。
+- **logical trace 文件存储 ✅**：`FileLogicalTraceArchiveStore` 复用 evidence 的
+  temp/backup/atomic replace 契约，提供可恢复的跨进程 trace 工件安装与加载。
+- **DebugRecorder 有界捕获 ✅**：调试事件流支持显式 max-events、保留前缀和
+  `truncated()` 标志，profile 仍记录完整 dispatch 数，长仿真不会因调试捕获无界增长。
+- **SimulationSession 累计预算 ✅**：跨多次 `advance(until)` 的 shared scheduler
+  dispatch 计数不再被切片重置；checkpoint/portable codec 保存累计计数，pause/step
+  无法绕过 KR1017。
+- **方法族/形式化元数据 ✅**：MethodRegistry Descriptor 增加 family/formalism，
+  明确 `discrete_event/{devs,process,statechart}`、`agent/agent`、
+  `system_dynamics/sd` 映射；旧 IR library 名称与无 metadata 的插件保持兼容，
+  Session 的 DEVS checkpoint 判断不再硬编码 method name。
+- **Evidence causal graph ✅**：`DevsEvidenceGraph` 从 PDEVS input_sources 聚合稳定
+  atom→atom 边、消息/转移计数和路径 hash，供离线复盘与 AI 解释复用；不把观测图伪装成干预因果。
+- **分区 replay gap 诊断 ✅**：`PartitionReplayWindow` 按 epoch/source 追踪最高序号，
+  Ring transport 检出跳号并保留 expected/observed 诊断，同时向 `PartitionPeerControl`
+  发布固定宽度 replay request，供 checkpoint replay 协调器触发补发。
+- **分区 bounded replay history ✅**：可选 `PartitionReplayHistory<Capacity>` 保留最近
+  帧并按 request 提取有序完整范围；窗口不足时明确返回 unavailable，回退到 checkpoint replay。
+- **Evidence first-divergence 诊断 ✅**：`DevsEvidenceComparator` 在 hash mismatch 后按记录/字段
+  给出第一处差异及 expected/actual，支持并行 barrier 与 checkpoint replay 调试。
+
+当前阶段仍保留明确边界：可信加密、对象存储 SDK、进程间映射、分布式故障恢复和
+Time Warp 不在内核中伪造实现，均通过 transform/transport/migration 接口预留。

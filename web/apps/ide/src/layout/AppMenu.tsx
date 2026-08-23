@@ -806,7 +806,7 @@ export function AppMenu() {
           )}
         </div>
       ))}
-      <input ref={fileRef} type="file" accept=".lpproj,.lp,.json" hidden onChange={onFileChosen} />
+      <input ref={fileRef} type="file" accept=".lpproj,.lp,.sysml,.json" hidden onChange={onFileChosen} />
       <input
         ref={workspaceFileRef}
         type="file"

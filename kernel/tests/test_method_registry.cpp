@@ -17,6 +17,7 @@
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/artifact_digest.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/runtime/method_plugin_manifest.h"
 #include "logicpilot/runtime/method_registry.h"
@@ -219,6 +220,16 @@ TEST_CASE("method registry: register, create, contains and idempotency", "[runti
   REQUIRE(registry.contains("devs"));
   REQUIRE(registry.contains("agent"));
   REQUIRE(registry.contains("sd"));
+  REQUIRE(registry.descriptor("devs")->family == MethodFamily::kDiscreteEvent);
+  REQUIRE(registry.descriptor("devs")->formalism == MethodFormalism::kDevs);
+  REQUIRE(registry.descriptor("process")->family == MethodFamily::kDiscreteEvent);
+  REQUIRE(registry.descriptor("process")->formalism == MethodFormalism::kProcess);
+  REQUIRE(registry.descriptor("statechart")->family == MethodFamily::kDiscreteEvent);
+  REQUIRE(registry.descriptor("statechart")->formalism == MethodFormalism::kStatechart);
+  REQUIRE(registry.descriptor("agent")->family == MethodFamily::kAgentBased);
+  REQUIRE(registry.descriptor("agent")->formalism == MethodFormalism::kAgent);
+  REQUIRE(registry.descriptor("sd")->family == MethodFamily::kSystemDynamics);
+  REQUIRE(registry.descriptor("sd")->formalism == MethodFormalism::kSd);
 }
 
 TEST_CASE("variable store: typed shared state across methods", "[runtime]") {
@@ -277,12 +288,16 @@ TEST_CASE("method plugin manifest: validates discovery metadata and registry bin
     "method": "petri_test_xyz",
     "runtimeVersion": "2.1.0",
     "semanticsVersions": ["3", "4"],
+    "family": "discrete_event",
+    "formalism": "devs",
     "runtime": {"kind": "linked", "entrypoint": "register_petri"},
     "dslLibraries": ["petri.lplib"]
   })json");
   REQUIRE(parsed.ok());
   REQUIRE(parsed.manifest.runtime_kind == PluginRuntimeKind::kLinked);
   REQUIRE(parsed.manifest.semantics_versions == std::vector<std::string>{"3", "4"});
+  REQUIRE(parsed.manifest.family == "discrete_event");
+  REQUIRE(parsed.manifest.formalism == "devs");
 
   std::string error;
   MethodRegistry& registry = MethodRegistry::instance();
@@ -290,6 +305,10 @@ TEST_CASE("method plugin manifest: validates discovery metadata and registry bin
       parsed.manifest, [] { return std::make_unique<TestMethod>("petri_test_xyz"); }, &error));
   REQUIRE(registry.supports_semantics_version("petri_test_xyz", "4"));
   REQUIRE_FALSE(registry.supports_semantics_version("petri_test_xyz", "2"));
+  REQUIRE(registry.descriptor("petri_test_xyz")->family ==
+          MethodFamily::kDiscreteEvent);
+  REQUIRE(registry.descriptor("petri_test_xyz")->formalism ==
+          MethodFormalism::kDevs);
 
   const auto missing_artifact = parse_method_plugin_manifest(R"json({
     "schema": "logicpilot.method-plugin",
@@ -302,6 +321,46 @@ TEST_CASE("method plugin manifest: validates discovery metadata and registry bin
   })json");
   REQUIRE_FALSE(missing_artifact.ok());
   REQUIRE(missing_artifact.error.find("MP1010") != std::string::npos);
+}
+
+TEST_CASE("artifact digest: SHA-256 vectors and manifest hash validation",
+          "[runtime][plugin][integrity]") {
+  const std::vector<std::uint8_t> empty;
+  REQUIRE(ArtifactDigest::sha256(empty) ==
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  const std::vector<std::uint8_t> abc{'a', 'b', 'c'};
+  REQUIRE(ArtifactDigest::sha256(abc) ==
+          "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  REQUIRE(ArtifactDigest::is_sha256_hex(
+      "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"));
+  REQUIRE_FALSE(ArtifactDigest::is_sha256_hex("abc"));
+
+  const auto parsed = parse_method_plugin_manifest(R"json({
+    "schema": "logicpilot.method-plugin",
+    "schemaVersion": 1,
+    "package": "acme.hash",
+    "method": "hash_method",
+    "runtimeVersion": "1",
+    "semanticsVersions": ["1"],
+    "runtime": {
+      "kind": "c-abi",
+      "entrypoint": "entry",
+      "artifact": "plugin.dll",
+      "artifactSha256": "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD"
+    }
+  })json");
+  REQUIRE(parsed.ok());
+  REQUIRE(parsed.manifest.artifact_sha256 ==
+          "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  const auto invalid = parse_method_plugin_manifest(R"json({
+    "schema": "logicpilot.method-plugin", "schemaVersion": 1,
+    "package": "acme.hash", "method": "hash_method", "runtimeVersion": "1",
+    "semanticsVersions": ["1"],
+    "runtime": {"kind": "c-abi", "entrypoint": "entry", "artifact": "plugin.dll",
+                 "artifactSha256": "not-a-hash"}
+  })json");
+  REQUIRE_FALSE(invalid.ok());
+  REQUIRE(invalid.error.find("MP1013") != std::string::npos);
 }
 
 TEST_CASE("message store: scheduler payload can reference typed envelopes", "[runtime][message]") {
@@ -318,6 +377,44 @@ TEST_CASE("message store: scheduler payload can reference typed envelopes", "[ru
   messages.clear();
   REQUIRE(messages.size() == 0);
   REQUIRE(messages.get(id) == nullptr);
+}
+
+TEST_CASE("message store: registered contracts reject schema and encoding drift",
+          "[runtime][message][contract]") {
+  MessageStore messages;
+  std::string error;
+  REQUIRE(messages.register_type(
+      MessageTypeContract{"urn:test:vehicle", 2, "flatbuffers"}, &error));
+  REQUIRE(messages.register_type(
+      MessageTypeContract{"urn:test:vehicle", 2, "flatbuffers"}, &error));
+  REQUIRE_FALSE(messages.register_type(
+      MessageTypeContract{"urn:test:vehicle", 3, "flatbuffers"}, &error));
+  REQUIRE(error.find("conflicts") != std::string::npos);
+
+  const MessageId valid = messages.publish(
+      MessageEnvelope{"urn:test:vehicle", 2, "flatbuffers", "agent", {1}});
+  REQUIRE(valid != kInvalidMessageId);
+
+  const MessageId wrong_schema = messages.publish(
+      MessageEnvelope{"urn:test:vehicle", 1, "flatbuffers", "agent", {1}});
+  REQUIRE(wrong_schema == kInvalidMessageId);
+  REQUIRE(messages.last_error().find("schema version mismatch") != std::string::npos);
+
+  const MessageId wrong_encoding = messages.publish(
+      MessageEnvelope{"urn:test:vehicle", 2, "json", "agent", {1}});
+  REQUIRE(wrong_encoding == kInvalidMessageId);
+  REQUIRE(messages.last_error().find("encoding mismatch") != std::string::npos);
+
+  std::vector<MessageEnvelope> invalid_snapshot{
+      MessageEnvelope{"urn:test:vehicle", 1, "flatbuffers", "agent", {1}}};
+  REQUIRE_FALSE(messages.restore(std::move(invalid_snapshot), &error));
+  REQUIRE(error.find("schema version mismatch") != std::string::npos);
+  REQUIRE(messages.size() == 0);
+
+  // Unregistered types preserve the legacy extension point.
+  const MessageId legacy = messages.publish(
+      MessageEnvelope{"urn:test:legacy", 1, "application/octet-stream", "legacy", {2}});
+  REQUIRE(legacy != kInvalidMessageId);
 }
 
 TEST_CASE("runtime manager: lifecycle orchestrates attached methods", "[runtime][manager]") {

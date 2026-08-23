@@ -39,6 +39,7 @@ class BinaryHeapScheduler final : public IEventScheduler {
 
   SimTime peek_time() override;
   void reserve(std::size_t n) override;
+  void clear() override;
 
   // Diagnostics (tests / profiling): raw heap entries including dead ones.
   [[nodiscard]] std::size_t heap_entries() const { return heap_.size(); }

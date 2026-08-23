@@ -129,6 +129,74 @@ void StatechartRuntime::shutdown() {
   ran_ = false;
 }
 
+bool StatechartRuntime::save_method_checkpoint(MethodCheckpoint& checkpoint,
+                                               std::string* error) const {
+  const auto* chart = dynamic_cast<const StatechartReplicationModel*>(
+      replication_.get());
+  if (chart == nullptr) {
+    const auto* network = dynamic_cast<const StatechartNetworkReplicationModel*>(
+        replication_.get());
+    if (network == nullptr) {
+      if (error != nullptr) *error = "statechart runtime has no checkpointable model";
+      return false;
+    }
+    checkpoint = MethodCheckpoint{};
+    checkpoint.method = "statechart";
+    checkpoint.schema_version = 2;
+    checkpoint.now = context_ != nullptr ? context_->clock().now()
+                                         : SimTime::zero();
+    if (!network->checkpoint_save(checkpoint.state)) {
+      if (error != nullptr) *error = "statechart network checkpoint_save failed";
+      return false;
+    }
+    return true;
+  }
+  checkpoint = MethodCheckpoint{};
+  checkpoint.method = "statechart";
+  checkpoint.schema_version = 1;
+  checkpoint.now = context_ != nullptr ? context_->clock().now()
+                                       : SimTime::zero();
+  if (!chart->checkpoint_save(checkpoint.state)) {
+    if (error != nullptr) *error = "statechart checkpoint_save failed";
+    return false;
+  }
+  return true;
+}
+
+bool StatechartRuntime::restore_method_checkpoint(
+    const MethodCheckpoint& checkpoint, std::string* error) {
+  auto* chart = dynamic_cast<StatechartReplicationModel*>(replication_.get());
+  auto* network = dynamic_cast<StatechartNetworkReplicationModel*>(replication_.get());
+  if ((chart == nullptr && network == nullptr) || checkpoint.method != "statechart" ||
+      (chart != nullptr && checkpoint.schema_version != 1) ||
+      (network != nullptr && checkpoint.schema_version != 2)) {
+    if (error != nullptr) {
+      *error = "unsupported statechart checkpoint bundle";
+    }
+    return false;
+  }
+  if (context_ != nullptr) {
+    context_->clock().reset(checkpoint.now);
+  }
+  if (chart != nullptr) {
+    if (!chart->checkpoint_restore(checkpoint.state)) {
+      if (error != nullptr) *error = "statechart checkpoint_restore failed";
+      return false;
+    }
+  } else if (!network->checkpoint_restore(checkpoint.state)) {
+    if (error != nullptr) *error = "statechart network checkpoint_restore failed";
+    return false;
+  }
+  return true;
+}
+
+std::uint32_t StatechartRuntime::checkpoint_schema_version() const {
+  return dynamic_cast<const StatechartNetworkReplicationModel*>(
+             replication_.get()) != nullptr
+             ? 2
+             : 1;
+}
+
 std::unique_ptr<ReplicationModel> StatechartRuntime::to_replication_model(const IrModelFile& model,
                                                                           std::string* error) {
   if (model.v2_root == nullptr || model.v2_root->root() == nullptr) {
@@ -159,7 +227,9 @@ std::unique_ptr<ReplicationModel> StatechartRuntime::to_replication_model(const 
 
 void register_statechart_method() {
   MethodRegistry::instance().register_method("statechart",
-                                             [] { return std::make_unique<StatechartRuntime>(); });
+                                             [] { return std::make_unique<StatechartRuntime>(); },
+      MethodRegistry::Descriptor{"1", {"1"}, MethodFamily::kDiscreteEvent,
+                                 MethodFormalism::kStatechart});
 }
 
 }  // namespace logicpilot

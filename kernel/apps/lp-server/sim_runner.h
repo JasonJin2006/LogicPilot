@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "logicpilot/core/random/xoshiro256pp.h"
@@ -43,6 +44,9 @@ struct StreamRunConfig {
   std::int64_t servers{1};
   double failure_rate{0.0};
   double repair_rate{1.0};
+  // Maximum number of scheduler events dispatched in this replication.
+  // Zero rejects the first event, matching ReplicationConfig semantics.
+  std::uint64_t max_events{50'000'000};
 };
 
 class SimRunner {
@@ -57,6 +61,9 @@ class SimRunner {
 
   // The replication drains completely (all arrivals served and departed).
   [[nodiscard]] bool finished() const { return finished_; }
+
+  [[nodiscard]] bool failed() const { return budget_exhausted_; }
+  [[nodiscard]] const std::string& failure_reason() const { return error_; }
 
   [[nodiscard]] std::int64_t now_ns() const { return clock_.now().as_ns(); }
 
@@ -97,6 +104,9 @@ class SimRunner {
   std::int64_t busy_servers_{0};
   std::int64_t down_servers_{0};
   bool finished_{false};
+  std::uint64_t dispatched_total_{0};
+  bool budget_exhausted_{false};
+  std::string error_;
 
   // Stats accumulators (cumulative sums instead of the kernel's wait_times_
   // vector - bounded memory for arbitrarily long runs).

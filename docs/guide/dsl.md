@@ -310,7 +310,7 @@ model Decay {
 }
 ```
 
-内核用固定步长 RK4 积分；`lpcli run --arrivals N` = N 步（`dt = 0.01`），`--trajectory` 导出采样轨迹。多方程耦合即连续多个 `d x/dt` 语句（SIR 见 `examples/sir.lp`）。每个 RK4 阶段和最终状态都会检查有限性；出现除零、溢出或非法初值时运行失败并给出变量、时间和积分阶段诊断，不会生成 `inf`/`nan` JSON。
+内核默认用固定步长 RK4 积分；`lpcli run --arrivals N` = N 步（`dt = 0.01`），`--trajectory` 导出采样轨迹。多方程耦合即连续多个 `d x/dt` 语句（SIR 见 `examples/sir.lp`）。连续块也可用 `param adaptive = 1` 加上 `absolute_tolerance`、`relative_tolerance`、`minimum_step`、`maximum_step` 和可选 `horizon` 启用确定性的自适应 step-doubling RK4。每个 RK4 阶段和最终状态都会检查有限性；出现除零、溢出或非法初值时运行失败并给出变量、时间和积分阶段诊断，不会生成 `inf`/`nan` JSON。
 
 ## experiment：模型声明实验
 

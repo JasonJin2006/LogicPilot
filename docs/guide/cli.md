@@ -53,6 +53,7 @@ usage: lpcli run [options]
   --mu <x>                   service rate for built-in:mm1 (default 1.0)
   --confidence <x>           CI confidence level (default 0.95)
   --trajectory <path>        write continuous-model trajectory JSON
+  --logical-trace <path>     write one-rep LPLT logical-step archive
 ```
 
 - `--project <path.lpproj>`：直接运行 `*.lpproj` 工程包（读取 `model/main.lp`
@@ -63,7 +64,18 @@ usage: lpcli run [options]
   模型实例，逐位结果与串行一致，ADR-0009 阶段 A）；`--trajectory` 请求时
   回退顺序执行
 - `--trajectory`：连续模型（`continuous` 块）输出采样轨迹 JSON，供 AI 面板/脚本绘制 ODE 曲线
+- `--logical-trace`：单 replication 的 Agent/Continuous accepted-step 证据写成
+  LPLT 归档；该选项要求 `--reps 1`，并自动回退到单线程执行。
 - 同一种子 + 相同参数 → 逐位相同结果（见 [确定性复现](./determinism)）
+
+## trace-compare
+
+```text
+lpcli trace-compare expected.lplt actual.lplt
+```
+
+相同归档返回 `identical`；不同归档返回非零退出码，并报告首个
+logical-step 的时间、类型或 payload 差异，适合 CI replay 门禁。
 
 ## serve
 

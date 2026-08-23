@@ -56,6 +56,12 @@ class Xoshiro256PlusPlus {
   }
 
   [[nodiscard]] const std::uint64_t* state() const { return s_; }
+  void restore_state(const std::uint64_t state[4]) {
+    s_[0] = state[0];
+    s_[1] = state[1];
+    s_[2] = state[2];
+    s_[3] = state[3];
+  }
 
  private:
   static std::uint64_t rotl(std::uint64_t x, int k) {

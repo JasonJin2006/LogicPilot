@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -66,9 +67,48 @@ constexpr std::uint64_t kMaxConditionPolls = 20000;
 // rate, message) is not an event identity: two transitions from the same state
 // may have the same trigger kind but different targets, guards or actions.
 constexpr FsmEventId kFirstDynamicFsmEvent = 0;
+constexpr std::uint32_t kStatechartCheckpointMagic = 0x4C505354U;  // LPST
+constexpr std::uint8_t kStatechartCheckpointVersion = 2;
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
+}
+
+std::string event_budget_error(std::uint64_t max_events) {
+  return "KR1017: shared scheduler event budget exhausted (" +
+         std::to_string(max_events) + " events)";
+}
+
+void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+  for (int byte = 0; byte < 4; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (int byte = 0; byte < 8; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint32_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 4) return false;
+  value = 0;
+  for (int byte = 0; byte < 4; ++byte) {
+    value |= static_cast<std::uint32_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
+bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint64_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 8) return false;
+  value = 0;
+  for (int byte = 0; byte < 8; ++byte) {
+    value |= static_cast<std::uint64_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
 }
 
 }  // namespace
@@ -119,8 +159,23 @@ struct StatechartReplicationModel::Impl {
   ReplicationConfig config_;
   std::uint64_t steps_{0};
   std::uint64_t condition_polls_{0};
+  std::uint64_t dispatched_total_{0};
   StateId last_visited{kInvalidState};
   bool done_{false};
+  bool budget_exhausted_{false};
+  std::string failure_reason_;
+
+  bool consume_transition_budget() {
+    if (config_.max_events == 0 || steps_ >= config_.max_events) {
+      budget_exhausted_ = true;
+      done_ = true;
+      failure_reason_ = event_budget_error(config_.max_events);
+      cancel_scheduled_triggers();
+      return false;
+    }
+    ++steps_;
+    return true;
+  }
 
   [[nodiscard]] IEventScheduler& scheduler() {
     return external_ != nullptr ? external_->scheduler() : *owned_scheduler_;
@@ -152,7 +207,7 @@ struct StatechartReplicationModel::Impl {
           return;  // no history yet: stay in the history state
         }
         machine.reset(target);
-        ++steps_;
+        if (!consume_transition_budget()) return;
         continue;
       }
       const auto branch = branch_targets.find(state);
@@ -172,7 +227,7 @@ struct StatechartReplicationModel::Impl {
           return;
         }
         machine.reset(target);
-        ++steps_;
+        if (!consume_transition_budget()) return;
         continue;
       }
       return;
@@ -180,7 +235,7 @@ struct StatechartReplicationModel::Impl {
   }
 
   void on_timer(const Event& event) {
-    if (done_) {
+    if (done_ || budget_exhausted_) {
       return;
     }
     const FsmEventId fsm_event = static_cast<FsmEventId>(event.payload);
@@ -188,7 +243,7 @@ struct StatechartReplicationModel::Impl {
     FsmContext ctx;
     if (guard_allows(fsm_event) && machine.dispatch(definition, fsm_event, ctx)) {
       last_visited = from;
-      ++steps_;
+      if (!consume_transition_budget()) return;
       emit_for(fsm_event);
       settle();
     }
@@ -196,7 +251,7 @@ struct StatechartReplicationModel::Impl {
   }
 
   void on_condition_poll() {
-    if (done_) {
+    if (done_ || budget_exhausted_) {
       return;
     }
     if (++condition_polls_ > kMaxConditionPolls) {
@@ -230,7 +285,7 @@ struct StatechartReplicationModel::Impl {
         if (machine.dispatch(definition, fired, ctx)) {
           transitioned = true;
           last_visited = from;
-          ++steps_;
+          if (!consume_transition_budget()) return;
           emit_for(fired);
           settle();
         }
@@ -241,7 +296,7 @@ struct StatechartReplicationModel::Impl {
   }
 
   void schedule_condition_poll(StateId state) {
-    if (done_) {
+    if (done_ || budget_exhausted_) {
       return;
     }
     if (condition_triggers.count(state) == 0) {
@@ -266,7 +321,7 @@ struct StatechartReplicationModel::Impl {
   }
 
   void schedule_triggers(StateId state) {
-    if (done_) {
+    if (done_ || budget_exhausted_) {
       return;
     }
     if (config_.arrivals > 0 && steps_ >= config_.arrivals) {
@@ -556,7 +611,10 @@ void StatechartReplicationModel::reset(const ReplicationConfig& config) {
   }
   impl_->steps_ = 0;
   impl_->condition_polls_ = 0;
+  impl_->dispatched_total_ = 0;
   impl_->done_ = false;
+  impl_->budget_exhausted_ = false;
+  impl_->failure_reason_.clear();
   impl_->last_visited = kInvalidState;
   impl_->emitted_messages.clear();
   impl_->machine = StateMachine{impl_->initial};
@@ -598,13 +656,19 @@ std::size_t StatechartReplicationModel::advance(SimTime until,
   if (impl_ == nullptr) {
     return 0;
   }
-  return run_until(impl_->scheduler(), impl_->clock(), until,
-                   [&](const Event& event) {
+  const std::size_t dispatched = run_until_bounded(
+      impl_->scheduler(), impl_->clock(), until, impl_->config_.max_events,
+      impl_->dispatched_total_, impl_->budget_exhausted_,
+      [&](const Event& event) {
                      if (trace != nullptr) {
                        trace->record(event.at, event.type, event.payload);
                      }
                      impl_->handlers().dispatch(event);
                    });
+  if (impl_->budget_exhausted_) {
+    impl_->failure_reason_ = event_budget_error(impl_->config_.max_events);
+  }
+  return dispatched;
 }
 
 ReplicationMetrics StatechartReplicationModel::metrics() const {
@@ -630,11 +694,21 @@ std::uint64_t StatechartReplicationModel::step_count() const {
 }
 
 bool StatechartReplicationModel::done() const {
-  return impl_ == nullptr || impl_->done_;
+  return impl_ == nullptr || impl_->done_ || impl_->budget_exhausted_;
 }
 
 bool StatechartReplicationModel::has_pending_events() {
-  return impl_ != nullptr && !impl_->scheduler().empty();
+  return impl_ != nullptr && !impl_->budget_exhausted_ &&
+         !impl_->scheduler().empty();
+}
+
+bool StatechartReplicationModel::failed() const {
+  return impl_ != nullptr && impl_->budget_exhausted_;
+}
+
+const std::string& StatechartReplicationModel::failure_reason() const {
+  static const std::string kNoFailure;
+  return impl_ != nullptr ? impl_->failure_reason_ : kNoFailure;
 }
 
 bool StatechartReplicationModel::dispatch_message(const std::string& port) {
@@ -649,7 +723,7 @@ bool StatechartReplicationModel::dispatch_message(const std::string& port) {
       continue;
     }
     impl_->last_visited = from;
-    ++impl_->steps_;
+    if (!impl_->consume_transition_budget()) return false;
     impl_->emit_for(event);
     impl_->settle();
     impl_->reschedule_triggers(impl_->machine.current());
@@ -676,6 +750,80 @@ StateId StatechartReplicationModel::last_state() const {
 
 std::size_t StatechartReplicationModel::last_steps() const {
   return impl_ == nullptr ? 0 : static_cast<std::size_t>(impl_->steps_);
+}
+
+bool StatechartReplicationModel::checkpoint_save(
+    std::vector<std::uint8_t>& state) const {
+  if (impl_ == nullptr || impl_->machine.current() == kInvalidState) {
+    return false;
+  }
+  state.clear();
+  append_u32(state, kStatechartCheckpointMagic);
+  state.push_back(kStatechartCheckpointVersion);
+  append_u64(state, impl_->config_.max_events);
+  append_u32(state, impl_->machine.current());
+  append_u32(state, impl_->last_visited);
+  append_u64(state, impl_->steps_);
+  append_u64(state, impl_->condition_polls_);
+  append_u64(state, impl_->dispatched_total_);
+  state.push_back(impl_->budget_exhausted_ ? 1 : 0);
+  state.push_back(impl_->done_ ? 1 : 0);
+  const std::uint64_t* rng = impl_->engine_.state();
+  for (int index = 0; index < 4; ++index) {
+    append_u64(state, rng[index]);
+  }
+  return true;
+}
+
+bool StatechartReplicationModel::checkpoint_restore(
+    std::span<const std::uint8_t> state) {
+  if (impl_ == nullptr) return false;
+  std::size_t offset = 0;
+  std::uint32_t magic = 0;
+  std::uint32_t current = kInvalidState;
+  std::uint32_t last_visited = kInvalidState;
+  std::uint64_t max_events = 0, steps = 0, polls = 0, dispatched_total = 0;
+  if (!read_u32(state, offset, magic) || magic != kStatechartCheckpointMagic ||
+      offset >= state.size() || state[offset++] != kStatechartCheckpointVersion ||
+      !read_u64(state, offset, max_events) ||
+      !read_u32(state, offset, current) ||
+      !read_u32(state, offset, last_visited) ||
+      !read_u64(state, offset, steps) || !read_u64(state, offset, polls) ||
+      !read_u64(state, offset, dispatched_total) ||
+      offset >= state.size()) {
+    return false;
+  }
+  const bool budget_exhausted = state[offset++] != 0;
+  if (offset >= state.size()) return false;
+  const bool done = state[offset++] != 0;
+  std::uint64_t rng[4]{};
+  for (std::uint64_t& value : rng) {
+    if (!read_u64(state, offset, value)) return false;
+  }
+  if (offset != state.size() || current >= impl_->definition.state_count() ||
+      (last_visited != kInvalidState &&
+       last_visited >= impl_->definition.state_count())) {
+    return false;
+  }
+
+  impl_->cancel_scheduled_triggers();
+  impl_->machine.reset(current);
+  impl_->config_.max_events = max_events;
+  impl_->last_visited = last_visited;
+  impl_->steps_ = steps;
+  impl_->condition_polls_ = polls;
+  impl_->dispatched_total_ = dispatched_total;
+  impl_->budget_exhausted_ = budget_exhausted;
+  impl_->failure_reason_ = budget_exhausted
+                               ? event_budget_error(impl_->config_.max_events)
+                               : std::string{};
+  impl_->done_ = done;
+  impl_->engine_.restore_state(rng);
+  impl_->emitted_messages.clear();
+  if (!impl_->done_ && !impl_->budget_exhausted_) {
+    impl_->reschedule_triggers(current);
+  }
+  return true;
 }
 
 }  // namespace logicpilot

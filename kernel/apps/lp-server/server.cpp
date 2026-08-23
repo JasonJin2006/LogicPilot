@@ -223,6 +223,7 @@ struct SimServer::Impl {
     std::string precision_metric_name{"Wq"};
     std::uint64_t arrivals{4000};
     std::uint64_t warmup{400};
+    std::uint64_t max_events{50'000'000};
     double confidence{0.95};
     // "animated" paces telemetry by the speed multiplier (pause/step make
     // sense there); "fast" (default) runs without wall-clock pacing.
@@ -326,6 +327,7 @@ struct SimServer::Impl {
       params.reps = config.reps;
       params.arrivals = config.arrivals;
       params.warmup = config.warmup;
+      params.max_events = config.max_events;
       params.confidence = config.confidence;
       double value = 0.0;
       if (json_number_field(message, "seed", value) && value >= 0.0) {
@@ -346,6 +348,9 @@ struct SimServer::Impl {
       }
       if (json_number_field(message, "warmup", value) && value >= 0.0) {
         params.warmup = static_cast<std::uint64_t>(value);
+      }
+      if (json_number_field(message, "maxEvents", value) && value >= 0.0) {
+        params.max_events = static_cast<std::uint64_t>(value);
       }
       if (json_number_field(message, "confidence", value)) {
         if (value <= 0.0 || value >= 1.0) {
@@ -624,6 +629,8 @@ struct SimServer::Impl {
     const SeedStreams streams{params.seed};
     std::vector<ReplicationMetrics> results;
     bool cancelled = false;
+    bool run_failed = false;
+    std::string run_failure_error;
     const std::uint64_t run_limit =
         params.precision_reps ? params.max_reps : params.reps;
     const auto precision_reached = [&]() {
@@ -670,9 +677,15 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           flow->reset(rep_config);
           if (!stream_flow_replication(*flow, params, rep, run_limit)) {
-            cancelled = true;
+            if (flow->failed()) {
+              run_failed = true;
+              run_failure_error = flow->failure_reason();
+            } else {
+              cancelled = true;
+            }
             break;
           }
           results.push_back(flow->metrics());
@@ -696,9 +709,15 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           if (!agents->reset(rep_config) ||
               !stream_agent_replication(*agents, params, rep, run_limit)) {
-            cancelled = true;
+            if (agents->failed()) {
+              run_failed = true;
+              run_failure_error = agents->failure_reason();
+            } else {
+              cancelled = true;
+            }
             break;
           }
           const std::uint64_t agent_ticks = agents->tick_count();
@@ -722,9 +741,15 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           chart->reset(rep_config);
           if (!stream_statechart_replication(*chart, params, rep, run_limit)) {
-            cancelled = true;
+            if (chart->failed()) {
+              run_failed = true;
+              run_failure_error = chart->failure_reason();
+            } else {
+              cancelled = true;
+            }
             break;
           }
           results.push_back(chart->metrics());
@@ -747,9 +772,15 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           if (!network->reset(rep_config) ||
               !stream_statechart_network(*network, params, rep, run_limit)) {
-            cancelled = true;
+            if (network->failed()) {
+              run_failed = true;
+              run_failure_error = network->failure_reason();
+            } else {
+              cancelled = true;
+            }
             break;
           }
           results.push_back(network->metrics());
@@ -772,6 +803,7 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
            if (!continuous->reset(rep_config) ||
                !stream_continuous_replication(*continuous, params, rep,
                                               run_limit)) {
@@ -808,6 +840,7 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           if (!atomic->reset(rep_config) ||
               !stream_atomic_replication(*atomic, params, rep, run_limit)) {
             cancelled = true;
@@ -831,6 +864,7 @@ struct SimServer::Impl {
           rep_config.seed = streams.derive_state(rep)[0];
           rep_config.arrivals = params.arrivals;
           rep_config.warmup_arrivals = params.warmup;
+          rep_config.max_events = params.max_events;
           results.push_back(model->run(rep_config, nullptr));
           if (precision_reached()) {
             break;
@@ -848,7 +882,10 @@ struct SimServer::Impl {
       finished.seq = ++seq_;
       finished.sim_time_ns = last_frame_sim_ns_;
       finished.run_id = run_id;
-      if (cancelled) {
+      if (run_failed) {
+        finished.status = 1;  // Failed
+        finished.error = run_failure_error;
+      } else if (cancelled) {
         finished.status = 2;  // Cancelled
       } else {
         finished.status = 0;  // Completed
@@ -892,9 +929,15 @@ struct SimServer::Impl {
       params.failure_rate >= 0.0 ? params.failure_rate : config.failure_rate;
   run_config.repair_rate =
       params.repair_rate > 0.0 ? params.repair_rate : config.repair_rate;
+  run_config.max_events = params.max_events;
   runner_.reset(run_config);
       if (!stream_replication(params, rep)) {
-        cancelled = true;
+        if (runner_.failed()) {
+          run_failed = true;
+          run_failure_error = runner_.failure_reason();
+        } else {
+          cancelled = true;
+        }
         break;
       }
       results.push_back(runner_.metrics());
@@ -915,7 +958,10 @@ struct SimServer::Impl {
     finished.seq = ++seq_;
     finished.sim_time_ns = last_frame_sim_ns_;
     finished.run_id = run_id;
-    if (cancelled) {
+    if (run_failed) {
+      finished.status = 1;  // Failed
+      finished.error = run_failure_error;
+    } else if (cancelled) {
       finished.status = 2;  // Cancelled
     } else {
       finished.status = 0;  // Completed
@@ -996,6 +1042,9 @@ struct SimServer::Impl {
           }
           boundary_ns = saturating_add(boundary_ns, drain_ns);
           runner_.process_until(boundary_ns);
+          if (runner_.failed()) {
+            return false;
+          }
           drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
         }
         emit_tick();
@@ -1006,6 +1055,9 @@ struct SimServer::Impl {
 
       boundary_ns = saturating_add(boundary_ns, slice_ns);
       const std::size_t dispatched = runner_.process_until(boundary_ns);
+      if (runner_.failed()) {
+        return false;
+      }
       if (!animated && dispatched < kFastMinEventsPerSlice) {
         slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
       }
@@ -1117,6 +1169,9 @@ struct SimServer::Impl {
           }
           boundary_ns = saturating_add(boundary_ns, drain_ns);
           flow.advance(SimTime::from_ns(boundary_ns), nullptr);
+          if (flow.failed()) {
+            return false;
+          }
           drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
         }
         // The final frame's sim time is the engine's exact clock time
@@ -1129,6 +1184,9 @@ struct SimServer::Impl {
       boundary_ns = saturating_add(boundary_ns, slice_ns);
       const std::size_t dispatched =
           flow.advance(SimTime::from_ns(boundary_ns), nullptr);
+      if (flow.failed()) {
+        return false;
+      }
       if (!animated && dispatched < kFastMinEventsPerSlice) {
         slice_ns = std::min(slice_ns * 2, kFastMaxSliceNs);
       }
@@ -1202,12 +1260,14 @@ struct SimServer::Impl {
             if (stop_request_) return false;
           }
           agents.step();
+          if (agents.failed()) return false;
         }
         emit_agent_frames(agents, rep, run_limit);
         return true;
       }
 
       agents.step();
+      if (agents.failed()) return false;
       emit_agent_frames(agents, rep, run_limit);
       ++frames;
       if (agents.done()) return true;
@@ -1271,6 +1331,7 @@ struct SimServer::Impl {
           boundary_ns = saturating_add(boundary_ns, drain_ns);
           const std::size_t dispatched =
               chart.advance(SimTime::from_ns(boundary_ns), nullptr);
+          if (chart.failed()) return false;
           if (dispatched == 0) break;
           drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
         }
@@ -1281,6 +1342,7 @@ struct SimServer::Impl {
       boundary_ns = saturating_add(boundary_ns, slice_ns);
       const std::size_t dispatched =
           chart.advance(SimTime::from_ns(boundary_ns), nullptr);
+      if (chart.failed()) return false;
       emit_statechart_counters(chart, rep, run_limit);
       ++frames;
       if (chart.done() || !chart.has_pending_events()) return true;
@@ -1348,6 +1410,7 @@ struct SimServer::Impl {
           }
           boundary_ns = saturating_add(boundary_ns, drain_ns);
           const std::size_t dispatched = network.advance(SimTime::from_ns(boundary_ns));
+          if (network.failed()) return false;
           if (dispatched == 0) break;
           drain_ns = std::min(drain_ns * 2, kFastDrainMaxSliceNs);
         }
@@ -1357,6 +1420,7 @@ struct SimServer::Impl {
 
       boundary_ns = saturating_add(boundary_ns, slice_ns);
       const std::size_t dispatched = network.advance(SimTime::from_ns(boundary_ns));
+      if (network.failed()) return false;
       emit_statechart_network_counters(network, rep, run_limit);
       ++frames;
       if (network.done() || !network.has_pending_events()) return true;

@@ -1,6 +1,8 @@
 #include "logicpilot/runtime/dynamic_method_plugin.h"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -17,6 +19,7 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/runtime/method_plugin_abi.h"
 #include "logicpilot/runtime/method_registry.h"
+#include "logicpilot/runtime/artifact_digest.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"
 
@@ -107,7 +110,8 @@ public:
                               &host_cancel,
                               &host_set_f64,
                               &host_get_f64,
-                              &host_publish_message};
+                              &host_publish_message,
+                              &host_register_message_type};
     const ReplicationConfig& config = context.config();
     const lp_replication_config_v1 abi_config{config.seed, config.arrivals, config.warmup_arrivals};
     std::array<char, 512> message{};
@@ -232,6 +236,25 @@ private:
     }
   }
 
+  static int32_t host_register_message_type(void* opaque, const char* type_uri,
+                                            uint32_t schema_version,
+                                            const char* encoding) {
+    auto* self = static_cast<CAbiSimulationMethod*>(opaque);
+    if (self->context_ == nullptr || type_uri == nullptr || *type_uri == '\0' ||
+        schema_version == 0) {
+      return 0;
+    }
+    try {
+      return self->context_->messages().register_type(
+                 MessageTypeContract{type_uri, schema_version,
+                                     encoding == nullptr ? "" : encoding})
+                 ? 1
+                 : 0;
+    } catch (...) {
+      return 0;
+    }
+  }
+
   std::shared_ptr<DynamicLibrary> library_;
   const lp_method_plugin_v1* api_;
   void* instance_{nullptr};
@@ -259,6 +282,20 @@ bool load_dynamic_method_plugin(const MethodPluginManifest& manifest,
   std::filesystem::path artifact = manifest.artifact;
   if (artifact.is_relative())
     artifact = manifest_directory / artifact;
+  if (!manifest.artifact_sha256.empty()) {
+    std::string actual;
+    std::string digest_error;
+    if (!ArtifactDigest::sha256_file(artifact, actual, &digest_error)) {
+      return fail("MP1108: cannot hash plugin artifact: " + digest_error);
+    }
+    std::string expected = manifest.artifact_sha256;
+    std::transform(expected.begin(), expected.end(), expected.begin(), [](unsigned char character) {
+      return static_cast<char>(std::tolower(character));
+    });
+    if (actual != expected) {
+      return fail("MP1108: plugin artifact SHA-256 mismatch");
+    }
+  }
   auto library = std::make_shared<DynamicLibrary>(artifact);
   if (!library->valid())
     return fail("MP1103: cannot load plugin artifact '" + artifact.string() + "'");

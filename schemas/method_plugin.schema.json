@@ -16,13 +16,16 @@
       "uniqueItems": true,
       "items": { "type": "string", "minLength": 1 }
     },
+    "family": { "enum": ["discrete_event", "agent", "system_dynamics"] },
+    "formalism": { "enum": ["devs", "process", "statechart", "agent", "sd"] },
     "runtime": {
       "type": "object",
       "required": ["kind", "entrypoint"],
       "properties": {
         "kind": { "enum": ["linked", "c-abi", "wasm"] },
         "entrypoint": { "type": "string", "minLength": 1 },
-        "artifact": { "type": "string" }
+        "artifact": { "type": "string" },
+        "artifactSha256": { "type": "string", "pattern": "^[A-Fa-f0-9]{64}$" }
       },
       "additionalProperties": true
     },

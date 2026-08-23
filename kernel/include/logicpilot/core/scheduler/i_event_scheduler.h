@@ -41,6 +41,11 @@ class IEventScheduler {
   // Pre-provision storage for `n` concurrently pending events so that the
   // schedule/pop hot path performs no dynamic allocation.
   virtual void reserve(std::size_t n) = 0;
+
+  // Remove every pending event. Session checkpoint transactions use this cold
+  // path before restoring method-owned event tokens; the hot event loop never
+  // calls it. Custom schedulers may override it when they support rollback.
+  virtual void clear() {}
 };
 
 }  // namespace logicpilot

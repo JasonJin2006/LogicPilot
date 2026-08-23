@@ -15,7 +15,7 @@
 //    "replicationMode":"fixed"|"precision","minReps":n,"maxReps":n,
 //    "errorPercent":p,"precisionMetric":"Wq",
 //    "executionMode":"fast"|"animated",
-//    "arrivals":n,"warmup":n,"confidence":c}
+//    "arrivals":n,"warmup":n,"maxEvents":n,"confidence":c}
 // are routed through SimServer::handle_control() (thread-safe) and answered
 // with a JSON ack/error text frame. pause/step/speed are thread-safe; the
 // speed multiplier only affects wall-clock pacing, never simulation results
@@ -51,6 +51,9 @@ struct ServerConfig {
   std::uint64_t reps{1};
   std::uint64_t arrivals{4000};
   std::uint64_t warmup{400};
+  // Shared scheduler event budget per replication (zero rejects the first
+  // event). The same limit is available as start.maxEvents.
+  std::uint64_t max_events{50'000'000};
   double confidence{0.95};
   double lambda{0.8};
   double mu{1.0};

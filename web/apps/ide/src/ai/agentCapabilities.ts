@@ -23,6 +23,7 @@ export const LOGICPILOT_MODELING_READONLY_CAPABILITY: AgentCapability = Object.f
       'explain_results',
       'compare_runs',
       'wait_for_run',
+      'inspect_sysml_projection',
     ].includes(tool.name),
   ),
 });

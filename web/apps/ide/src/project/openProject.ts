@@ -89,6 +89,16 @@ export async function openProjectFromFile(file: File): Promise<void> {
     return;
   }
 
+  // SysML files are external engineering artifacts. Open them as a virtual
+  // workspace document so the SysML projection editor can visualize the
+  // source without trying to lower it into the LogicPilot simulation DSL.
+  if (lowerName.endsWith('.sysml')) {
+    useProjectStore.getState().clearProject();
+    useWorkspaceStore.getState().openVirtual(file.name);
+    useUiStore.getState().openDiskFile(file.name, text);
+    return;
+  }
+
   useProjectStore.getState().clearProject();
   const parsed = parseDsl(text);
   if (parsed.ok) {

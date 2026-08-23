@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -49,7 +50,12 @@ public:
   // tick and returns false once the configured budget is exhausted.
   bool reset(const ReplicationConfig& config);
   bool step();
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const;
+  bool checkpoint_restore(std::span<const std::uint8_t> state);
   [[nodiscard]] bool done() const;
+  [[nodiscard]] bool failed() const;
+  [[nodiscard]] const std::string& failure_reason() const;
   [[nodiscard]] std::uint64_t tick_count() const;
   void snapshot_agents(std::vector<AgentSnapshot>& out) const;
   ReplicationMetrics finish(TraceRecorder* trace = nullptr);
@@ -68,6 +74,7 @@ private:
   std::vector<Position> last_positions_;
   std::vector<ModelAgentState> last_agents_state_;
   std::unique_ptr<Session> session_;
+  TraceRecorder* trace_{nullptr};
 };
 
 }  // namespace logicpilot

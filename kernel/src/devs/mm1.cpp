@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <vector>
 
 #include "logicpilot/core/random/distributions.h"
@@ -24,8 +25,48 @@
 namespace logicpilot {
 namespace {
 
+constexpr std::uint32_t kQueueingCheckpointMagic = 0x4C505151U;  // LPQQ
+constexpr std::uint8_t kQueueingCheckpointVersion = 2;
+
+void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+  for (int byte = 0; byte < 4; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (int byte = 0; byte < 8; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint32_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 4) return false;
+  value = 0;
+  for (int byte = 0; byte < 4; ++byte) {
+    value |= static_cast<std::uint32_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
+bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint64_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 8) return false;
+  value = 0;
+  for (int byte = 0; byte < 8; ++byte) {
+    value |= static_cast<std::uint64_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
+}
+
+std::string event_budget_error(std::uint64_t max_events) {
+  return "KR1017: shared scheduler event budget exhausted (" +
+         std::to_string(max_events) + " events)";
 }
 
 }  // namespace
@@ -63,6 +104,8 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
   }
   arrive_token_ = EventToken{};
   server_tokens_.assign(spec_.servers < 1 ? 1 : spec_.servers, EventToken{});
+  arrive_event_ = PendingEvent{};
+  server_events_.assign(spec_.servers < 1 ? 1 : spec_.servers, PendingEvent{});
 
   queue_.clear();
   servers_.assign(spec_.servers < 1 ? 1 : spec_.servers, Server{});
@@ -72,6 +115,9 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
   in_system_ = 0;
   in_queue_ = 0;
   departures_ = 0;
+  dispatched_total_ = 0;
+  budget_exhausted_ = false;
+  failure_reason_.clear();
   busy_servers_ = 0;
   down_servers_ = 0;
   has_failure_ = static_cast<bool>(spec_.failure);
@@ -97,20 +143,23 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     service_start_ns_[customer] = clock().now().as_ns();
     const std::int64_t service_ns = to_ns(spec_.service(engine_));
     if (!has_failure_) {
-      server_tokens_[server] = scheduler().schedule(
-          clock().now() + SimTime::from_ns(service_ns), kDepartEvent,
-          depart_id_, server);
+      const SimTime at = clock().now() + SimTime::from_ns(service_ns);
+      server_tokens_[server] = scheduler().schedule(at, kDepartEvent,
+                                                     depart_id_, server);
+      server_events_[server] = PendingEvent{at, kDepartEvent, server, true};
       return;
     }
     const std::int64_t failure_ns = to_ns(spec_.failure(engine_));
     if (failure_ns < service_ns) {
-      server_tokens_[server] = scheduler().schedule(
-          clock().now() + SimTime::from_ns(failure_ns), kFailEvent, fail_id_,
-          server);
+      const SimTime at = clock().now() + SimTime::from_ns(failure_ns);
+      server_tokens_[server] = scheduler().schedule(at, kFailEvent, fail_id_,
+                                                     server);
+      server_events_[server] = PendingEvent{at, kFailEvent, server, true};
     } else {
-      server_tokens_[server] = scheduler().schedule(
-          clock().now() + SimTime::from_ns(service_ns), kDepartEvent,
-          depart_id_, server);
+      const SimTime at = clock().now() + SimTime::from_ns(service_ns);
+      server_tokens_[server] = scheduler().schedule(at, kDepartEvent,
+                                                     depart_id_, server);
+      server_events_[server] = PendingEvent{at, kDepartEvent, server, true};
     }
   };
 
@@ -134,6 +183,7 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
         [this, accumulate_area, start_service](const Event& event) {
       const std::uint64_t server = event.payload;
       server_tokens_[server] = EventToken{};  // this event was consumed
+      server_events_[server] = PendingEvent{};
       const std::int64_t now_ns = clock().now().as_ns();
       accumulate_area(now_ns);
       Server& s = servers_[server];
@@ -163,6 +213,7 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
         [this, accumulate_area, start_service](const Event& event) {
       const std::uint64_t id = event.payload;
       arrive_token_ = EventToken{};  // this event was consumed
+      arrive_event_ = PendingEvent{};
       const std::int64_t now_ns = clock().now().as_ns();
       accumulate_area(now_ns);
       arrival_ns_[id] = now_ns;
@@ -170,9 +221,10 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
       // Emit the next arrival (source keeps generating until the quota).
       if (emitted_ < config_.arrivals) {
         const double gap = spec_.interarrival(engine_);
-        arrive_token_ = scheduler().schedule(
-            clock().now() + SimTime::from_ns(to_ns(gap)), kArriveEvent,
-            arrive_id_, emitted_);
+        const SimTime at = clock().now() + SimTime::from_ns(to_ns(gap));
+        arrive_token_ = scheduler().schedule(at, kArriveEvent, arrive_id_,
+                                             emitted_);
+        arrive_event_ = PendingEvent{at, kArriveEvent, emitted_, true};
         ++emitted_;
       }
 
@@ -197,6 +249,7 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
     fail_id_ = handlers().add([this, accumulate_area](const Event& event) {
       const std::uint64_t server = event.payload;
       server_tokens_[server] = EventToken{};  // this event was consumed
+      server_events_[server] = PendingEvent{};
       const std::int64_t now_ns = clock().now().as_ns();
       accumulate_area(now_ns);
       Server& s = servers_[server];
@@ -209,14 +262,16 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
       queue_.push_front(id);
       ++in_queue_;
       const std::int64_t repair_ns = to_ns(spec_.repair(engine_));
-      server_tokens_[server] = scheduler().schedule(
-          clock().now() + SimTime::from_ns(repair_ns), kRepairEvent,
-          repair_id_, server);
+      const SimTime at = clock().now() + SimTime::from_ns(repair_ns);
+      server_tokens_[server] = scheduler().schedule(at, kRepairEvent,
+                                                     repair_id_, server);
+      server_events_[server] = PendingEvent{at, kRepairEvent, server, true};
     });
     repair_id_ = handlers().add(
         [this, accumulate_area, start_service](const Event& event) {
       const std::uint64_t server = event.payload;
       server_tokens_[server] = EventToken{};  // this event was consumed
+      server_events_[server] = PendingEvent{};
       const std::int64_t now_ns = clock().now().as_ns();
       accumulate_area(now_ns);
       Server& s = servers_[server];
@@ -238,19 +293,258 @@ void QueueingFlowSim::reset(const ReplicationConfig& config) {
   // index out of bounds for an empty run.
   if (config_.arrivals > 0) {
     emitted_ = 1;
-    arrive_token_ = scheduler().schedule(
-        clock().now() + SimTime::from_ns(to_ns(spec_.interarrival(engine_))),
-        kArriveEvent, arrive_id_, 0);
+    const SimTime at =
+        clock().now() + SimTime::from_ns(to_ns(spec_.interarrival(engine_)));
+    arrive_token_ = scheduler().schedule(at, kArriveEvent, arrive_id_, 0);
+    arrive_event_ = PendingEvent{at, kArriveEvent, 0, true};
   }
 }
 
 std::size_t QueueingFlowSim::advance(SimTime until, TraceRecorder* trace) {
-  return run_until(scheduler(), clock(), until, [&](const Event& event) {
+  const std::size_t dispatched = run_until_bounded(
+      scheduler(), clock(), until, config_.max_events, dispatched_total_,
+      budget_exhausted_, [&](const Event& event) {
     if (trace != nullptr) {
       trace->record(event.at, event.type, event.payload);
     }
     handlers().dispatch(event);
   });
+  if (budget_exhausted_) {
+    failure_reason_ = event_budget_error(config_.max_events);
+  }
+  return dispatched;
+}
+
+bool QueueingFlowSim::checkpoint_save(
+    std::vector<std::uint8_t>& state) const {
+  if (config_.arrivals > std::numeric_limits<std::uint32_t>::max() ||
+      servers_.size() > std::numeric_limits<std::uint32_t>::max() ||
+      queue_.size() > std::numeric_limits<std::uint32_t>::max() ||
+      wait_times_.size() > std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  state.clear();
+  append_u32(state, kQueueingCheckpointMagic);
+  state.push_back(kQueueingCheckpointVersion);
+  append_u64(state, config_.seed);
+  append_u64(state, config_.arrivals);
+  append_u64(state, config_.warmup_arrivals);
+  append_u64(state, config_.max_events);
+  const std::uint64_t* rng = engine_.state();
+  for (int index = 0; index < 4; ++index) append_u64(state, rng[index]);
+  append_u64(state, dropped_);
+  append_u64(state, emitted_);
+  append_u64(state, in_system_);
+  append_u64(state, in_queue_);
+  append_u64(state, departures_);
+  append_u64(state, dispatched_total_);
+  state.push_back(budget_exhausted_ ? 1 : 0);
+  append_u64(state, static_cast<std::uint64_t>(busy_servers_));
+  append_u64(state, static_cast<std::uint64_t>(down_servers_));
+  state.push_back(has_failure_ ? 1 : 0);
+  append_u64(state, static_cast<std::uint64_t>(last_ns_));
+  append_u64(state, static_cast<std::uint64_t>(area_system_ns_));
+  append_u64(state, static_cast<std::uint64_t>(area_queue_ns_));
+  append_u64(state, static_cast<std::uint64_t>(area_busy_ns_));
+  append_u64(state, static_cast<std::uint64_t>(area_down_ns_));
+  append_u64(state, std::bit_cast<std::uint64_t>(sojourn_sum_));
+  append_u64(state, sojourn_count_);
+
+  append_u32(state, static_cast<std::uint32_t>(wait_times_.size()));
+  for (const double value : wait_times_) {
+    append_u64(state, std::bit_cast<std::uint64_t>(value));
+  }
+  append_u32(state, static_cast<std::uint32_t>(queue_.size()));
+  for (const std::uint64_t customer : queue_) append_u64(state, customer);
+  append_u32(state, static_cast<std::uint32_t>(servers_.size()));
+  for (const Server& server : servers_) {
+    state.push_back(static_cast<std::uint8_t>(server.state));
+    append_u64(state, server.customer);
+  }
+  append_u32(state, static_cast<std::uint32_t>(arrival_ns_.size()));
+  for (const std::int64_t value : arrival_ns_)
+    append_u64(state, static_cast<std::uint64_t>(value));
+  append_u32(state, static_cast<std::uint32_t>(service_start_ns_.size()));
+  for (const std::int64_t value : service_start_ns_)
+    append_u64(state, static_cast<std::uint64_t>(value));
+
+  const auto append_event = [&](const PendingEvent& event) {
+    state.push_back(event.valid ? 1 : 0);
+    append_u64(state, static_cast<std::uint64_t>(event.at.as_ns()));
+    append_u32(state, event.type);
+    append_u64(state, event.payload);
+  };
+  append_event(arrive_event_);
+  append_u32(state, static_cast<std::uint32_t>(server_events_.size()));
+  for (const PendingEvent& event : server_events_) append_event(event);
+  return true;
+}
+
+bool QueueingFlowSim::checkpoint_restore(
+    std::span<const std::uint8_t> state) {
+  std::size_t offset = 0;
+  std::uint32_t magic = 0;
+  std::uint64_t seed = 0, arrivals = 0, warmup = 0, max_events = 0;
+  if (!read_u32(state, offset, magic) || magic != kQueueingCheckpointMagic ||
+      offset >= state.size() || state[offset++] != kQueueingCheckpointVersion ||
+      !read_u64(state, offset, seed) || !read_u64(state, offset, arrivals) ||
+      !read_u64(state, offset, warmup) ||
+      !read_u64(state, offset, max_events)) {
+    return false;
+  }
+  if (arrivals > std::numeric_limits<std::uint32_t>::max()) return false;
+  ReplicationConfig restored_config{seed, arrivals, warmup, max_events};
+  std::uint64_t rng_state[4]{};
+  for (std::uint64_t& value : rng_state) {
+    if (!read_u64(state, offset, value)) return false;
+  }
+  std::uint64_t dropped = 0, emitted = 0, in_system = 0, in_queue = 0,
+               departures = 0, dispatched_total = 0, busy = 0, down = 0;
+  if (!read_u64(state, offset, dropped) || !read_u64(state, offset, emitted) ||
+      !read_u64(state, offset, in_system) || !read_u64(state, offset, in_queue) ||
+      !read_u64(state, offset, departures) ||
+      !read_u64(state, offset, dispatched_total) || offset >= state.size())
+    return false;
+  const bool budget_exhausted = state[offset++] != 0;
+  if (!read_u64(state, offset, busy) || !read_u64(state, offset, down) ||
+      offset >= state.size()) return false;
+  const bool has_failure = state[offset++] != 0;
+  std::uint64_t raw = 0;
+  std::int64_t last_ns = 0, area_system = 0, area_queue = 0, area_busy = 0,
+               area_down = 0;
+  double sojourn_sum = 0.0;
+  std::uint64_t sojourn_count = 0;
+  if (!read_u64(state, offset, raw)) return false;
+  last_ns = static_cast<std::int64_t>(raw);
+  if (!read_u64(state, offset, raw)) return false;
+  area_system = static_cast<std::int64_t>(raw);
+  if (!read_u64(state, offset, raw)) return false;
+  area_queue = static_cast<std::int64_t>(raw);
+  if (!read_u64(state, offset, raw)) return false;
+  area_busy = static_cast<std::int64_t>(raw);
+  if (!read_u64(state, offset, raw)) return false;
+  area_down = static_cast<std::int64_t>(raw);
+  if (!read_u64(state, offset, raw)) return false;
+  sojourn_sum = std::bit_cast<double>(raw);
+  if (!std::isfinite(sojourn_sum) || !read_u64(state, offset, sojourn_count))
+    return false;
+
+  std::uint32_t count = 0;
+  if (!read_u32(state, offset, count)) return false;
+  std::vector<double> waits;
+  waits.reserve(count);
+  for (std::uint32_t index = 0; index < count; ++index) {
+    if (!read_u64(state, offset, raw)) return false;
+    const double value = std::bit_cast<double>(raw);
+    if (!std::isfinite(value)) return false;
+    waits.push_back(value);
+  }
+  std::uint32_t queue_count = 0;
+  if (!read_u32(state, offset, queue_count)) return false;
+  std::deque<std::uint64_t> queue;
+  for (std::uint32_t index = 0; index < queue_count; ++index) {
+    if (!read_u64(state, offset, raw)) return false;
+    queue.push_back(raw);
+  }
+  std::uint32_t server_count = 0;
+  if (!read_u32(state, offset, server_count) ||
+      server_count != (spec_.servers < 1 ? 1 : spec_.servers)) return false;
+  std::vector<Server> servers(server_count);
+  for (Server& server : servers) {
+    if (offset >= state.size()) return false;
+    const std::uint8_t kind = state[offset++];
+    if (kind > static_cast<std::uint8_t>(ServerState::kDown) ||
+        !read_u64(state, offset, server.customer)) return false;
+    server.state = static_cast<ServerState>(kind);
+  }
+  std::uint32_t arrival_count = 0, service_count = 0;
+  if (!read_u32(state, offset, arrival_count) || arrival_count != arrivals)
+    return false;
+  std::vector<std::int64_t> arrival_ns(arrival_count);
+  for (std::int64_t& value : arrival_ns) {
+    if (!read_u64(state, offset, raw)) return false;
+    value = static_cast<std::int64_t>(raw);
+  }
+  if (!read_u32(state, offset, service_count) || service_count != arrivals)
+    return false;
+  std::vector<std::int64_t> service_start(service_count);
+  for (std::int64_t& value : service_start) {
+    if (!read_u64(state, offset, raw)) return false;
+    value = static_cast<std::int64_t>(raw);
+  }
+  const auto read_event = [&](PendingEvent& event) {
+    if (offset >= state.size()) return false;
+    event.valid = state[offset++] != 0;
+    if (!read_u64(state, offset, raw)) return false;
+    event.at = SimTime::from_ns(static_cast<std::int64_t>(raw));
+    if (!read_u32(state, offset, event.type) ||
+        !read_u64(state, offset, event.payload)) return false;
+    return event.type == 0 || event.type == kArriveEvent ||
+           event.type == kDepartEvent || event.type == kFailEvent ||
+           event.type == kRepairEvent;
+  };
+  PendingEvent arrive_event;
+  if (!read_event(arrive_event)) return false;
+  std::uint32_t event_count = 0;
+  if (!read_u32(state, offset, event_count) || event_count != server_count)
+    return false;
+  std::vector<PendingEvent> server_events(event_count);
+  for (PendingEvent& event : server_events) {
+    if (!read_event(event)) return false;
+  }
+  if (offset != state.size()) return false;
+
+  // The engine's own tokens are canceled before replacing state; the method
+  // runtime owns no other queue events in this fast-path checkpoint.
+  if (arrive_token_.valid()) scheduler().cancel(arrive_token_);
+  for (const EventToken token : server_tokens_) {
+    if (token.valid()) scheduler().cancel(token);
+  }
+  config_ = restored_config;
+  engine_.restore_state(rng_state);
+  dropped_ = dropped;
+  emitted_ = emitted;
+  in_system_ = in_system;
+  in_queue_ = in_queue;
+  departures_ = departures;
+  dispatched_total_ = dispatched_total;
+  budget_exhausted_ = budget_exhausted;
+  failure_reason_ = budget_exhausted ? event_budget_error(config_.max_events)
+                                     : std::string{};
+  busy_servers_ = static_cast<std::int64_t>(busy);
+  down_servers_ = static_cast<std::int64_t>(down);
+  has_failure_ = has_failure;
+  last_ns_ = last_ns;
+  area_system_ns_ = area_system;
+  area_queue_ns_ = area_queue;
+  area_busy_ns_ = area_busy;
+  area_down_ns_ = area_down;
+  sojourn_sum_ = sojourn_sum;
+  sojourn_count_ = sojourn_count;
+  wait_times_ = std::move(waits);
+  queue_ = std::move(queue);
+  servers_ = std::move(servers);
+  arrival_ns_ = std::move(arrival_ns);
+  service_start_ns_ = std::move(service_start);
+  arrive_event_ = arrive_event;
+  server_events_ = server_events;
+  arrive_token_ = EventToken{};
+  server_tokens_.assign(server_count, EventToken{});
+  if (arrive_event_.valid) {
+    arrive_token_ = scheduler().schedule(arrive_event_.at, arrive_event_.type,
+                                         arrive_id_, arrive_event_.payload);
+  }
+  for (std::size_t index = 0; index < server_events_.size(); ++index) {
+    if (server_events_[index].valid) {
+      server_tokens_[index] = scheduler().schedule(
+          server_events_[index].at, server_events_[index].type,
+          server_events_[index].type == kDepartEvent
+              ? depart_id_
+              : server_events_[index].type == kFailEvent ? fail_id_ : repair_id_,
+          server_events_[index].payload);
+    }
+  }
+  return true;
 }
 
 std::int64_t QueueingFlowSim::now_ns() const {
@@ -284,6 +578,8 @@ void QueueingFlowSim::attach(RuntimeContext& context) {
     // scheduler and accidentally cancel an unrelated colliding token.
     arrive_token_ = EventToken{};
     std::fill(server_tokens_.begin(), server_tokens_.end(), EventToken{});
+    arrive_event_ = PendingEvent{};
+    std::fill(server_events_.begin(), server_events_.end(), PendingEvent{});
     external_ = &context;
     handlers_owner_ = nullptr;  // re-register against the new registry
   }

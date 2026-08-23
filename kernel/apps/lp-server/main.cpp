@@ -47,6 +47,7 @@ void print_usage() {
       "  --reps <n>           default replications per run (default 1)\n"
       "  --arrivals <n>       arrivals per replication (default 4000)\n"
       "  --warmup <n>         warmup arrivals (default 400)\n"
+      "  --max-events <n>     scheduler events per replication (default 50000000)\n"
       "  --confidence <x>     CI confidence level (default 0.95)\n"
       "  --lambda <x>         arrival rate, built-in mm1 only (default 0.8)\n"
       "  --mu <x>             service rate, built-in mm1 only (default 1.0)\n"
@@ -197,6 +198,11 @@ int main(int argc, char** argv) {
     } else if (arg == "--warmup") {
       if (!need_value() || !parse_u64(value, config.warmup)) {
         fmt::print(stderr, "error: invalid --warmup\n");
+        return 2;
+      }
+    } else if (arg == "--max-events") {
+      if (!need_value() || !parse_u64(value, config.max_events)) {
+        fmt::print(stderr, "error: invalid --max-events\n");
         return 2;
       }
     } else if (arg == "--confidence") {

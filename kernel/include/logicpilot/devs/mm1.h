@@ -91,10 +91,17 @@ class QueueingFlowSim : public FlowEngine {
   // legacy batch call.
   void reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until, TraceRecorder* trace);
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override;
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override;
   [[nodiscard]] ReplicationMetrics metrics() const;
 
   // Exact current simulation time (nanoseconds) from the engine clock.
   [[nodiscard]] std::int64_t now_ns() const override;
+  [[nodiscard]] bool failed() const override { return budget_exhausted_; }
+  [[nodiscard]] const std::string& failure_reason() const override {
+    return failure_reason_;
+  }
 
   // Live telemetry: the scheduler is drained when no event is pending.
   [[nodiscard]] bool has_pending_events() override;
@@ -130,9 +137,21 @@ class QueueingFlowSim : public FlowEngine {
   std::uint64_t in_system_{0};
   std::uint64_t in_queue_{0};
   std::uint64_t departures_{0};
+  std::uint64_t dispatched_total_{0};
+  bool budget_exhausted_{false};
+  std::string failure_reason_;
   std::int64_t busy_servers_{0};
   std::int64_t down_servers_{0};
   bool has_failure_{false};
+
+  struct PendingEvent {
+    SimTime at{SimTime::infinity()};
+    EventType type{0};
+    std::uint64_t payload{0};
+    bool valid{false};
+  };
+  PendingEvent arrive_event_{};
+  std::vector<PendingEvent> server_events_;
 
   // Pending event tokens owned by this engine: the next source arrival and
   // one in-flight depart/fail/repair event per server. In external

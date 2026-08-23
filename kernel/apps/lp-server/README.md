@@ -33,7 +33,7 @@ lp-server --model-file examples/mm1.ir.bin --port 8089 --seed 42
 
 | 消息 | 说明 |
 | --- | --- |
-| `{"cmd":"start","seed":42,"reps":3,"arrivals":4000,"warmup":400,"speed":10}` | 开始运行（seed/reps/arrivals/warmup/speed 均可省略，取服务器默认） |
+| `{"cmd":"start","seed":42,"reps":3,"arrivals":4000,"warmup":400,"maxEvents":50000000,"speed":10}` | 开始运行（seed/reps/arrivals/warmup/maxEvents/speed 均可省略，取服务器默认） |
 | `{"cmd":"pause"}` | 暂停（线程安全） |
 | `{"cmd":"resume"}` | 恢复 |
 | `{"cmd":"step"}` | 暂停时单步推进一个发射间隔 |
@@ -43,6 +43,11 @@ lp-server --model-file examples/mm1.ir.bin --port 8089 --seed 42
 
 应答：`{"ok":true,"cmd":"start"}`；出错时
 `{"ok":false,"error":"unknown command 'launch'"}`。
+
+`maxEvents` 是内置 M/M/c 流式 replication 的共享 scheduler 事件上限，默认
+5000 万；耗尽时服务器发送 `RunFinished{status: Failed, error: "KR1017: ..."}`，
+而不是把预算耗尽误报为取消。泛型 method runtime 收到同一
+`ReplicationConfig.max_events` 配置，由各自 runtime 执行其预算契约。
 
 ### 遥测（服务器 → 客户端，二进制帧）
 

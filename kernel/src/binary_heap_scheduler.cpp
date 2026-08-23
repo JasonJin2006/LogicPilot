@@ -84,6 +84,16 @@ void BinaryHeapScheduler::reserve(std::size_t n) {
   heap_.reserve(n);
 }
 
+void BinaryHeapScheduler::clear() {
+  for (Slot* slot : heap_) {
+    if (slot != nullptr) {
+      pool_.deallocate(slot);
+    }
+  }
+  heap_.clear();
+  live_count_ = 0;
+}
+
 // ---------------------------------------------------------------------------
 // Heap mechanics (min-heap on (at, seq)).
 // ---------------------------------------------------------------------------

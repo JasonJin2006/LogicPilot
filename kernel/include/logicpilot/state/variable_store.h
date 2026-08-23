@@ -10,8 +10,14 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <string>
 #include <string_view>
+#include <optional>
+#include <set>
+#include <span>
+#include <utility>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -27,6 +33,71 @@ struct VariableDeclaration {
   std::vector<std::string> writers;
 
   bool operator==(const VariableDeclaration&) const = default;
+};
+
+struct VariableSnapshot {
+  std::string name;
+  VariableDeclaration declaration;
+  std::optional<VariableValue> value;
+};
+
+class VariableSnapshotMigrationPlan {
+ public:
+  using Converter = std::function<bool(const VariableValue& source,
+                                       VariableValue& target,
+                                       std::string* error)>;
+
+  bool rename(std::string source, std::string target) {
+    if (source.empty() || target.empty()) return false;
+    renames_[std::move(source)] = std::move(target);
+    return true;
+  }
+  bool convert(std::string name, Converter converter) {
+    if (name.empty() || !converter) return false;
+    converters_[std::move(name)] = std::move(converter);
+    return true;
+  }
+
+  bool apply(std::span<const VariableSnapshot> source,
+             std::vector<VariableSnapshot>& target,
+             std::string* error = nullptr) const {
+    if (error != nullptr) error->clear();
+    target.clear();
+    std::set<std::string> names;
+    for (const VariableSnapshot& original : source) {
+      VariableSnapshot migrated = original;
+      if (const auto rename_it = renames_.find(migrated.name);
+          rename_it != renames_.end()) {
+        migrated.name = rename_it->second;
+      }
+      if (const auto converter_it = converters_.find(migrated.name);
+          converter_it != converters_.end() && migrated.value.has_value()) {
+        VariableValue converted;
+        std::string conversion_error;
+        if (!converter_it->second(*migrated.value, converted,
+                                  &conversion_error)) {
+          if (error != nullptr) {
+            *error = conversion_error.empty() ? "variable value conversion failed"
+                                               : conversion_error;
+          }
+          target.clear();
+          return false;
+        }
+        migrated.value = std::move(converted);
+      }
+      if (migrated.name.empty() || !names.insert(migrated.name).second) {
+        if (error != nullptr) *error = "variable migration name collision";
+        target.clear();
+        return false;
+      }
+      target.push_back(std::move(migrated));
+    }
+    return true;
+  }
+
+ private:
+  std::map<std::string, std::string> renames_;
+  std::map<std::string, Converter> converters_;
 };
 
 class VariableStore {
@@ -95,6 +166,47 @@ class VariableStore {
   }
 
   [[nodiscard]] std::size_t size() const { return values_.size(); }
+
+  [[nodiscard]] std::vector<VariableSnapshot> snapshot() const {
+    std::set<std::string> names;
+    for (const auto& [name, declaration] : declarations_) names.insert(name);
+    for (const auto& [name, value] : values_) names.insert(name);
+    std::vector<VariableSnapshot> result;
+    result.reserve(names.size());
+    for (const std::string& name : names) {
+      VariableSnapshot snapshot;
+      snapshot.name = name;
+      if (const auto declaration = declarations_.find(name);
+          declaration != declarations_.end()) {
+        snapshot.declaration = declaration->second;
+      }
+      if (const auto value = values_.find(name); value != values_.end()) {
+        snapshot.value = value->second;
+      }
+      result.push_back(std::move(snapshot));
+    }
+    return result;
+  }
+
+  bool restore(std::span<const VariableSnapshot> snapshots) {
+    clear();
+    std::set<std::string> names;
+    for (const VariableSnapshot& snapshot : snapshots) {
+      if (snapshot.name.empty() || !names.insert(snapshot.name).second) {
+        clear();
+        return false;
+      }
+      if (!snapshot.declaration.owner.empty() &&
+          !declare(snapshot.name, snapshot.declaration)) {
+        clear();
+        return false;
+      }
+      if (snapshot.value.has_value()) {
+        values_[snapshot.name] = *snapshot.value;
+      }
+    }
+    return true;
+  }
 
  private:
   static bool allowed(const std::vector<std::string>& grants,

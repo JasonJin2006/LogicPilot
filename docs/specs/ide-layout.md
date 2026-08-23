@@ -4,9 +4,11 @@ Status: **已完成**（2026-08-05 落地，2026-08-06 现状）· 对应 roadma
 
 ## 0. 定位
 
-LogicPilot IDE 的布局形态融合 **VS Code 的壳**（活动栏 + 侧边栏 + 多标签工作区 +
-底部面板 + 全局状态栏，全部可调/可折叠/可持久化）与 **AnyLogic 的建模语义**
-（模型树、块库 Palette、属性 Properties、画布居中）：
+LogicPilot IDE 的布局形态融合 **VS Code 的 Workbench 壳**（活动栏 + 侧边栏 +
+多标签工作区 + 底部面板 + 全局状态栏，全部可调/可折叠/可持久化）与工程建模所需的
+Outline、Palette、Properties 和专用编辑器。AnyLogic 风格 Process 画布是首个内置
+编辑器，不再定义整个平台的语义。统一文档/provider 迁移与高优先级 SysML v2 计划见
+[`../workbench-architecture-plan.md`](../workbench-architecture-plan.md)。
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -126,6 +128,15 @@ Splitter 只改数值。
 阶段的 `areas` 是退化的分割树；后续可将 `AreaState` 换成通用节点（tabs/split），
 实现拖拽停靠/标签合并/编辑器拆分，`persist` 与 `Workspace` 渲染平滑迁移，
 面板注册表不动。
+
+内容扩展采用 provider，而不是继续扩大 `PanelId`/模型 kind 的全局 switch：
+
+- center editor 由 `EditorProvider` 按 document type 注册；
+- Project 树是 `OutlineProvider` 的通用 host；
+- Palette、Properties、Diagnostics 与 AI 均由活动文档贡献；
+- 同一 `DocumentSession` 可同时打开文本、图形和追踪视图；
+- 活动选择没有 execution target 时不显示无意义的 Run；SysML behavior/analysis 等
+  受支持目标可贡献自己的 Run/Analyze/Verify 动作。
 
 ## 8. 主题系统
 

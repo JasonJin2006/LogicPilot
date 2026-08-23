@@ -1,7 +1,8 @@
 # ADR-0009: Runtime Execution Strategy (Parallelism + Scripting)
 
 - **Status**: Accepted；Phase A（reps 级并行）、Phase B（agent ECS 批量
-  tick 并行）与脚本 Phase 1（运行时条件表达式）均已落地（2026-08-06）
+  tick 并行）、PDEVS 事件屏障试点与脚本 Phase 1（运行时条件表达式）均已
+  落地（2026-08-06）
 - **Date**: 2026-08-06
 - **Deciders**: `/root` (integration) + kernel/DSL owners
 
@@ -35,10 +36,12 @@ P0-P3 of `docs/dev-plan.md`:
    runtime is EnTT ECS with SoA hot components (kernel/agent). Fixed-dt
    ticks are partitioned across workers and reduced in a stable order, so
    per-tick semantics and the deterministic event stream never change.
-3. **Phase C (deferred): event-level conservative parallelism**
-   (ADR-0007). A global safe-window / barrier scheduler across workers,
-   only after A/B are proven with real models and perf budgets show the
-   need. Determinism golden tests remain the gate at every phase.
+3. **Phase C (pilot): PDEVS timestamp-barrier parallelism.** The first safe
+   slice is now implemented through `DevsPartitionPlan` and
+   `DevsExecutor::run_parallel`: only explicitly thread-safe PDEVS atoms enter
+   workers, and scheduler/evidence commits remain serialized. A general
+   lookahead window, distributed transport, and optimistic execution remain
+   deferred until real-model performance data justifies them.
 
 ### B. Scripting - expression-first hybrid, no VM now
 
@@ -75,8 +78,8 @@ P0-P3 of `docs/dev-plan.md`:
   the biggest scripting gap (decisions) with machinery that already exists;
   no VM complexity or sandboxing burden today.
 - Negative: `selectOutput` stays probability-only until Phase 1 lands;
-  agent behaviors stay handler-registry-only; event-level parallel scaling
-  is deferred to Phase C.
+  agent behaviors stay handler-registry-only; general lookahead/distributed
+  event scaling remains deferred beyond the PDEVS barrier pilot.
 
 ## Implementation notes
 

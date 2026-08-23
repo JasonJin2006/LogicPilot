@@ -207,7 +207,7 @@ model Swarm {
 ## 9. Continuous models (ODEs, v0.1)
 
 `continuous` blocks declare coupled ordinary differential equations executed
-by a fixed-step RK4 integrator:
+by a deterministic RK4 integrator. The default is fixed-step:
 
 ```logicpilot
 model SIR {
@@ -233,6 +233,14 @@ model SIR {
   rejects equations whose lhs is not a declared state variable.
 - `lpcli run --arrivals N` = N integration steps of dt = 0.01; the summary's
   `final_value` is the first variable's end state. Deterministic (no RNG).
+- A block may opt into adaptive step-doubling RK4 with numeric params
+  `adaptive = 1`, `absolute_tolerance`, `relative_tolerance`,
+  `minimum_step`, and `maximum_step`; optional `horizon` sets the target time
+  (otherwise it is `arrivals * 0.01`). The fixed-step path remains unchanged.
+- With adaptive mode, `detect_zero_crossings = 1` records sign crossings;
+  `stop_at_zero_crossings = 1` clips an accepted step at the first crossing
+  boundary (and requires detection). The observer hook is post-acceptance; a
+  full discrete event rollback protocol remains a later hybrid boundary.
 
 ## 10. Experiment blocks (v0.1)
 

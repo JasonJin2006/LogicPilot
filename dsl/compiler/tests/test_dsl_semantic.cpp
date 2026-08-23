@@ -11,6 +11,7 @@
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/diagnostics.h"
 #include "logicpilot/dsl/parser.h"
+#include "logicpilot/dsl/registry.h"
 #include "logicpilot/dsl/semantic.h"
 
 using namespace logicpilot::dsl;
@@ -616,6 +617,130 @@ TEST_CASE("semantic: unreachable process stage is flagged LP5004",
     }
   }
   REQUIRE(lp5004 == 1);
+}
+
+TEST_CASE("semantic: zero-capacity wait is flagged LP5008",
+          "[dsl][semantic][deadlock]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  wait W { capacity = 0 }\n"
+      "  sink S { }\n"
+      "  couple A.out -> W.in\n"
+      "  couple W.out -> S.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  REQUIRE(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& diagnostic) {
+    return diagnostic.code == "LP5008";
+  }));
+}
+
+TEST_CASE("semantic: preempting zero-capacity queue is not flagged LP5008",
+          "[dsl][semantic][deadlock]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  queue Q { capacity = 0; enablePreemption = true }\n"
+      "  sink S { }\n"
+      "  couple A.out -> Q.in\n"
+      "  couple Q.outPreempted -> S.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  REQUIRE_FALSE(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& diagnostic) {
+    return diagnostic.code == "LP5008";
+  }));
+}
+
+TEST_CASE("semantic: atomic coupling rejects incompatible port types (LP5009)",
+          "[dsl][semantic][ports]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  atomic A {\n"
+      "    time_advance = constant(1)\n"
+      "    out done: Signal\n"
+      "    on_timeout { emit done }\n"
+      "  }\n"
+      "  atomic B {\n"
+      "    time_advance = infinite\n"
+      "    in job: Command\n"
+      "    on_input job { }\n"
+      "  }\n"
+      "  couple A.done -> B.job\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model);
+  const auto mismatch = std::find_if(
+      diags.begin(), diags.end(), [](const Diagnostic& diagnostic) {
+        return diagnostic.code == "LP5009";
+      });
+  REQUIRE(mismatch != diags.end());
+  REQUIRE(mismatch->message.find("Signal") != std::string::npos);
+  REQUIRE(mismatch->message.find("Command") != std::string::npos);
+}
+
+TEST_CASE("semantic: process coupling accepts equal and wildcard port types",
+          "[dsl][semantic][ports]") {
+  LibraryRegistry registry;
+  std::vector<Diagnostic> library_diags;
+  REQUIRE(registry.load(
+      "library process {\n"
+      "  version = 1\n"
+      "  block source {\n"
+      "    out out: Job\n"
+      "    arrival: distribution = rate(1)\n"
+      "  }\n"
+      "  block sink { in in: any }\n"
+      "}\n",
+      &library_diags));
+  REQUIRE(library_diags.empty());
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  sink B { }\n"
+      "  couple A.out -> B.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model, &registry);
+  REQUIRE_FALSE(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& diagnostic) {
+    return diagnostic.code == "LP5009";
+  }));
+}
+
+TEST_CASE("semantic: process coupling rejects incompatible port types",
+          "[dsl][semantic][ports]") {
+  LibraryRegistry registry;
+  std::vector<Diagnostic> library_diags;
+  REQUIRE(registry.load(
+      "library process {\n"
+      "  version = 1\n"
+      "  block source {\n"
+      "    out out: Job\n"
+      "    arrival: distribution = rate(1)\n"
+      "  }\n"
+      "  block sink { in in: Command }\n"
+      "}\n",
+      &library_diags));
+  REQUIRE(library_diags.empty());
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  source A { arrival = rate(1) }\n"
+      "  sink B { }\n"
+      "  couple A.out -> B.in\n"
+      "}\n",
+      "input.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diags = analyze_model(*parsed.model, &registry);
+  REQUIRE(std::any_of(diags.begin(), diags.end(), [](const Diagnostic& diagnostic) {
+    return diagnostic.code == "LP5009" &&
+           diagnostic.message.find("Job") != std::string::npos &&
+           diagnostic.message.find("Command") != std::string::npos;
+  }));
 }
 
 TEST_CASE("semantic: custom block extending an unknown built-in is LP2011",

@@ -2,6 +2,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -79,4 +80,37 @@ TEST_CASE("C ABI loader rejects a missing entrypoint") {
   CHECK_FALSE(
       load_dynamic_method_plugin(bad, std::filesystem::path{}, MethodRegistry::instance(), &error));
   CHECK(error.find("MP1104") != std::string::npos);
+}
+
+TEST_CASE("C ABI loader rejects an artifact hash mismatch") {
+  MethodPluginManifest bad = manifest();
+  bad.method = "cabi_hash_mismatch";
+  bad.artifact_sha256 = std::string(64, '0');
+  std::string error;
+  CHECK_FALSE(
+      load_dynamic_method_plugin(bad, std::filesystem::path{}, MethodRegistry::instance(), &error));
+  CHECK(error.find("MP1108") != std::string::npos);
+}
+
+TEST_CASE("shared scheduler enforces the configured event budget") {
+  MethodRegistry& registry = MethodRegistry::instance();
+  if (!registry.contains("cabi_test_method")) {
+    std::string load_error;
+    REQUIRE(load_dynamic_method_plugin(manifest(), std::filesystem::path{}, registry,
+                                       &load_error));
+  }
+  IrLoadResult loaded = plugin_model();
+  REQUIRE(loaded.ok());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(loaded.file, &error));
+  ReplicationConfig config{17, 4, 0};
+  config.max_events = 2;
+  std::vector<RuntimeDiagnostic> diagnostics;
+  const auto metrics = kernel.run(config, nullptr, &error, &diagnostics);
+  REQUIRE(metrics.empty());
+  REQUIRE(error.find("event budget exhausted") != std::string::npos);
+  REQUIRE(std::any_of(diagnostics.begin(), diagnostics.end(), [](const RuntimeDiagnostic& d) {
+    return d.code == "KR1017";
+  }));
 }

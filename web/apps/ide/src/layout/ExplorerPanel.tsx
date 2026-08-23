@@ -40,7 +40,7 @@ import type { ContextAction } from './ContextMenu';
 interface TreeFile {
   name: string;
   path: string;
-  kind: 'dsl' | 'json' | 'ir' | 'muted';
+  kind: 'dsl' | 'sysml' | 'json' | 'ir' | 'muted';
 }
 
 interface TreeFolder {
@@ -72,7 +72,11 @@ export function treeFromPaths(paths: string[]): TreeEntry[] {
           level.push({
             name,
             path,
-            kind: path.endsWith('.lp') ? ('dsl' as const) : ('json' as const),
+            kind: path.endsWith('.lp')
+              ? ('dsl' as const)
+              : path.toLowerCase().endsWith('.sysml')
+                ? ('sysml' as const)
+                : ('json' as const),
           });
         }
         break;
@@ -122,7 +126,7 @@ function FileRow({
   dataPath?: string;
   active?: boolean;
 }) {
-  const Icon = file.kind === 'dsl' ? FileCode2 : FileJson2;
+  const Icon = file.kind === 'dsl' || file.kind === 'sysml' ? FileCode2 : FileJson2;
   const muted = file.kind === 'muted' || file.kind === 'ir';
   return (
     <div
@@ -239,7 +243,7 @@ export function ExplorerPanel() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".lpproj,.lp,.json"
+            accept=".lpproj,.lp,.sysml,.json"
             hidden
             onChange={(event) => {
               const file = event.target.files?.[0];

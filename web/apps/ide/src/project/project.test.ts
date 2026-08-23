@@ -245,6 +245,17 @@ describe('project bundle', () => {
     expect(merged.manifest.modelParts).toEqual([]);
   });
 
+  it('mergeCanvasSplit preserves editor-owned non-model artifacts', () => {
+    const base = createProjectBundle(buildSample());
+    const current = createProject('Keep');
+    current.files['model/vehicle.sysml'] = 'part def Vehicle {}\n';
+    current.files['presentation/sysml/vehicle.layout.json'] = '{"version":1}\n';
+    const merged = mergeCanvasSplit(base, splitModelSource(base.files[DEFAULT_MODEL_PATH]!), current);
+    expect(merged.files['model/vehicle.sysml']).toContain('Vehicle');
+    expect(merged.files['presentation/sysml/vehicle.layout.json']).toContain('version');
+    expect(merged.manifest.modelParts).toEqual([]);
+  });
+
   it('sceneContainerFromFile identifies the container of a scene file', () => {
     expect(
       sceneContainerFromFile('model/scenes/Drone.lp', '  agent Drone {\n    count = 2\n  }\n'),

@@ -22,3 +22,4 @@ export { MODEL_READ_TOOLS } from './readTools';
 export { MODEL_ANALYSIS_TOOLS } from './analysisTools';
 export { MODEL_SIMULATION_TOOLS } from './simulationTools';
 export { MODEL_MUTATION_TOOLS } from './mutationTools';
+export { SYSML_TOOLS } from './sysmlTools';

@@ -63,6 +63,10 @@ typedef struct lp_method_host_v1 {
   int32_t (*get_f64)(void* context, const char* name, double* value);
   uint64_t (*publish_message)(void* context, const char* type_uri, uint32_t schema_version,
                               const char* encoding, const uint8_t* data, size_t data_size);
+  // Optional append-only service (available when struct_size includes it):
+  // register the URI/schema/encoding contract before publishing messages.
+  int32_t (*register_message_type)(void* context, const char* type_uri,
+                                   uint32_t schema_version, const char* encoding);
 } lp_method_host_v1;
 
 typedef struct lp_method_plugin_v1 {

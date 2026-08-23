@@ -14,6 +14,7 @@
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/runtime/simulation_kernel.h"
+#include "logicpilot/runtime/simulation_session.h"
 
 #include "ir_v2_generated.h"
 #include "register.h"
@@ -34,11 +35,35 @@ double evaluate(const std::string& text, const std::unordered_map<std::string, d
   });
 }
 
-std::vector<std::uint8_t> make_v2_equation(const char* rhs, double k, double y0) {
+std::vector<std::uint8_t> make_v2_equation(const char* rhs, double k, double y0,
+                                           bool adaptive = false,
+                                           bool detect_zero_crossings = false,
+                                           bool stop_at_zero_crossings = false) {
   flatbuffers::FlatBufferBuilder builder;
   const auto k_var =
       v2::CreateVar(builder, builder.CreateString("k"), v2::VarType_Float, false, 0, k, 0, 0);
   std::vector<flatbuffers::Offset<v2::Var>> params{k_var};
+  if (adaptive) {
+    params.push_back(v2::CreateVar(builder, builder.CreateString("adaptive"),
+                                   v2::VarType_Float, false, 0, 1.0, 0, 0));
+    params.push_back(v2::CreateVar(builder, builder.CreateString("relative_tolerance"),
+                                   v2::VarType_Float, false, 0, 1e-7, 0, 0));
+    params.push_back(v2::CreateVar(builder, builder.CreateString("absolute_tolerance"),
+                                   v2::VarType_Float, false, 0, 1e-10, 0, 0));
+    params.push_back(v2::CreateVar(builder, builder.CreateString("maximum_step"),
+                                   v2::VarType_Float, false, 0,
+                                   stop_at_zero_crossings ? 0.1 : 0.01, 0, 0));
+    params.push_back(v2::CreateVar(builder, builder.CreateString("minimum_step"),
+                                   v2::VarType_Float, false, 0, 1e-8, 0, 0));
+  }
+  if (detect_zero_crossings) {
+    params.push_back(v2::CreateVar(builder, builder.CreateString("detect_zero_crossings"),
+                                   v2::VarType_Float, false, 0, 1.0, 0, 0));
+  }
+  if (stop_at_zero_crossings) {
+    params.push_back(v2::CreateVar(builder, builder.CreateString("stop_at_zero_crossings"),
+                                   v2::VarType_Float, false, 0, 1.0, 0, 0));
+  }
   const auto equation =
       v2::CreateEquation(builder, builder.CreateString("y"), builder.CreateString(rhs), y0);
   std::vector<flatbuffers::Offset<v2::Equation>> equations{equation};
@@ -92,6 +117,160 @@ TEST_CASE("v2-native RK4 matches exponential decay analytically", "[continuous][
   REQUIRE(metrics.final_value == Approx(std::exp(-5.0)).margin(1e-6));
 }
 
+TEST_CASE("adaptive RK4 controls local error on a rapidly decaying system",
+          "[continuous][adaptive][numeric]") {
+  ReplicationConfig config;
+  config.seed = 1;
+  config.arrivals = 10;  // target horizon = 10 * 0.01 = 0.1 seconds
+
+  ContinuousReplicationModel fixed{make_v2_equation("-k*y", 100.0, 1.0), nullptr};
+  const ReplicationMetrics fixed_metrics = fixed.run(config, nullptr);
+  const double exact = std::exp(-10.0);
+  const double fixed_error = std::abs(fixed_metrics.final_value - exact);
+
+  ContinuousReplicationModel adaptive{
+      make_v2_equation("-k*y", 100.0, 1.0, true), nullptr};
+  const ReplicationMetrics adaptive_metrics = adaptive.run(config, nullptr);
+  const double adaptive_error = std::abs(adaptive_metrics.final_value - exact);
+
+  REQUIRE(adaptive.adaptive_solver());
+  REQUIRE(adaptive.step_count() > config.arrivals);
+  REQUIRE(adaptive.max_local_error() <= 1.000001);
+  REQUIRE(adaptive_error < fixed_error * 0.01);
+  REQUIRE(adaptive_error < 1e-7);
+}
+
+TEST_CASE("adaptive RK4 checkpoint restores the proposed step deterministically",
+          "[continuous][adaptive][checkpoint]") {
+  const auto bytes = make_v2_equation("-k*y", 100.0, 1.0, true);
+  ReplicationConfig config;
+  config.arrivals = 10;
+
+  ContinuousReplicationModel first{bytes, nullptr};
+  REQUIRE(first.reset(config));
+  REQUIRE(first.step());
+  REQUIRE(first.step());
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(first.checkpoint_save(checkpoint));
+  while (first.step()) {
+  }
+  const double expected = first.last_state().at("y");
+
+  ContinuousReplicationModel replay{bytes, nullptr};
+  REQUIRE(replay.reset(config));
+  REQUIRE(replay.checkpoint_restore(checkpoint));
+  while (replay.step()) {
+  }
+  REQUIRE(replay.last_state().at("y") == expected);
+  REQUIRE(replay.step_count() == first.step_count());
+}
+
+TEST_CASE("continuous integration enforces the shared step budget",
+          "[continuous][safety][checkpoint]") {
+  const auto bytes = make_v2_equation("-k*y", 1.0, 1.0);
+  ReplicationConfig config;
+  config.arrivals = 10;
+  config.max_events = 2;
+
+  ContinuousReplicationModel model{bytes, nullptr};
+  REQUIRE(model.reset(config));
+  REQUIRE(model.step());
+  REQUIRE(model.step());
+  REQUIRE_FALSE(model.step());
+  REQUIRE(model.failed());
+  REQUIRE(model.last_error().find("KR1017") != std::string::npos);
+
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(model.checkpoint_save(checkpoint));
+  REQUIRE(model.checkpoint_restore(checkpoint));
+  REQUIRE(model.failed());
+}
+
+TEST_CASE("continuous logical-step trace is deterministic",
+          "[continuous][determinism][trace]") {
+  const auto bytes = make_v2_equation("-k*y", 0.5, 1.0);
+  ReplicationConfig config;
+  config.arrivals = 10;
+  ContinuousReplicationModel model{bytes, nullptr};
+  TraceRecorder first;
+  TraceRecorder second;
+  REQUIRE(model.run(config, &first).arrivals == 10);
+  REQUIRE(model.run(config, &second).arrivals == 10);
+  REQUIRE(first.hash() == second.hash());
+  REQUIRE(first.event_count() == 0);
+  REQUIRE(first.logical_step_count() == 10);
+  REQUIRE(second.logical_step_count() == 10);
+}
+
+TEST_CASE("adaptive SD runtime schedules shared events at accepted times",
+          "[continuous][adaptive][runtime]") {
+  register_all_methods();
+  const auto bytes = make_v2_equation("-k*y", 100.0, 1.0, true);
+  const IrLoadResult loaded = load_model_buffer(bytes.data(), bytes.size());
+  REQUIRE(loaded.ok());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(loaded.file, &error));
+  ReplicationConfig config;
+  config.arrivals = 10;
+  const auto metrics = kernel.run(config, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  REQUIRE(metrics.front().horizon_seconds == Approx(0.1).margin(1e-9));
+  REQUIRE(std::abs(metrics.front().final_value - std::exp(-10.0)) < 1e-7);
+}
+
+TEST_CASE("continuous zero crossing is localized and checkpointed",
+          "[continuous][crossing][checkpoint]") {
+  const auto bytes = make_v2_equation("1.0", 0.0, -0.05, false, true);
+  ReplicationConfig config;
+  config.arrivals = 10;
+  ContinuousReplicationModel first{bytes, nullptr};
+  std::vector<ContinuousZeroCrossing> observed;
+  first.set_zero_crossing_observer(
+      [&observed](const ContinuousZeroCrossing& crossing) {
+        observed.push_back(crossing);
+      });
+  REQUIRE(first.reset(config));
+  for (int step = 0; step < 4; ++step) {
+    REQUIRE(first.step());
+    REQUIRE(first.zero_crossings().empty());
+  }
+  REQUIRE(first.step());
+  REQUIRE(first.zero_crossings().size() == 1);
+  REQUIRE(first.zero_crossings()[0].variable == "y");
+  REQUIRE(first.zero_crossings()[0].at == Approx(0.05).margin(1e-12));
+  REQUIRE(first.zero_crossings()[0].direction == ZeroCrossingDirection::kUpward);
+  REQUIRE(observed.size() == 1);
+  REQUIRE(observed[0].at == first.zero_crossings()[0].at);
+
+  std::vector<std::uint8_t> checkpoint;
+  REQUIRE(first.checkpoint_save(checkpoint));
+  while (first.step()) {
+  }
+  ContinuousReplicationModel replay{bytes, nullptr};
+  REQUIRE(replay.reset(config));
+  REQUIRE(replay.checkpoint_restore(checkpoint));
+  while (replay.step()) {
+  }
+  REQUIRE(replay.zero_crossings().size() == first.zero_crossings().size());
+  REQUIRE(replay.zero_crossings()[0].at == first.zero_crossings()[0].at);
+}
+
+TEST_CASE("adaptive solver can stop exactly at a zero crossing boundary",
+          "[continuous][crossing][adaptive][runtime]") {
+  const auto bytes = make_v2_equation("1.0", 0.0, -0.05, true, true, true);
+  ReplicationConfig config;
+  config.arrivals = 1;  // target horizon = 0.1 with the configured max step
+  ContinuousReplicationModel model{bytes, nullptr};
+  REQUIRE(model.reset(config));
+  REQUIRE(model.step());
+  REQUIRE(model.sim_time_seconds() == Approx(0.05).margin(1e-10));
+  REQUIRE(model.zero_crossings().size() == 1);
+  REQUIRE(model.zero_crossings()[0].at == Approx(0.05).margin(1e-10));
+  REQUIRE(model.next_step_seconds() == Approx(0.05).margin(1e-10));
+}
+
 TEST_CASE("system dynamics shared scheduler matches the batch integrator",
           "[continuous][runtime][kernel]") {
   register_all_methods();
@@ -115,6 +294,38 @@ TEST_CASE("system dynamics shared scheduler matches the batch integrator",
   REQUIRE(actual[0].horizon_seconds == expected.horizon_seconds);
   REQUIRE(actual[0].final_value == expected.final_value);
   REQUIRE(std::get<double>(*kernel.variables().get("sd::y")) == expected.final_value);
+}
+
+TEST_CASE("system dynamics session restores a versioned RK4 state bundle",
+          "[continuous][session][checkpoint]") {
+  register_all_methods();
+  const std::vector<std::uint8_t> bytes = make_v2_equation("-k*y", 0.5, 1.0);
+  const IrLoadResult loaded = load_model_buffer(bytes.data(), bytes.size());
+  REQUIRE(loaded.ok());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(loaded.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+
+  ReplicationConfig config;
+  config.arrivals = 100;
+  REQUIRE(session->start(config, &error));
+  REQUIRE(session->advance(200_ms, nullptr, nullptr, &error));
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.methods.size() == 1);
+  REQUIRE(checkpoint.methods[0].method == "sd");
+
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+  REQUIRE(session->restore_method_checkpoint(checkpoint, &error));
+  REQUIRE(session->now() == 200_ms);
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+  const auto metrics = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  REQUIRE(metrics[0].arrivals == 100);
+  REQUIRE(metrics[0].final_value == Approx(std::exp(-0.5)).margin(1e-5));
 }
 
 TEST_CASE("v2-native RK4 matches the logistic solution analytically", "[continuous][ir-v2]") {

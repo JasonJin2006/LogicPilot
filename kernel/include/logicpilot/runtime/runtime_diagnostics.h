@@ -9,6 +9,7 @@
 //   KR1004  method runtime not registered
 //   KR1005  method attach failed
 //   KR1006  method initialize failed
+//   KR1017  shared scheduler event budget exhausted
 //
 // DebugRecorder captures every dispatched event in order (the base for a
 // future kernel debugger); the SimulationKernel can attach one per run.
@@ -50,14 +51,38 @@ inline std::string format_runtime_diagnostic(
 // (same data TraceRecorder hashes, kept as a readable list for tooling).
 class DebugRecorder {
  public:
-  void record(const Event& event) { events_.push_back(event); }
+  // A zero limit preserves the historical unbounded capture behavior. A
+  // positive limit keeps only the prefix and marks the rest as dropped.
+  explicit DebugRecorder(std::size_t max_events = 0)
+      : max_events_{max_events} {}
+
+  void set_max_events(std::size_t max_events) {
+    max_events_ = max_events;
+    truncated_ = false;
+    events_.clear();
+  }
+
+  void record(const Event& event) {
+    if (max_events_ == 0 || events_.size() < max_events_) {
+      events_.push_back(event);
+    } else {
+      truncated_ = true;
+    }
+  }
 
   [[nodiscard]] const std::vector<Event>& events() const { return events_; }
   [[nodiscard]] std::size_t event_count() const { return events_.size(); }
-  void clear() { events_.clear(); }
+  [[nodiscard]] bool truncated() const { return truncated_; }
+  [[nodiscard]] std::size_t max_events() const { return max_events_; }
+  void clear() {
+    events_.clear();
+    truncated_ = false;
+  }
 
  private:
   std::vector<Event> events_;
+  std::size_t max_events_{0};
+  bool truncated_{false};
 };
 
 }  // namespace logicpilot

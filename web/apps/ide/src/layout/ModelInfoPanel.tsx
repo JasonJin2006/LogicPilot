@@ -36,6 +36,7 @@ import { useModelStore } from '../state/modelStore';
 import { CANVAS_CONTAINER_KINDS } from '../model/blockDefs';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
+import { useSysMLStore } from '../state/sysmlStore';
 import { ContextMenu } from './ContextMenu';
 import type { ContextAction } from './ContextMenu';
 import {
@@ -47,6 +48,8 @@ import {
   replaceSpan,
 } from '../project/projectTree';
 import type { ProjectMember, ProjectModel } from '../project/projectTree';
+import type { SysMLElement, SysMLProjection } from '../sysml/sysmlProjection';
+import { documentContributionFor } from '../workbench/documentTypes';
 
 interface MergedMember {
   file: string;
@@ -63,6 +66,42 @@ interface MenuState {
   x: number;
   y: number;
   actions: ContextAction[];
+}
+
+function SysMLOutlinePanel({ projection, selectedId }: { projection: SysMLProjection; selectedId: string | null }) {
+  const select = useSysMLStore((state) => state.select);
+  const children = new Map<string | undefined, SysMLElement[]>();
+  for (const element of projection.elements) {
+    const list = children.get(element.ownerId) ?? [];
+    list.push(element);
+    children.set(element.ownerId, list);
+  }
+  const render = (ownerId: string | undefined, depth: number): ReactNode =>
+    (children.get(ownerId) ?? []).map((element) => (
+      <div key={element.id}>
+        <div
+          className={`tree-row tree-file${element.id === selectedId ? ' tree-selected' : ''}`}
+          style={{ paddingLeft: (depth + 1) * 14 + 8 }}
+          title={`${element.kind} ${element.qualifiedName}`}
+          onClick={() => select(element.id)}
+        >
+          <span className="tree-glyph tree-glyph-muted">·</span>
+          <span className="tree-glyph"><Boxes size={12} /></span>
+          <span className="outline-name">{element.name}</span>
+          <span className="sysml-outline-kind">{element.kind}</span>
+        </div>
+        {render(element.id, depth + 1)}
+      </div>
+    ));
+  return (
+    <div className="side-panel-body model-info-panel sysml-outline-panel">
+      <div className="sysml-outline-header">SysML Outline</div>
+      {render(undefined, 0)}
+      <div className="sysml-outline-summary">
+        {projection.elements.length} elements · {projection.relations.length} relations
+      </div>
+    </div>
+  );
 }
 
 const KIND_ICONS: Record<string, ComponentType<{ size?: number }>> = {
@@ -109,6 +148,9 @@ export function ModelInfoPanel() {
   const projectPath = useProjectStore((state) => state.path);
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const openPrompt = useUiStore((state) => state.openPrompt);
+  const activeFile = useUiStore((state) => state.activeFile);
+  const sysmlProjection = useSysMLStore((state) => state.projection);
+  const sysmlSelectedId = useSysMLStore((state) => state.selectedId);
   const focusView = useCanvasView((state) => state.view);
   const setFocusView = useCanvasView((state) => state.setView);
   const selected = useModelStore((state) =>
@@ -210,6 +252,10 @@ export function ModelInfoPanel() {
     }
     return [...models, ...orphans];
   }, [bundle, partPaths]);
+
+  if (documentContributionFor(activeFile)?.id === 'sysml' && sysmlProjection) {
+    return <SysMLOutlinePanel projection={sysmlProjection} selectedId={sysmlSelectedId} />;
+  }
 
   const toggle = (key: string) => setCollapsed((current) => ({ ...current, [key]: !current[key] }));
   const isCollapsed = (key: string) => collapsed[key] === true;

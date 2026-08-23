@@ -31,6 +31,7 @@
 #include "logicpilot/core/scheduler/handler_registry.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/devs/evidence.h"
 #include "logicpilot/devs/replication.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_diagnostics.h"
@@ -41,6 +42,8 @@
 
 namespace logicpilot {
 
+class SimulationSession;
+
 class SimulationKernel {
  public:
   SimulationKernel() = default;
@@ -50,6 +53,12 @@ class SimulationKernel {
   // Store the model to run (bytes are copied; validation happens at run()).
   bool load(const IrModelFile& model, std::string* error = nullptr);
 
+  // Create a persistent shared-event-queue session from the verified model.
+  // The returned session owns a copy of the IR bytes and can be advanced in
+  // multiple calls without reinitializing method runtimes.
+  [[nodiscard]] std::unique_ptr<SimulationSession> create_session(
+      std::string* error = nullptr) const;
+
   // Run one full replication: resolve methods, attach one runtime per method,
   // initialize, dispatch until the scheduler drains, shutdown. Returns one
   // metric set per method (in resolution order). `trace` records every
@@ -57,12 +66,20 @@ class SimulationKernel {
   // `diagnostics` receives structured failures (KR1xxx), `debug` captures
   // the ordered event stream, and `profile` reports the event-type histogram
   // and wall time for this replication.
-  std::vector<ReplicationMetrics> run(const ReplicationConfig& config,
-                                      TraceRecorder* trace = nullptr,
-                                      std::string* error = nullptr,
-                                      std::vector<RuntimeDiagnostic>* diagnostics = nullptr,
-                                      DebugRecorder* debug = nullptr,
-                                      SimulationProfile* profile = nullptr);
+  // ABI/source-compatible legacy entry point. It runs without method-level
+  // DEVS evidence capture.
+  std::vector<ReplicationMetrics> run(
+      const ReplicationConfig& config, TraceRecorder* trace = nullptr,
+      std::string* error = nullptr,
+      std::vector<RuntimeDiagnostic>* diagnostics = nullptr,
+      DebugRecorder* debug = nullptr, SimulationProfile* profile = nullptr);
+
+  // Extended entry point with optional DEVS causal evidence capture.
+  std::vector<ReplicationMetrics> run(
+      const ReplicationConfig& config, TraceRecorder* trace,
+      std::string* error, std::vector<RuntimeDiagnostic>* diagnostics,
+      DebugRecorder* debug, SimulationProfile* profile,
+      DevsEvidenceRecorder* evidence);
 
   // Shared cross-method state (readable between/after runs).
   [[nodiscard]] const VariableStore& variables() const { return variables_; }

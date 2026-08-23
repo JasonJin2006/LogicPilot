@@ -32,6 +32,7 @@ struct RunOptions {
   double mu{1.0};
   double confidence{0.95};
   std::string trajectory;  // write continuous-model trajectory JSON here
+  std::string logical_trace;  // write LPLT logical-step archive here
   std::string project;     // *.lpproj bundle (DSL-enabled builds)
   std::string results_dir; // write run.json + metrics.json here
   std::string output_ir;   // write the compiled IR to this path (with --project)

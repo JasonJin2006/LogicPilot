@@ -13,8 +13,13 @@
 // BlockContext so they never reach into engine internals.
 #pragma once
 
+#include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <deque>
+#include <cmath>
+#include <limits>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -52,6 +57,173 @@ struct Entity {
   std::int64_t measure_start_ns{0};
   bool has_measure{false};
 };
+
+namespace checkpoint_detail {
+
+inline void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+  for (int byte = 0; byte < 4; ++byte)
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+}
+
+inline void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (int byte = 0; byte < 8; ++byte)
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+}
+
+inline bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset,
+                     std::uint32_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 4) return false;
+  value = 0;
+  for (int byte = 0; byte < 4; ++byte)
+    value |= static_cast<std::uint32_t>(bytes[offset++]) << (byte * 8);
+  return true;
+}
+
+inline bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset,
+                     std::uint64_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 8) return false;
+  value = 0;
+  for (int byte = 0; byte < 8; ++byte)
+    value |= static_cast<std::uint64_t>(bytes[offset++]) << (byte * 8);
+  return true;
+}
+
+inline void append_string(std::vector<std::uint8_t>& out,
+                          std::string_view value) {
+  append_u32(out, static_cast<std::uint32_t>(value.size()));
+  out.insert(out.end(), value.begin(), value.end());
+}
+
+inline bool read_string(std::span<const std::uint8_t> bytes,
+                        std::size_t& offset, std::string& value) {
+  std::uint32_t size = 0;
+  if (!read_u32(bytes, offset, size) || size > bytes.size() - offset)
+    return false;
+  value.assign(reinterpret_cast<const char*>(bytes.data() + offset), size);
+  offset += size;
+  return true;
+}
+
+inline bool read_count(std::span<const std::uint8_t> bytes,
+                       std::size_t& offset, std::uint32_t& count) {
+  return read_u32(bytes, offset, count) &&
+         count <= bytes.size() - offset;
+}
+
+inline void append_entity(std::vector<std::uint8_t>& out, const Entity& entity);
+inline bool read_entity(std::span<const std::uint8_t> bytes,
+                        std::size_t& offset, Entity& entity);
+
+inline void append_entity_map(
+    std::vector<std::uint8_t>& out,
+    const std::unordered_map<std::string, double>& values) {
+  append_u32(out, static_cast<std::uint32_t>(values.size()));
+  std::vector<std::pair<std::string, double>> sorted(values.begin(),
+                                                     values.end());
+  std::sort(sorted.begin(), sorted.end(),
+            [](const auto& left, const auto& right) {
+              return left.first < right.first;
+            });
+  for (const auto& [name, value] : sorted) {
+    append_string(out, name);
+    append_u64(out, std::bit_cast<std::uint64_t>(value));
+  }
+}
+
+inline bool read_entity_map(std::span<const std::uint8_t> bytes,
+                            std::size_t& offset,
+                            std::unordered_map<std::string, double>& values) {
+  std::uint32_t count = 0;
+  if (!read_count(bytes, offset, count)) return false;
+  for (std::uint32_t index = 0; index < count; ++index) {
+    std::string name;
+    std::uint64_t raw = 0;
+    if (!read_string(bytes, offset, name) || !read_u64(bytes, offset, raw) ||
+        !values.emplace(std::move(name), std::bit_cast<double>(raw)).second)
+      return false;
+  }
+  return true;
+}
+
+inline void append_entity_int_map(
+    std::vector<std::uint8_t>& out,
+    const std::unordered_map<std::string, std::int64_t>& values) {
+  append_u32(out, static_cast<std::uint32_t>(values.size()));
+  std::vector<std::pair<std::string, std::int64_t>> sorted(values.begin(),
+                                                           values.end());
+  std::sort(sorted.begin(), sorted.end(),
+            [](const auto& left, const auto& right) {
+              return left.first < right.first;
+            });
+  for (const auto& [name, value] : sorted) {
+    append_string(out, name);
+    append_u64(out, static_cast<std::uint64_t>(value));
+  }
+}
+
+inline bool read_entity_int_map(
+    std::span<const std::uint8_t> bytes, std::size_t& offset,
+    std::unordered_map<std::string, std::int64_t>& values) {
+  std::uint32_t count = 0;
+  if (!read_count(bytes, offset, count)) return false;
+  for (std::uint32_t index = 0; index < count; ++index) {
+    std::string name;
+    std::uint64_t raw = 0;
+    if (!read_string(bytes, offset, name) || !read_u64(bytes, offset, raw) ||
+        !values.emplace(std::move(name), static_cast<std::int64_t>(raw)).second)
+      return false;
+  }
+  return true;
+}
+
+inline void append_entity(std::vector<std::uint8_t>& out,
+                          const Entity& entity) {
+  append_u64(out, entity.id);
+  append_u64(out, entity.root_arrival_index);
+  append_u64(out, static_cast<std::uint64_t>(entity.created_ns));
+  append_u64(out, static_cast<std::uint64_t>(entity.service_start_ns));
+  append_u64(out, static_cast<std::uint64_t>(entity.stage_arrival_ns));
+  append_u64(out, std::bit_cast<std::uint64_t>(entity.x));
+  append_u64(out, std::bit_cast<std::uint64_t>(entity.y));
+  append_u64(out, static_cast<std::uint64_t>(entity.measure_start_ns));
+  out.push_back(entity.has_measure ? 1 : 0);
+  append_entity_map(out, entity.attributes);
+  append_entity_int_map(out, entity.resources);
+  append_u32(out, static_cast<std::uint32_t>(entity.contents.size()));
+  for (const Entity& child : entity.contents) append_entity(out, child);
+}
+
+inline bool read_entity(std::span<const std::uint8_t> bytes,
+                        std::size_t& offset, Entity& entity) {
+  std::uint64_t raw = 0;
+  if (!read_u64(bytes, offset, entity.id) ||
+      !read_u64(bytes, offset, entity.root_arrival_index) ||
+      !read_u64(bytes, offset, raw)) return false;
+  entity.created_ns = static_cast<std::int64_t>(raw);
+  if (!read_u64(bytes, offset, raw)) return false;
+  entity.service_start_ns = static_cast<std::int64_t>(raw);
+  if (!read_u64(bytes, offset, raw)) return false;
+  entity.stage_arrival_ns = static_cast<std::int64_t>(raw);
+  if (!read_u64(bytes, offset, raw)) return false;
+  entity.x = std::bit_cast<double>(raw);
+  if (!read_u64(bytes, offset, raw)) return false;
+  entity.y = std::bit_cast<double>(raw);
+  if (!read_u64(bytes, offset, raw)) return false;
+  entity.measure_start_ns = static_cast<std::int64_t>(raw);
+  if (offset >= bytes.size()) return false;
+  entity.has_measure = bytes[offset++] != 0;
+  if (!read_entity_map(bytes, offset, entity.attributes) ||
+      !read_entity_int_map(bytes, offset, entity.resources)) return false;
+  std::uint32_t count = 0;
+  if (!read_count(bytes, offset, count)) return false;
+  entity.contents.resize(count);
+  for (Entity& child : entity.contents) {
+    if (!read_entity(bytes, offset, child)) return false;
+  }
+  return true;
+}
+
+}  // namespace checkpoint_detail
 
 // Engine-side facilities handed to blocks during update/complete/retry.
 class BlockContext {
@@ -229,6 +401,15 @@ class ProcessBlock {
   // tasks, where the failure task waits for the unit).
   virtual void on_pool_down(BlockContext&, const std::string&) {}
   virtual void on_pool_up(BlockContext&, const std::string&) {}
+
+  // Optional block-local state bundle. Basic BufferedBlock descendants use
+  // this for source/queue/sink flows; richer blocks override when all private
+  // state (service slots, timeouts, batches, etc.) is covered.
+  [[nodiscard]] virtual bool checkpoint_save(
+      std::vector<std::uint8_t>&) const { return false; }
+  virtual bool checkpoint_restore(std::span<const std::uint8_t>) {
+    return false;
+  }
 };
 
 // Shared buffering/counter state for the common input -> forward model.
@@ -284,6 +465,65 @@ class BufferedBlock : public ProcessBlock {
   void clear_buffers() override {
     input_.clear();
     outgoing_.clear();
+  }
+
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override {
+    using namespace checkpoint_detail;
+    state.clear();
+    append_u32(state, 0x4C50424CU);  // LPBL
+    state.push_back(1);
+    append_u32(state, static_cast<std::uint32_t>(input_.size()));
+    for (const Entity& entity : input_) append_entity(state, entity);
+    append_u32(state, static_cast<std::uint32_t>(outgoing_.size()));
+    for (const Entity& entity : outgoing_) append_entity(state, entity);
+    append_u64(state, arrived_);
+    append_u64(state, departed_);
+    append_u64(state, std::bit_cast<std::uint64_t>(area_occupancy_));
+    append_u64(state, std::bit_cast<std::uint64_t>(area_busy_));
+    append_u64(state, std::bit_cast<std::uint64_t>(area_down_));
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0, count = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C50424CU ||
+        offset >= state.size() || state[offset++] != 1 ||
+        !read_count(state, offset, count)) return false;
+    std::deque<Entity> input;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      input.push_back(std::move(entity));
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::deque<Entity> outgoing;
+    for (std::uint32_t index = 0; index < count; ++index) {
+      Entity entity;
+      if (!read_entity(state, offset, entity)) return false;
+      outgoing.push_back(std::move(entity));
+    }
+    std::uint64_t arrived = 0, departed = 0, raw = 0;
+    if (!read_u64(state, offset, arrived) ||
+        !read_u64(state, offset, departed) || !read_u64(state, offset, raw))
+      return false;
+    const double occupancy = std::bit_cast<double>(raw);
+    if (!read_u64(state, offset, raw)) return false;
+    const double busy = std::bit_cast<double>(raw);
+    if (!read_u64(state, offset, raw)) return false;
+    const double down = std::bit_cast<double>(raw);
+    if (offset != state.size() || !std::isfinite(occupancy) ||
+        !std::isfinite(busy) || !std::isfinite(down)) return false;
+    input_ = std::move(input);
+    outgoing_ = std::move(outgoing);
+    arrived_ = arrived;
+    departed_ = departed;
+    area_occupancy_ = occupancy;
+    area_busy_ = busy;
+    area_down_ = down;
+    return true;
   }
 
   bool retry_outgoing(BlockContext& ctx) override {

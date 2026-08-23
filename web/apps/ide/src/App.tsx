@@ -21,6 +21,7 @@ import { useCanvasView } from './state/canvasView';
 import { useConnectionStore } from './state/connectionStore';
 import { useUiStore } from './state/uiStore';
 import { ThemeManager } from './theme/ThemeManager';
+import { editorPanelFor } from './workbench/documentTypes';
 import { useEffect } from 'react';
 
 export default function App() {
@@ -43,7 +44,7 @@ export default function App() {
   // the center does not linger on the editor with nothing open.
   useEffect(() => {
     if (activeFile !== null) {
-      useLayoutStore.getState().openPanel('center', 'dsl');
+      useLayoutStore.getState().openPanel('center', editorPanelFor(activeFile));
       return;
     }
     const { rootOpen, views } = useCanvasView.getState();

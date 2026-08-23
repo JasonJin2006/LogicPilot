@@ -6,6 +6,7 @@ import { MODEL_INSPECTION_TOOLS, MODEL_READ_TOOLS } from './readTools';
 import { MODEL_ANALYSIS_TOOLS } from './analysisTools';
 import { MODEL_SIMULATION_TOOLS } from './simulationTools';
 import { MODEL_MUTATION_TOOLS } from './mutationTools';
+import { SYSML_TOOLS } from './sysmlTools';
 
 export const LOGICPILOT_MODELING_TOOLS: readonly AssistantTool[] = [
   ...MODEL_INSPECTION_TOOLS,
@@ -13,6 +14,7 @@ export const LOGICPILOT_MODELING_TOOLS: readonly AssistantTool[] = [
   ...MODEL_ANALYSIS_TOOLS,
   ...MODEL_SIMULATION_TOOLS,
   ...MODEL_MUTATION_TOOLS,
+  ...SYSML_TOOLS,
 ];
 
 export const findLogicPilotTool = (

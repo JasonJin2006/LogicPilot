@@ -48,7 +48,9 @@ bool MethodRegistry::register_manifest(const MethodPluginManifest& manifest, Fac
     return false;
   }
   register_method(manifest.method, std::move(factory),
-                  Descriptor{manifest.runtime_version, manifest.semantics_versions});
+                  Descriptor{manifest.runtime_version, manifest.semantics_versions,
+                             parse_method_family(manifest.family),
+                             parse_method_formalism(manifest.formalism)});
   return true;
 }
 

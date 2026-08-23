@@ -14,7 +14,6 @@
 #include <cstdint>
 
 #include "logicpilot/core/random/distributions.h"
-#include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/devs/mm1.h"
 
 namespace logicpilot::server {
@@ -79,6 +78,9 @@ void SimRunner::reset(const StreamRunConfig& config) {
   sojourn_count_ = 0;
   wait_sum_ = 0.0;
   wait_count_ = 0;
+  dispatched_total_ = 0;
+  budget_exhausted_ = false;
+  error_.clear();
 
   const auto accumulate_area = [this](std::int64_t now_ns) {
     const std::int64_t dt = now_ns - last_ns_;
@@ -210,9 +212,28 @@ void SimRunner::reset(const StreamRunConfig& config) {
 }
 
 std::size_t SimRunner::process_until(std::int64_t boundary_ns) {
-  const std::size_t dispatched = run_until(
-      *scheduler_, clock_, SimTime::from_ns(boundary_ns),
-      [this](const Event& event) { handlers_.dispatch(event); });
+  if (budget_exhausted_) {
+    return 0;
+  }
+  std::size_t dispatched = 0;
+  const SimTime boundary = SimTime::from_ns(boundary_ns);
+  Event event{};
+  while (!scheduler_->empty() && scheduler_->peek_time() <= boundary) {
+    if (config_.max_events == 0 || dispatched_total_ >= config_.max_events) {
+      budget_exhausted_ = true;
+      finished_ = true;
+      error_ = "KR1017: shared scheduler event budget exhausted (" +
+               std::to_string(config_.max_events) + " events)";
+      break;
+    }
+    if (!scheduler_->try_pop_next(event)) {
+      break;
+    }
+    clock_.advance_to(event.at);
+    handlers_.dispatch(event);
+    ++dispatched;
+    ++dispatched_total_;
+  }
   if (scheduler_->empty()) {
     finished_ = true;
   }

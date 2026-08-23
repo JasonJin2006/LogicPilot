@@ -2,6 +2,12 @@
 
 状态：现行（2026-08-06）· 维护者：`/root`。
 
+> 范围说明（2026-08-23）：本规格继续定义 `.lp` 仿真工程的现行存储与同步，
+> 不再作为所有 Workbench 文档的统一格式。SysML、C4、FMU、网格和外部仓库可以有
+> 独立 `DocumentTypeProvider` 与 authoritative model；跨文档通过稳定 `ElementRef`
+> 和 Artifact Relation Graph 连接。迁移计划见
+> [`../workbench-architecture-plan.md`](../workbench-architecture-plan.md)。
+
 本格式把"DSL 代码编辑"与"面板可视化编辑"统一到**单一 canonical 模型**上，
 实现真正双向同步。工程组织采用 **agent-centric 结构**（见
 [agent-centric](./agent-centric)）：`model` 根承载全部成员（参数、资源、
@@ -18,7 +24,7 @@ atomic / continuous / experiment）每个一个模型文件 + 一个布局文件
 
 ## 2. 单一 canonical 模型
 
-- **canonical**：内存中的结构树（`ModelDocument`：`kind/name/params/
+- **`.lp` canonical**：内存中的结构树（`ModelDocument`：`kind/name/params/
   children/couplings`）+ 布局表（节点 id → 坐标/几何/分组/缩放）。
 - **面板编辑**：直接改 canonical → 保存时序列化回 DSL 文件与布局文件。
 - **DSL 编辑**：解析文件 → 校验 → 替换 canonical → 面板重渲染。

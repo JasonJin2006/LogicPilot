@@ -12,10 +12,12 @@ import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { useCanvasView } from '../state/canvasView';
+import { useSysMLStore } from '../state/sysmlStore';
 import { mergeModelSource } from '../project/project';
 import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, type AreaId, type PanelId } from './panels';
 import { ScrollArea } from '../components/ScrollArea';
+import { editorPanelFor } from '../workbench/documentTypes';
 
 function Splitter({
   area,
@@ -222,14 +224,15 @@ function TabBar({ area }: { area: AreaId }) {
           {/* Code tabs: one per open bundle file. */}
           {openFiles.map((path) => {
             const name = path.slice(path.lastIndexOf('/') + 1);
-            const active = state.activePanel === 'dsl' && path === activeFile;
+            const isSysML = editorPanelFor(path) === 'sysml';
+            const active = state.activePanel === (isSysML ? 'sysml' : 'dsl') && path === activeFile;
             return (
               <div
                 key={`file:${path}`}
                 className={`tab tab-file${active ? ' active' : ''}`}
                 title={path}
                 onClick={() => {
-                  openPanel('center', 'dsl');
+                  openPanel('center', editorPanelFor(path));
                   openFile(path);
                 }}
               >
@@ -375,11 +378,19 @@ function PanelArea({ area }: { area: AreaId }) {
 export function Workspace() {
   const areas = useLayoutStore((s) => s.areas);
   const selectedId = useModelStore((s) => s.selectedId);
+  const sysmlSelectedId = useSysMLStore((s) => s.selectedId);
   const setActive = useLayoutStore((s) => s.setActive);
+  const openPanel = useLayoutStore((s) => s.openPanel);
   // Selecting a block brings the Properties tab up; deselecting returns AI.
   useEffect(() => {
-    setActive('right', selectedId ? 'properties' : 'ai');
-  }, [selectedId, setActive]);
+    if (selectedId) {
+      openPanel('right', 'properties');
+    } else if (sysmlSelectedId) {
+      openPanel('right', 'sysmlProperties');
+    } else {
+      setActive('right', 'ai');
+    }
+  }, [selectedId, sysmlSelectedId, setActive, openPanel]);
   const style = {
     '--left-w': `${areas.left.collapsed ? 0 : areas.left.size}px`,
     '--right-w': `${areas.right.collapsed ? 0 : areas.right.size}px`,

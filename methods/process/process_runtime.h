@@ -38,6 +38,11 @@ public:
   void advance(SimTime until) override;
   void shutdown() override;
 
+  [[nodiscard]] bool save_method_checkpoint(
+      MethodCheckpoint& checkpoint, std::string* error = nullptr) const override;
+  bool restore_method_checkpoint(const MethodCheckpoint& checkpoint,
+                                 std::string* error = nullptr) override;
+
   [[nodiscard]] std::unique_ptr<ReplicationModel> to_replication_model(const IrModelFile& model,
                                                                        std::string* error) override;
 

@@ -7,6 +7,7 @@
 add_executable(lpcli
   main.cpp
   run_command.cpp
+  trace_compare_command.cpp
   builtin_registry.cpp
 )
 target_link_libraries(lpcli PRIVATE

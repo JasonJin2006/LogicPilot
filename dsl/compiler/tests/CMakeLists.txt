@@ -135,6 +135,40 @@ set_tests_properties(lpcli_run_agents PROPERTIES
   DEPENDS lpcli_compile_agents
   PASS_REGULAR_EXPRESSION "summary: 1 replications")
 
+add_test(NAME lpcli_run_agents_logical_trace
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.ir.bin"
+          --seed=42 --reps=1 --arrivals=5 --warmup=0
+          --logical-trace "${CMAKE_CURRENT_BINARY_DIR}/agents.lplt")
+set_tests_properties(lpcli_run_agents_logical_trace PROPERTIES
+  DEPENDS lpcli_compile_agents
+  PASS_REGULAR_EXPRESSION "logical trace written")
+
+add_test(NAME lpcli_trace_compare_identical
+  COMMAND lpcli trace-compare
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.lplt"
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.lplt")
+set_tests_properties(lpcli_trace_compare_identical PROPERTIES
+  DEPENDS lpcli_run_agents_logical_trace
+  PASS_REGULAR_EXPRESSION "identical:")
+
+add_test(NAME lpcli_run_agents_logical_trace_short
+  COMMAND lpcli run --model-file
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.ir.bin"
+          --seed=42 --reps=1 --arrivals=4 --warmup=0
+          --logical-trace "${CMAKE_CURRENT_BINARY_DIR}/agents-short.lplt")
+set_tests_properties(lpcli_run_agents_logical_trace_short PROPERTIES
+  DEPENDS lpcli_compile_agents
+  PASS_REGULAR_EXPRESSION "logical trace written")
+
+add_test(NAME lpcli_trace_compare_divergence
+  COMMAND lpcli trace-compare
+          "${CMAKE_CURRENT_BINARY_DIR}/agents.lplt"
+          "${CMAKE_CURRENT_BINARY_DIR}/agents-short.lplt")
+set_tests_properties(lpcli_trace_compare_divergence PROPERTIES
+  DEPENDS lpcli_run_agents_logical_trace_short
+  WILL_FAIL TRUE)
+
 # Multi-server example (M/M/2) must survive the DSL -> IR -> runtime chain.
 add_test(NAME lpcli_compile_two_servers
   COMMAND lpcli compile "${CMAKE_SOURCE_DIR}/examples/two_servers.lp"

@@ -10,6 +10,8 @@
 #include <string_view>
 #include <vector>
 
+#include "logicpilot/runtime/method_identity.h"
+
 namespace logicpilot {
 
 enum class PluginRuntimeKind : std::uint8_t {
@@ -26,7 +28,13 @@ struct MethodPluginManifest {
   PluginRuntimeKind runtime_kind{PluginRuntimeKind::kLinked};
   std::string entrypoint;
   std::string artifact;
+  // Optional lowercase/uppercase SHA-256 hex pin for native/WASM artifacts.
+  std::string artifact_sha256;
   std::vector<std::string> dsl_libraries;
+  // Optional metadata; empty preserves manifests produced before family
+  // classification existed.
+  std::string family;
+  std::string formalism;
 };
 
 struct MethodPluginManifestResult {

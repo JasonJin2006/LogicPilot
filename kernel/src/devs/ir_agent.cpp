@@ -3,7 +3,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <thread>
 #include <utility>
@@ -92,6 +94,97 @@ const v2::Node* find_agent_node(const v2::Node* node) {
 }
 
 constexpr float kDt = 1.0F;  // fixed sim-time per tick (v0.1)
+constexpr EventType kAgentLogicalStep = 0xFFFF1001U;
+constexpr std::uint32_t kAgentCheckpointMagic = 0x4C504147U;  // LPAG
+constexpr std::uint8_t kAgentCheckpointVersion = 2;
+
+std::string event_budget_error(std::uint64_t max_events) {
+  return "KR1017: shared scheduler event budget exhausted (" +
+         std::to_string(max_events) + " ticks)";
+}
+
+void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+  for (int byte = 0; byte < 4; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (int byte = 0; byte < 8; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint32_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 4) return false;
+  value = 0;
+  for (int byte = 0; byte < 4; ++byte) {
+    value |= static_cast<std::uint32_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
+bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint64_t& value) {
+  if (offset > bytes.size() || bytes.size() - offset < 8) return false;
+  value = 0;
+  for (int byte = 0; byte < 8; ++byte) {
+    value |= static_cast<std::uint64_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
+void append_string(std::vector<std::uint8_t>& out, const std::string& value) {
+  append_u32(out, static_cast<std::uint32_t>(value.size()));
+  out.insert(out.end(), value.begin(), value.end());
+}
+
+bool read_string(std::span<const std::uint8_t> bytes, std::size_t& offset,
+                 std::string& value) {
+  std::uint32_t size = 0;
+  if (!read_u32(bytes, offset, size) || size > bytes.size() - offset) {
+    return false;
+  }
+  value.assign(reinterpret_cast<const char*>(bytes.data() + offset), size);
+  offset += size;
+  return true;
+}
+
+void append_value(std::vector<std::uint8_t>& out, const IrValue& value) {
+  if (std::holds_alternative<bool>(value)) {
+    out.push_back(0);
+    out.push_back(std::get<bool>(value) ? 1 : 0);
+  } else if (std::holds_alternative<std::int64_t>(value)) {
+    out.push_back(1);
+    append_u64(out, static_cast<std::uint64_t>(std::get<std::int64_t>(value)));
+  } else {
+    out.push_back(2);
+    append_u64(out, std::bit_cast<std::uint64_t>(std::get<double>(value)));
+  }
+}
+
+bool read_value(std::span<const std::uint8_t> bytes, std::size_t& offset,
+                IrValue& value) {
+  if (offset >= bytes.size()) return false;
+  const std::uint8_t type = bytes[offset++];
+  if (type == 0) {
+    if (offset >= bytes.size()) return false;
+    value = bytes[offset++] != 0;
+    return true;
+  }
+  std::uint64_t raw = 0;
+  if (!read_u64(bytes, offset, raw)) return false;
+  if (type == 1) {
+    value = static_cast<std::int64_t>(raw);
+    return true;
+  }
+  if (type == 2) {
+    value = std::bit_cast<double>(raw);
+    return true;
+  }
+  return false;
+}
 
 }  // namespace
 
@@ -106,8 +199,11 @@ struct AgentReplicationModel::Session {
   std::vector<Behavior> behaviors;
   std::int64_t count{0};
   std::uint64_t budget{0};
+  std::uint64_t requested_budget{0};
   std::uint64_t tick{0};
   bool bounce{false};
+  bool budget_exhausted{false};
+  std::string failure_reason;
 };
 
 AgentReplicationModel::AgentReplicationModel(std::vector<std::uint8_t> v2_bytes,
@@ -120,12 +216,16 @@ AgentReplicationModel::~AgentReplicationModel() = default;
 
 ReplicationMetrics AgentReplicationModel::run(const ReplicationConfig& config,
                                               TraceRecorder* trace) {
+  trace_ = trace;
   if (!reset(config)) {
+    trace_ = nullptr;
     return ReplicationMetrics{};
   }
   while (step()) {
   }
-  return finish(trace);
+  ReplicationMetrics result = finish(trace);
+  trace_ = nullptr;
+  return result;
 }
 
 bool AgentReplicationModel::reset(const ReplicationConfig& config) {
@@ -173,7 +273,10 @@ bool AgentReplicationModel::reset(const ReplicationConfig& config) {
     session_.reset();
     return false;
   }
-  session_->budget = config.arrivals;
+  session_->requested_budget = config.arrivals;
+  session_->budget = std::min(config.arrivals, config.max_events);
+  session_->budget_exhausted = false;
+  session_->failure_reason.clear();
   session_->handles.reserve(static_cast<std::size_t>(session_->count));
   last_positions_.clear();
   last_agents_state_.clear();
@@ -205,8 +308,143 @@ bool AgentReplicationModel::reset(const ReplicationConfig& config) {
   return true;
 }
 
+bool AgentReplicationModel::checkpoint_save(
+    std::vector<std::uint8_t>& state) const {
+  if (session_ == nullptr || session_->count < 0 ||
+      static_cast<std::uint64_t>(session_->count) >
+          std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  state.clear();
+  append_u32(state, kAgentCheckpointMagic);
+  state.push_back(kAgentCheckpointVersion);
+  append_u64(state, static_cast<std::uint64_t>(session_->count));
+  append_u64(state, session_->budget);
+  append_u64(state, session_->requested_budget);
+  append_u64(state, session_->tick);
+  state.push_back(session_->bounce ? 1 : 0);
+  state.push_back(session_->budget_exhausted ? 1 : 0);
+  for (std::size_t index = 0; index < session_->handles.size(); ++index) {
+    const AgentHandle handle = session_->handles[index];
+    const Position position = session_->runtime.store().position(handle.slot);
+    const Velocity velocity = session_->runtime.store().velocity(handle.slot);
+    const AgentState agent_state = session_->runtime.store().state(handle.slot);
+    append_u32(state, std::bit_cast<std::uint32_t>(position.x));
+    append_u32(state, std::bit_cast<std::uint32_t>(position.y));
+    append_u32(state, std::bit_cast<std::uint32_t>(velocity.vx));
+    append_u32(state, std::bit_cast<std::uint32_t>(velocity.vy));
+    append_u32(state, agent_state.bits);
+
+    const ModelAgentState& model_state =
+        session_->runtime.registry().get<ModelAgentState>(handle.entity);
+    if (model_state.values.size() > std::numeric_limits<std::uint32_t>::max()) {
+      return false;
+    }
+    append_u32(state, static_cast<std::uint32_t>(model_state.values.size()));
+    std::vector<std::pair<std::string, IrValue>> values(
+        model_state.values.begin(), model_state.values.end());
+    std::sort(values.begin(), values.end(),
+              [](const auto& left, const auto& right) {
+                return left.first < right.first;
+              });
+    for (const auto& [name, value] : values) {
+      append_string(state, name);
+      append_value(state, value);
+    }
+  }
+  return true;
+}
+
+bool AgentReplicationModel::checkpoint_restore(
+    std::span<const std::uint8_t> state) {
+  if (session_ == nullptr) return false;
+  std::size_t offset = 0;
+  std::uint32_t magic = 0;
+  std::uint64_t count = 0;
+  std::uint64_t budget = 0, requested_budget = 0, tick = 0;
+  if (!read_u32(state, offset, magic) || magic != kAgentCheckpointMagic ||
+      offset >= state.size() || state[offset++] != kAgentCheckpointVersion ||
+      !read_u64(state, offset, count) || !read_u64(state, offset, budget) ||
+      !read_u64(state, offset, requested_budget) ||
+      !read_u64(state, offset, tick) || offset >= state.size()) {
+    return false;
+  }
+  if (count > static_cast<std::uint64_t>(
+                   std::numeric_limits<std::int64_t>::max())) {
+    return false;
+  }
+  const bool bounce = state[offset++] != 0;
+  if (offset >= state.size()) return false;
+  const bool budget_exhausted = state[offset++] != 0;
+  struct RestoredAgent {
+    Position position;
+    Velocity velocity;
+    AgentState state;
+    ModelAgentState model_state;
+  };
+  std::vector<RestoredAgent> restored;
+  restored.reserve(static_cast<std::size_t>(count));
+  for (std::uint64_t index = 0; index < count; ++index) {
+    std::uint32_t raw = 0;
+    RestoredAgent agent;
+    if (!read_u32(state, offset, raw)) return false;
+    agent.position.x = std::bit_cast<float>(raw);
+    if (!read_u32(state, offset, raw)) return false;
+    agent.position.y = std::bit_cast<float>(raw);
+    if (!read_u32(state, offset, raw)) return false;
+    agent.velocity.vx = std::bit_cast<float>(raw);
+    if (!read_u32(state, offset, raw)) return false;
+    agent.velocity.vy = std::bit_cast<float>(raw);
+    if (!read_u32(state, offset, agent.state.bits)) return false;
+    std::uint32_t values = 0;
+    if (!read_u32(state, offset, values)) return false;
+    for (std::uint32_t value_index = 0; value_index < values; ++value_index) {
+      std::string name;
+      IrValue value;
+      if (!read_string(state, offset, name) ||
+          !read_value(state, offset, value) ||
+          !agent.model_state.values.emplace(std::move(name), value).second) {
+        return false;
+      }
+    }
+    restored.push_back(std::move(agent));
+  }
+  if (offset != state.size()) return false;
+
+  session_->runtime.clear();
+  session_->handles.clear();
+  session_->count = static_cast<std::int64_t>(count);
+  session_->budget = budget;
+  session_->requested_budget = requested_budget;
+  session_->tick = tick;
+  session_->bounce = bounce;
+  session_->budget_exhausted = budget_exhausted;
+  session_->failure_reason = budget_exhausted
+                                 ? event_budget_error(session_->budget)
+                                 : std::string{};
+  session_->handles.reserve(restored.size());
+  last_positions_.clear();
+  last_agents_state_.clear();
+  for (RestoredAgent& agent : restored) {
+    const AgentHandle handle = session_->runtime.create_agent(
+        agent.position, agent.velocity, agent.state);
+    session_->runtime.registry().emplace<ModelAgentState>(
+        handle.entity, std::move(agent.model_state));
+    session_->handles.push_back(handle);
+    last_positions_.push_back(agent.position);
+    last_agents_state_.push_back(
+        session_->runtime.registry().get<ModelAgentState>(handle.entity));
+  }
+  return true;
+}
+
 bool AgentReplicationModel::step() {
   if (done()) {
+    if (session_ != nullptr && session_->tick >= session_->budget &&
+        session_->budget < session_->requested_budget) {
+      session_->budget_exhausted = true;
+      session_->failure_reason = event_budget_error(session_->budget);
+    }
     return false;
   }
   for (const Session::Behavior& behavior : session_->behaviors) {
@@ -247,11 +485,27 @@ bool AgentReplicationModel::step() {
     });
   }
   ++session_->tick;
+  if (trace_ != nullptr) {
+    trace_->record_logical_step(
+        SimTime::from_ns(static_cast<std::int64_t>(session_->tick) *
+                         1'000'000'000LL),
+        kAgentLogicalStep, session_->tick);
+  }
   return true;
 }
 
 bool AgentReplicationModel::done() const {
-  return session_ == nullptr || session_->tick >= session_->budget;
+  return session_ == nullptr || session_->budget_exhausted ||
+         session_->tick >= session_->budget;
+}
+
+bool AgentReplicationModel::failed() const {
+  return session_ != nullptr && session_->budget_exhausted;
+}
+
+const std::string& AgentReplicationModel::failure_reason() const {
+  static const std::string kNoFailure;
+  return session_ != nullptr ? session_->failure_reason : kNoFailure;
 }
 
 std::uint64_t AgentReplicationModel::tick_count() const {

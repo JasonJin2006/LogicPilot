@@ -11,15 +11,19 @@
 //     pending internal and reschedule it at now + ta()), and the atom is
 //     rescheduled;
 //   * inject() feeds the root's input ports from the outside.
-// DEVS-lite simplifications (documented, deliberate): no elapsed-time
-// carryover, no confluent/imminent tie resolution (equal-time internal
-// events follow scheduler FIFO order), single output phase per internal
-// transition.
+// Legacy DEVS-lite models retain their historical FIFO behavior. If every
+// loaded atom opts into PDEVS semantics, run() switches to a timestamp-batch
+// executor: all imminent atoms at a time are collected, outputs are produced
+// first, and each destination receives one simultaneous input bag. This is
+// the first step toward a fully compiled PDEVS runtime without forcing the
+// existing optimized process engines to migrate in one change.
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
+#include <span>
 #include <string>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "logicpilot/core/scheduler/event.h"
@@ -28,8 +32,12 @@
 #include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
-#include "logicpilot/devs/coupled_model.h"
+#include "logicpilot/devs/checkpoint.h"
+#include "logicpilot/devs/checkpoint_codec.h"
+#include "logicpilot/devs/evidence.h"
 #include "logicpilot/devs/port_event.h"
+#include "logicpilot/devs/partition_plan.h"
+#include "logicpilot/devs/runtime_plan.h"
 
 namespace logicpilot {
 
@@ -54,35 +62,92 @@ public:
   // Returns the number of events dispatched.
   std::size_t run(SimTime horizon);
 
-  [[nodiscard]] std::size_t atom_count() const { return atoms_.size(); }
+  // Conservative PDEVS timestamp-barrier execution. Atom-local output and
+  // transition work may run on fixed partitions, while bag merging, evidence,
+  // and scheduler writes are committed in atom-id order. Legacy DEVS-lite
+  // models and workers <= 1 fall back to run() unchanged.
+  std::size_t run_parallel(SimTime horizon, std::size_t workers);
+
+  [[nodiscard]] DevsPartitionPlan partition_plan(
+      std::size_t requested_partitions) const {
+    std::vector<std::uint32_t> weights;
+    weights.reserve(plan_.atom_count());
+    for (std::size_t atom = 0; atom < plan_.atom_count(); ++atom) {
+      weights.push_back(plan_.atom(atom)->parallel_weight());
+    }
+    return DevsPartitionPlan::compile(plan_, requested_partitions, weights);
+  }
+
+  // Exclusive upper bound for a conservative partition window. A cross
+  // partition message cannot be produced before this time according to the
+  // atom lookahead contracts. With zero lookahead this collapses to the next
+  // cross-partition event, preserving the timestamp-barrier behavior.
+  [[nodiscard]] SimTime conservative_safe_horizon(
+      SimTime requested_horizon, std::size_t requested_partitions) const;
+
+  [[nodiscard]] std::size_t atom_count() const { return plan_.atom_count(); }
+  [[nodiscard]] const DevsRuntimePlan& plan() const { return plan_; }
+  void set_evidence_recorder(DevsEvidenceRecorder* recorder) {
+    evidence_ = recorder;
+  }
+  bool save_checkpoint(DevsCheckpoint& checkpoint,
+                       std::string* error = nullptr) const;
+  bool restore_checkpoint(const DevsCheckpoint& checkpoint,
+                          std::string* error = nullptr);
+  bool save_checkpoint_bytes(std::vector<std::uint8_t>& bytes,
+                             std::string* error = nullptr) const;
+  bool restore_checkpoint_bytes(std::span<const std::uint8_t> bytes,
+                                std::string* error = nullptr);
   [[nodiscard]] std::size_t dispatched_total() const { return dispatched_; }
+  void set_recovery_epoch(std::uint64_t epoch) { recovery_epoch_ = epoch; }
+  [[nodiscard]] std::uint64_t recovery_epoch() const {
+    return recovery_epoch_;
+  }
+  void set_replay_watermarks(std::vector<std::uint64_t> watermarks) {
+    replay_watermarks_ = std::move(watermarks);
+  }
+  [[nodiscard]] const std::vector<std::uint64_t>& replay_watermarks() const {
+    return replay_watermarks_;
+  }
   // Internal-transition budget for the next run(): after `budget` internal
   // firings the executor stops re-arming atoms, so perpetual emitters
   // terminate deterministically (0 = unlimited, the default).
   void set_internal_budget(std::size_t budget) { internal_budget_ = budget; }
   [[nodiscard]] std::size_t internal_transitions() const { return internal_transitions_; }
   [[nodiscard]] bool has_pending_events() const { return !scheduler_.empty(); }
+  [[nodiscard]] bool parallel_supported() const {
+    return all_pdevs_ && all_parallel_safe_;
+  }
   [[nodiscard]] SimulationClock& clock() { return clock_; }
 
 private:
-  struct RouteTarget {
-    std::uint32_t atom;
-    PortId port;
+  struct PendingInput {
+    PortEvent event;
+    std::uint32_t source{kExternalEvidenceSource};
   };
   struct ExtInput {
-    std::uint32_t atom;
+    std::uint32_t atom{0};
     PortEvent event;
+    std::uint32_t source{kExternalEvidenceSource};
   };
 
-  static std::uint64_t route_key(std::uint32_t atom, PortId port) {
-    return (std::uint64_t{atom} << 32) | port;
-  }
-
-  PortId intern_port(const std::string& name);
   void on_event(const Event& event);
   void deliver_internal(std::uint32_t atom);
-  void deliver_external(std::uint32_t atom, const PortEvent& input);
+  void deliver_external(
+      std::uint32_t atom, const PortEvent& input,
+      std::uint32_t source = kExternalEvidenceSource);
+  void cancel_pending(std::uint32_t atom);
   void reschedule(std::uint32_t atom);
+  std::size_t run_pdevs(SimTime horizon);
+  std::size_t run_pdevs_parallel(SimTime horizon,
+                                 const DevsPartitionPlan& partitions);
+  void process_pdevs_round(
+      const std::vector<std::uint32_t>& imminent,
+      std::vector<std::vector<PendingInput>> initial_inputs = {});
+  void process_pdevs_round_parallel(
+      const std::vector<std::uint32_t>& imminent,
+      std::vector<std::vector<PendingInput>> initial_inputs,
+      const DevsPartitionPlan& partitions);
 
   IEventScheduler& scheduler_;
   SimulationClock& clock_;
@@ -90,21 +155,21 @@ private:
   EventHandlerRegistry& handlers_;
   HandlerId dispatch_handler_{0};
 
-  std::vector<AtomicModel*> atoms_;  // borrowed
-  // Coupled-scope (pass-through / root-inject) port names; atom ports are
-  // resolved through each AtomicModel's own declare_port table.
-  std::unordered_map<std::string, PortId> cpl_port_ids_;
-
-  // Flattened routing.
-  std::unordered_map<std::uint64_t, std::vector<RouteTarget>> out_routes_;
-  std::unordered_map<PortId, std::vector<RouteTarget>> root_in_routes_;
+  DevsRuntimePlan plan_;
 
   // Runtime state.
   std::vector<EventToken> pending_;
+  std::vector<SimTime> pending_at_;
+  std::vector<SimTime> last_transition_;
   std::vector<ExtInput> ext_inputs_;
+  DevsEvidenceRecorder* evidence_{nullptr};
+  bool all_pdevs_{false};
+  bool all_parallel_safe_{false};
   std::size_t dispatched_{0};
   std::size_t internal_budget_{0};
   std::size_t internal_transitions_{0};
+  std::uint64_t recovery_epoch_{0};
+  std::vector<std::uint64_t> replay_watermarks_;
 };
 
 }  // namespace logicpilot

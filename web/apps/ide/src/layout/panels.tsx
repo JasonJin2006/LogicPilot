@@ -3,6 +3,7 @@
 // adding a panel (model tree, palette, properties, diagnostics) never
 // touches the layout system. See docs/specs/ide-layout.md.
 
+import { lazy, Suspense } from 'react';
 import type { ComponentType } from 'react';
 import { Boxes, Files, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
@@ -22,6 +23,8 @@ export type PanelId =
   | 'ai'
   | 'console'
   | 'dsl'
+  | 'sysml'
+  | 'sysmlProperties'
   | 'explorer'
   | 'modelInfo'
   | 'palette'
@@ -34,15 +37,40 @@ export interface PanelDef {
   component: ComponentType;
 }
 
+// Load the optional projection editor only when a SysML document is opened;
+// language-specific dependencies stay outside the eager registry graph.
+const LazySysMLWorkspace = lazy(() =>
+  import('../sysml/SysMLWorkspace').then((module) => ({ default: module.SysMLWorkspace })),
+);
+const LazySysMLProperties = lazy(() =>
+  import('../sysml/SysMLPropertiesPanel').then((module) => ({ default: module.SysMLPropertiesPanel })),
+);
+function SysMLWorkspacePanel() {
+  return (
+    <Suspense fallback={<div className="sysml-empty">Loading SysML projection...</div>}>
+      <LazySysMLWorkspace />
+    </Suspense>
+  );
+}
+function SysMLPropertiesPanel() {
+  return (
+    <Suspense fallback={<div className="sysml-properties-empty">Loading SysML properties...</div>}>
+      <LazySysMLProperties />
+    </Suspense>
+  );
+}
+
 export const PANELS: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
   dsl: { title: 'DSL', area: 'center', component: DslEditor },
+  sysml: { title: 'SysML', area: 'center', component: SysMLWorkspacePanel },
   welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // right: selected block properties.
   properties: { title: 'Properties', area: 'right', component: PropertiesPanel },
+  sysmlProperties: { title: 'SysML Properties', area: 'right', component: SysMLPropertiesPanel },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
   // left: side panels switched by the activity bar (VS Code style).

@@ -33,11 +33,13 @@ endif()
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
   src/runtime/method_plugin_manifest.cpp
+  src/runtime/artifact_digest.cpp
   src/runtime/dynamic_method_plugin.cpp
   src/runtime/wasm_method_plugin.cpp
   src/runtime/method_registry.cpp
   src/runtime/runtime_manager.cpp
   src/runtime/simulation_kernel.cpp
+  src/runtime/simulation_session.cpp
 )
 target_include_directories(logicpilot_kernel PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -91,9 +93,16 @@ find_package(fmt CONFIG REQUIRED)
 add_library(logicpilot_phase1b STATIC
   src/agent/soa_agent_store.cpp
   src/devs/executor.cpp
+  src/devs/evidence.cpp
+  src/devs/evidence_store.cpp
+  src/devs/trace_store.cpp
+  src/devs/partition_plan.cpp
+  src/devs/runtime_plan.cpp
   src/devs/ir_atomic.cpp
   src/devs/ir_agent.cpp
   src/devs/continuous.cpp
+  src/devs/checkpoint_journal.cpp
+  src/devs/checkpoint_store.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp

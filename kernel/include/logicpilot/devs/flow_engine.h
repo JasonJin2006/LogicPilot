@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -48,12 +49,30 @@ class FlowEngine : public ReplicationModel {
   // and has range issues near the int64 limits).
   [[nodiscard]] virtual std::int64_t now_ns() const = 0;
 
+  // Incremental runtimes expose scheduler-safety failures separately from
+  // ordinary user cancellation. Older method engines keep these defaults;
+  // event-driven flows override them for KR1017.
+  [[nodiscard]] virtual bool failed() const { return false; }
+  [[nodiscard]] virtual const std::string& failure_reason() const {
+    static const std::string kNoFailure;
+    return kNoFailure;
+  }
+
+
   // Live telemetry for streamed runs (defaults keep non-flow engines on the
   // batch path).
   [[nodiscard]] virtual std::vector<BlockSnapshot> block_snapshots() const {
     return {};
   }
   [[nodiscard]] virtual bool has_pending_events() { return true; }
+
+  // Optional versioned state bundle. Generic ProcessFlowSim remains
+  // unsupported until entity/resource state is covered explicitly.
+  [[nodiscard]] virtual bool checkpoint_save(
+      std::vector<std::uint8_t>&) const { return false; }
+  virtual bool checkpoint_restore(std::span<const std::uint8_t>) {
+    return false;
+  }
 };
 
 }  // namespace logicpilot

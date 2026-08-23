@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <span>
 
 #include "logicpilot/devs/replication.h"
 #include "statechart_replication.h"
@@ -39,8 +40,12 @@ class StatechartNetworkReplicationModel final : public ReplicationModel {
   bool dispatch_message(const std::string& port);
   [[nodiscard]] bool done() const;
   [[nodiscard]] bool has_pending_events();
+  [[nodiscard]] bool failed() const;
+  [[nodiscard]] const std::string& failure_reason() const;
   [[nodiscard]] ReplicationMetrics metrics() const;
   [[nodiscard]] std::vector<StatechartSnapshot> snapshots() const;
+  [[nodiscard]] bool checkpoint_save(std::vector<std::uint8_t>& state) const;
+  bool checkpoint_restore(std::span<const std::uint8_t> state);
 
  private:
   struct Impl;

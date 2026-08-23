@@ -19,6 +19,8 @@
 
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
+#include "logicpilot/devs/checkpoint.h"
+#include "logicpilot/devs/evidence.h"
 #include "logicpilot/devs/atomic_model.h"
 #include "logicpilot/devs/coupled_model.h"
 #include "logicpilot/devs/executor.h"
@@ -43,6 +45,9 @@ class IrAtomicModelV2 final : public AtomicModel {
   void external_transition(SimTime now, PortId port,
                            std::uint64_t payload) override;
   void internal_transition(SimTime now) override;
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override;
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override;
 
   [[nodiscard]] std::optional<IrValue> state(const std::string& name) const;
 
@@ -82,6 +87,11 @@ class DevsReplicationModel final : public ReplicationModel {
   bool reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until);
   bool inject(const std::string& root_port, std::uint64_t payload = 0);
+  void set_evidence_recorder(DevsEvidenceRecorder* recorder);
+  bool save_checkpoint(DevsCheckpoint& checkpoint,
+                       std::string* error = nullptr) const;
+  bool restore_checkpoint(const DevsCheckpoint& checkpoint,
+                          std::string* error = nullptr);
   [[nodiscard]] bool done() const;
   [[nodiscard]] ReplicationMetrics metrics() const;
   [[nodiscard]] std::size_t internal_transitions() const;
@@ -96,6 +106,7 @@ class DevsReplicationModel final : public ReplicationModel {
   std::unique_ptr<BinaryHeapScheduler> scheduler_;
   std::unique_ptr<SimulationClock> clock_;
   std::unique_ptr<DevsExecutor> executor_;
+  DevsEvidenceRecorder* evidence_{nullptr};
   std::size_t internal_budget_{0};
   bool active_{false};
 };

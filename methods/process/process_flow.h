@@ -54,9 +54,14 @@ class ProcessFlowSim : public FlowEngine {
   // Live per-block telemetry for streamed runs.
   [[nodiscard]] std::vector<BlockSnapshot> block_snapshots() const override;
   [[nodiscard]] bool has_pending_events() override;
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const override;
+  bool checkpoint_restore(std::span<const std::uint8_t> state) override;
 
   // Exact current simulation time (nanoseconds) from the engine clock.
   [[nodiscard]] std::int64_t now_ns() const override;
+  [[nodiscard]] bool failed() const override;
+  [[nodiscard]] const std::string& failure_reason() const override;
 
   // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
   // facilities instead of per-engine owned ones.

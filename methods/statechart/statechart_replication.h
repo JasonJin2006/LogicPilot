@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,8 @@ class StatechartReplicationModel final : public ReplicationModel {
   [[nodiscard]] std::uint64_t step_count() const;
   [[nodiscard]] bool done() const;
   [[nodiscard]] bool has_pending_events();
+  [[nodiscard]] bool failed() const;
+  [[nodiscard]] const std::string& failure_reason() const;
   bool dispatch_message(const std::string& port);
   std::vector<std::string> take_emitted_messages();
   // Composite runtimes use this callback to route an emitted message before
@@ -62,6 +65,13 @@ class StatechartReplicationModel final : public ReplicationModel {
   // Final state after the last run (test inspection).
   [[nodiscard]] StateId last_state() const;
   [[nodiscard]] std::size_t last_steps() const;
+
+  // Versioned state bundle for a paused/continued statechart replication.
+  // Pending timers are canceled and rebuilt against the attached scheduler
+  // during restore.
+  [[nodiscard]] bool checkpoint_save(
+      std::vector<std::uint8_t>& state) const;
+  bool checkpoint_restore(std::span<const std::uint8_t> state);
 
  private:
   struct Impl;

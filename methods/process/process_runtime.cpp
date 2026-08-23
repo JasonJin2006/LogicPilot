@@ -356,6 +356,44 @@ void ProcessRuntime::shutdown() {
   ran_ = false;
 }
 
+bool ProcessRuntime::save_method_checkpoint(MethodCheckpoint& checkpoint,
+                                             std::string* error) const {
+  if (replication_ == nullptr || context_ == nullptr) {
+    if (error != nullptr) *error = "process runtime is not active";
+    return false;
+  }
+  checkpoint = MethodCheckpoint{};
+  checkpoint.method = "process";
+  checkpoint.schema_version = 1;
+  checkpoint.now = context_->clock().now();
+  if (!replication_->checkpoint_save(checkpoint.state)) {
+    if (error != nullptr) {
+      *error = "process checkpoint is currently supported only by the "
+               "QueueingFlowSim fast path";
+    }
+    return false;
+  }
+  return true;
+}
+
+bool ProcessRuntime::restore_method_checkpoint(
+    const MethodCheckpoint& checkpoint, std::string* error) {
+  if (replication_ == nullptr || context_ == nullptr ||
+      checkpoint.method != "process" || checkpoint.schema_version != 1) {
+    if (error != nullptr) *error = "unsupported process checkpoint bundle";
+    return false;
+  }
+  context_->clock().reset(checkpoint.now);
+  if (!replication_->checkpoint_restore(checkpoint.state)) {
+    if (error != nullptr) {
+      *error = "process checkpoint is currently supported only by the "
+               "QueueingFlowSim fast path";
+    }
+    return false;
+  }
+  return true;
+}
+
 std::unique_ptr<FlowEngine> ProcessRuntime::lower(
     const ir::v2::Node* model_root, std::string* error) {
   return lower_process_model(model_root, error);
@@ -374,7 +412,9 @@ std::unique_ptr<ReplicationModel> ProcessRuntime::to_replication_model(
 
 void register_process_method() {
   MethodRegistry::instance().register_method(
-      "process", [] { return std::make_unique<ProcessRuntime>(); });
+      "process", [] { return std::make_unique<ProcessRuntime>(); },
+      MethodRegistry::Descriptor{"1", {"1"}, MethodFamily::kDiscreteEvent,
+                                 MethodFormalism::kProcess});
 }
 
 }  // namespace logicpilot

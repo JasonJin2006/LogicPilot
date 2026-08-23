@@ -188,8 +188,9 @@ export function collectModelParts(files: Record<string, string>): string[] {
   return Object.keys(files)
     .filter(
       (path) =>
-        path.startsWith('model/') &&
-        path !== DEFAULT_MODEL_PATH &&
+      path.startsWith('model/') &&
+      path.endsWith('.lp') &&
+      path !== DEFAULT_MODEL_PATH &&
         !path.startsWith(`${MODEL_SCENE_DIR}/`),
     )
     .sort();
@@ -230,6 +231,16 @@ export function mergeCanvasSplit(
   }
   for (const [path, content] of Object.entries(current?.files ?? {})) {
     if (path.startsWith(`${MODEL_SCENE_DIR}/`) && files[path] === undefined) {
+      files[path] = content;
+    }
+    // Preserve non-model artifacts such as SysML projection layout sidecars,
+    // imported architecture snapshots and future editor-owned resources.
+    if (
+      files[path] === undefined &&
+      path !== DEFAULT_MODEL_PATH &&
+      path !== DEFAULT_PRESENTATION_PATH &&
+      !path.startsWith(`${MODEL_SCENE_DIR}/`)
+    ) {
       files[path] = content;
     }
   }

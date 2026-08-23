@@ -8,6 +8,7 @@
 //   * same seed reproduces the identical event trace
 #include <bit>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -19,13 +20,27 @@
 #include "ir_v2_generated.h"
 #include "logicpilot/devs/ir_loader.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/dsl/compile.h"
 #include "logicpilot/runtime/simulation_kernel.h"
+#include "logicpilot/runtime/simulation_session.h"
+#include "logicpilot/runtime/migration_audit_codec.h"
+#include "logicpilot/runtime/migration_audit_store.h"
 #include "register.h"
 
 using namespace logicpilot;
 namespace v2 = logicpilot::ir::v2;
 
 namespace {
+
+IrLoadResult load_pulse_chain_model() {
+  const dsl::CompileResult compiled =
+      dsl::compile_file(LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp");
+  REQUIRE(compiled.ok);
+  IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  return loaded;
+}
 
 flatbuffers::Offset<v2::Distribution> distribution(
     flatbuffers::FlatBufferBuilder& builder, std::uint8_t kind,
@@ -514,6 +529,458 @@ TEST_CASE("simulation kernel: profiler and debug recorder capture the run",
     histogram_total += count;
   }
   REQUIRE(histogram_total == profile.events_dispatched);
+}
+
+TEST_CASE("debug recorder can bound long-run event capture",
+          "[runtime][kernel][profiler][safety]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+
+  DebugRecorder debug{1};
+  SimulationProfile profile;
+  const auto metrics = kernel.run(test_config(), nullptr, &error, nullptr,
+                                  &debug, &profile);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 2);
+  REQUIRE(debug.event_count() == 1);
+  REQUIRE(debug.truncated());
+  REQUIRE(debug.max_events() == 1);
+  REQUIRE(profile.events_dispatched > debug.event_count());
+}
+
+TEST_CASE("simulation kernel forwards optional DEVS evidence recorder",
+          "[runtime][kernel][devs][evidence]") {
+  register_all_methods();
+  const IrLoadResult model = load_pulse_chain_model();
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+
+  ReplicationConfig config = test_config();
+  config.arrivals = 3;
+  DevsEvidenceRecorder evidence;
+  const auto metrics = kernel.run(config, nullptr, &error, nullptr, nullptr,
+                                  nullptr, &evidence);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  REQUIRE(evidence.event_count() > 0);
+  REQUIRE(evidence.hash() != 0);
+  REQUIRE(evidence.records().front().atom_path == "Pulser");
+  REQUIRE(evidence.records().back().atom_path == "Sink");
+}
+
+TEST_CASE("simulation session advances a shared multi-method world in slices",
+          "[runtime][kernel][session]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+  ReplicationConfig config = test_config();
+  DevsEvidenceRecorder evidence;
+  SimulationProfile profile;
+  REQUIRE(session->start(config, &error, nullptr, &evidence, &profile));
+  REQUIRE(session->active());
+  REQUIRE(session->method_count() == 2);
+
+  std::size_t dispatched = 0;
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error, &dispatched));
+  REQUIRE(error.empty());
+  REQUIRE(session->now() <= 1_s);
+  REQUIRE(session->active());
+  REQUIRE(dispatched > 0);
+
+  DevsCheckpoint unsupported;
+  REQUIRE_FALSE(session->save_checkpoint(unsupported, &error));
+  REQUIRE(error.find("requires one checkpointable DEVS runtime") !=
+          std::string::npos);
+  error.clear();
+
+  const auto metrics = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 2);
+  REQUIRE(!session->active());
+  REQUIRE(profile.events_dispatched > 0);
+  REQUIRE(metrics[1].final_value == 2.0);
+}
+
+TEST_CASE("simulation session restores a DEVS checkpoint through the method API",
+          "[runtime][kernel][session][checkpoint]") {
+  register_all_methods();
+  const IrLoadResult model = load_pulse_chain_model();
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+
+  ReplicationConfig config = test_config();
+  config.arrivals = 3;
+  DevsEvidenceRecorder evidence;
+  REQUIRE(session->start(config, &error, nullptr, &evidence));
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+
+  DevsCheckpoint checkpoint;
+  REQUIRE(session->save_checkpoint(checkpoint, &error));
+  REQUIRE(error.empty());
+  evidence.clear();
+  REQUIRE(session->advance(3_s, nullptr, nullptr, &error));
+  const std::uint64_t first_hash = evidence.hash();
+
+  REQUIRE(session->restore_checkpoint(checkpoint, &error));
+  REQUIRE(error.empty());
+  REQUIRE(evidence.event_count() == 0);
+  REQUIRE(session->advance(3_s, nullptr, nullptr, &error));
+  REQUIRE(evidence.hash() == first_hash);
+  REQUIRE(session->finish(nullptr, nullptr, &error).size() == 1);
+}
+
+TEST_CASE("simulation session restores a versioned Statechart bundle",
+          "[runtime][kernel][session][statechart][checkpoint]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_statechart_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+
+  ReplicationConfig config = test_config();
+  config.arrivals = 10;
+  REQUIRE(session->start(config, &error));
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.methods.size() == 1);
+  REQUIRE(checkpoint.methods[0].method == "statechart");
+
+  REQUIRE(session->advance(3_s, nullptr, nullptr, &error));
+  REQUIRE(session->restore_method_checkpoint(checkpoint, &error));
+  REQUIRE(session->now() == 1_s);
+  REQUIRE(session->advance(3_s, nullptr, nullptr, &error));
+  const auto metrics = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(metrics.size() == 1);
+  REQUIRE(metrics[0].final_value == 2.0);
+}
+
+TEST_CASE("simulation session restores a coupled Statechart network bundle",
+          "[runtime][kernel][session][statechart][network][checkpoint]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_statechart_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+  ReplicationConfig config = test_config();
+  config.arrivals = 10;
+  REQUIRE(session->start(config, &error));
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.methods.size() == 1);
+  REQUIRE(checkpoint.methods[0].schema_version == 2);
+  REQUIRE(session->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto first = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+
+  auto replay = kernel.create_session(&error);
+  REQUIRE(replay != nullptr);
+  REQUIRE(replay->start(config, &error));
+  REQUIRE(replay->advance(1_s, nullptr, nullptr, &error));
+  REQUIRE(replay->restore_method_checkpoint(checkpoint, &error));
+  REQUIRE(replay->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto second = replay->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(second.size() == first.size());
+  REQUIRE(second[0].departures == first[0].departures);
+  REQUIRE(second[0].horizon_seconds == first[0].horizon_seconds);
+}
+
+TEST_CASE("simulation session restores mixed process and statechart bundles",
+          "[runtime][kernel][session][multi-method][checkpoint]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  ReplicationConfig config = test_config();
+  config.arrivals = 30;
+
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+  REQUIRE(session->start(config, &error));
+  session->variables().set("shared_inventory", std::int64_t{17});
+  const MessageId message_id = session->messages().publish(
+      MessageEnvelope{"urn:test:shared", 1, "application/octet-stream",
+                      "process", {1, 2, 3}});
+  REQUIRE(message_id != kInvalidMessageId);
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.methods.size() == 2);
+  REQUIRE(checkpoint.model_fingerprint != 0);
+  std::vector<std::uint8_t> checkpoint_archive;
+  REQUIRE(session->save_method_checkpoint_bytes(checkpoint_archive, &error));
+  REQUIRE(session->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto first = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+
+  auto replay = kernel.create_session(&error);
+  REQUIRE(replay != nullptr);
+  REQUIRE(replay->start(config, &error));
+  REQUIRE(replay->variables().get("shared_inventory") == nullptr);
+  REQUIRE(replay->advance(1_s, nullptr, nullptr, &error));
+  std::vector<std::uint8_t> corrupted_archive = checkpoint_archive;
+  corrupted_archive.back() ^= 0x01U;
+  REQUIRE_FALSE(replay->restore_method_checkpoint_bytes(corrupted_archive, &error));
+  SimulationSessionCheckpoint wrong_model = checkpoint;
+  wrong_model.model_fingerprint += 1;
+  const auto wrong_model_archive =
+      SimulationSessionCheckpointCodec::encode(wrong_model);
+  REQUIRE_FALSE(replay->restore_method_checkpoint_bytes(wrong_model_archive,
+                                                        &error));
+  SessionCheckpointMigrationRegistry session_migrations;
+  REQUIRE(session_migrations.register_migration(
+      wrong_model.model_fingerprint, checkpoint.model_fingerprint,
+      [](const SimulationSessionCheckpoint& source, std::uint64_t target_fp,
+         SimulationSessionCheckpoint& target, std::string* migration_error) {
+        if (migration_error != nullptr) migration_error->clear();
+        target = source;
+        target.model_fingerprint = target_fp;
+        return true;
+      }));
+  REQUIRE(replay->restore_method_checkpoint(wrong_model, session_migrations,
+                                            &error));
+  REQUIRE(session_migrations.audit_log().size() == 1);
+  REQUIRE(session_migrations.audit_log()[0].success);
+  REQUIRE(session_migrations.audit_log()[0].source_fingerprint ==
+          wrong_model.model_fingerprint);
+  REQUIRE(session_migrations.audit_log()[0].target_fingerprint ==
+          checkpoint.model_fingerprint);
+
+  // Corrupt the second method after the first method's bundle remains valid.
+  // Restore must be transactional: the process method and shared world must
+  // return to the pre-attempt state when the Statechart method rejects.
+  replay->variables().set("shared_inventory", std::int64_t{99});
+  const SimTime before_failed_restore = replay->now();
+  SimulationSessionCheckpoint partially_invalid = checkpoint;
+  REQUIRE(partially_invalid.methods.size() == 2);
+  REQUIRE_FALSE(partially_invalid.methods[1].state.empty());
+  partially_invalid.methods[1].state[0] ^= 0xFFU;
+  REQUIRE_FALSE(replay->restore_method_checkpoint(partially_invalid, &error));
+  REQUIRE(error.find("rolled back") != std::string::npos);
+  REQUIRE(replay->now() == before_failed_restore);
+  const auto* rolled_back_inventory = replay->variables().get("shared_inventory");
+  REQUIRE(rolled_back_inventory != nullptr);
+  REQUIRE(std::get<std::int64_t>(*rolled_back_inventory) == 99);
+
+  const auto audit_archive = MigrationAuditCodec::encode(
+      session_migrations.audit_log());
+  std::vector<SessionMigrationAuditEntry> decoded_audit;
+  REQUIRE(MigrationAuditCodec::decode(audit_archive, decoded_audit, &error));
+  REQUIRE(decoded_audit.size() == 1);
+  REQUIRE(decoded_audit[0].success);
+  const auto audit_path = std::filesystem::temp_directory_path() /
+                          "logicpilot_migration_audit_test.bin";
+  std::error_code audit_filesystem_error;
+  std::filesystem::remove(audit_path, audit_filesystem_error);
+  FileMigrationAuditStore audit_store{audit_path};
+  REQUIRE(audit_store.save(session_migrations.audit_log(), &error));
+  std::vector<SessionMigrationAuditEntry> loaded_audit;
+  REQUIRE(audit_store.load(loaded_audit, &error));
+  REQUIRE(loaded_audit.size() == 1);
+  REQUIRE(loaded_audit[0].target_fingerprint == checkpoint.model_fingerprint);
+  std::filesystem::remove(audit_path, audit_filesystem_error);
+  SessionCheckpointMigrationRegistry missing_migration;
+  SimulationSessionCheckpoint ignored;
+  REQUIRE_FALSE(missing_migration.migrate(
+      wrong_model, checkpoint.model_fingerprint + 1, ignored, &error));
+  REQUIRE(missing_migration.audit_log().size() == 1);
+  REQUIRE_FALSE(missing_migration.audit_log()[0].success);
+  SimulationSessionCheckpoint wrong_schema = checkpoint;
+  wrong_schema.methods[0].schema_version += 1;
+  const auto wrong_schema_archive =
+      SimulationSessionCheckpointCodec::encode(wrong_schema);
+  REQUIRE_FALSE(replay->restore_method_checkpoint_bytes(wrong_schema_archive,
+                                                         &error));
+  MethodCheckpointMigrationRegistry migrations;
+  REQUIRE(migrations.register_migration(
+      "process", 2, 1,
+      [](const MethodCheckpoint& source, MethodCheckpoint& target,
+         std::string* migration_error) {
+        if (migration_error != nullptr) migration_error->clear();
+        target = source;
+        target.schema_version = 1;
+        return true;
+      }));
+  MethodCheckpointMigrationRegistry chain_migrations;
+  REQUIRE(chain_migrations.register_migration(
+      "process", 3, 2,
+      [](const MethodCheckpoint& source, MethodCheckpoint& target,
+         std::string*) {
+        target = source;
+        target.schema_version = 2;
+        return true;
+      }));
+  REQUIRE(chain_migrations.register_migration(
+      "process", 2, 1,
+      [](const MethodCheckpoint& source, MethodCheckpoint& target,
+         std::string*) {
+        target = source;
+        target.schema_version = 1;
+        return true;
+      }));
+  MethodCheckpoint chain_source = wrong_schema.methods[0];
+  chain_source.schema_version = 3;
+  MethodCheckpoint chain_target;
+  REQUIRE(chain_migrations.migrate(chain_source, 1, chain_target, &error));
+  REQUIRE(chain_target.schema_version == 1);
+  REQUIRE(replay->restore_method_checkpoint(wrong_schema, migrations, &error));
+  REQUIRE(replay->restore_method_checkpoint_bytes(checkpoint_archive, &error));
+  const auto* restored_inventory =
+      replay->variables().get("shared_inventory");
+  REQUIRE(restored_inventory != nullptr);
+  REQUIRE(std::get<std::int64_t>(*restored_inventory) == 17);
+  REQUIRE(replay->messages().size() == 1);
+  REQUIRE(replay->messages().get(message_id)->type_uri == "urn:test:shared");
+  REQUIRE(replay->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto second = replay->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(second.size() == first.size());
+  for (std::size_t index = 0; index < first.size(); ++index) {
+    REQUIRE(second[index].departures == first[index].departures);
+    REQUIRE(second[index].horizon_seconds == first[index].horizon_seconds);
+  }
+}
+
+TEST_CASE("variable snapshot migration plan renames and converts values",
+          "[runtime][checkpoint][migration][variables]") {
+  VariableSnapshot source;
+  source.name = "old_inventory";
+  source.value = std::int64_t{17};
+  VariableSnapshotMigrationPlan plan;
+  REQUIRE(plan.rename("old_inventory", "inventory"));
+  REQUIRE(plan.convert(
+      "inventory",
+      [](const VariableValue& value, VariableValue& target,
+         std::string* error) {
+        if (!std::holds_alternative<std::int64_t>(value)) {
+          if (error != nullptr) *error = "expected integer inventory";
+          return false;
+        }
+        target = static_cast<double>(std::get<std::int64_t>(value));
+        return true;
+      }));
+  std::vector<VariableSnapshot> migrated;
+  const std::vector<VariableSnapshot> sources{source};
+  REQUIRE(plan.apply(sources, migrated));
+  REQUIRE(migrated.size() == 1);
+  REQUIRE(migrated[0].name == "inventory");
+  REQUIRE(std::holds_alternative<double>(*migrated[0].value));
+  REQUIRE(std::get<double>(*migrated[0].value) == 17.0);
+
+  VariableSnapshot collision = source;
+  collision.name = "inventory";
+  std::vector<VariableSnapshot> collided;
+  const std::vector<VariableSnapshot> collision_sources{source, collision};
+  REQUIRE_FALSE(plan.apply(collision_sources, collided));
+}
+
+TEST_CASE("message snapshot migration plan renames and converts envelopes",
+          "[runtime][checkpoint][migration][messages]") {
+  MessageEnvelope source{"urn:legacy:item", 1, "application/octet-stream",
+                         "process", {1, 2}};
+  MessageSnapshotMigrationPlan plan;
+  REQUIRE(plan.rename_type("urn:legacy:item", "urn:v2:item"));
+  REQUIRE(plan.convert_type(
+      "urn:v2:item",
+      [](MessageEnvelope& message, std::string* error) {
+        if (message.schema_version != 1) {
+          if (error != nullptr) *error = "unexpected message schema";
+          return false;
+        }
+        message.schema_version = 2;
+        message.data.push_back(3);
+        return true;
+      }));
+  const std::vector<MessageEnvelope> sources{source};
+  std::vector<MessageEnvelope> migrated;
+  REQUIRE(plan.apply(sources, migrated));
+  REQUIRE(migrated.size() == 1);
+  REQUIRE(migrated[0].type_uri == "urn:v2:item");
+  REQUIRE(migrated[0].schema_version == 2);
+  REQUIRE(migrated[0].data == std::vector<std::uint8_t>{1, 2, 3});
+}
+
+TEST_CASE("simulation session restores the Process queueing fast path",
+          "[runtime][kernel][session][process][checkpoint]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_flat_mm1_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+
+  ReplicationConfig config = test_config();
+  config.arrivals = 100;
+  REQUIRE(session->start(config, &error));
+  REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
+
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.methods.size() == 1);
+  REQUIRE(checkpoint.methods[0].method == "process");
+
+  REQUIRE(session->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto first = session->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(first.size() == 1);
+
+  auto replay = kernel.create_session(&error);
+  REQUIRE(replay != nullptr);
+  REQUIRE(replay->start(config, &error));
+  REQUIRE(replay->advance(1_s, nullptr, nullptr, &error));
+  REQUIRE(replay->restore_method_checkpoint(checkpoint, &error));
+  REQUIRE(replay->advance(SimTime::infinity(), nullptr, nullptr, &error));
+  const auto second = replay->finish(nullptr, nullptr, &error);
+  REQUIRE(error.empty());
+  REQUIRE(second.size() == 1);
+  REQUIRE(second[0].departures == first[0].departures);
+  REQUIRE(second[0].horizon_seconds == first[0].horizon_seconds);
+  REQUIRE(second[0].mean_wait == first[0].mean_wait);
+}
+
+TEST_CASE("simulation session keeps the event budget cumulative across advances",
+          "[runtime][kernel][session][safety]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_flat_mm1_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+
+  ReplicationConfig config = test_config();
+  config.arrivals = 20;
+  config.max_events = 1;
+  REQUIRE(session->start(config, &error));
+  REQUIRE_FALSE(session->advance(SimTime::infinity(), nullptr, nullptr,
+                                 &error));
+  REQUIRE(error.find("KR1017") != std::string::npos);
+
+  SimulationSessionCheckpoint checkpoint;
+  REQUIRE(session->save_method_checkpoint(checkpoint, &error));
+  REQUIRE(checkpoint.dispatched_events == 1);
 }
 
 TEST_CASE("simulation kernel: structured diagnostics on failures",

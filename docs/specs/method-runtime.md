@@ -1,10 +1,20 @@
-# 方法运行时架构
+# 可执行模型运行时架构
 
-状态：核心契约与动态宿主已落地；Process、Statechart、DEVS、Agent、系统动力学以及插件运行时均可接入共享事件队列。
+状态：核心契约与动态宿主已落地；作为历史兼容，接口名仍为 `SimulationMethod`。
+
+> 范围说明（2026-08-23）：本文只规范**可执行模型的 runtime adapter**，不再定义
+> LogicPilot 的完整建模分类。SysML/C4 文档类型不整体实现本接口；SysML v2 中
+> 可执行的 behavior、calculation、analysis/verification case 通过显式 execution
+> target 选择解释器、lowering backend 或外部工具。Workbench 文档/编辑器/AI
+> 总架构与迁移见
+> [`../workbench-architecture-plan.md`](../workbench-architecture-plan.md)。
 
 ## 1. 设计目标
 
-LogicPilot 的核心不是某一种仿真算法，而是一个“建模方法操作系统”：内核只负责仿真时间、事件排序、生命周期、状态交换和诊断；Process、Agent、系统动力学、Statechart、Petri 网以及未来的 FEM/PDE/FMU 都是可注册的方法运行时。
+本子系统的核心不是某一种仿真算法：内核只负责仿真时间、事件排序、可执行生命周期、
+状态交换和诊断。DEVS/PDEVS、连续求解器、Process 优化执行器或外部 FMU 等通过
+runtime adapter 接入；Process/Agent/Statechart 等建模视角与组件库可以通过 lowering
+选择这些 adapter，但不因此与形式语义、求解器或执行策略处在同一分类层。
 
 ```text
 DSL / library packages
@@ -23,9 +33,10 @@ RuntimeManager ---- shared clock / scheduler / variables / messages
         +-- third-party runtime
 ```
 
-核心依赖方向只能是“方法依赖内核”。内核不得包含 Queue、Service、Stock、Agent 等方法专属概念，也不得按方法名称写 `switch`。
+核心依赖方向只能是“adapter 依赖内核”。内核不得包含 Queue、Service、Stock、
+Agent、SysML 等专属概念，也不得按注册名称写 `switch`。
 
-## 2. IR 与方法身份
+## 2. IR 与运行时身份
 
 每个可执行节点通过以下三元组声明语义：
 
@@ -33,17 +44,23 @@ RuntimeManager ---- shared clock / scheduler / variables / messages
 SemanticsRef { library, block, version }
 ```
 
-- `library` 是运行时注册键，例如 `process`、`statechart`、`petri`。
+- `library` 在现行 IR 中仍兼作运行时解析键，例如 `process`、`statechart`、`petri`；
+  这是兼容边界，不是最终本体分类。后续将建模 library、formalism 与 runtime backend
+  分离，旧值通过 lowering/registry 映射继续有效。
 - `block` 是库内组件，例如 `service`、`place`。
 - `version` 是该组件采用的语义契约版本，不是 LogicPilot 内核版本。
 
 DSL 注册表必须把 `.lplib` 的库名和版本原样传到 IR。不同库可以声明相同短块名；此时模型必须写成 `library::block`。未限定且有歧义时编译器返回 `LP2013`，同一库内重复声明仍以 `LP2012` 拒绝。
 
-通用结构使用 `Node` 的 state、params、ports、children 与 couplings。方法专属的大型或异构数据使用 `ExtensionPayload {type_uri, schema_version, encoding, data}`。因此新增一种方法通常只需新 DSL 库、新运行时和新扩展 schema，无需修改核心 IR。
+现行仿真 IR 的通用结构使用 `Node` 的 state、params、ports、children 与 couplings；
+runtime 专属的大型或异构数据使用
+`ExtensionPayload {type_uri, schema_version, encoding, data}`。这不是 Workbench 所有
+文档的万能模型：SysML、PDE、网格、外部仓库等可拥有自己的 document schema，并仅在
+需要执行或联合仿真时 lowering 到仿真 composition/runtime contract。
 
 ## 3. 运行时契约
 
-所有方法实现 `SimulationMethod`：
+所有可执行 runtime adapter 当前实现 `SimulationMethod`：
 
 ```cpp
 class SimulationMethod {
@@ -84,11 +101,15 @@ method -> factory + runtimeVersion + supported semanticsVersions
 - DSL 库文件；
 - 运行时种类与入口点。
 
-运行时种类支持 `linked`、`c-abi` 与 `wasm`。清单解析完成后，宿主装载 artifact、校验方法身份与 ABI，再把持有模块生命周期的 factory 注册到统一 `MethodRegistry`。清单只描述发现信息，不把 C++ 对象布局冒充稳定 ABI。
+运行时种类支持 `linked`、`c-abi` 与 `wasm`。清单解析完成后，宿主装载 artifact、校验方法身份与 ABI，再把持有模块生命周期的 factory 注册到统一 `MethodRegistry`。runtime 可选 `artifactSha256` 用于加载前完整性 pin；它不是数字签名或信任链。清单只描述发现信息，不把 C++ 对象布局冒充稳定 ABI。
 
 ### 5.1 原生 C ABI v1
 
 `method_plugin_abi.h` 是纯 C、追加式的版本化函数表。边界只传递固定宽度标量、FlatBuffer IR 字节和宿主回调，不传 STL、异常、RTTI 或 C++ 对象布局。插件可通过宿主表读取仿真时钟、调度/取消事件、读写 double 共享变量，并发布带类型 URI 的消息。插件必须导出清单 `entrypoint` 指定的 `lp_method_plugin_entrypoint_v1` 函数。
+
+`lp_method_host_v1` 的追加字段 `register_message_type` 允许插件在初始化时注册
+自己的 URI/schema/encoding 契约；宿主在字段由 `struct_size` 表示可用时提供该服务。
+旧版插件看不到追加字段，仍按原有 ABI 工作。
 
 ### 5.2 WASM ABI v1
 
@@ -122,9 +143,18 @@ WASM v1 采用确定性事件计划：初始化后由模块给出初始事件，
 方法插件的权限边界。SD 运行时声明 `sd::<state>` 后按 `sd` 写入；C ABI host 对
 插件自身首次写入的变量建立同名 owner 声明，仍禁止其他 method 借用其 writer 权限。
 
-调度器的 `Event.payload` 继续保持 64 位，以保证热路径紧凑。复杂载荷时它保存 `MessageId`，指向一次 replication 内的 `MessageStore`；方法可用类型 URI 和版本校验后再解码。初始化或回滚时，变量与消息都会清空，不跨 replication 泄漏。
+调度器的 `Event.payload` 继续保持 64 位，以保证热路径紧凑。复杂载荷时它保存 `MessageId`，指向一次 replication 内的 `MessageStore`；方法可用类型 URI 和版本校验后再解码。`MessageStore::register_type` 可为 URI 注册 schema/version 与 encoding 契约，已注册类型在 publish 和 checkpoint restore 时拒绝版本或编码漂移；未注册类型保留给旧插件的兼容扩展点。宿主通过 `ReplicationConfig.max_events` 为共享队列设置事件风暴上限，超限返回 KR1017。初始化或回滚时，变量与消息都会清空，不跨 replication 泄漏。
 
-端口层的 `Port.event_type` 描述静态消息类型，`MessageEnvelope.type_uri` 描述运行时实际载荷。后续应增加端口连接的编译期类型兼容检查。
+端口层的 `Port.event_type` 描述静态消息类型，`MessageEnvelope.type_uri` 描述运行时实际载荷。
+编译器现在对已声明的 coupling 两端执行 LP5009 类型兼容检查：普通类型必须精确相等，
+空类型（历史无类型端口）以及显式 `any`/`message` 接收端作为通配契约；不兼容连接在
+进入 IR 和运行时之前即被拒绝。运行时仍应在消息解码处校验 `type_uri` 与 schema 版本，
+因为动态插件消息不能仅依赖 DSL 静态类型。
+
+DEVS 原子也保留这项类型元数据：IR v2 `Port.event_type` 会进入
+`AtomicModel::port_type()`，`DevsRuntimePlan` 在展开层级 coupling 后再次检查每条
+最终 output→input 路由。这样手工构造的 IR、原生插件或绕过 DSL 的模型不能以未知消息
+类型加载成功；缺少类型的旧原子仍按兼容模式运行。
 
 ## 7. 新方法接入检查表
 
@@ -153,6 +183,7 @@ cascade 保护。该边界已有 kernel coupling/determinism 验收覆盖。
 - 为插件包增加发布者签名、信任策略与细粒度能力授权；当前 C ABI 插件与宿主同进程，只有 WASM 插件具备内存隔离和计算配额。
 - 为 `VariableStore` 增加跨方法变量的声明式单位、所有权与读写权限 ✅；为端口增加
   类型兼容检查。
-- 定义连续时间方法的误差控制、零交叉与离散事件回滚协议。
+- 连续时间方法已增加确定性的自适应 RK4 误差控制、scheduler 步长预检和可选零
+  交叉定位观测/observer hook；零交叉的精确离散调度与离散事件回滚协议仍是后续边界。
 
 这些是超越 AnyLogic 扩展性的关键工程，不应靠 Java 式任意继承来替代明确、可版本化、可诊断的契约。

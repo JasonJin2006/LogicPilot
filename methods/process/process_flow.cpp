@@ -19,6 +19,7 @@
 #include <cstring>
 #include <map>
 #include <memory>
+#include <limits>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -54,6 +55,7 @@ constexpr EventType kRepairEvent = 23;
 constexpr EventType kTimeoutEvent = 24;
 constexpr EventType kPoolFailureEvent = 25;
 constexpr EventType kPoolRepairEvent = 26;
+constexpr std::uint8_t kProcessCheckpointVersion = 2;
 
 // ResourcePool spec: capacity plus the milestone-1 busy-time failure law.
 struct PoolSpec {
@@ -72,6 +74,11 @@ struct SpatialGraph {
 
 std::int64_t to_ns(double seconds) {
   return static_cast<std::int64_t>(std::llround(seconds * 1e9));
+}
+
+std::string event_budget_error(std::uint64_t max_events) {
+  return "KR1017: shared scheduler event budget exhausted (" +
+         std::to_string(max_events) + " events)";
 }
 
 void fail(std::string* error, const std::string& message) {
@@ -436,6 +443,12 @@ std::unique_ptr<ProcessBlock> make_block(
 // blocks (ProcessBlock implementations) express their own behavior.
 class Engine final : public BlockContext {
  public:
+  struct PendingEvent {
+    SimTime at{SimTime::infinity()};
+    EventType type{0};
+    std::uint64_t payload{0};
+    bool valid{false};
+  };
   Engine(const std::vector<const Node*>& stages,
          const std::vector<const ir::v2::Coupling*>& couplings,
          const Node* root, std::string* error) {
@@ -604,6 +617,432 @@ class Engine final : public BlockContext {
 
   [[nodiscard]] bool valid() const { return valid_; }
 
+  [[nodiscard]] bool checkpoint_supported() const {
+    if (!valid_) {
+      return false;
+    }
+    for (const auto& block : blocks_) {
+      if (block->kind() != "source" && block->kind() != "queue" &&
+          block->kind() != "wait" &&
+          block->kind() != "delay" && block->kind() != "sink" &&
+          block->kind() != "enter" && block->kind() != "exit" &&
+          block->kind() != "service" && block->kind() != "batch" &&
+          block->kind() != "unbatch" && block->kind() != "seize" &&
+          block->kind() != "release" && block->kind() != "combine" &&
+          block->kind() != "match" && block->kind() != "split" &&
+          block->kind() != "selectOutput" &&
+          block->kind() != "selectOutput5" &&
+          block->kind() != "selectOutputIn" &&
+          block->kind() != "selectOutputOut" && block->kind() != "count" &&
+          block->kind() != "hold" && block->kind() != "timeMeasureStart" &&
+          block->kind() != "timeMeasureEnd" &&
+          block->kind() != "assembler" && block->kind() != "moveTo") {
+        return false;
+      }
+      if (block->kind() == "service") {
+        const auto* service = dynamic_cast<const ServiceBlock*>(block.get());
+        if (service == nullptr || !service->checkpoint_eligible()) return false;
+      } else if (block->kind() == "seize") {
+        const auto* seize = dynamic_cast<const SeizeBlock*>(block.get());
+        if (seize == nullptr || !seize->checkpoint_eligible()) return false;
+      } else if (block->kind() == "assembler") {
+        if (dynamic_cast<const AssemblerBlock*>(block.get()) == nullptr) {
+          return false;
+        }
+      } else if (!block->pool_resource().empty()) {
+        return false;
+      }
+    }
+    for (const auto& [resource, token] : pool_failure_tokens_) {
+      (void)token;
+      if (!pool_failure_events_.contains(resource)) return false;
+    }
+    for (const auto& [resource, token] : pool_repair_tokens_) {
+      (void)token;
+      if (!pool_repair_events_.contains(resource)) return false;
+    }
+    for (const auto& [key, event] : block_event_events_) {
+      (void)event;
+      if (key.first != kTimeoutEvent) return false;
+    }
+    return true;
+  }
+
+  bool checkpoint_save(std::vector<std::uint8_t>& state) const {
+    using namespace checkpoint_detail;
+    if (!checkpoint_supported() || blocks_.size() >
+                                      std::numeric_limits<std::uint32_t>::max()) {
+      return false;
+    }
+    state.clear();
+    append_u32(state, 0x4C504746U);  // LPGF
+    state.push_back(kProcessCheckpointVersion);
+    append_u64(state, config_.seed);
+    append_u64(state, config_.arrivals);
+    append_u64(state, config_.warmup_arrivals);
+    append_u64(state, config_.max_events);
+    append_u64(state, static_cast<std::uint64_t>(clock().now().as_ns()));
+    const std::uint64_t* rng = engine_.state();
+    for (int index = 0; index < 4; ++index) append_u64(state, rng[index]);
+    append_u64(state, emitted_);
+    append_u64(state, arrival_events_);
+    append_u64(state, departures_);
+    append_u64(state, dispatched_total_);
+    state.push_back(budget_exhausted_ ? 1 : 0);
+    append_u64(state, static_cast<std::uint64_t>(in_system_));
+    append_u64(state, static_cast<std::uint64_t>(last_ns_));
+    append_u64(state, static_cast<std::uint64_t>(area_system_ns_));
+    append_u64(state, std::bit_cast<std::uint64_t>(sojourn_sum_));
+    append_u64(state, sojourn_count_);
+    append_u64(state, std::bit_cast<std::uint64_t>(wait_sum_));
+    append_u64(state, wait_count_);
+    append_u64(state, std::bit_cast<std::uint64_t>(measure_sum_));
+    append_u64(state, measure_count_);
+    append_u64(state, warmup_);
+    append_u64(state, servers_total_);
+    append_u64(state, current_);
+    state.push_back(valid_ ? 1 : 0);
+    state.push_back(manual_injection_ ? 1 : 0);
+
+    append_u32(state, static_cast<std::uint32_t>(blocks_.size()));
+    for (const auto& block : blocks_) {
+      append_string(state, block->kind());
+      append_string(state, block->name());
+      std::vector<std::uint8_t> block_state;
+      if (!block->checkpoint_save(block_state) ||
+          block_state.size() > std::numeric_limits<std::uint32_t>::max()) {
+        return false;
+      }
+      append_u32(state, static_cast<std::uint32_t>(block_state.size()));
+      state.insert(state.end(), block_state.begin(), block_state.end());
+    }
+    append_u32(state, static_cast<std::uint32_t>(pool_order_.size()));
+    const auto append_pool_event = [&](const PendingEvent* event) {
+      const bool valid = event != nullptr && event->valid;
+      state.push_back(valid ? 1 : 0);
+      append_u64(state, valid ? static_cast<std::uint64_t>(event->at.as_ns()) : 0);
+      append_u64(state, valid ? event->payload : 0);
+    };
+    for (const std::string& resource : pool_order_) {
+      append_string(state, resource);
+      append_u64(state, static_cast<std::uint64_t>(available_.at(resource)));
+      append_u64(state, static_cast<std::uint64_t>(pool_busy_.at(resource)));
+      append_u64(state, static_cast<std::uint64_t>(pool_down_units_.contains(resource)
+                                                         ? pool_down_units_.at(resource)
+                                                         : 0));
+      append_u64(state, static_cast<std::uint64_t>(pool_gen_.at(resource)));
+      state.push_back(pool_down_.contains(resource) && pool_down_.at(resource) ? 1 : 0);
+      append_u64(state, std::bit_cast<std::uint64_t>(
+                              pool_down_area_.contains(resource)
+                                  ? pool_down_area_.at(resource)
+                                  : 0.0));
+      append_u64(state, std::bit_cast<std::uint64_t>(
+                              pool_busy_area_.contains(resource)
+                                  ? pool_busy_area_.at(resource)
+                                  : 0.0));
+      const auto failure = pool_failure_events_.find(resource);
+      const auto repair = pool_repair_events_.find(resource);
+      append_pool_event(failure == pool_failure_events_.end() ? nullptr
+                                                               : &failure->second);
+      append_pool_event(repair == pool_repair_events_.end() ? nullptr
+                                                            : &repair->second);
+    }
+    append_u32(state, static_cast<std::uint32_t>(source_arrival_events_.size()));
+    for (const std::uint64_t value : source_arrival_events_) append_u64(state, value);
+    append_u32(state, static_cast<std::uint32_t>(source_exhausted_.size()));
+    for (const bool value : source_exhausted_) state.push_back(value ? 1 : 0);
+    append_u32(state, static_cast<std::uint32_t>(source_arrival_at_.size()));
+    for (std::size_t index = 0; index < source_arrival_at_.size(); ++index) {
+      const bool valid = source_arrival_tokens_[index].valid();
+      state.push_back(valid ? 1 : 0);
+      append_u64(state, static_cast<std::uint64_t>(source_arrival_at_[index].as_ns()));
+    }
+    append_u32(state, static_cast<std::uint32_t>(depart_events_.size()));
+    std::vector<std::pair<std::uint64_t, PendingEvent>> sorted_depart(
+        depart_events_.begin(), depart_events_.end());
+    std::sort(sorted_depart.begin(), sorted_depart.end(),
+              [](const auto& left, const auto& right) {
+                return left.first < right.first;
+              });
+    for (const auto& [payload, event] : sorted_depart) {
+      append_u64(state, payload);
+      append_u64(state, static_cast<std::uint64_t>(event.at.as_ns()));
+      append_u32(state, event.type);
+      append_u64(state, event.payload);
+    }
+    append_u32(state, static_cast<std::uint32_t>(block_event_events_.size()));
+    for (const auto& [key, event] : block_event_events_) {
+      append_u32(state, key.first);
+      append_u64(state, key.second);
+      append_u64(state, static_cast<std::uint64_t>(event.at.as_ns()));
+    }
+    append_u32(state, static_cast<std::uint32_t>(work_.size()));
+    for (const std::size_t value : work_) append_u64(state, value);
+    return true;
+  }
+
+  bool checkpoint_restore(std::span<const std::uint8_t> state) {
+    using namespace checkpoint_detail;
+    std::size_t offset = 0;
+    std::uint32_t magic = 0;
+    if (!read_u32(state, offset, magic) || magic != 0x4C504746U ||
+        offset >= state.size() ||
+        state[offset++] != kProcessCheckpointVersion) return false;
+    std::uint64_t seed = 0, arrivals = 0, warmup = 0, max_events = 0,
+                  checkpoint_now = 0;
+    if (!read_u64(state, offset, seed) || !read_u64(state, offset, arrivals) ||
+        !read_u64(state, offset, warmup) ||
+        !read_u64(state, offset, max_events) ||
+        !read_u64(state, offset, checkpoint_now)) return false;
+    std::uint64_t rng[4]{};
+    for (std::uint64_t& value : rng) if (!read_u64(state, offset, value)) return false;
+    std::uint64_t emitted = 0, arrival_events = 0, departures = 0,
+                  dispatched_total = 0, raw = 0;
+    if (!read_u64(state, offset, emitted) || !read_u64(state, offset, arrival_events) ||
+        !read_u64(state, offset, departures) ||
+        !read_u64(state, offset, dispatched_total) || offset >= state.size())
+      return false;
+    const bool budget_exhausted = state[offset++] != 0;
+    if (!read_u64(state, offset, raw)) return false;
+    const std::int64_t in_system = static_cast<std::int64_t>(raw);
+    if (!read_u64(state, offset, raw)) return false;
+    const std::int64_t last_ns = static_cast<std::int64_t>(raw);
+    if (!read_u64(state, offset, raw)) return false;
+    const std::int64_t area_system = static_cast<std::int64_t>(raw);
+    std::uint64_t sojourn_count = 0, wait_count = 0, measure_count = 0;
+    const auto read_double = [&](double& value) {
+      std::uint64_t bits = 0;
+      if (!read_u64(state, offset, bits)) return false;
+      value = std::bit_cast<double>(bits);
+      return std::isfinite(value);
+    };
+    double sojourn_sum = 0.0, wait_sum = 0.0, measure_sum = 0.0;
+    if (!read_double(sojourn_sum) || !read_u64(state, offset, sojourn_count) ||
+        !read_double(wait_sum) || !read_u64(state, offset, wait_count) ||
+        !read_double(measure_sum) || !read_u64(state, offset, measure_count)) return false;
+    std::uint64_t warmup_value = 0, servers_total = 0, current = 0;
+    if (!read_u64(state, offset, warmup_value) || !read_u64(state, offset, servers_total) ||
+        !read_u64(state, offset, current) || offset + 2 > state.size()) return false;
+    const bool valid = state[offset++] != 0;
+    const bool manual = state[offset++] != 0;
+    std::uint32_t block_count = 0;
+    if (!read_count(state, offset, block_count) || block_count != blocks_.size()) return false;
+    std::vector<std::vector<std::uint8_t>> block_states;
+    block_states.reserve(block_count);
+    for (std::uint32_t index = 0; index < block_count; ++index) {
+      std::string kind, name;
+      std::uint32_t size = 0;
+      if (!read_string(state, offset, kind) || !read_string(state, offset, name) ||
+          !read_u32(state, offset, size) || size > state.size() - offset ||
+          kind != blocks_[index]->kind() || name != blocks_[index]->name()) return false;
+      block_states.emplace_back(state.begin() + offset,
+                                state.begin() + offset + size);
+      offset += size;
+    }
+    struct RestoredPool {
+      std::string name;
+      std::int64_t available{0};
+      std::int64_t busy{0};
+      std::int64_t down_units{0};
+      std::int64_t generation{0};
+      bool down{false};
+      double down_area{0.0};
+      double busy_area{0.0};
+      PendingEvent failure;
+      PendingEvent repair;
+      bool failure_valid{false};
+      bool repair_valid{false};
+    };
+    std::uint32_t pool_count = 0;
+    if (!read_count(state, offset, pool_count) ||
+        pool_count != pool_order_.size()) return false;
+    std::vector<RestoredPool> restored_pools;
+    restored_pools.reserve(pool_count);
+    const auto read_pool_event = [&](PendingEvent& event) {
+      if (offset >= state.size()) return false;
+      const bool valid = state[offset++] != 0;
+      std::uint64_t at_raw = 0;
+      if (!read_u64(state, offset, at_raw) || !read_u64(state, offset, event.payload))
+        return false;
+      event.at = SimTime::from_ns(static_cast<std::int64_t>(at_raw));
+      event.valid = valid;
+      event.type = 0;
+      return true;
+    };
+    for (std::uint32_t index = 0; index < pool_count; ++index) {
+      RestoredPool pool;
+      std::uint64_t raw_pool = 0;
+      if (!read_string(state, offset, pool.name) ||
+          pool.name != pool_order_[index] || !read_u64(state, offset, raw_pool)) return false;
+      pool.available = static_cast<std::int64_t>(raw_pool);
+      if (!read_u64(state, offset, raw_pool)) return false;
+      pool.busy = static_cast<std::int64_t>(raw_pool);
+      if (!read_u64(state, offset, raw_pool)) return false;
+      pool.down_units = static_cast<std::int64_t>(raw_pool);
+      if (!read_u64(state, offset, raw_pool)) return false;
+      pool.generation = static_cast<std::int64_t>(raw_pool);
+      if (offset >= state.size()) return false;
+      pool.down = state[offset++] != 0;
+      if (!read_u64(state, offset, raw_pool)) return false;
+      pool.down_area = std::bit_cast<double>(raw_pool);
+      if (!read_u64(state, offset, raw_pool)) return false;
+      pool.busy_area = std::bit_cast<double>(raw_pool);
+      if (!std::isfinite(pool.down_area) || !std::isfinite(pool.busy_area) ||
+          !read_pool_event(pool.failure) || !read_pool_event(pool.repair)) return false;
+      pool.failure_valid = pool.failure.valid;
+      pool.repair_valid = pool.repair.valid;
+      restored_pools.push_back(std::move(pool));
+    }
+    std::uint32_t count = 0;
+    if (!read_count(state, offset, count) || count != blocks_.size()) return false;
+    std::vector<std::uint64_t> source_events(count);
+    for (std::uint64_t& value : source_events) if (!read_u64(state, offset, value)) return false;
+    if (!read_count(state, offset, count) || count != blocks_.size()) return false;
+    std::vector<bool> exhausted(count);
+    for (std::size_t index = 0; index < exhausted.size(); ++index) {
+      if (offset >= state.size()) return false;
+      exhausted[index] = state[offset++] != 0;
+    }
+    if (!read_count(state, offset, count) || count != blocks_.size()) return false;
+    std::vector<SimTime> source_at(count, SimTime::infinity());
+    std::vector<bool> source_valid(count);
+    for (std::size_t index = 0; index < count; ++index) {
+      if (offset >= state.size()) return false;
+      source_valid[index] = state[offset++] != 0;
+      if (!read_u64(state, offset, raw)) return false;
+      source_at[index] = SimTime::from_ns(static_cast<std::int64_t>(raw));
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::vector<std::pair<std::uint64_t, PendingEvent>> depart_events;
+    depart_events.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+      std::uint64_t payload = 0;
+      PendingEvent event;
+      if (!read_u64(state, offset, payload) ||
+          !read_u64(state, offset, raw) || !read_u32(state, offset, event.type) ||
+          !read_u64(state, offset, event.payload) ||
+          event.type != kDepartEvent) return false;
+      event.at = SimTime::from_ns(static_cast<std::int64_t>(raw));
+      event.valid = true;
+      depart_events.push_back({payload, event});
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::vector<std::pair<std::pair<EventType, std::uint64_t>, PendingEvent>>
+        block_events;
+    block_events.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+      EventType type = 0;
+      std::uint64_t payload = 0, at_raw = 0;
+      if (!read_u32(state, offset, type) || !read_u64(state, offset, payload) ||
+          !read_u64(state, offset, at_raw) || type != kTimeoutEvent) return false;
+      block_events.push_back({
+          {type, payload},
+          PendingEvent{SimTime::from_ns(static_cast<std::int64_t>(at_raw)),
+                       type, payload, true}});
+    }
+    if (!read_count(state, offset, count)) return false;
+    std::vector<std::size_t> work;
+    work.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+      if (!read_u64(state, offset, raw) || raw >= blocks_.size()) return false;
+      work.push_back(static_cast<std::size_t>(raw));
+    }
+    if (offset != state.size() || !checkpoint_supported()) return false;
+
+    cancel_all_pending_events();
+    for (std::size_t index = 0; index < blocks_.size(); ++index) {
+      if (!blocks_[index]->checkpoint_restore(block_states[index])) return false;
+    }
+    config_ = ReplicationConfig{seed, arrivals, warmup, max_events};
+    clock().reset(SimTime::from_ns(static_cast<std::int64_t>(checkpoint_now)));
+    engine_.restore_state(rng);
+    available_.clear();
+    pool_busy_.clear();
+    pool_down_.clear();
+    pool_down_units_.clear();
+    pool_gen_.clear();
+    pool_down_area_.clear();
+    pool_busy_area_.clear();
+    pool_failure_events_.clear();
+    pool_repair_events_.clear();
+    pool_failure_tokens_.clear();
+    pool_repair_tokens_.clear();
+    for (const RestoredPool& pool : restored_pools) {
+      available_[pool.name] = pool.available;
+      pool_busy_[pool.name] = pool.busy;
+      pool_down_[pool.name] = pool.down;
+      pool_down_units_[pool.name] = pool.down_units;
+      pool_gen_[pool.name] = pool.generation;
+      pool_down_area_[pool.name] = pool.down_area;
+      pool_busy_area_[pool.name] = pool.busy_area;
+      if (pool.failure_valid) {
+        PendingEvent event = pool.failure;
+        event.type = kPoolFailureEvent;
+        pool_failure_events_[pool.name] = event;
+      }
+      if (pool.repair_valid) {
+        PendingEvent event = pool.repair;
+        event.type = kPoolRepairEvent;
+        pool_repair_events_[pool.name] = event;
+      }
+    }
+    emitted_ = emitted;
+    arrival_events_ = arrival_events;
+    departures_ = departures;
+    dispatched_total_ = dispatched_total;
+    budget_exhausted_ = budget_exhausted;
+    failure_reason_ = budget_exhausted ? event_budget_error(config_.max_events)
+                                       : std::string{};
+    in_system_ = in_system;
+    last_ns_ = last_ns;
+    area_system_ns_ = area_system;
+    sojourn_sum_ = sojourn_sum;
+    sojourn_count_ = sojourn_count;
+    wait_sum_ = wait_sum;
+    wait_count_ = wait_count;
+    measure_sum_ = measure_sum;
+    measure_count_ = measure_count;
+    warmup_ = warmup_value;
+    servers_total_ = servers_total;
+    current_ = static_cast<std::size_t>(current);
+    valid_ = valid;
+    manual_injection_ = manual;
+    source_arrival_events_ = std::move(source_events);
+    source_exhausted_ = std::move(exhausted);
+    source_arrival_at_ = source_at;
+    source_arrival_tokens_.assign(blocks_.size(), EventToken{});
+    work_ = std::move(work);
+    depart_events_.clear();
+    depart_tokens_.clear();
+    for (const auto& [payload, event] : depart_events) {
+      depart_events_[payload] = event;
+      depart_tokens_[payload] = scheduler().schedule(
+          event.at, event.type, depart_handler_, event.payload);
+    }
+    block_event_events_.clear();
+    block_event_tokens_.clear();
+    for (const auto& [key, event] : block_events) {
+      block_event_events_[key] = event;
+      block_event_tokens_[key] = scheduler().schedule(
+          event.at, event.type, timeout_handler_, event.payload);
+    }
+    for (const auto& [resource, event] : pool_failure_events_) {
+      pool_failure_tokens_[resource] = scheduler().schedule(
+          event.at, kPoolFailureEvent, pool_failure_handler_, event.payload);
+    }
+    for (const auto& [resource, event] : pool_repair_events_) {
+      pool_repair_tokens_[resource] = scheduler().schedule(
+          event.at, kPoolRepairEvent, pool_repair_handler_, event.payload);
+    }
+    for (std::size_t index = 0; index < source_arrival_at_.size(); ++index) {
+      if (source_valid[index]) {
+        source_arrival_tokens_[index] = scheduler().schedule(
+            source_arrival_at_[index], kArriveEvent, arrive_handler_, index);
+      }
+    }
+    return true;
+  }
+
   std::vector<BlockSnapshot> block_snapshots() const {
     std::vector<BlockSnapshot> out;
     out.reserve(blocks_.size());
@@ -707,9 +1146,13 @@ class Engine final : public BlockContext {
       // replay old tokens against the new scheduler and cancel unrelated
       // events whose scheduler-local id/generation happens to collide.
       depart_tokens_.clear();
+      depart_events_.clear();
       block_event_tokens_.clear();
+      block_event_events_.clear();
       pool_failure_tokens_.clear();
       pool_repair_tokens_.clear();
+      pool_failure_events_.clear();
+      pool_repair_events_.clear();
       external_ = &context;
       handlers_owner_ = nullptr;  // re-register against the new registry
     }
@@ -738,11 +1181,17 @@ class Engine final : public BlockContext {
     emitted_ = 0;
     arrival_events_ = 0;
     depart_tokens_.clear();
+    depart_events_.clear();
     block_event_tokens_.clear();
+    block_event_events_.clear();
     source_arrival_events_.assign(blocks_.size(), 0);
     source_arrival_tokens_.assign(blocks_.size(), EventToken{});
+    source_arrival_at_.assign(blocks_.size(), SimTime::infinity());
     source_exhausted_.assign(blocks_.size(), false);
     departures_ = 0;
+    dispatched_total_ = 0;
+    budget_exhausted_ = false;
+    failure_reason_.clear();
     in_system_ = 0;
     last_ns_ = 0;
     area_system_ns_ = 0;
@@ -770,6 +1219,8 @@ class Engine final : public BlockContext {
     }
     pool_failure_tokens_.clear();
     pool_repair_tokens_.clear();
+    pool_failure_events_.clear();
+    pool_repair_events_.clear();
     pool_down_area_.clear();
     pool_busy_area_.clear();
     pool_order_.clear();
@@ -847,7 +1298,9 @@ class Engine final : public BlockContext {
   }
 
   std::size_t advance(SimTime until, TraceRecorder* trace) {
-    return run_until(scheduler(), clock(), until, [&](const Event& event) {
+    const std::size_t dispatched = run_until_bounded(
+        scheduler(), clock(), until, config_.max_events, dispatched_total_,
+        budget_exhausted_, [&](const Event& event) {
       if (trace != nullptr) {
         trace->record(event.at, event.type, event.payload);
       }
@@ -862,6 +1315,16 @@ class Engine final : public BlockContext {
       // this, so an in-flight repair always completes.
       cancel_tail_maintenance();
     });
+    if (budget_exhausted_) {
+      failure_reason_ = event_budget_error(config_.max_events);
+    }
+    return dispatched;
+  }
+
+  [[nodiscard]] bool failed() const { return budget_exhausted_; }
+
+  [[nodiscard]] const std::string& failure_reason() const {
+    return failure_reason_;
   }
 
   // Cancel pending pool failure/repair and block-level failure/repair/
@@ -1051,12 +1514,13 @@ class Engine final : public BlockContext {
   }
 
   void schedule_depart(std::int64_t hold_ns, std::uint64_t entity_id) override {
+    const std::uint64_t payload = self_payload(current_, entity_id);
+    const SimTime at = clock().now() + SimTime::from_ns(hold_ns);
     const EventToken token =
-        scheduler().schedule(clock().now() + SimTime::from_ns(hold_ns),
-                             kDepartEvent, depart_handler_,
-                             self_payload(current_, entity_id));
+        scheduler().schedule(at, kDepartEvent, depart_handler_, payload);
     if (token.valid()) {
-      depart_tokens_[self_payload(current_, entity_id)] = token;
+      depart_tokens_[payload] = token;
+      depart_events_[payload] = PendingEvent{at, kDepartEvent, payload, true};
     }
   }
 
@@ -1067,6 +1531,7 @@ class Engine final : public BlockContext {
     }
     scheduler().cancel(it->second);
     depart_tokens_.erase(it);
+    depart_events_.erase(self_payload(current_, entity_id));
   }
 
   void schedule_failure(std::int64_t hold_ns,
@@ -1102,12 +1567,14 @@ class Engine final : public BlockContext {
     if (existing != block_event_tokens_.end() && existing->second.valid()) {
       scheduler().cancel(existing->second);
     }
+    const SimTime at = clock().now() + SimTime::from_ns(hold_ns);
     block_event_tokens_[key] = scheduler().schedule(
-        clock().now() + SimTime::from_ns(hold_ns), type,
+        at, type,
         type == kFailureEvent ? failure_handler_
         : type == kRepairEvent  ? repair_handler_
                                 : timeout_handler_,
         payload);
+    block_event_events_[key] = PendingEvent{at, type, payload, true};
   }
 
   void cancel_block_event(EventType type, std::uint64_t payload) {
@@ -1117,6 +1584,7 @@ class Engine final : public BlockContext {
       scheduler().cancel(it->second);
     }
     block_event_tokens_.erase(key);
+    block_event_events_.erase(key);
   }
 
   void leave_system(const Entity& entity) override {
@@ -1272,6 +1740,7 @@ class Engine final : public BlockContext {
     // a stale event from a previous generation can never clear a newer
     // token).
     source_arrival_tokens_[source] = EventToken{};
+    source_arrival_at_[source] = SimTime::infinity();
     accumulate_areas(clock().now().as_ns());
     const std::int64_t source_limit = blocks_[source]->max_arrival_events();
     if (arrival_events_ >= config_.arrivals) {
@@ -1353,6 +1822,7 @@ class Engine final : public BlockContext {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
     depart_tokens_.erase(event.payload);
+    depart_events_.erase(event.payload);
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->complete(*this, entity_id);
@@ -1363,6 +1833,7 @@ class Engine final : public BlockContext {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
     block_event_tokens_.erase(std::make_pair(kFailureEvent, event.payload));
+    block_event_events_.erase(std::make_pair(kFailureEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_failure(*this, entity_id);
@@ -1373,6 +1844,7 @@ class Engine final : public BlockContext {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
     block_event_tokens_.erase(std::make_pair(kRepairEvent, event.payload));
+    block_event_events_.erase(std::make_pair(kRepairEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_repair(*this, entity_id);
@@ -1383,6 +1855,7 @@ class Engine final : public BlockContext {
     const std::size_t block = static_cast<std::size_t>(event.payload >> 32);
     const std::uint64_t entity_id = event.payload & 0xFFFFFFFFu;
     block_event_tokens_.erase(std::make_pair(kTimeoutEvent, event.payload));
+    block_event_events_.erase(std::make_pair(kTimeoutEvent, event.payload));
     accumulate_areas(clock().now().as_ns());
     current_ = block;
     blocks_[block]->on_timeout(*this, entity_id);
@@ -1453,6 +1926,7 @@ class Engine final : public BlockContext {
   void schedule_source_arrival(std::size_t source, SimTime at) {
     source_arrival_tokens_[source] =
         scheduler().schedule(at, kArriveEvent, arrive_handler_, source);
+    source_arrival_at_[source] = at;
   }
 
   void cancel_source_arrival(std::size_t source) {
@@ -1460,7 +1934,7 @@ class Engine final : public BlockContext {
     if (token.valid()) {
       scheduler().cancel(token);
     }
-    source_arrival_tokens_[source] = EventToken{};
+    source_arrival_at_[source] = SimTime::infinity();
   }
 
   // Cancel every pending source arrival (used when the global arrivals cap
@@ -1511,6 +1985,7 @@ class Engine final : public BlockContext {
       scheduler().cancel(token->second);
     }
     pool_failure_tokens_.erase(resource);
+    pool_failure_events_.erase(resource);
   }
 
   void cancel_pool_repair(const std::string& resource) {
@@ -1519,6 +1994,7 @@ class Engine final : public BlockContext {
       scheduler().cancel(token->second);
     }
     pool_repair_tokens_.erase(resource);
+    pool_repair_events_.erase(resource);
   }
 
   void schedule_pool_failure(const std::string& resource) {
@@ -1531,9 +2007,12 @@ class Engine final : public BlockContext {
     const std::uint64_t payload =
         (static_cast<std::uint64_t>(index->second) << 32) |
         (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu);
+    const SimTime at =
+        clock().now() + SimTime::from_ns(to_ns(ttf(engine_)));
     pool_failure_tokens_[resource] = scheduler().schedule(
-        clock().now() + SimTime::from_ns(to_ns(ttf(engine_))),
-        kPoolFailureEvent, pool_failure_handler_, payload);
+        at, kPoolFailureEvent, pool_failure_handler_, payload);
+    pool_failure_events_[resource] = PendingEvent{at, kPoolFailureEvent,
+                                                  payload, true};
   }
 
   void on_pool_failure(const Event& event) {
@@ -1578,15 +2057,19 @@ class Engine final : public BlockContext {
       const std::uint64_t repair_payload =
           (static_cast<std::uint64_t>(index) << 32) |
           (static_cast<std::uint64_t>(pool_gen_[resource]) & 0xFFFFFFFFu);
+      const SimTime at =
+          clock().now() + SimTime::from_ns(to_ns(repair(engine_)));
       pool_repair_tokens_[resource] = scheduler().schedule(
-          clock().now() + SimTime::from_ns(to_ns(repair(engine_))),
-          kPoolRepairEvent, pool_repair_handler_, repair_payload);
+          at, kPoolRepairEvent, pool_repair_handler_, repair_payload);
+      pool_repair_events_[resource] = PendingEvent{at, kPoolRepairEvent,
+                                                   repair_payload, true};
     }
     // The event was consumed: drop the token so a later cancel does not
     // chase an already-fired event. Stale events above return WITHOUT
     // touching the token map, so a handler from an old generation can
     // never erase the current generation's pending token.
     pool_failure_tokens_.erase(resource);
+    pool_failure_events_.erase(resource);
   }
 
   void on_pool_repair(const Event& event) {
@@ -1626,6 +2109,7 @@ class Engine final : public BlockContext {
       pump(waiter);  // handler wake-up: the worklist needs a pump run
     }
     pool_repair_tokens_.erase(resource);
+    pool_repair_events_.erase(resource);
   }
 
   static std::uint64_t self_payload(std::size_t block,
@@ -1744,9 +2228,12 @@ class Engine final : public BlockContext {
   // scheduler before the cancellation.
   std::unordered_map<std::string, EventToken> pool_failure_tokens_;
   std::unordered_map<std::string, EventToken> pool_repair_tokens_;
+  std::unordered_map<std::string, PendingEvent> pool_failure_events_;
+  std::unordered_map<std::string, PendingEvent> pool_repair_events_;
   std::unordered_map<std::string, double> pool_down_area_;
   std::unordered_map<std::string, double> pool_busy_area_;
   std::unordered_map<std::uint64_t, EventToken> depart_tokens_;
+  std::unordered_map<std::uint64_t, PendingEvent> depart_events_;
   std::vector<std::string> pool_order_;
   std::unordered_map<std::string, std::size_t> pool_index_;
   std::vector<std::size_t> resource_waiters_;
@@ -1771,6 +2258,7 @@ class Engine final : public BlockContext {
   // finite gap). business_finished() uses both: no pending arrival and no
   // source that could still fire one, together with in_system == 0.
   std::vector<EventToken> source_arrival_tokens_;
+  std::vector<SimTime> source_arrival_at_;
   std::vector<bool> source_exhausted_;
   bool manual_injection_{false};
   // Pending block-level failure/repair/timeout events, keyed by
@@ -1780,7 +2268,12 @@ class Engine final : public BlockContext {
   // engine-owned event.
   std::map<std::pair<EventType, std::uint64_t>, EventToken>
       block_event_tokens_;
+  std::map<std::pair<EventType, std::uint64_t>, PendingEvent>
+      block_event_events_;
   std::uint64_t departures_{0};
+  std::uint64_t dispatched_total_{0};
+  bool budget_exhausted_{false};
+  std::string failure_reason_;
   std::int64_t in_system_{0};
   std::int64_t last_ns_{0};
   std::int64_t area_system_ns_{0};
@@ -1869,6 +2362,25 @@ bool ProcessFlowSim::has_pending_events() {
     return false;
   }
   return impl_->engine.has_pending_events();
+}
+
+bool ProcessFlowSim::failed() const {
+  return impl_ != nullptr && impl_->engine.failed();
+}
+
+const std::string& ProcessFlowSim::failure_reason() const {
+  static const std::string kNoFailure;
+  return impl_ != nullptr ? impl_->engine.failure_reason() : kNoFailure;
+}
+
+bool ProcessFlowSim::checkpoint_save(
+    std::vector<std::uint8_t>& state) const {
+  return impl_ != nullptr && impl_->engine.checkpoint_save(state);
+}
+
+bool ProcessFlowSim::checkpoint_restore(
+    std::span<const std::uint8_t> state) {
+  return impl_ != nullptr && impl_->engine.checkpoint_restore(state);
 }
 
 bool ProcessFlowSim::inject(const std::string& source, std::uint64_t count) {

@@ -20,6 +20,8 @@
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/devs/replication.h"
+#include "logicpilot/devs/trace_codec.h"
+#include "logicpilot/devs/trace_store.h"
 #include "logicpilot/runtime/simulation_kernel.h"
 #include "ir_v2_generated.h"
 #include "register.h"
@@ -75,7 +77,8 @@ void print_usage() {
       "  --lambda <x>               arrival rate for built-in:mm1 (default 0.8)\n"
       "  --mu <x>                   service rate for built-in:mm1 (default 1.0)\n"
       "  --confidence <x>           CI confidence level (default 0.95)\n"
-      "  --trajectory <path>        write continuous-model trajectory JSON\n");
+      "  --trajectory <path>        write continuous-model trajectory JSON\n"
+      "  --logical-trace <path>     write one-rep LPLT logical-step archive\n");
 }
 
 std::uint64_t replication_seed(std::uint64_t run_seed, std::uint64_t rep) {
@@ -353,6 +356,12 @@ int run_kernel_model(const IrModelFile& file, RunOptions options,
                "error: multi-method SimulationKernel runs currently require --threads 1\n");
     return 2;
   }
+  if (!options.logical_trace.empty()) {
+    fmt::print(stderr,
+               "error: --logical-trace is not supported for mixed-method runs; "
+               "use a single Agent/Continuous model\n");
+    return 2;
+  }
   if (options.precision_reps) {
     fmt::print(stderr,
                "error: precision replication is not yet defined for mixed-method metrics; "
@@ -613,6 +622,12 @@ int run_command(std::span<const std::string> args) {
         return 2;
       }
       options.trajectory = value;
+    } else if (arg == "--logical-trace") {
+      if (!need_value()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      options.logical_trace = value;
     } else {
       fmt::print(stderr, "error: unknown option {}\n", arg);
       print_usage();
@@ -860,9 +875,21 @@ int run_command(std::span<const std::string> args) {
   std::vector<ReplicationMetrics> results;
   const std::uint64_t run_limit =
       options.precision_reps ? options.max_reps : options.reps;
+  if (!options.logical_trace.empty() && run_limit != 1) {
+    fmt::print(stderr,
+               "error: --logical-trace requires exactly one replication\n");
+    return 2;
+  }
   results.reserve(run_limit);
+  TraceRecorder logical_trace;
+  TraceRecorder* logical_trace_ptr = nullptr;
+  if (!options.logical_trace.empty()) {
+    logical_trace.enable_logical_step_records(LogicalTraceCodec::kMaxRecords);
+    logical_trace_ptr = &logical_trace;
+  }
   const bool sequential =
-      options.threads <= 1 || !options.trajectory.empty() || options.precision_reps;
+      options.threads <= 1 || !options.trajectory.empty() ||
+      !options.logical_trace.empty() || options.precision_reps;
   if (sequential) {
     // Sequential path reuses the primary `model` so per-run state (e.g. the
     // continuous-model trajectory) stays visible after the loop.
@@ -871,7 +898,7 @@ int run_command(std::span<const std::string> args) {
       config.seed = replication_seed(options.seed, rep);
       config.arrivals = options.arrivals;
       config.warmup_arrivals = options.warmup;
-      ReplicationMetrics metrics = model->run(config, nullptr);
+      ReplicationMetrics metrics = model->run(config, logical_trace_ptr);
       if (const auto* continuous =
               dynamic_cast<const ContinuousReplicationModel*>(model.get());
           continuous != nullptr && continuous->failed()) {
@@ -952,6 +979,18 @@ int run_command(std::span<const std::string> args) {
   print_row("utilization", summary.utilization, theory.rho, is_builtin_mm1);
   print_row("availability", summary.availability, 0.0, false);
   print_row("final_value", summary.final_value, 0.0, false);
+
+  if (!options.logical_trace.empty()) {
+    FileLogicalTraceArchiveStore store{options.logical_trace};
+    std::string trace_error;
+    if (!store.save(logical_trace, &trace_error)) {
+      fmt::print(stderr, "error: cannot write logical trace '{}': {}\n",
+                 options.logical_trace, trace_error);
+      return 1;
+    }
+    fmt::print("logical trace written to '{}' ({} steps)\n",
+               options.logical_trace, logical_trace.logical_step_count());
+  }
 
   if (!options.results_dir.empty()) {
     const int status =

@@ -5,8 +5,16 @@
 
 #include "logicpilot/core/scheduler/run.h"
 #include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/simulation_session.h"
 
 namespace logicpilot {
+
+std::vector<ReplicationMetrics> SimulationKernel::run(
+    const ReplicationConfig& config, TraceRecorder* trace, std::string* error,
+    std::vector<RuntimeDiagnostic>* diagnostics, DebugRecorder* debug,
+    SimulationProfile* profile) {
+  return run(config, trace, error, diagnostics, debug, profile, nullptr);
+}
 
 bool SimulationKernel::load(const IrModelFile& model, std::string* error) {
   if (model.v2_root == nullptr) {
@@ -31,11 +39,23 @@ bool SimulationKernel::load(const IrModelFile& model, std::string* error) {
   return true;
 }
 
+std::unique_ptr<SimulationSession> SimulationKernel::create_session(
+    std::string* error) const {
+  if (bytes_.empty() || verified_.v2_root == nullptr) {
+    if (error != nullptr) {
+      *error = "SimulationKernel has no valid loaded model";
+    }
+    return nullptr;
+  }
+  return std::make_unique<SimulationSession>(bytes_);
+}
+
 std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& config,
                                                       TraceRecorder* trace, std::string* error,
                                                       std::vector<RuntimeDiagnostic>* diagnostics,
                                                       DebugRecorder* debug,
-                                                      SimulationProfile* profile) {
+                                                      SimulationProfile* profile,
+                                                      DevsEvidenceRecorder* evidence) {
   const auto fail = [&](const std::string& code, const std::string& message) {
     if (diagnostics != nullptr) {
       diagnostics->push_back(RuntimeDiagnostic{RuntimeSeverity::kError, code, message});
@@ -67,7 +87,8 @@ std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& c
   handlers_.clear();
   variables_.clear();
   clock_.reset();
-  RuntimeManager manager{clock_, *scheduler_, handlers_, variables_, config};
+  RuntimeManager manager{clock_, *scheduler_, handlers_, variables_, config,
+                         evidence};
 
   MethodRegistry& registry = MethodRegistry::instance();
   for (const MethodRequirement& requirement : requirements) {
@@ -108,7 +129,16 @@ std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& c
   }
 
   if (all_shared_event_queue) {
-    run_until(*scheduler_, clock_, SimTime::infinity(), [&](const Event& event) {
+    std::uint64_t dispatched = 0;
+    while (!scheduler_->empty()) {
+      if (config.max_events == 0 || dispatched >= config.max_events) {
+        manager.shutdown();
+        return fail("KR1017", "shared scheduler event budget exhausted (" +
+                                  std::to_string(config.max_events) + " events)");
+      }
+      Event event{};
+      if (!scheduler_->try_pop_next(event)) break;
+      clock_.advance_to(event.at);
       if (trace != nullptr) {
         trace->record(event.at, event.type, event.payload);
       }
@@ -119,7 +149,8 @@ std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& c
         profiler.record_event(event);
       }
       handlers_.dispatch(event);
-    });
+      ++dispatched;
+    }
   } else {
     // Honest compatibility path for one legacy runtime. This makes native
     // DEVS/Agent/SD executable through SimulationKernel without pretending

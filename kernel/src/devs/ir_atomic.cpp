@@ -1,8 +1,11 @@
 // IR atomic interpreter + DEVS replication adapter implementation.
 #include "logicpilot/devs/ir_atomic.h"
 
+#include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -51,13 +54,54 @@ bool v2_node_is(const v2::Node* node, const char* block) {
          std::strcmp(node->semantics()->block()->c_str(), block) == 0;
 }
 
+constexpr std::uint32_t kIrCheckpointMagic = 0x4C504331U;  // LPC1
+constexpr std::uint8_t kIrCheckpointVersion = 1;
+
+void append_u32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+  for (int byte = 0; byte < 4; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+void append_u64(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (int byte = 0; byte < 8; ++byte) {
+    out.push_back(static_cast<std::uint8_t>(value >> (byte * 8)));
+  }
+}
+
+bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint32_t& value) {
+  if (bytes.size() - offset < 4) {
+    return false;
+  }
+  value = 0;
+  for (int byte = 0; byte < 4; ++byte) {
+    value |= static_cast<std::uint32_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
+bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset,
+              std::uint64_t& value) {
+  if (bytes.size() - offset < 8) {
+    return false;
+  }
+  value = 0;
+  for (int byte = 0; byte < 8; ++byte) {
+    value |= static_cast<std::uint64_t>(bytes[offset++]) << (byte * 8);
+  }
+  return true;
+}
+
 }  // namespace
 
 IrAtomicModelV2::IrAtomicModelV2(const v2::Node& spec, Xoshiro256PlusPlus& engine) {
   if (spec.ports() != nullptr) {
     for (const v2::Port* port : *spec.ports()) {
       if (port->name() != nullptr) {
-        declare_port(port->name()->str());
+        declare_port(port->name()->str(),
+                     port->event_type() == nullptr ? std::string{}
+                                                    : port->event_type()->str());
       }
     }
   }
@@ -130,6 +174,106 @@ void IrAtomicModelV2::internal_transition(SimTime) {
       emit(out_port_);
     }
   }
+}
+
+bool IrAtomicModelV2::checkpoint_save(
+    std::vector<std::uint8_t>& bytes) const {
+  bytes.clear();
+  append_u32(bytes, kIrCheckpointMagic);
+  bytes.push_back(kIrCheckpointVersion);
+  if (state_.size() > std::numeric_limits<std::uint32_t>::max()) {
+    return false;
+  }
+  append_u32(bytes, static_cast<std::uint32_t>(state_.size()));
+
+  std::vector<std::pair<std::string, IrValue>> entries(state_.begin(),
+                                                        state_.end());
+  std::sort(entries.begin(), entries.end(),
+            [](const auto& left, const auto& right) {
+              return left.first < right.first;
+            });
+  for (const auto& [name, value] : entries) {
+    if (name.size() > std::numeric_limits<std::uint32_t>::max()) {
+      return false;
+    }
+    append_u32(bytes, static_cast<std::uint32_t>(name.size()));
+    bytes.insert(bytes.end(), name.begin(), name.end());
+    if (std::holds_alternative<bool>(value)) {
+      bytes.push_back(0);
+      bytes.push_back(std::get<bool>(value) ? 1 : 0);
+    } else if (std::holds_alternative<std::int64_t>(value)) {
+      bytes.push_back(1);
+      append_u64(bytes, static_cast<std::uint64_t>(std::get<std::int64_t>(value)));
+    } else {
+      bytes.push_back(2);
+      append_u64(bytes, std::bit_cast<std::uint64_t>(std::get<double>(value)));
+    }
+  }
+  return true;
+}
+
+bool IrAtomicModelV2::checkpoint_restore(
+    std::span<const std::uint8_t> bytes) {
+  std::size_t offset = 0;
+  std::uint32_t magic = 0;
+  std::uint32_t count = 0;
+  if (!read_u32(bytes, offset, magic) || magic != kIrCheckpointMagic ||
+      offset >= bytes.size() || bytes[offset++] != kIrCheckpointVersion ||
+      !read_u32(bytes, offset, count) || count != state_.size()) {
+    return false;
+  }
+
+  std::unordered_map<std::string, IrValue> restored;
+  restored.reserve(count);
+  for (std::uint32_t item = 0; item < count; ++item) {
+    std::uint32_t name_size = 0;
+    if (!read_u32(bytes, offset, name_size) ||
+        name_size > bytes.size() - offset) {
+      return false;
+    }
+    std::string name(reinterpret_cast<const char*>(bytes.data() + offset),
+                     name_size);
+    offset += name_size;
+    if (offset >= bytes.size()) {
+      return false;
+    }
+    const std::uint8_t type = bytes[offset++];
+    IrValue value;
+    if (type == 0) {
+      if (offset >= bytes.size()) {
+        return false;
+      }
+      value = bytes[offset++] != 0;
+    } else if (type == 1) {
+      std::uint64_t raw = 0;
+      if (!read_u64(bytes, offset, raw)) {
+        return false;
+      }
+      value = static_cast<std::int64_t>(raw);
+    } else if (type == 2) {
+      std::uint64_t raw = 0;
+      if (!read_u64(bytes, offset, raw)) {
+        return false;
+      }
+      value = std::bit_cast<double>(raw);
+    } else {
+      return false;
+    }
+    if (!restored.emplace(std::move(name), value).second) {
+      return false;
+    }
+  }
+  if (offset != bytes.size()) {
+    return false;
+  }
+  for (const auto& [name, value] : state_) {
+    const auto it = restored.find(name);
+    if (it == restored.end() || it->second.index() != value.index()) {
+      return false;
+    }
+  }
+  state_ = std::move(restored);
+  return true;
 }
 
 std::optional<IrValue> IrAtomicModelV2::state(const std::string& name) const {
@@ -210,6 +354,7 @@ bool DevsReplicationModel::reset(const ReplicationConfig& config) {
   scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
   clock_ = std::make_unique<SimulationClock>();
   executor_ = std::make_unique<DevsExecutor>(*scheduler_, *clock_);
+  executor_->set_evidence_recorder(evidence_);
   internal_budget_ = static_cast<std::size_t>(config.arrivals);
   executor_->set_internal_budget(internal_budget_);
   executor_->load(*last_tree_);
@@ -225,6 +370,40 @@ std::size_t DevsReplicationModel::advance(SimTime until) {
 bool DevsReplicationModel::inject(const std::string& root_port,
                                    std::uint64_t payload) {
   return active_ && executor_ != nullptr && executor_->inject(root_port, payload);
+}
+
+void DevsReplicationModel::set_evidence_recorder(
+    DevsEvidenceRecorder* recorder) {
+  evidence_ = recorder;
+  if (executor_ != nullptr) {
+    executor_->set_evidence_recorder(evidence_);
+  }
+}
+
+bool DevsReplicationModel::save_checkpoint(DevsCheckpoint& checkpoint,
+                                           std::string* error) const {
+  if (!active_ || executor_ == nullptr) {
+    if (error != nullptr) {
+      *error = "DEVS replication is not active";
+    }
+    return false;
+  }
+  return executor_->save_checkpoint(checkpoint, error);
+}
+
+bool DevsReplicationModel::restore_checkpoint(
+    const DevsCheckpoint& checkpoint, std::string* error) {
+  if (!active_ || executor_ == nullptr) {
+    if (error != nullptr) {
+      *error = "DEVS replication is not active";
+    }
+    return false;
+  }
+  const bool restored = executor_->restore_checkpoint(checkpoint, error);
+  if (restored) {
+    internal_budget_ = checkpoint.internal_budget;
+  }
+  return restored;
 }
 
 bool DevsReplicationModel::done() const {
