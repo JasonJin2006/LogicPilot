@@ -38,9 +38,9 @@ namespace {
 void print_usage() {
   fmt::print(
       "LogicPilot WebSocket gateway (lp-server)\n"
-      "usage: lp-server [options]\n"
       "Executes any model the session loads; every method runtime streams\n"
       "live telemetry.\n"
+      "usage: lp-server [options]\n"
       "  --model-file <path>  FlatBuffers IR (.lpir/.ir.bin); when omitted, the\n"
       "                       gateway serves the built-in M/M/1 demo model\n"
       "                       until a session loads one\n"
