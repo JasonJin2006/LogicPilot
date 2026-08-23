@@ -298,6 +298,22 @@ describe('syncCanvasViewsWithDocument (id re-keying)', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+it('recovers an id-keyed view across a reparse that regenerated all ids', () => {
+    const previous = agentDocument();
+    const workerId = previous.nodes[0]!.id;
+    // A fresh parse of the same source produces brand-new ids.
+    const reparsed = parseDsl(generateDsl(previous)).document!;
+    expect(reparsed.nodes[0]!.id).not.toBe(workerId);
+    const name = reparsed.nodes[0]!.name;
+    expect(name).toBe('Worker');
+    useCanvasView.getState().resetCanvasViews();
+    useCanvasView.getState().setView({ kind: 'agent', name: 'Worker', containerId: workerId });
+    syncCanvasViewsWithDocument(reparsed, previous);
+    expect(useCanvasView.getState().views).toEqual([
+      { kind: 'agent', name: 'Worker', containerId: reparsed.nodes[0]!.id },
+    ]);
+  });
+
   it('adopts containerId for a legacy view whose container is unchanged', () => {
     const document = agentDocument();
     const workerId = document.nodes[0]!.id;

@@ -28,6 +28,7 @@
 | (本轮) | **B/F6 稳定链接(containerId)**:editor `ModelNode` 新增 `containerId?`(权威父子链接)+ `isChildOf/isRootMember/childrenOfContainer/parentOfNode` 辅助;parseDsl 双写 container/containerId;dsl.ts 子图查找换辅助;removeNode 改 id 驱动**传递性**级联(修复删 agent/behavior 容器孤儿化子成员的缺陷);modelPatch `add_block.container`(wire 名字)apply 时解析为 id,未知/歧义容器报 MP2005。IDE:canvasView 视图携 containerId(id 解析+前代回溯),canvasInsert/dblclick/connectPresentationShapes/nodePath 全部传/走 id。diffModelDocuments 与 syncEngine structureSignature **有意保留名字键**(跨 parse 边界,id 不对应,已注释说明)。editor 73(+5)ide 242 typecheck build 全绿,E2E PASS |
 | (本轮) | **C1/F9 Outline host**:`workbench/outline.ts` 新增 `OUTLINE_CONTRIBUTIONS`(applies+priority+组件形态,贡献方自带 store 订阅);`.lp` 项目树整体迁至 `project/dslOutlineContribution.tsx`,SysML outline 迁至 `sysml/sysmlOutlineContribution.tsx`(priority 10,活动文档为 sysml 时压过项目树);`ModelInfoPanel` 降级为纯宿主(解析零语言、零 kind 分支)。新增 `workbench/outline.test.tsx`(4 用例,共 246 vitest)+ `.verify/outline-check.mjs` 实测双贡献方切换 PASS。注意:导入 .sysml 会 clearProject(SysML 是项目外虚拟文档,既有设计) |
 | (本轮) | **C2/F8+F10 Panel 开放注册**:panels.tsx 的 `PanelId` 放开为 string + `registerPanel()`(重复 id 拒绝);`PanelDef.focus?` 谓词承载"选中→属性面板"规则,Workspace 的 selectedId/sysmlSelectedId 二元分支改为 `focusedPanelId('right')` 注册表解析(两个订阅仅作触发器);SysML 编辑器/属性面板迁至 `sysml/sysmlPanelsContribution.tsx`(lazy 保留),App.tsx 作为组合根最先引入(保证持久化 layout 校验前注册完成);documentTypes 的 editorPanel union 同步放开。新增 panels 测试 2 例(共 248)。E2E + outline-check PASS |
+| (本轮) | **C3/DocumentSession 同步**:`projectSync.refreshCanvasDocument()`——解析成功即换新 revision,失败保留最后有效模型并记控制台;DslEditor 编辑 bundle 文件 300ms 防抖触发(文本→画布实时);Project 树/AI 源码工具/场景导入三条流全部改走温和路径(不再 closeAllFiles+resetCanvasViews);canvasView resolve 增加"前代名字恢复",reparse 换 id 后已打开容器视图存活。新增 projectSync.test.ts(3 例)+ canvasView 跨 reparse 用例(共 252 vitest)+ `.verify/live-sync-check.mjs` 实测 PASS |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -47,8 +48,9 @@
 (`parse(generate(parse(src))) == parse(src)`,editor 68 vitest + corpus)。
 建议切法:先在 graph 层加 `containerId?` 并行字段过渡,消费方逐个切换后再删 name 链路。
 
-### C. F9/F8/F10 已完成(见 §3),剩余:DocumentSession 统一
-- `.lp` 文本、画布、模型树接同一权威 revision;禁止 AI/画布/树各自维护不可协调的“真模型”(plan §6);
+### C. F9/F8/F10 + DocumentSession 核心同步已完成(见 §3),剩余:更细粒度的会话治理
+- 已完成:`refreshCanvasDocument` 温和刷新(文本编辑器防抖触发、树/AI/场景流改走,不再关标签/视图;坏语法保留最后有效模型并记控制台);canvasView 支持跨 reparse 的按名恢复;
+- 剩余:按文件粒度的 authoritative revision 追踪(哪些文件已与文档一致)、磁盘文件夹模式(无 bundle)的实时同步、AI typed edits 直接走 DocumentSession 事务。
 
 ### D. SysML 继续(roadmap P1-Next 第 2 步起,S1 MVP)
 现状:仅 regex 投影(`sysml/sysmlProjection.ts`,行级、best-effort)+ 关系画布 + 布局侧车 + AI inspect/layout/view/focus/move 工具。

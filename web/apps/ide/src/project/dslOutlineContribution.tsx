@@ -33,7 +33,7 @@ import {
   Waves,
 } from 'lucide-react';
 import { MODEL_SCENE_DIR } from './project';
-import { syncCanvasFromProject } from '../state/projectSync';
+import { refreshCanvasDocument } from '../state/projectSync';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
 import { CANVAS_CONTAINER_KINDS } from '../model/blockDefs';
@@ -229,7 +229,8 @@ function DslOutline() {
     const source = current.files[path] ?? '';
     const next = apply(source);
     updateFiles((files) => ({ ...files, [path]: next }));
-    syncCanvasFromProject();
+    // Same-revision projection: keep open file tabs and canvas views alive.
+    refreshCanvasDocument();
   };
 
   const deleteFile = (path: string) => {

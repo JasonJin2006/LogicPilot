@@ -81,8 +81,10 @@ export function syncCanvasViewsWithDocument(
     entry.containerId ?? `${entry.kind}\u0000${entry.name}`;
   const resolve = (entry: CanvasView): CanvasView | null => {
     if (entry.containerId !== undefined) {
-      const node = next.nodes.find((candidate) => candidate.id === entry.containerId);
-      return node ? { kind: node.kind, name: node.name, containerId: node.id } : null;
+      const byId = next.nodes.find((candidate) => candidate.id === entry.containerId);
+      if (byId) {
+        return { kind: byId.kind, name: byId.name, containerId: byId.id };
+      }
     }
     const byName = next.nodes.find(
       (candidate) => candidate.kind === entry.kind && candidate.name === entry.name,
@@ -90,13 +92,22 @@ export function syncCanvasViewsWithDocument(
     if (byName) {
       return { kind: byName.kind, name: byName.name, containerId: byName.id };
     }
-    // Renamed while this view was still name-keyed: find the same node in
-    // the previous revision and follow it into `next` by id.
-    const before = previous?.nodes.find(
-      (candidate) => candidate.kind === entry.kind && candidate.name === entry.name,
-    );
+    // Renamed (or re-parsed with fresh ids) while this view pointed at the
+    // previous revision: follow the same node through `previous` - first by
+    // its old id's name, then by the raw name match.
+    const before =
+      (entry.containerId !== undefined
+        ? previous?.nodes.find((candidate) => candidate.id === entry.containerId)
+        : undefined) ??
+      previous?.nodes.find(
+        (candidate) => candidate.kind === entry.kind && candidate.name === entry.name,
+      );
     if (before !== undefined) {
-      const after = next.nodes.find((candidate) => candidate.id === before.id);
+      const after = next.nodes.find(
+        (candidate) =>
+          candidate.id === before.id ||
+          (candidate.kind === before.kind && candidate.name === before.name),
+      );
       if (after) {
         return { kind: after.kind, name: after.name, containerId: after.id };
       }

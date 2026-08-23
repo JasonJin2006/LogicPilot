@@ -21,7 +21,7 @@ import {
 import { getDraggedKind, getDraggedLibrary, getDraggedScene } from './paletteDnd';
 import { addInstanceLine, nextInstanceName, sceneContainerFromFile } from '../project/project';
 import { useProjectStore } from '../state/projectStore';
-import { syncCanvasFromProject } from '../state/projectSync';
+import { refreshCanvasDocument } from '../state/projectSync';
 import {
   blockPorts,
   CONTROL_KINDS,
@@ -615,7 +615,8 @@ export function ModelCanvas() {
           ...files,
           [bundle!.manifest.model]: nextMain,
         }));
-        syncCanvasFromProject();
+        // The imported scene joins the SAME session: no tab/view reset.
+        refreshCanvasDocument();
         if (container) {
           setFocusView({ kind: container.kind, name: instanceName });
         }

@@ -1,5 +1,5 @@
 import type { AssistantTool } from '../../toolTypes';
-import { syncCanvasFromProject } from '../../../state/projectSync';
+import { refreshCanvasDocument } from '../../../state/projectSync';
 import { useProjectStore } from '../../../state/projectStore';
 import { useWorkspaceStore } from '../../../state/workspaceStore';
 import { readProjectFile } from '../../../state/tauriFs';
@@ -104,7 +104,8 @@ export const SOURCE_EDITING_TOOLS: readonly AssistantTool[] = [
         return { ok: false, error: 'patched source exceeds the 512 KiB limit' };
       const project = useProjectStore.getState();
       project.updateFiles((files) => ({ ...files, [path]: next }));
-      if (path.startsWith('model/')) syncCanvasFromProject();
+      // Keep the user's tabs/views; only the parsed projection swaps.
+      if (path.startsWith('model/')) refreshCanvasDocument();
       return {
         ok: true,
         path,

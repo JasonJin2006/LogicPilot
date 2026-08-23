@@ -22,19 +22,48 @@ export function loadModelDocument(document: ModelDocument): void {
   useCanvasView.getState().setView(null);
 }
 
-export function syncCanvasFromProject(): void {
+function mergedModelSource(): string | null {
   const current = useProjectStore.getState().bundle;
   if (!current) {
-    return;
+    return null;
   }
-  const merged = mergeModelSource(
+  return mergeModelSource(
     current.files[current.manifest.model] ?? '',
     current.files,
     current.manifest.modelParts ?? [],
   );
+}
+
+/** Swap the canvas document for one re-parsed from the current files WITHOUT
+ *  touching open file tabs or container views: text editor, Project tree and
+ *  canvas stay projections of the same authoritative revision (plan §6).
+ *  Source that no longer parses keeps the last valid model; the diagnostic
+ *  lands in the console (VS Code-style error model). */
+export function refreshCanvasDocument(): void {
+  const merged = mergedModelSource();
+  if (merged === null) {
+    return;
+  }
+  const parsed = parseDsl(merged);
+  if (parsed.ok) {
+    useModelStore.getState().loadDocument(parsed.document);
+  } else {
+    const code = parsed.diagnostics?.[0]?.code ?? 'LP2101';
+    logConsoleEvent('error', `${code}: ${parsed.error ?? 'invalid DSL'}`);
+  }
+}
+
+/** Full reload from the project's merged model source for "a different
+ *  model arrived" flows: parses, swaps the document AND closes open file /
+ *  container tabs so no stale projection survives. */
+export function syncCanvasFromProject(): void {
+  const merged = mergedModelSource();
+  if (merged === null) {
+    return;
+  }
   const canvas = parseDsl(merged);
   if (canvas.ok) {
-    useModelStore.getState().loadDocument(canvas.document);
+    loadModelDocument(canvas.document);
   } else {
     // The DSL no longer parses: keep the last valid model and surface the
     // structure diagnostics in the console (VS Code-style error model).
