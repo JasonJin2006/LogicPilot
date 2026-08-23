@@ -21,7 +21,7 @@ features:
   - title: AI 建模闭环
     details: 自然语言 → DSL → 结构化诊断 → 自动修复 → 运行，规则 provider 离线可用，LLM provider 可选；自动优化与瓶颈归因开箱即用。
   - title: Web 运行可视化
-    details: M/M/c 经 WebSocket + FlatBuffers 实时推流；其他模型返回批量摘要，并共享拖拽画布、DSL 编译和 AI 工具。
+    details: 全部方法（process/agent/statechart/连续 ODE/DEVS 原子）经 WebSocket + FlatBuffers 实时遥测推流，共享拖拽画布、DSL 编译和 AI 工具；SysML v2 工程建模经 Workbench 扩展接入。
   - title: 契约冻结
     details: F1（IR）/F2（wire）schema 双门禁冻结，C++ ↔ TS 运行时互操作由 CI 逐字段校验（v1 契约已全量退役）。
 ---

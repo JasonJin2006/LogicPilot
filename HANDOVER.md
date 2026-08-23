@@ -95,6 +95,28 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
 - 针对性小验证脚本可仿照 `.verify/rename-check.mjs`(playwright-core 用绝对路径导入 `file:///.../web/apps/ide/node_modules/playwright-core/index.mjs`);
 - 内核侧如需跑 CTest:`./scripts/windows-build.ps1 -Preset windows-msvc-dev -Test`(clean gate 曾 492/492)。
 
+## 5.5 战略上下文(2026-08-23 校准,来源:用户提供的内核深挖对话)
+
+项目定位已从"M/M/c 教学演示"演进为:**可验证的仿真编译器 + 自适应执行引擎 +
+证据驱动的 AI**,长期愿景是"需求 → 架构 → 模型 → 实验 → 结果 → 证据"的数字
+工程链(LogicPilot = 数字工程领域的 VS Code)。
+
+内核已具备(勿重复建设,全部有测试与 ADR):
+- PDEVS opt-in 语义(λ/δint/δext/δcon、输入 bag、exact-imminent、elapsed);
+- `DevsRuntimePlan` 编译层(ADR-0010:扁平原子表/紧凑路由/层次路径);
+- 因果证据 trace(ADR-0011:每条 transition 记录路径/端口/payload/来源/FNV hash);
+- 显式 checkpoint(ADR-0012:版本化状态 blob,拒绝损坏);
+- 持久化多方法 `SimulationSession`(ADR-0013:start→advance*→finish,共享时钟/队列);
+- 方法级 `MethodCheckpoint` bundle(ADR-0014:Statechart 已完成,DEVS 已接入;
+  Process/Agent/SD 各自 bundle 是内核侧后续项);门禁 492+。
+
+**lowering 的准确形态**(修正:不是"跨前后端大工程"):编译只发生在 C++ 侧、
+AI/前端只读写 DSL,所以 SysML 状态机 lowering = **前端生成等价的 .lp
+statechart DSL 文本** → 现有 lp-server 编译管线 → StatechartRuntime 真执行
+(遥测/暂停停止/checkpoint 白拿)。前端已有 `generateDsl()` 先例,内核零改动。
+
+README/docs/index 的陈旧"M/M/c 独占流式"描述已修正为全方法实时遥测。
+
 ## 6. 关键架构知识 / 约定
 
 - 分层方向:**语言扩展依赖 workbench 平台**,反向禁止(workbench 不 import model/sysml 具体目录);provider 注册都是模块副作用式(`import './xxxContributions'`),新 provider 一律带 `*.test.ts`;

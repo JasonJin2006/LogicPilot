@@ -3,10 +3,13 @@
 AI 原生 · Web 化 · 高性能的**多方法建模仿真平台**（Simulation OS）。
 
 用一套薄 DSL 描述模型，C++ 内核高速执行，浏览器/Tauri 桌面端拖拽建模，并为
-M/M/c 指数流程提供实时流式可视化（其他模型返回批量运行摘要）。AI 生成 → 编译
-修复 → 运行校验闭环开箱即用。技术路线上与
-AnyLogic / Simio 对齐，但采用更现代的 **DSL → IR → C++ Runtime → Web/Tauri
-IDE** 分层，而不是 Java/生成代码。
+process / agent / statechart / 连续 ODE / DEVS 原子等**全部方法提供实时遥测
+流**（固定种子逐位可复现，PDEVS 语义、因果证据 trace、checkpoint 与可持久化
+仿真会话见 `docs/adr/`）。AI 生成 → 编译修复 → 运行校验闭环开箱即用；
+SysML v2 等工程建模文档经 Workbench 扩展接入，可执行元素绑定显式 execution
+target（解释器 / lowering / 外部工具）。技术路线上与 AnyLogic / Simio 对齐，
+但采用更现代的 **DSL → IR → C++ Runtime → Web/Tauri IDE** 分层，而不是
+Java/生成代码。
 
 > 定位声明：LogicPilot 是**建模仿真平台**（离散事件、DEVS 原子、Agent 群体、
 > 连续 ODE，多方法在同一内核/事件队列中组合），不是通用编程语言，也不是
@@ -77,8 +80,8 @@ pnpm --filter @logicpilot/ide dev          # http://localhost:5173
 ```
 
 在 IDE 里可以：拖拽建模（39 个 process 块 + presentation/statechart/action
-库）、DSL 编译诊断、M/M/c 流式运行可视化、通用模型批量运行摘要、AI 面板
-生成/优化/归因。桌面客户端见
+库）、DSL 编译诊断、全部方法的实时遥测可视化、通用模型批量运行摘要、AI 面板
+生成/优化/归因，以及外部 SysML v2 文档的投影可视化与语义执行子集。桌面客户端见
 [desktop/README.md](desktop/README.md)。
 
 ### 离散事件（process）块语义
