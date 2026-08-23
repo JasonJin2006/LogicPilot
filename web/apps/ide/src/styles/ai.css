@@ -320,6 +320,45 @@
   border-radius: 9px;
 }
 
+/* Persistent error state: the assistant cannot start a turn without a
+   configured provider/model. This is a panel error, not a conversation turn. */
+.ai-provider-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--error);
+  background: var(--error-dim);
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--border));
+  border-radius: 9px;
+}
+
+.ai-provider-error > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-provider-error strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.ai-provider-error span {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.ai-provider-error button {
+  flex: none;
+  padding: 2px 10px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 .ai-checkpoint-card > div {
   display: flex;
   min-width: 0;

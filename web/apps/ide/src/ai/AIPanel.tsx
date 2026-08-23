@@ -80,6 +80,7 @@ import { ScrollArea } from '../components/ScrollArea';
 import { useCanvasView } from '../state/canvasView';
 import { getAppConfig } from '../state/appConfig';
 import { getAiProviderState } from './providerConfig';
+import { isAssistantNotConfiguredError } from './assistantErrors';
 
 function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentSettings): boolean {
   return (
@@ -168,6 +169,9 @@ const WINDOW_SESSION_ID =
     ? crypto.randomUUID()
     : `window-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const NOT_CONFIGURED_MESSAGE =
+  '未配置 AI 模型。请打开 Settings → AI & Models 选择 provider 并配置 API Key(或使用 Codex 登录)后再开始对话。';
+
 export function AIPanel() {
   const dslRef = useRef<HTMLPreElement>(null);
   const runRef = useRef<HTMLPreElement>(null);
@@ -178,6 +182,7 @@ export function AIPanel() {
   const [toolsEnabled, setToolsEnabled] = useState(true);
   const [sourceEditingEnabled, setSourceEditingEnabled] = useState(false);
   const [modelLabel, setModelLabel] = useState('Auto');
+  const [providerConfigured, setProviderConfigured] = useState(true);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [voiceError, setVoiceError] = useState('');
   const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -314,7 +319,13 @@ export function AIPanel() {
         .then((state) => {
           if (disposed) return;
           const provider = state.active.providerId || 'Auto';
-          setModelLabel(state.active.model?.trim() || provider);
+          setProviderConfigured(state.active.configured);
+          setModelLabel(
+            state.active.configured ? state.active.model?.trim() || provider : 'Not configured',
+          );
+          if (state.active.configured) {
+            setError((current) => (current === NOT_CONFIGURED_MESSAGE ? '' : current));
+          }
         })
         .catch(() => {
           if (!disposed) setModelLabel('Auto');
@@ -330,7 +341,7 @@ export function AIPanel() {
   const loadToCanvas = async () => {
     if (proposal?.patch == null) return;
     if (!useWorkspaceStore.getState().isOpen()) {
-      appendWorkspaceCapabilityNotice(proposalPrompt || 'Apply the proposed model change.');
+      setError('当前没有打开工程，无法应用这个建模变更。请先 File > New Project 新建工程，或 File > Open 打开 .lpproj/.lp。');
       setProposal(null);
       return;
     }
@@ -405,7 +416,7 @@ export function AIPanel() {
     // user closes and creates projects, so the render-captured workspace flag
     // can otherwise reject a valid request from a newly opened workspace.
     if (!useWorkspaceStore.getState().isOpen()) {
-      appendWorkspaceCapabilityNotice(requestPrompt);
+      setError('当前没有打开工程，无法执行这个建模操作。请先 File > New Project 新建工程，或 File > Open 打开 .lpproj/.lp；外部 .sysml 文件可直接打开，无需工程。');
       return;
     }
     // Analysis tools also see metrics produced by assistant-driven runs.
@@ -589,29 +600,18 @@ export function AIPanel() {
     activeSessionScopeRef.current === null ||
     activeSessionScopeRef.current === workspaceScope;
 
-  const appendWorkspaceCapabilityNotice = (requestPrompt: string) => {
-    if (activeSessionRef.current === null) startSession(requestPrompt);
-    appendConversation(currentAssistantScope(), {
-      user: requestPrompt,
-      assistant:
-        '当前没有打开工程，所以 .lp 模型的创建/修改/编译/运行暂时不可用。可以这样开始：' +
-        '菜单 File > New Project 新建工程，或 File > Open 打开 .lpproj/.lp；' +
-        '外部 .sysml 文件可直接从 Explorer 打开，投影/执行/降载（lowering）不需要工程。' +
-        '另外，当前未配置在线模型，我只能响应内置的确定性建模指令（例如“建一个 M/M/c 模型，服务台 2 个”），自由对话不会触发建模。',
-      patch: { version: 1, operations: [] },
-      outcome: 'completed',
-    });
-  };
-
   // Assistant Runtime: one continuous conversation turn with inline tool
-  // execution. Agent-mode model building falls back to the deterministic
-  // rule-based path when no server-side provider is configured, so the local
-  // desktop/CI experience remains useful without network credentials.
+  // execution. A missing provider/model is a real error state: the panel
+  // shows it inline and never pretends the assistant replied.
   const sendAssistant = async (resume = false, explicitRequest?: string) => {
     const request = resume
       ? 'Resume the unfinished Agent turn.'
       : (explicitRequest ?? prompt.trim());
     if ((!resume && request === '') || busy) {
+      return;
+    }
+    if (!providerConfigured) {
+      setError(NOT_CONFIGURED_MESSAGE);
       return;
     }
     let scope = conversationScope;
@@ -767,21 +767,13 @@ export function AIPanel() {
     }
     if (
       !result.ok &&
-      ((result.error ?? '').includes('assistant is not configured') ||
-        (result.error ?? '').includes('OPENAI_API_KEY'))
+      isAssistantNotConfiguredError(result.error ?? '')
     ) {
-      if (agentMode === 'Agent') {
-        await run('build', resumedRequest);
-        return;
-      }
-      appendConversation(scope, {
-        user: resumedRequest,
-        assistant:
-          '请先在 Settings → AI & Models 中配置一个 AI provider 和模型。配置完成后我才能继续这次对话；当前不会执行任何建模操作。',
-        patch: { version: 1, operations: [] },
-        outcome: 'run_failed',
-        assistantRecord: { steps: result.steps, error: result.error },
-      });
+      // No configured model: surface a real error state instead of appending
+      // a fabricated assistant turn or silently re-routing to the rule-based
+      // builder.
+      setProviderConfigured(false);
+      setError(NOT_CONFIGURED_MESSAGE);
       return;
     }
     appendConversation(scope, {
@@ -1072,6 +1064,18 @@ export function AIPanel() {
   return (
     <div className="ai-panel">
       <div className="ai-thread" aria-label="AI modeling conversation">
+        {!providerConfigured && (
+          <div className="ai-provider-error" role="alert">
+            <AlertTriangle size={14} />
+            <div>
+              <strong>AI 模型未配置</strong>
+              <span>当前无法进行对话。请先在 Settings → AI &amp; Models 中选择 provider 并配置 API Key(或使用 Codex 登录)。</span>
+            </div>
+            <button type="button" onClick={() => useUiStore.getState().openSettings()}>
+              打开设置
+            </button>
+          </div>
+        )}
         {activeSessionId !== null && (
           <div className="ai-session-header">
             <button
