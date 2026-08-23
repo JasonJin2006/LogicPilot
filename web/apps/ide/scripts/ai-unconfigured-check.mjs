@@ -1,6 +1,7 @@
-// Targeted check: with no AI provider configured, the AI panel must show a
-// real error state (banner + inline error) and must NOT fabricate an
-// assistant conversation turn when the user sends a message.
+// Targeted check: with no AI provider configured, sending a conversation
+// message must still enter a session and commit the user's turn while the
+// assistant side shows a genuine error state. There must be no persistent
+// banner and no fabricated assistant reply.
 //
 // Prereqs: `pnpm dev` in web/apps/ide, no LOGICPILOT_AI_* / OPENAI_* env.
 
@@ -46,42 +47,50 @@ await page.goto(process.env.LP_DEV_URL ?? 'http://localhost:5174/', {
 });
 await page.locator('.ai-input').waitFor({ timeout: 15000 });
 
-// The provider state poll runs every ~2.5s; the banner appears once the
-// server reports the assistant is unconfigured.
-const banner = page.locator('.ai-provider-error');
-await banner.waitFor({ timeout: 10000 });
-check(await banner.isVisible(), 'unconfigured banner .ai-provider-error is visible');
+// The provider state poll runs every ~2.5s and flips the model label to
+// "Not configured". There must be no persistent banner.
 check(
-  (await banner.innerText()).includes('AI 模型未配置'),
-  'banner states the model is unconfigured',
+  (await page.locator('.ai-provider-error').count()) === 0,
+  'no persistent unconfigured banner',
 );
-check(
-  await page.locator('.ai-panel').evaluate((el) => el.textContent.includes('打开设置')),
-  'banner offers a settings shortcut',
-);
+await page
+  .locator('.ai-model-select summary span')
+  .filter({ hasText: 'Not configured' })
+  .waitFor({ timeout: 10000 });
+check(true, 'model label reads "Not configured"');
 
 const turnsBefore = await page.locator('.ai-turn').count();
 await page.fill('.ai-input', 'hello');
 await page.press('.ai-input', 'Enter');
 
-// Give the guard a moment to run; the panel must not grow a turn.
-await page.waitForTimeout(1500);
-const turnsAfter = await page.locator('.ai-turn').count();
+// The turn must land: session entered, user message committed, assistant
+// side shows the not-configured error instead of a fabricated reply.
+await page.locator('.ai-turn').nth(turnsBefore).waitFor({ timeout: 10000 });
+const turn = page.locator('.ai-turn').nth(turnsBefore);
+check((await page.locator('.ai-session-header').count()) > 0, 'session created and entered');
+check((await turn.locator('.ai-message.user').innerText()).includes('hello'), 'user message committed');
 check(
-  turnsAfter === turnsBefore,
-  `no fabricated conversation turn (turns ${turnsBefore} -> ${turnsAfter})`,
+  (await turn.locator('.ai-error').innerText()).includes('未配置 AI 模型'),
+  'assistant side shows the not-configured error',
 );
 check(
-  (await page.locator('.ai-error').count()) > 0,
-  'inline error is shown near the composer',
+  await turn
+    .locator('.ai-outcome')
+    .evaluate((el) => el.classList.contains('run_failed')),
+  'turn outcome is run_failed',
 );
-check(await banner.isVisible(), 'banner still visible after send attempt');
+check(
+  !(await turn.locator('.ai-message.assistant > div > p').first().innerText()).includes(
+    '未配置 AI 模型',
+  ),
+  'error is not fabricated as a plain assistant reply',
+);
 
-await page.screenshot({ path: join(OUT, 'ai-unconfigured-banner.png') });
+await page.screenshot({ path: join(OUT, 'ai-unconfigured-turn.png') });
 await browser.close();
 
 if (failures.length) {
   console.error(`\n${failures.length} check(s) failed`);
   process.exit(1);
 }
-console.log('\nall ai-unconfigured checks passed');
+console.log('\nall ai-unconfigured turn checks passed');

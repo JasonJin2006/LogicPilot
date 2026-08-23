@@ -323,9 +323,6 @@ export function AIPanel() {
           setModelLabel(
             state.active.configured ? state.active.model?.trim() || provider : 'Not configured',
           );
-          if (state.active.configured) {
-            setError((current) => (current === NOT_CONFIGURED_MESSAGE ? '' : current));
-          }
         })
         .catch(() => {
           if (!disposed) setModelLabel('Auto');
@@ -600,9 +597,25 @@ export function AIPanel() {
     activeSessionScopeRef.current === null ||
     activeSessionScopeRef.current === workspaceScope;
 
+  // A missing provider/model does not swallow the user's message: the turn
+  // is committed and the assistant side shows a genuine error state, so the
+  // panel never pretends the assistant replied.
+  const appendAssistantErrorTurn = (
+    scope: string,
+    userText: string,
+    steps: AssistantStepRecord[] = [],
+  ) => {
+    appendConversation(scope, {
+      user: userText,
+      assistant: 'The request did not complete.',
+      patch: { version: 1, operations: [] },
+      outcome: 'run_failed',
+      assistantRecord: { steps, error: NOT_CONFIGURED_MESSAGE },
+    });
+  };
+
   // Assistant Runtime: one continuous conversation turn with inline tool
-  // execution. A missing provider/model is a real error state: the panel
-  // shows it inline and never pretends the assistant replied.
+  // execution.
   const sendAssistant = async (resume = false, explicitRequest?: string) => {
     const request = resume
       ? 'Resume the unfinished Agent turn.'
@@ -610,14 +623,15 @@ export function AIPanel() {
     if ((!resume && request === '') || busy) {
       return;
     }
-    if (!providerConfigured) {
-      setError(NOT_CONFIGURED_MESSAGE);
-      return;
-    }
     let scope = conversationScope;
     if (!resume && activeSessionRef.current === null) {
       const id = startSession(request);
       scope = aiSessionScope(workspaceScope, id);
+    }
+    if (!providerConfigured) {
+      setPrompt('');
+      appendAssistantErrorTurn(scope, request);
+      return;
     }
     const pendingCheckpoint = checkpoints[scope];
     const checkpointMessages = pendingCheckpoint
@@ -765,15 +779,11 @@ export function AIPanel() {
       setError('Assistant step cancelled.');
       return;
     }
-    if (
-      !result.ok &&
-      isAssistantNotConfiguredError(result.error ?? '')
-    ) {
-      // No configured model: surface a real error state instead of appending
-      // a fabricated assistant turn or silently re-routing to the rule-based
-      // builder.
+    if (!result.ok && isAssistantNotConfiguredError(result.error ?? '')) {
+      // The assistant turned out unconfigured after the turn started: still
+      // commit the turn with a real error instead of dropping the message.
       setProviderConfigured(false);
-      setError(NOT_CONFIGURED_MESSAGE);
+      appendAssistantErrorTurn(scope, resumedRequest, result.steps);
       return;
     }
     appendConversation(scope, {
@@ -1064,18 +1074,6 @@ export function AIPanel() {
   return (
     <div className="ai-panel">
       <div className="ai-thread" aria-label="AI modeling conversation">
-        {!providerConfigured && (
-          <div className="ai-provider-error" role="alert">
-            <AlertTriangle size={14} />
-            <div>
-              <strong>AI 模型未配置</strong>
-              <span>当前无法进行对话。请先在 Settings → AI &amp; Models 中选择 provider 并配置 API Key(或使用 Codex 登录)。</span>
-            </div>
-            <button type="button" onClick={() => useUiStore.getState().openSettings()}>
-              打开设置
-            </button>
-          </div>
-        )}
         {activeSessionId !== null && (
           <div className="ai-session-header">
             <button
