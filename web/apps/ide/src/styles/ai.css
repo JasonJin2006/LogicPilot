@@ -93,10 +93,31 @@
 }
 
 .ai-sessions-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 2px 5px 5px;
   color: var(--text);
   font-size: 12px;
   font-weight: 650;
+}
+
+.ai-new-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 550;
+}
+
+.ai-new-chat:hover {
+  background: var(--surface-3, var(--surface-2));
+  color: var(--accent);
 }
 
 .ai-session-row {

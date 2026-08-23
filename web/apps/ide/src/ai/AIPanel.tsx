@@ -1094,7 +1094,19 @@ export function AIPanel() {
         )}
         {activeSessionId === null && sessionItems.length > 0 && (
           <section className="ai-sessions" aria-label="Sessions">
-            <div className="ai-sessions-title">会话</div>
+            <div className="ai-sessions-title">
+              会话
+              <button
+                type="button"
+                className="ai-new-chat"
+                onClick={() => {
+                  leaveSession();
+                  setPrompt('');
+                }}
+              >
+                <Plus size={12} /> 新对话
+              </button>
+            </div>
             {sessionItems.map((session) => (
               <div className="ai-session-row" key={session.id}>
                 <button

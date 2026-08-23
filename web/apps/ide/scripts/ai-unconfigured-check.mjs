@@ -85,6 +85,16 @@ check(
   'error is not fabricated as a plain assistant reply',
 );
 
+const newChat = page.locator('.ai-new-chat');
+await page.locator('button[aria-label="返回会话列表"]').click();
+await newChat.waitFor({ timeout: 5000 });
+check(await newChat.isVisible(), 'sessions list offers a 新对话 button');
+await newChat.click();
+check(
+  await page.locator('.ai-input').isEnabled(),
+  '新对话 returns to a fresh composer state',
+);
+
 await page.screenshot({ path: join(OUT, 'ai-unconfigured-turn.png') });
 await browser.close();
 
