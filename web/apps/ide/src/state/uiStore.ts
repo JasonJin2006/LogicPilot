@@ -37,6 +37,11 @@ interface UiState {
   openFile: (path: string) => void;
   openDiskFile: (path: string, content: string) => void;
   updateDiskFile: (path: string, content: string) => void;
+  /** Language-service handoff: select [start,end) in the file's text editor
+   *  (SysML go-to-definition / reveal). Consumers clear it after use. */
+  sourceReveal: { path: string; start: number; end: number; nonce: number } | null;
+  revealInSource: (path: string, start: number, end: number) => void;
+  clearSourceReveal: () => void;
   closeFile: (path: string) => void;
   closeAllFiles: () => void;
   openPrompt: (prompt: UiState['prompt']) => void;
@@ -84,6 +89,17 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       diskFiles: { ...state.diskFiles, [path]: content },
     })),
+  sourceReveal: null,
+  revealInSource: (path, start, end) =>
+    set((state) => ({
+      sourceReveal: {
+        path,
+        start,
+        end,
+        nonce: (state.sourceReveal?.nonce ?? 0) + 1,
+      },
+    })),
+  clearSourceReveal: () => set({ sourceReveal: null }),
   closeAllFiles: () => set({ openFiles: [], activeFile: null, diskFiles: {} }),
   openPrompt: (prompt) => set({ prompt }),
   closePrompt: () => set({ prompt: null }),

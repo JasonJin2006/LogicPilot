@@ -8,7 +8,7 @@
 // bundle to merge against, so they edit as plain source until Save.
 
 import { generateDsl } from '@logicpilot/editor';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -26,6 +26,18 @@ export function DslEditor() {
   const diskContent = useUiStore((state) => (activeFile ? state.diskFiles[activeFile] : undefined));
   const bundle = useProjectStore((state) => state.bundle);
   const updateFiles = useProjectStore((state) => state.updateFiles);
+  const reveal = useUiStore((state) => state.sourceReveal);
+
+  // Language-service handoff: focus the editor and select the requested
+  // span (go-to-definition / reveal from the SysML projection). The caret
+  // selection makes browsers scroll it into view.
+  useEffect(() => {
+    if (reveal === null || reveal.path !== activeFile || !editorRef.current) return;
+    const el = editorRef.current;
+    el.focus();
+    el.setSelectionRange(reveal.start, reveal.end);
+    useUiStore.getState().clearSourceReveal();
+  }, [reveal, activeFile]);
 
   const fileSource = activeFile !== null && bundle ? bundle.files[activeFile] : undefined;
   const isDiskFile = diskContent !== undefined;

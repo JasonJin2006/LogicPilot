@@ -171,10 +171,69 @@ export function renameElement(
   if (clash) {
     return { ok: false, error: `an element named '${name}' already exists in the same scope` };
   }
+
+  // Replace the declaration token AND every reference that resolves to this
+  // element (word matches re-checked through the projection's own resolver,
+  // so same-named elements in other scopes never get touched). Ranges apply
+  // right-to-left to keep offsets valid.
+  const oldName = element.name;
+  const ranges: Array<{ start: number; end: number }> = [element.nameSpan];
+  const token = /[A-Za-z_][A-Za-z0-9_.:]*/g;
+  for (const match of source.matchAll(token)) {
+    const lowerWord = match[0].toLowerCase();
+    // Bare references ('car'), qualified tails ('Vehicle::car') - anything
+    // else containing the name as a segment (e.g. 'carbon') never matches.
+    const bareOrTail =
+      lowerWord === oldName.toLowerCase() ||
+      lowerWord.endsWith(`::${oldName.toLowerCase()}`);
+    if (!bareOrTail) continue;
+    void lowerWord;
+    const start = match.index;
+    const withinOtherDeclaration =
+      // Another element's declaration token, or our own (already a range).
+      projection.elements.some(
+        (candidate) =>
+          candidate !== element &&
+          start >= candidate.nameSpan.start &&
+          start < candidate.nameSpan.end,
+      ) ||
+      (start >= element.nameSpan.start && start < element.nameSpan.end);
+    if (withinOtherDeclaration) continue;
+    // Does this word resolve to OUR element? (definitionAt semantics)
+    const word = match[0];
+    const normalized = word.replace(/^::/, '').toLowerCase();
+    let refers = false;
+    if (normalized === element.qualifiedName.toLowerCase()) {
+      refers = true;
+    } else {
+      const candidates = projection.elements.filter(
+        (candidate) =>
+          candidate !== element &&
+          (candidate.name.toLowerCase() === normalized ||
+            candidate.qualifiedName.toLowerCase().endsWith(`::${normalized}`)),
+      );
+      if (bareOrTail && candidates.length === 0) {
+        refers = true; // unambiguous bare/qualified reference to oldName
+      }
+    }
+    if (refers) {
+      ranges.push({ start, end: start + word.length });
+    }
+  }
+  ranges.sort((a, b) => b.start - a.start);
+  let nextSource = source;
+  for (const range of ranges) {
+    const segment = nextSource.slice(range.start, range.end);
+    const replaced =
+      range.start === element.nameSpan.start
+        ? name
+        : segment.split(oldName).join(name);
+    nextSource = `${nextSource.slice(0, range.start)}${replaced}${nextSource.slice(range.end)}`;
+  }
   return {
     ok: true,
-    source: `${source.slice(0, element.nameSpan.start)}${name}${source.slice(element.nameSpan.end)}`,
-    detail: `renamed ${element.qualifiedName} to '${name}'`,
+    source: nextSource,
+    detail: `renamed ${element.qualifiedName} to '${name}' (${ranges.length} occurrence${ranges.length === 1 ? '' : 's'})`,
   };
 }
 

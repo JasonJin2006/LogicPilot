@@ -1,4 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
+import { useUiStore } from '../state/uiStore';
+import { useLayoutStore } from '../state/layoutStore';
 import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import type { SysMLElement, SysMLPosition, SysMLRelationKind, SysMLVisualKind } from './sysmlProjection';
@@ -177,6 +179,7 @@ export function SysMLCanvas() {
   const projection = useSysMLStore((state) => state.projection);
   const layout = useSysMLStore((state) => state.layout);
   const parseDirty = useSysMLStore((state) => state.parseDirty);
+  const currentPath = useSysMLStore((state) => state.path);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
   const pastLength = useSysMLStore((state) => state.past.length);
@@ -352,6 +355,18 @@ export function SysMLCanvas() {
           <span>{selected.kind}</span>
           <strong>{selected.qualifiedName}</strong>
           <small>line {selected.span.line} · {selected.id}</small>
+          {currentPath !== null && (
+            <button
+              type="button"
+              className="sysml-link"
+              onClick={() => {
+                useLayoutStore.getState().openPanel('center', 'dsl');
+                useUiStore.getState().revealInSource(currentPath!, selected.nameSpan.start, selected.nameSpan.end);
+              }}
+            >
+              Go to source
+            </button>
+          )}
         </div>
       )}
       {projection.diagnostics.length > 0 && (

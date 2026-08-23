@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { useSysMLStore } from '../state/sysmlStore';
+import { useUiStore } from '../state/uiStore';
+import { useLayoutStore } from '../state/layoutStore';
 
 export function SysMLPropertiesPanel() {
   const projection = useSysMLStore((state) => state.projection);
@@ -17,9 +19,15 @@ export function SysMLPropertiesPanel() {
     [projection, selectedId],
   );
 
+  const path = useSysMLStore((state) => state.path);
   if (!projection || !layout || !selected) {
     return <div className="sysml-properties-empty">Select a SysML element to inspect it.</div>;
   }
+  const openInSource = () => {
+    if (path === null) return;
+    useLayoutStore.getState().openPanel('center', 'dsl');
+    useUiStore.getState().revealInSource(path, selected.nameSpan.start, selected.nameSpan.end);
+  };
   const position = layout.positions[selected.id] ?? { x: 80, y: 80 };
   const setPosition = (axis: 'x' | 'y', value: string) => {
     const number = Number(value);
@@ -33,7 +41,15 @@ export function SysMLPropertiesPanel() {
       <div className="sysml-properties-kind">{selected.kind} · {selected.declaration}</div>
       <h3>{selected.name}</h3>
       <div className="sysml-property-row"><span>Qualified name</span><code>{selected.qualifiedName}</code></div>
-      <div className="sysml-property-row"><span>Source line</span><strong>{selected.span.line}</strong></div>
+      <div className="sysml-property-row">
+        <span>Source line</span>
+        <strong>
+          {selected.span.line}{' '}
+          <button type="button" className="sysml-link" onClick={openInSource}>
+            Open in source
+          </button>
+        </strong>
+      </div>
       {owner && <div className="sysml-property-row"><span>Owner</span><strong>{owner.qualifiedName}</strong></div>}
       <div className="sysml-property-section-title">Layout</div>
       <label className="sysml-coordinate"><span>X</span><input type="number" value={Math.round(position.x)} onChange={(event) => setPosition('x', event.target.value)} /></label>

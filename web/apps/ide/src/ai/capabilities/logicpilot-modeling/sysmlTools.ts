@@ -14,6 +14,7 @@ import {
   renameElement,
   type RelationVerb,
 } from '../../../sysml/sysmlEdits';
+import { definitionAt, referencesOf } from '../../../sysml/sysmlLanguage';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
   return typeof args[key] === 'number' && Number.isFinite(args[key] as number) ? (args[key] as number) : null;
@@ -315,6 +316,95 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
           stringArg(args, 'to')!,
         ),
       );
+    },
+  },
+  {
+    name: 'find_sysml_definition',
+    description:
+      'Resolve what a SysML name or cursor reference points to. Pass `query` ' +
+      '(name/qualified name) or `line` to inspect that line.',
+    parameters: {
+      query: { type: 'string' },
+      line: { type: 'number' },
+    },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection || !state.source) return 'no SysML projection is open';
+      if (stringArg(args, 'query') === null && numberArg(args, 'line') === null) {
+        return 'provide a query or a line number';
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      let offset: number;
+      if (typeof args.query === 'string') {
+        // Approximate the first occurrence of the token for span reporting.
+        const idx = state.source.indexOf(stringArg(args, 'query')!);
+        offset = idx === -1 ? 0 : idx;
+      } else {
+        const lines = state.source.split(/\r?\n/);
+        const line = Math.min(Math.max(1, numberArg(args, 'line') ?? 1), lines.length);
+        offset = lines.slice(0, line - 1).reduce((sum, text) => sum + text.length + 1, 0);
+      }
+      const found = definitionAt(state.source, state.projection!, offset);
+      if (found === null) return { ok: false, error: 'no SysML element resolves at that position' };
+      return {
+        ok: true,
+        id: found.id,
+        kind: found.kind,
+        qualifiedName: found.qualifiedName,
+        declaration: found.declaration,
+        line: found.span.line,
+        owner: found.ownerId ?? null,
+      };
+    },
+  },
+  {
+    name: 'find_sysml_references',
+    description: 'List every extracted relation touching one SysML element (traceability both ways).',
+    parameters: { query: { type: 'string', required: true } },
+    validate: (args) => {
+      const state = useSysMLStore.getState();
+      if (!state.projection) return 'no SysML projection is open';
+      const query = stringArg(args, 'query');
+      if (query === null) return 'query must be a non-empty string';
+      const normalized = query.toLowerCase();
+      if (
+        !state.projection.elements.some(
+          (element) =>
+            element.id.toLowerCase() === normalized ||
+            element.name.toLowerCase() === normalized ||
+            element.qualifiedName.toLowerCase() === normalized,
+        )
+      ) {
+        return `no SysML element matches '${query}'`;
+      }
+      return null;
+    },
+    execute: (args) => {
+      const state = useSysMLStore.getState();
+      const projection = state.projection!;
+      const normalized = stringArg(args, 'query')!.toLowerCase();
+      const element = projection.elements.find(
+        (entry) =>
+          entry.id.toLowerCase() === normalized ||
+          entry.name.toLowerCase() === normalized ||
+          entry.qualifiedName.toLowerCase() === normalized,
+      )!;
+      const relations = referencesOf(projection, element.id);
+      return {
+        ok: true,
+        element: { id: element.id, qualifiedName: element.qualifiedName },
+        references: relations.map((relation) => ({
+          kind: relation.kind,
+          label: relation.label,
+          line: relation.line,
+          from: projection.elements.find((e) => e.id === relation.from)?.qualifiedName ?? relation.from,
+          to: projection.elements.find((e) => e.id === relation.to)?.qualifiedName ?? relation.to,
+        })),
+        count: relations.length,
+      };
     },
   },
 ];
