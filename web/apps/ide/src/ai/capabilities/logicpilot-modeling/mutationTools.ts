@@ -124,7 +124,7 @@ export const MODEL_MUTATION_TOOLS: readonly AssistantTool[] = [
       if (!useWorkspaceStore.getState().isOpen()) {
         return {
           ok: false,
-          error: '当前未打开工作区。仍可继续对话；打开工作区后才能创建或修改模型。',
+          error: 'No workspace is open. You can keep chatting, but creating or modifying models requires an open workspace.',
         };
       }
       const summary = stringArg(args, 'summary') ?? '';

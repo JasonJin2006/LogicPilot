@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 
 const PORT = Number(process.env.MOCK_LLM_PORT ?? 9191);
 const DELAY = Number(process.env.MOCK_LLM_DELAY ?? 250);
-const REPLY = '流式回复:这是来自 mock 模型的逐块输出。';
+const REPLY = 'Streamed reply: this is chunked output from the mock model.';
 
 function writeChunks(res, body) {
   const { stream, max_tokens: maxTokens } = body;
@@ -42,7 +42,7 @@ function writeChunks(res, body) {
       })}\n\n`,
     );
   send({ role: 'assistant' });
-  const parts = ['流式回复:', '这是来自 mock 模型的', '逐块输出。'];
+  const parts = ['Streamed reply:', 'this is chunked output', 'from the mock model.'];
   let index = 0;
   const tick = () => {
     if (index < parts.length) {

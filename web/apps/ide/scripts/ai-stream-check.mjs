@@ -54,7 +54,7 @@ await page
   .filter({ hasText: 'mock-model' })
   .waitFor({ timeout: 10000 });
 
-await page.fill('.ai-input', '测试流式回复');
+await page.fill('.ai-input', 'Test streamed reply');
 await page.press('.ai-input', 'Enter');
 
 // The in-thread streaming bubble must appear right away with the user
@@ -63,7 +63,7 @@ const bubble = page.locator('.ai-turn-streaming');
 await bubble.waitFor({ timeout: 5000 });
 check(await bubble.isVisible(), 'streaming bubble appears immediately');
 check(
-  (await bubble.locator('.ai-message.user').innerText()).includes('测试流式回复'),
+  (await bubble.locator('.ai-message.user').innerText()).includes('Test streamed reply'),
   'streaming bubble carries the user message',
 );
 await page.screenshot({ path: join(OUT, 'ai-streaming-bubble.png') });
@@ -77,7 +77,7 @@ await page.waitForFunction(
 );
 await finalTurn.waitFor({ timeout: 5000 });
 check(
-  (await finalTurn.locator('.ai-message.assistant p').first().innerText()).includes('mock 模型'),
+  (await finalTurn.locator('.ai-message.assistant p').first().innerText()).includes('mock model'),
   'final turn shows the streamed assistant reply',
 );
 check(

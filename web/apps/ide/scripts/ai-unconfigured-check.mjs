@@ -54,8 +54,8 @@ check(
   'no persistent unconfigured banner',
 );
 check(
-  '未配置' === (await page.locator('.ai-model-select summary span').first().innerText()),
-  'model label reads 未配置',
+  'Not configured' === (await page.locator('.ai-model-select summary span').first().innerText()),
+  'model label reads Not configured',
 );
 
 const turnsBefore = await page.locator('.ai-turn').count();
@@ -69,7 +69,7 @@ const turn = page.locator('.ai-turn').nth(turnsBefore);
 check((await page.locator('.ai-session-header').count()) > 0, 'session created and entered');
 check((await turn.locator('.ai-message.user').innerText()).includes('hello'), 'user message committed');
 check(
-  (await turn.locator('.ai-error').innerText()).includes('未配置 AI 模型'),
+  (await turn.locator('.ai-error').innerText()).includes('No AI model is configured'),
   'assistant side shows the not-configured error',
 );
 check(
@@ -80,19 +80,19 @@ check(
 );
 check(
   !(await turn.locator('.ai-message.assistant > div > p').first().innerText()).includes(
-    '未配置 AI 模型',
+    'No AI model is configured',
   ),
   'error is not fabricated as a plain assistant reply',
 );
 
 const newChat = page.locator('.ai-new-chat');
-await page.locator('button[aria-label="返回会话列表"]').click();
+await page.locator('button[aria-label="Back to sessions"]').click();
 await newChat.waitFor({ timeout: 5000 });
-check(await newChat.isVisible(), 'sessions list offers a 新对话 button');
+check(await newChat.isVisible(), 'sessions list offers a New chat button');
 await newChat.click();
 check(
   await page.locator('.ai-input').isEnabled(),
-  '新对话 returns to a fresh composer state',
+  'New chat returns to a fresh composer state',
 );
 
 await page.screenshot({ path: join(OUT, 'ai-unconfigured-turn.png') });

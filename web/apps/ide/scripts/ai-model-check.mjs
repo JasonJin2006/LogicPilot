@@ -58,12 +58,12 @@ const popover = page.locator('.ai-model-select .ai-select-popover');
 const mockItem = popover.locator('button', { hasText: 'mock-model' });
 await mockItem.waitFor({ timeout: 8000 });
 check(
-  (await popover.locator('button', { hasText: '自动' }).count()) > 0,
-  'popover lists the 自动 option',
+  (await popover.locator('button', { hasText: 'Auto' }).count()) > 0,
+  'popover lists the Auto option',
 );
 check((await mockItem.count()) > 0, 'popover lists the discovered model');
 check(
-  (await popover.locator('button', { hasText: '设置' }).count()) > 0,
+  (await popover.locator('button', { hasText: 'Settings' }).count()) > 0,
   'popover keeps the settings entry',
 );
 await mockItem.first().click();

@@ -47,10 +47,10 @@ await page.goto(process.env.LP_DEV_URL ?? 'http://localhost:5173/', {
 await page.locator('.ai-input').waitFor({ timeout: 15000 });
 
 // Create a session, then go back to the list.
-await page.fill('.ai-input', '初始会话标题');
+await page.fill('.ai-input', 'Initial session title');
 await page.press('.ai-input', 'Enter');
 await page.locator('.ai-turn').first().waitFor({ timeout: 20000 });
-await page.locator('button[aria-label="返回会话列表"]').click();
+await page.locator('button[aria-label="Back to sessions"]').click();
 await page.locator('.ai-session-row').first().waitFor({ timeout: 5000 });
 
 // Rename via the row menu.
@@ -66,23 +66,23 @@ const openMenu = async () => {
   await pop.waitFor({ state: 'visible', timeout: 3000 });
 };
 await openMenu();
-await page.locator('.ai-session-menu-pop button', { hasText: '重命名' }).click();
-const promptDialog = page.locator('.dialog-card', { hasText: '重命名会话' });
+await page.locator('.ai-session-menu-pop button', { hasText: 'Rename' }).click();
+const promptDialog = page.locator('.dialog-card', { hasText: 'Rename session' });
 await promptDialog.waitFor({ timeout: 5000 });
-await promptDialog.locator('input').fill('重命名后的会话');
-await promptDialog.locator('button', { hasText: '重命名' }).first().click();
+await promptDialog.locator('input').fill('Renamed session');
+await promptDialog.locator('button', { hasText: 'Rename' }).first().click();
 await page.waitForTimeout(500);
 check(
-  (await page.locator('.ai-session-row').first().innerText()).includes('重命名后的会话'),
+  (await page.locator('.ai-session-row').first().innerText()).includes('Renamed session'),
   'session title updates after rename',
 );
 
 // Delete via the row menu with confirmation.
 await openMenu();
-await page.locator('.ai-session-menu-pop button', { hasText: '删除' }).click();
-const confirmDialog = page.locator('.dialog-card', { hasText: '删除会话' });
+await page.locator('.ai-session-menu-pop button', { hasText: 'Delete' }).click();
+const confirmDialog = page.locator('.dialog-card', { hasText: 'Delete session' });
 await confirmDialog.waitFor({ timeout: 5000 });
-await confirmDialog.locator('button', { hasText: '删除' }).click();
+await confirmDialog.locator('button', { hasText: 'Delete' }).click();
 await page.waitForTimeout(500);
 check(
   (await page.locator('.ai-session-row').count()) === 0,

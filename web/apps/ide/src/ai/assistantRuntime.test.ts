@@ -852,7 +852,7 @@ describe('assistant tools: model editing', () => {
       { session: createAssistantSession(), experiment: { seed: 1 } as never },
     );
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('当前未打开工作区');
+    expect(result.error).toContain('No workspace is open');
     expect(useModelStore.getState().document.nodes).toHaveLength(0);
   });
 

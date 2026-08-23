@@ -433,8 +433,8 @@ export function SettingsDialog() {
                 </p>
                 <div className="settings-group">
                   <div className="settings-control-label">
-                    <strong>Copilot 工具</strong>
-                    <span>默认启用建模工具;源代码编辑默认关闭。MCP 工具配置后自动发现。</span>
+                    <strong>Copilot tools</strong>
+                    <span>Modeling tools are enabled by default; source editing is off. MCP tools are discovered automatically when configured.</span>
                   </div>
                   <button
                     type="button"
@@ -442,8 +442,8 @@ export function SettingsDialog() {
                     onClick={() => setAiToolsEnabled(!aiToolsEnabled)}
                   >
                     <span>
-                      <strong>LogicPilot 建模</strong>
-                      <small>检查、编辑、编译与模拟</small>
+                      <strong>LogicPilot modeling</strong>
+                      <small>Inspect, edit, compile and simulate</small>
                     </span>
                     <span className={`ai-toggle ${aiToolsEnabled ? 'on' : ''}`} aria-hidden>
                       <i />
@@ -455,8 +455,8 @@ export function SettingsDialog() {
                     onClick={() => setAiSourceEditingEnabled(!aiSourceEditingEnabled)}
                   >
                     <span>
-                      <strong>源代码编辑</strong>
-                      <small>读取并修改工作区内的受限源文件</small>
+                      <strong>Source editing</strong>
+                      <small>Read and patch bounded workspace source files</small>
                     </span>
                     <span className={`ai-toggle ${aiSourceEditingEnabled ? 'on' : ''}`} aria-hidden>
                       <i />
