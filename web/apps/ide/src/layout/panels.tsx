@@ -2,8 +2,11 @@
 // content are decoupled - the Workspace renders whatever is registered, so
 // adding a panel (model tree, palette, properties, diagnostics) never
 // touches the layout system. See docs/specs/ide-layout.md.
+//
+// The registry is open (plan §13: no core table of language panels): built-in
+// shell panels register below, language extensions add theirs through
+// registerPanel() from their own contribution modules.
 
-import { lazy, Suspense } from 'react';
 import type { ComponentType } from 'react';
 import { Boxes, Files, Palette } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
@@ -15,62 +18,40 @@ import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
 import { PropertiesPanel } from '../model/PropertiesPanel';
 import { WelcomePanel } from './WelcomePanel';
+import { useModelStore } from '../state/modelStore';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
-export type PanelId =
-  | 'model'
-  | 'ai'
-  | 'console'
-  | 'dsl'
-  | 'sysml'
-  | 'sysmlProperties'
-  | 'explorer'
-  | 'modelInfo'
-  | 'palette'
-  | 'properties'
-  | 'welcome';
+/** Open-ended panel id: built-ins below plus anything registered through
+ *  registerPanel() by language contributions. */
+export type PanelId = string;
 
 export interface PanelDef {
   title: string;
   area: AreaId;
   component: ComponentType;
+  /** Selection-driven focus probe. When it returns true the workspace brings
+   *  this panel forward; checked over the registry before falling back to
+   *  the area's default tab. Lets a language own its properties-panel rule
+   *  instead of the workspace branching on selections. */
+  focus?: () => boolean;
 }
 
-// Load the optional projection editor only when a SysML document is opened;
-// language-specific dependencies stay outside the eager registry graph.
-const LazySysMLWorkspace = lazy(() =>
-  import('../sysml/SysMLWorkspace').then((module) => ({ default: module.SysMLWorkspace })),
-);
-const LazySysMLProperties = lazy(() =>
-  import('../sysml/SysMLPropertiesPanel').then((module) => ({ default: module.SysMLPropertiesPanel })),
-);
-function SysMLWorkspacePanel() {
-  return (
-    <Suspense fallback={<div className="sysml-empty">Loading SysML projection...</div>}>
-      <LazySysMLWorkspace />
-    </Suspense>
-  );
-}
-function SysMLPropertiesPanel() {
-  return (
-    <Suspense fallback={<div className="sysml-properties-empty">Loading SysML properties...</div>}>
-      <LazySysMLProperties />
-    </Suspense>
-  );
-}
-
-export const PANELS: Record<PanelId, PanelDef> = {
+const registry: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
   dsl: { title: 'DSL', area: 'center', component: DslEditor },
-  sysml: { title: 'SysML', area: 'center', component: SysMLWorkspacePanel },
   welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
-  // right: selected block properties.
-  properties: { title: 'Properties', area: 'right', component: PropertiesPanel },
-  sysmlProperties: { title: 'SysML Properties', area: 'right', component: SysMLPropertiesPanel },
+  // right: selected block properties; focused while a canvas block is
+  // selected, handing focus back when the selection clears.
+  properties: {
+    title: 'Properties',
+    area: 'right',
+    component: PropertiesPanel,
+    focus: () => useModelStore.getState().selectedId !== null,
+  },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
   // left: side panels switched by the activity bar (VS Code style).
@@ -78,6 +59,32 @@ export const PANELS: Record<PanelId, PanelDef> = {
   modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
 };
+
+/** Register a panel at runtime (language contributions). Duplicate ids are
+ *  rejected so two contributions cannot silently steal one tab. */
+export function registerPanel(id: PanelId, definition: PanelDef): () => void {
+  if (id in registry) {
+    throw new Error(`panel '${id}' is already registered`);
+  }
+  registry[id] = definition;
+  return () => {
+    delete registry[id];
+  };
+}
+
+/** The visible panel table (built-ins + registered contributions). */
+export const PANELS = registry as Readonly<Record<PanelId, PanelDef>>;
+
+/** First panel in `area` whose focus probe fires, or null when nothing
+ *  claims focus (the workspace then falls back to its default tab). */
+export function focusedPanelId(area: AreaId): PanelId | null {
+  for (const [id, definition] of Object.entries(PANELS)) {
+    if (definition.area === area && definition.focus?.()) {
+      return id;
+    }
+  }
+  return null;
+}
 
 /** Activity-bar views map 1:1 onto the left side panels. */
 export const ACTIVITY_VIEWS: Array<{

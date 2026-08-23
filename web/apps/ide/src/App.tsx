@@ -3,6 +3,11 @@
 // (activity bar gear); stats charts and results are center-workspace tabs
 // (AnyLogic-style opt-in telemetry views), not pinned side panels.
 
+// Composition root for language contributions: register their panels before
+// any other module evaluates, so persisted layouts validate against the
+// complete panel table.
+import './sysml/sysmlPanelsContribution';
+
 import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';
 import { Workspace } from './layout/Workspace';

@@ -5,7 +5,10 @@
 // this registry instead of hardcoded extension switches
 // (workbench-architecture-plan.md §5/§13).
 
-export type DocumentEditorPanel = 'dsl' | 'sysml';
+/** The center panel a document type opens in. A plain string: the panel
+ *  itself is registered by the language's panel contribution, not by the
+ *  workbench (plan §13 - no core table of language panels). */
+export type DocumentEditorPanel = string;
 
 export interface DocumentContribution {
   id: string;

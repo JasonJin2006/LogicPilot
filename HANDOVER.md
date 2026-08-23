@@ -27,6 +27,8 @@
 | (本轮) | **A1 canvasView 同步**:`state/canvasView.ts` 新增 `syncCanvasViewsWithDocument(next, previous)`——容器改名时打开的视图标签跟随新名(undo 跟回旧名,改名撞已有标签去重),容器删除时关闭标签;接入 `App.tsx` 既有 modelStore 订阅,统一覆盖 renameBlock/AI patch/undo/redo。新增 5 个 vitest(共 242)+ `.verify/rename-tab-check.mjs` 浏览器实测 PASS |
 | (本轮) | **B/F6 稳定链接(containerId)**:editor `ModelNode` 新增 `containerId?`(权威父子链接)+ `isChildOf/isRootMember/childrenOfContainer/parentOfNode` 辅助;parseDsl 双写 container/containerId;dsl.ts 子图查找换辅助;removeNode 改 id 驱动**传递性**级联(修复删 agent/behavior 容器孤儿化子成员的缺陷);modelPatch `add_block.container`(wire 名字)apply 时解析为 id,未知/歧义容器报 MP2005。IDE:canvasView 视图携 containerId(id 解析+前代回溯),canvasInsert/dblclick/connectPresentationShapes/nodePath 全部传/走 id。diffModelDocuments 与 syncEngine structureSignature **有意保留名字键**(跨 parse 边界,id 不对应,已注释说明)。editor 73(+5)ide 242 typecheck build 全绿,E2E PASS |
 | (本轮) | **C1/F9 Outline host**:`workbench/outline.ts` 新增 `OUTLINE_CONTRIBUTIONS`(applies+priority+组件形态,贡献方自带 store 订阅);`.lp` 项目树整体迁至 `project/dslOutlineContribution.tsx`,SysML outline 迁至 `sysml/sysmlOutlineContribution.tsx`(priority 10,活动文档为 sysml 时压过项目树);`ModelInfoPanel` 降级为纯宿主(解析零语言、零 kind 分支)。新增 `workbench/outline.test.tsx`(4 用例,共 246 vitest)+ `.verify/outline-check.mjs` 实测双贡献方切换 PASS。注意:导入 .sysml 会 clearProject(SysML 是项目外虚拟文档,既有设计) |
+| (本轮) | **C2/F8+F10 Panel 开放注册**:panels.tsx 的 `PanelId` 放开为 string + `registerPanel()`(重复 id 拒绝);`PanelDef.focus?` 谓词承载"选中→属性面板"规则,Workspace 的 selectedId/sysmlSelectedId 二元分支改为 `focusedPanelId('right')` 注册表解析(两个订阅仅作触发器);SysML 编辑器/属性面板迁至 `sysml/sysmlPanelsContribution.tsx`(lazy 保留),App.tsx 作为组合根最先引入(保证持久化 layout 校验前注册完成);documentTypes 的 editorPanel union 同步放开。新增 panels 测试 2 例(共 248)。E2E + outline-check PASS |
+
 
 ## 4. 待办(按优先级,对应审查文档 §4)
 
@@ -45,9 +47,8 @@
 (`parse(generate(parse(src))) == parse(src)`,editor 68 vitest + corpus)。
 建议切法:先在 graph 层加 `containerId?` 并行字段过渡,消费方逐个切换后再删 name 链路。
 
-### C. F9 通用 Outline host → F8 DiagramProvider/PanelId 动态化(F8/F10)→ F7 已完 → DocumentSession 统一
-- Outline host:`layout/ModelInfoPanel.tsx` 自解析 .lp 渲染 Project 树,应降级为宿主,语义树由贡献方提供(SysML 已有 projection 可作为第二贡献方);
-- PanelId(`layout/panels.tsx`)是硬编码 union 含 'sysml'/'sysmlProperties';Workspace.tsx 用 selectedId/sysmlSelectedId 二元判断选属性面板(F10)。
+### C. F9/F8/F10 已完成(见 §3),剩余:DocumentSession 统一
+- `.lp` 文本、画布、模型树接同一权威 revision;禁止 AI/画布/树各自维护不可协调的“真模型”(plan §6);
 
 ### D. SysML 继续(roadmap P1-Next 第 2 步起,S1 MVP)
 现状:仅 regex 投影(`sysml/sysmlProjection.ts`,行级、best-effort)+ 关系画布 + 布局侧车 + AI inspect/layout/view/focus/move 工具。

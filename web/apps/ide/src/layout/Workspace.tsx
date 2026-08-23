@@ -15,7 +15,7 @@ import { useCanvasView } from '../state/canvasView';
 import { useSysMLStore } from '../state/sysmlStore';
 import { mergeModelSource } from '../project/project';
 import { writeProjectFile } from '../state/tauriFs';
-import { PANELS, type AreaId, type PanelId } from './panels';
+import { PANELS, focusedPanelId, type AreaId, type PanelId } from './panels';
 import { ScrollArea } from '../components/ScrollArea';
 import { editorPanelFor } from '../workbench/documentTypes';
 
@@ -144,7 +144,7 @@ function TabBar({ area }: { area: AreaId }) {
       className={`tab${panel === state.activePanel ? ' active' : ''}`}
       onClick={() => setActive(area, panel)}
     >
-      <span className="tab-label">{PANELS[panel].title}</span>
+      <span className="tab-label">{PANELS[panel]?.title ?? panel}</span>
       {perTabClose && (
         <button
           className="tab-x"
@@ -339,7 +339,7 @@ function PanelArea({ area }: { area: AreaId }) {
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
       {!state.collapsed &&
         (area === 'left' ? (
-          <div className="panel-title">{PANELS[state.activePanel].title}</div>
+          <div className="panel-title">{PANELS[state.activePanel]?.title ?? state.activePanel}</div>
         ) : !centerEmpty ? (
           <TabBar area={area} />
         ) : null)}
@@ -382,12 +382,15 @@ export function Workspace() {
   const sysmlSelectedId = useSysMLStore((s) => s.selectedId);
   const setActive = useLayoutStore((s) => s.setActive);
   const openPanel = useLayoutStore((s) => s.openPanel);
-  // Selecting a block brings the Properties tab up; deselecting returns AI.
+  // Selection-driven panel focus: the first registered right-area panel
+  // whose focus probe fires comes forward; with nothing selected the AI tab
+  // (the area default) returns. The probes live on the panel definitions,
+  // so languages own their properties-panel rule - these two subscriptions
+  // only re-run the probe when either known selection store changes.
   useEffect(() => {
-    if (selectedId) {
-      openPanel('right', 'properties');
-    } else if (sysmlSelectedId) {
-      openPanel('right', 'sysmlProperties');
+    const focused = focusedPanelId('right');
+    if (focused !== null) {
+      openPanel('right', focused);
     } else {
       setActive('right', 'ai');
     }
