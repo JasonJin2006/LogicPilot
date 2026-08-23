@@ -1,10 +1,17 @@
 // Best-effort SysML v2 projection for external models.
 //
-// This is intentionally not a SysML parser. Professional SysML tools remain
-// the source of truth for the language. The projection extracts the stable,
-// visual subset needed by the Workbench: declarations, containment and the
-// most common structural/traceability/behavior relations. Unsupported syntax
-// is preserved in the source editor and reported as a non-fatal diagnostic.
+// Professional SysML tools remain the source of truth for the language. The
+// projection extracts the stable, visual subset needed by the Workbench:
+// declarations with precise source spans, containment and the most common
+// structural/traceability/behavior relations. The statement-level scanner
+// lives in ./sysmlParser (stable SYxxxx diagnostics); this layer resolves
+// references, dedupes relations and derives the layout sidecar.
+
+import {
+  elementIdFor,
+  fnv1aHex,
+  parseSysMLSource,
+} from './sysmlParser';
 
 export type SysMLVisualKind =
   | 'package'
@@ -62,6 +69,9 @@ export interface SysMLElement {
   ownerId?: string;
   declaration: 'definition' | 'usage' | 'unknown';
   span: SysMLSourceSpan;
+  /** The identifier token inside the declaration line - the anchor for
+   *  go-to-definition/rename style language features (plan §8 S1). */
+  nameSpan: SysMLSourceSpan;
 }
 
 export interface SysMLRelation {
@@ -98,56 +108,10 @@ export interface SysMLLayout {
   positions: Record<string, SysMLPosition>;
 }
 
-const DECLARATION =
-  /^\s*(package|part|item|port|interface|requirement|action|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)\s+(?:(def|usage)\s+)?([A-Za-z_][A-Za-z0-9_]*)/;
-const REFERENCE = '[A-Za-z_][A-Za-z0-9_.:]*';
-
-function fnv1a(value: string): string {
-  let hash = 0xcbf29ce484222325n;
-  for (const byte of new TextEncoder().encode(value)) {
-    hash ^= BigInt(byte);
-    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
-  }
-  return hash.toString(16).padStart(16, '0');
-}
-
-export function sysmlSourceHash(source: string): string {
-  return `fnv1a-${fnv1a(source)}`;
-}
-
 /** Portable project-side layout artifact; the source file remains external or
  * text-backed and is never rewritten by the projection editor. */
 export function sysmlLayoutPath(sourcePath: string): string {
-  return `presentation/sysml/${fnv1a(sourcePath)}.layout.json`;
-}
-
-function visualKind(value: string): SysMLVisualKind {
-  return value as SysMLVisualKind;
-}
-
-function stripComments(line: string): string {
-  return line.replace(/\/\/.*$/, '').trimEnd();
-}
-
-function relationId(kind: SysMLRelationKind, line: number, from: string, to: string): string {
-  return `sysml-rel-${fnv1a(`${kind}:${line}:${from}:${to}`)}`;
-}
-
-function elementId(qualifiedName: string, kind: SysMLVisualKind): string {
-  return `sysml-${fnv1a(`${kind}:${qualifiedName}`)}`;
-}
-
-interface PendingRelation {
-  kind: SysMLRelationKind;
-  from: string;
-  to: string;
-  label: string;
-  line: number;
-}
-
-interface Scope {
-  element: SysMLElement;
-  closeDepth: number;
+  return `presentation/sysml/${fnv1aHex(sourcePath)}.layout.json`;
 }
 
 function resolveReference(
@@ -164,111 +128,26 @@ function resolveReference(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function pushPending(
-  pending: PendingRelation[],
-  kind: SysMLRelationKind,
-  from: string,
-  to: string,
-  label: string,
-  line: number,
-): void {
-  if (from.trim() === '' || to.trim() === '') return;
-  pending.push({ kind, from: from.trim(), to: to.trim(), label, line });
-}
-
 /** Parse the visual subset without pretending to be a complete SysML parser. */
 export function projectSysML(source: string): SysMLProjection {
-  const elements: SysMLElement[] = [];
-  const pending: PendingRelation[] = [];
-  const diagnostics: SysMLProjectionDiagnostic[] = [];
-  const scopes: Scope[] = [];
-  let depth = 0;
-  let offset = 0;
-
-  const lines = source.split(/\r?\n/);
-  lines.forEach((rawLine, index) => {
-    const lineNumber = index + 1;
-    const line = stripComments(rawLine);
-    while (scopes.length > 0 && depth < scopes[scopes.length - 1]!.closeDepth) {
-      scopes.pop();
-    }
-    const owner = scopes[scopes.length - 1]?.element;
-    const declaration = DECLARATION.exec(line);
-    if (declaration) {
-      const kind = visualKind(declaration[1]!);
-      const declarationKind = declaration[2] === 'def' ? 'definition' : declaration[2] === 'usage' ? 'usage' : 'unknown';
-      const name = declaration[3]!;
-      const qualifiedName = owner ? `${owner.qualifiedName}::${name}` : name;
-      const element: SysMLElement = {
-        id: elementId(qualifiedName, kind),
-        kind,
-        name,
-        qualifiedName,
-        ownerId: owner?.id,
-        declaration: declarationKind,
-        span: { start: offset, end: offset + rawLine.length, line: lineNumber },
-      };
-      elements.push(element);
-      if (owner) {
-        pushPending(pending, 'contains', owner.qualifiedName, qualifiedName, 'contains', lineNumber);
-      }
-
-      const specializes = new RegExp(`:>\\s*(${REFERENCE})`).exec(line);
-      if (specializes) {
-        pushPending(pending, 'specializes', qualifiedName, specializes[1]!, ':>', lineNumber);
-      }
-      const typed = new RegExp(`:\\s*(${REFERENCE})`).exec(line.replace(/:>/g, ''));
-      if (typed && declarationKind !== 'definition') {
-        pushPending(pending, 'typed_by', qualifiedName, typed[1]!, ':', lineNumber);
-      }
-
-      const opens = (line.match(/{/g) ?? []).length;
-      const closes = (line.match(/}/g) ?? []).length;
-      if (opens > closes) scopes.push({ element, closeDepth: depth + opens - closes });
-      depth += opens - closes;
-    } else {
-      const satisfy = new RegExp(`^\\s*satisfy\\s+requirement\\s+(${REFERENCE})\\s+by\\s+(${REFERENCE})`).exec(line);
-      const verify = new RegExp(`^\\s*verify\\s+requirement\\s+(${REFERENCE})\\s+by\\s+(${REFERENCE})`).exec(line);
-      const trace = new RegExp(`^\\s*trace\\s+(${REFERENCE})\\s+(?:to|from)\\s+(${REFERENCE})`).exec(line);
-      const connect = new RegExp(`^\\s*connect\\s+(${REFERENCE})\\s+to\\s+(${REFERENCE})`).exec(line);
-      const flow = new RegExp(`^\\s*flow\\s+(${REFERENCE})\\s+from\\s+(${REFERENCE})\\s+to\\s+(${REFERENCE})`).exec(line);
-      const transition = new RegExp(`^\\s*transition\\s+(?:first\\s+)?(${REFERENCE})\\s+then\\s+(${REFERENCE})`).exec(line);
-      const binary = new RegExp(
-        `^\\s*(allocate|derive|refine|redefine|subset|expose|bind|include|dependsOn|depends_on)\\s+(${REFERENCE})\\s+(?:to|from|by|=)\\s+(${REFERENCE})`,
-      ).exec(line);
-      if (satisfy) pushPending(pending, 'satisfies', satisfy[2]!, satisfy[1]!, 'satisfies', lineNumber);
-      else if (verify) pushPending(pending, 'verifies', verify[2]!, verify[1]!, 'verifies', lineNumber);
-      else if (flow) pushPending(pending, 'flows', flow[2]!, flow[3]!, flow[1]!, lineNumber);
-      else if (connect) pushPending(pending, 'connects', connect[1]!, connect[2]!, 'connects', lineNumber);
-      else if (transition) pushPending(pending, 'transitions', transition[1]!, transition[2]!, 'transitions', lineNumber);
-      else if (trace) pushPending(pending, 'traces', trace[1]!, trace[2]!, 'traces', lineNumber);
-      else if (binary) {
-        const relationKind: SysMLRelationKind =
-          binary[1] === 'allocate' ? 'allocates' :
-          binary[1] === 'derive' ? 'derives' :
-          binary[1] === 'refine' ? 'refines' :
-          binary[1] === 'redefine' ? 'redefines' :
-          binary[1] === 'subset' ? 'subsets' :
-          binary[1] === 'expose' ? 'exposes' :
-          binary[1] === 'bind' ? 'binds' :
-          binary[1] === 'include' ? 'includes' : 'depends_on';
-        pushPending(pending, relationKind, binary[2]!, binary[3]!, binary[1]!, lineNumber);
-      }
-      depth += (line.match(/{/g) ?? []).length - (line.match(/}/g) ?? []).length;
-    }
-    offset += rawLine.length + 1;
-  });
+  const parsed = parseSysMLSource(source);
+  const elements: SysMLElement[] = parsed.elements.map((element) => ({
+    ...element,
+    id: elementIdFor(element.kind, element.qualifiedName),
+  }));
 
   const byQualified = new Map(elements.map((element) => [element.qualifiedName, element]));
   const relations: SysMLRelation[] = [];
   const relationKeys = new Set<string>();
-  for (const candidate of pending) {
+  const diagnostics = [...parsed.diagnostics];
+  for (const candidate of parsed.pending) {
     const from = resolveReference(candidate.from, elements, byQualified);
     const to = resolveReference(candidate.to, elements, byQualified);
     if (!from || !to) {
       if (candidate.kind !== 'contains') {
+        // SY0002: stable unresolved-reference warning (parser code table).
         diagnostics.push({
-          code: 'LP-SYML-REF',
+          code: 'SY0002',
           severity: 'warning',
           message: `cannot resolve ${candidate.kind} reference '${candidate.from}' -> '${candidate.to}'`,
           line: candidate.line,
@@ -280,7 +159,7 @@ export function projectSysML(source: string): SysMLProjection {
     if (relationKeys.has(key)) continue;
     relationKeys.add(key);
     relations.push({
-      id: relationId(candidate.kind, candidate.line, from.id, to.id),
+      id: `sysml-rel-${fnv1aHex(`${candidate.kind}:${candidate.line}:${from.id}:${to.id}`)}`,
       kind: candidate.kind,
       from: from.id,
       to: to.id,
@@ -289,14 +168,12 @@ export function projectSysML(source: string): SysMLProjection {
     });
   }
 
-  if (elements.length === 0 && source.trim() !== '') {
-    diagnostics.push({
-      code: 'LP-SYML-EMPTY',
-      severity: 'warning',
-      message: 'no visual SysML declarations were recognized; the source remains available in the text editor',
-    });
-  }
-  return { sourceHash: sysmlSourceHash(source), elements, relations, diagnostics };
+  return {
+    sourceHash: `fnv1a-${fnv1aHex(source)}`,
+    elements,
+    relations,
+    diagnostics,
+  };
 }
 
 export type SysMLLayoutMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';

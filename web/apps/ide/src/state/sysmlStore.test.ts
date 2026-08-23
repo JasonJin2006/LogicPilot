@@ -34,3 +34,27 @@ describe('SysML projection store', () => {
     expect(useSysMLStore.getState().projection!.elements).toHaveLength(count);
   });
 });
+
+  it('keeps the last valid snapshot while the source has errors (parseDirty)', () => {
+    useSysMLStore.getState().load('model/a.sysml', 'package P {\n  part def A {}\n}\n');
+    const validProjection = useSysMLStore.getState().projection!;
+    expect(useSysMLStore.getState().parseDirty).toBe(false);
+
+    // Broken edit: the raw source updates, the semantic snapshot does not.
+    useSysMLStore.getState().refresh('package P {\n  part def A {\n');
+    const state = useSysMLStore.getState();
+    expect(state.parseDirty).toBe(true);
+    expect(state.projection).toBe(validProjection);
+    expect(state.source).toContain('part def A {');
+
+    // Fixed: the projection advances again.
+    useSysMLStore
+      .getState()
+      .refresh('package P {\n  part def A {}\n  requirement R;\n}\n');
+    expect(useSysMLStore.getState().parseDirty).toBe(false);
+    expect(useSysMLStore.getState().projection!.elements.map((e) => e.name)).toEqual([
+      'P',
+      'A',
+      'R',
+    ]);
+  });

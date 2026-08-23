@@ -176,6 +176,7 @@ function visibleInMode(kind: SysMLVisualKind, mode: SysMLViewMode): boolean {
 export function SysMLCanvas() {
   const projection = useSysMLStore((state) => state.projection);
   const layout = useSysMLStore((state) => state.layout);
+  const parseDirty = useSysMLStore((state) => state.parseDirty);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
   const pastLength = useSysMLStore((state) => state.past.length);
@@ -355,6 +356,11 @@ export function SysMLCanvas() {
       )}
       {projection.diagnostics.length > 0 && (
         <div className="sysml-diagnostics">{projection.diagnostics.length} projection warning(s); source remains authoritative.</div>
+      )}
+      {parseDirty && (
+        <div className="sysml-diagnostics sysml-parse-dirty">
+          Source has errors - showing the last valid model.
+        </div>
       )}
     </div>
   );

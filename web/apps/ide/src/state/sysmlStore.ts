@@ -64,6 +64,9 @@ interface SysMLState {
   selectedId: string | null;
   viewMode: SysMLViewMode;
   layoutDirty: boolean;
+  /** The source currently has error-level diagnostics; projection/layout hold
+   *  the LAST VALID snapshot until the errors are fixed (plan §8 S1). */
+  parseDirty: boolean;
   past: SysMLLayout[];
   future: SysMLLayout[];
   load: (path: string, source: string, serialized?: string) => void;
@@ -87,18 +90,38 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   selectedId: null,
   viewMode: 'all',
   layoutDirty: false,
+  parseDirty: false,
   past: [],
   future: [],
   load: (path, source, serialized) => {
+    // Opening a file has no previous snapshot to protect: take what parsed.
     const projection = projectSysML(source);
     const layout = loadLayout(path, projection, serialized);
     persistLayout(path, layout);
-    set({ path, source, projection, layout, selectedId: null, viewMode: 'all', layoutDirty: false, past: [], future: [] });
+    set({
+      path,
+      source,
+      projection,
+      layout,
+      selectedId: null,
+      viewMode: 'all',
+      layoutDirty: false,
+      parseDirty: projection.diagnostics.some((d) => d.severity === 'error'),
+      past: [],
+      future: [],
+    });
   },
   refresh: (source) => {
     const path = get().path;
     if (!path) return;
     const projection = projectSysML(source);
+    const hasErrors = projection.diagnostics.some((d) => d.severity === 'error');
+    if (hasErrors && get().projection !== null) {
+      // Broken source never clobbers the last valid semantic snapshot
+      // (workbench-architecture-plan.md §8 S1); only the raw text updates.
+      set({ source, parseDirty: true });
+      return;
+    }
     const previous = get().layout;
     const fallback = loadLayout(path, projection);
     const positions = { ...fallback.positions };
@@ -108,7 +131,16 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     }
     const layout: SysMLLayout = { version: 1, sourceHash: projection.sourceHash, positions };
     persistLayout(path, layout);
-    set({ source, projection, layout, selectedId: null, layoutDirty: false, past: [], future: [] });
+    set({
+      source,
+      projection,
+      layout,
+      selectedId: null,
+      layoutDirty: false,
+      parseDirty: false,
+      past: [],
+      future: [],
+    });
   },
   select: (id) => set({ selectedId: id }),
   setViewMode: (mode) => set({ viewMode: mode, selectedId: null }),
@@ -152,5 +184,5 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   },
   markLayoutPersisted: () => set({ layoutDirty: false }),
   clear: () =>
-    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, past: [], future: [] }),
+    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, past: [], future: [] }),
 }));

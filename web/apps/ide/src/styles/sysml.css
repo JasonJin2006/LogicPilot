@@ -168,6 +168,12 @@
   font-weight: 600;
 }
 
+.sysml-parse-dirty {
+  right: auto;
+  left: 10px;
+  border-color: color-mix(in srgb, #f0a294 55%, transparent);
+}
+
 .sysml-selection,
 .sysml-diagnostics {
   position: absolute;
