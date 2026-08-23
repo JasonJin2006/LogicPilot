@@ -10,7 +10,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
-import { BLOCK_DEFS, LIBRARIES, portGlyphPoint } from '../model/blockDefs';
+import { portGlyphPoint } from '../model/blockDefs';
+// Side-effect import: registers the built-in element libraries into the
+// palette provider registry consumed below (plan §9.3).
+import '../model/paletteContributions';
+import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
+import type { PaletteItem as CatalogItem } from '../workbench/palette';
 import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
 import { useCanvasView } from '../state/canvasView';
@@ -27,6 +32,36 @@ interface PaletteBlock {
   /** Port names by direction, for the palette grid's connection dots. */
   inPorts?: string[];
   outPorts?: string[];
+}
+
+type PaletteBlockMap = Map<string, PaletteBlock>;
+
+function toBlock(item: CatalogItem): PaletteBlock {
+  return {
+    kind: item.kind,
+    library: item.library,
+    name: item.name,
+    hint: item.hint,
+    in: item.in,
+    out: item.out,
+    inPorts: item.inPorts,
+    outPorts: item.outPorts,
+  };
+}
+
+/** Registered contributions + imported custom libraries -> one block map
+ *  keyed by kind (custom entries override built-ins of the same kind). */
+function blockIndex(customLibraries: Record<string, { blocks: PaletteBlock[] }>): PaletteBlockMap {
+  const defs: PaletteBlockMap = new Map();
+  for (const item of PALETTE_CONTRIBUTIONS.allItems()) {
+    defs.set(item.kind, toBlock(item));
+  }
+  for (const custom of Object.values(customLibraries)) {
+    for (const block of custom.blocks) {
+      defs.set(block.kind, block);
+    }
+  }
+  return defs;
 }
 
 interface DragSession {
@@ -67,29 +102,9 @@ export function PalettePanel() {
     return () => bar.removeEventListener('wheel', onWheel);
   }, []);
 
-  const defs = new Map<string, PaletteBlock>();
-  for (const block of BLOCK_DEFS) {
-    // Catalog-only process kinds have no kernel registry entry yet; hiding
-    // them keeps the palette honest (dragging one would fail DSL compile).
-    if (block.library === 'process' && !block.executable) {
-      continue;
-    }
-    defs.set(block.kind, {
-      kind: block.kind,
-      library: block.library,
-      name: block.name,
-      hint: block.hint,
-      in: block.ports.some((port) => port.direction === 'in'),
-      out: block.ports.some((port) => port.direction === 'out'),
-      inPorts: block.ports.filter((port) => port.direction === 'in').map((port) => port.name),
-      outPorts: block.ports.filter((port) => port.direction === 'out').map((port) => port.name),
-    });
-  }
-  for (const custom of Object.values(customLibraries)) {
-    for (const block of custom.blocks) {
-      defs.set(block.kind, block);
-    }
-  }
+  // The registry owns the catalog: built-in libraries come from palette
+  // contributions, custom imports override by kind.
+  const defs = blockIndex(customLibraries);
 
   let visible: PaletteBlock[] = [];
   if (library === 'all') {
@@ -98,23 +113,11 @@ export function PalettePanel() {
     visible = recentKinds
       .map((kind) => defs.get(kind))
       .filter((block): block is PaletteBlock => block !== undefined);
-  } else if (library === 'process') {
-    // Resolve through the defs map so library views render the same port
-    // indicators as the All view (BLOCK_DEFS carries ports, not the
-    // palette's in/out flags).
-    visible = BLOCK_DEFS.filter((block) => block.library === 'process')
-      .map((block) => defs.get(block.kind))
-      .filter((block): block is PaletteBlock => block !== undefined);
-  } else if (
-    library === 'presentation' ||
-    library === 'statechart' ||
-    library === 'action' ||
-    library === 'agent' ||
-    library === 'analysis' ||
-    library === 'controls'
-  ) {
-    visible = BLOCK_DEFS.filter((block) => block.library === library)
-      .map((block) => defs.get(block.kind))
+  } else if (PALETTE_CONTRIBUTIONS.itemsFor(library).length > 0) {
+    // Registered library view: resolve through the defs map so custom
+    // overrides of a registered kind render identically.
+    visible = PALETTE_CONTRIBUTIONS.itemsFor(library)
+      .map((item) => defs.get(item.kind))
       .filter((block): block is PaletteBlock => block !== undefined);
   } else {
     visible = customLibraries[library]?.blocks ?? [];
@@ -133,7 +136,7 @@ export function PalettePanel() {
   const tabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
-    ...LIBRARIES.map((entry) => ({ id: entry.id, label: entry.name })),
+    ...PALETTE_CONTRIBUTIONS.libraries().map((entry) => ({ id: entry.id, label: entry.name })),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
     id: custom.name,
