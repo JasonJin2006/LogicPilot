@@ -57,6 +57,8 @@ interface AiConversationState {
   createSession: (scope: string, title: string) => string;
   archiveSession: (id: string, archived?: boolean) => void;
   pinSession: (id: string, pinned?: boolean) => void;
+  renameSession: (id: string, title: string) => void;
+  deleteSession: (id: string) => void;
   updateSessionPermission: (id: string, permission: AiSession['permission']) => void;
   saveCheckpoint: (scope: string, checkpoint: AssistantKernelCheckpoint) => void;
   clearCheckpoint: (scope: string) => void;
@@ -167,6 +169,24 @@ export const useAiConversationStore = create<AiConversationState>()(
         set((state) => ({
           sessions: state.sessions.map((item) => (item.id === id ? { ...item, pinned } : item)),
         })),
+      renameSession: (id, title) =>
+        set((state) => ({
+          sessions: state.sessions.map((item) => (item.id === id ? { ...item, title } : item)),
+        })),
+      deleteSession: (id) =>
+        set((state) => {
+          const session = state.sessions.find((item) => item.id === id);
+          const scope = session ? aiSessionScope(session.scope, id) : id;
+          const histories = { ...state.histories };
+          delete histories[scope];
+          const checkpoints = { ...state.checkpoints };
+          delete checkpoints[scope];
+          return {
+            sessions: state.sessions.filter((item) => item.id !== id),
+            histories,
+            checkpoints,
+          };
+        }),
       updateSessionPermission: (id, permission) =>
         set((state) => ({
           sessions: state.sessions.map((item) => (item.id === id ? { ...item, permission } : item)),

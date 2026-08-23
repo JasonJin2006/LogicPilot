@@ -340,6 +340,57 @@
   padding: 8px 10px;
 }
 
+.ai-session-menu {
+  position: relative;
+}
+
+.ai-session-menu > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.ai-session-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ai-session-menu-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  min-width: 110px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-1);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.ai-session-menu-pop button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 11px;
+}
+
+.ai-session-menu-pop button:hover {
+  background: var(--surface-3);
+}
+
+.ai-session-menu-pop button.danger {
+  color: var(--error);
+}
+
 .ai-checkpoint-card {
   display: flex;
   align-items: center;

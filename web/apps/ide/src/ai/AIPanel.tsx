@@ -17,6 +17,7 @@ import {
   Eraser,
   ListChecks,
   Mic,
+  MoreHorizontal,
   Plus,
   Pin,
   RotateCcw,
@@ -243,6 +244,8 @@ export function AIPanel() {
   const createSession = useAiConversationStore((state) => state.createSession);
   const archiveSession = useAiConversationStore((state) => state.archiveSession);
   const pinSession = useAiConversationStore((state) => state.pinSession);
+  const renameSession = useAiConversationStore((state) => state.renameSession);
+  const deleteSession = useAiConversationStore((state) => state.deleteSession);
   const updateSessionPermission = useAiConversationStore((state) => state.updateSessionPermission);
   const activeSession =
     activeSessionId === null
@@ -597,6 +600,30 @@ export function AIPanel() {
     activeSessionScopeRef.current = null;
     setActiveSessionId(null);
     setPrompt('');
+  };
+
+  const openRenameSession = (session: AiSession) => {
+    useUiStore.getState().openPrompt({
+      title: '重命名会话',
+      label: '会话名称',
+      initial: session.title,
+      submitLabel: '重命名',
+      onSubmit: (value) => {
+        const next = value.trim();
+        if (next !== '' && next !== session.title) renameSession(session.id, next);
+      },
+    });
+  };
+
+  const confirmDeleteSession = (session: AiSession) => {
+    useUiStore.getState().openConfirm({
+      title: '删除会话',
+      body: '此会话及其对话记录将被删除,无法找回。',
+      actions: [
+        { label: '删除', primary: true, onSelect: () => deleteSession(session.id) },
+        { label: '取消', onSelect: () => {} },
+      ],
+    });
   };
 
   const refreshModelList = async () => {
@@ -1231,6 +1258,23 @@ export function AIPanel() {
                   </span>
                 </button>
                 <span className="ai-session-actions">
+                  <details className="ai-session-menu">
+                    <summary aria-label="会话操作" title="会话操作">
+                      <MoreHorizontal size={13} />
+                    </summary>
+                    <div className="ai-tools-popover ai-session-menu-pop">
+                      <button type="button" onClick={() => openRenameSession(session)}>
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => confirmDeleteSession(session)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </details>
                   <button
                     type="button"
                     aria-label="归档会话"
@@ -1241,8 +1285,8 @@ export function AIPanel() {
                   </button>
                   <button
                     type="button"
-              aria-label={session.pinned ? '取消置顶会话' : '置顶会话'}
-              title={session.pinned ? '取消置顶' : '置顶'}
+                    aria-label={session.pinned ? '取消置顶会话' : '置顶会话'}
+                    title={session.pinned ? '取消置顶' : '置顶'}
                     onClick={() => pinSession(session.id, !session.pinned)}
                   >
                     <Pin size={13} />
