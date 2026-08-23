@@ -34,7 +34,8 @@ export function wordAt(source: string, offset: number): { word: string; start: n
   return { word: source.slice(start, end), start, end };
 }
 
-/** Completions at a cursor: element references after `by/to/from`, otherwise
+/** Completions at a cursor: element references in traceability positions
+ *  (`by/to/from`, or the target slot of satisfy/verify lines), otherwise
  *  declaration keywords filtered by the word being typed. */
 export function completionsAt(
   source: string,
@@ -42,7 +43,11 @@ export function completionsAt(
   projection: SysMLProjection,
 ): SysMLCompletionItem[] {
   const before = source.slice(0, offset);
-  const referenceContext = /(?:by|to|from)\s+([A-Za-z0-9_.:]*)$/.exec(before);
+  const referenceContext =
+    /(?:by|to|from)\s+([A-Za-z0-9_.:]*)$/.exec(before) ??
+    // `satisfy requirement <target>` / `verify requirement <target>`: the
+    // token being typed IS an element reference.
+    /(?:^|\n)\s*(?:satisfy|verify)\s+requirement\s+([A-Za-z0-9_.:]*)$/.exec(before);
   if (referenceContext !== null) {
     const typedPrefix = referenceContext[1]!.toLowerCase();
     return projection.elements

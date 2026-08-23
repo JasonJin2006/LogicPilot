@@ -11,6 +11,13 @@ import type { ComponentType } from 'react';
  *  workbench (plan §13 - no core table of language panels). */
 export type DocumentEditorPanel = string;
 
+/** One completion row rendered by the shared editor overlay. */
+export interface DocumentCompletionItem {
+  label: string;
+  insertText: string;
+  detail?: string;
+}
+
 export interface DocumentContribution {
   id: string;
   label: string;
@@ -24,6 +31,10 @@ export interface DocumentContribution {
    *  generic source/data glyphs when omitted. Contributed by the language -
    *  the workbench never maps kinds to icons itself. */
   icon?: ComponentType<{ size?: number }>;
+  /** Cursor-aware completions for this document type, served to the shared
+   *  text-editor overlay (Ctrl+Space). Contributed by the language - the
+   *  editor stays keyword-agnostic. */
+  completions?: (source: string, offset: number) => readonly DocumentCompletionItem[];
 }
 
 class DocumentContributionRegistry {

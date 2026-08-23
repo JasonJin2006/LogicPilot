@@ -1524,3 +1524,51 @@
   flex: 1;
   font-size: 11px;
 }
+
+/* Contributed-completion overlay (Ctrl+Space in text editors). */
+.dsl-editor {
+  position: relative;
+}
+
+.dsl-completion {
+  position: absolute;
+  z-index: 30;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-strong) 97%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.dsl-completion button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dsl-completion button.active,
+.dsl-completion button:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.dsl-completion em {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: normal;
+}

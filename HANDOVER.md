@@ -32,6 +32,7 @@
 | (本轮) | **D1/SysML 结构化 parser**:新建 `sysml/sysmlParser.ts`(括号配对作用域栈、坏语句跳过继续收集全部错误);元素带 `nameSpan`(标识符精确定位)+ 覆盖到闭括号行的块级 span;诊断改稳定码 SY0001 未识别语句/SY0002 未解析引用/SY0003 重名/SY0004 括号失衡/SY0005 无声明;`sysmlStore.refresh` 错误时只更新 source、保留最后有效 projection/layout 并置 `parseDirty`(画布显示提示条)。id 方案不变(qualifiedName fnv1a),布局侧车向后兼容。新增 parser 6 测 + store 1 测(共 259 vitest);E2E/sysml-canvas-check PASS |
 | (本轮) | **D2/SysML AI typed edits**:新建 `sysmlEdits.ts`(insertElement/renameElement/addRelationStatement 纯函数——嵌套插入带缩进、单行 `{ }` 父块自动展开、rename 只替换 nameSpan token、同作用域重名拒绝、括号失衡拒追关系);工具侧 `commitEdit` 写前用 parser 重验证(会引入 SY error 的输出直接拒绝且不动文件),读取走权威存储而非滞后的 store.source。新增 7 个纯函数测试 + 4 个真实 store 集成测试(共 270 vitest) |
 | (本轮) | **D3/SysML 语言服务**:新建 `sysmlLanguage.ts`——completionsAt(by/to/from 后给元素名,否则按前缀过滤声明关键字)、hoverAt(最内层包含块)、definitionAt(声明处=自身;引用词走唯一名/::尾解析)、referencesOf、renameAt;uiStore 新增 sourceReveal 请求,DslEditor 聚焦并选中 span(浏览器自动滚动到可见),属性面板与画布选中卡加 Open in source 按钮;AI 侧新增 find_sysml_definition/find_sysml_references。renameElement 升级:除声明 token 外,所有能解析到该元素的裸名/限定尾引用一并替换(其他作用域同名不受影响)。语言测试 6 例(共 276 vitest) |
+| (本轮) | **S1 补齐**:① `DocumentContribution.completions(source,offset)` 缝隙,SysML 贡献方注册(元素上下文/关键字),DslEditor 通用 Ctrl+Space 弹层(方向键/Enter/Esc、输入续排、点击接受,disk 模式同样落盘);② `sysmlProjectIndex.ts` 聚合全部 .sysml——唯一名/限定名/::尾三级解析,歧义返回 null,诊断按路径聚合;find_sysml_definition 增加 projectFiles 列表与跨文件回退。新增 4 索引测试 + 语言上下文用例扩展(共 280 vitest);`.verify/completion-check.mjs` 实测弹层→点选 Power→token 落盘 PASS |
 
 
 ## 4. 待办(按优先级,对应审查文档 §4)
@@ -59,7 +60,8 @@
 - ✅ **D1 结构化 parser**(见 §3):`sysml/sysmlParser.ts` 括号配对+错误恢复,nameSpan/块级 span,稳定诊断码族 SY0001–SY0005(表在文件头),store 错误时保留最后有效快照(parseDirty);元素 id 沿用 qualifiedName 哈希(布局侧车兼容);
 - ✅ **D2 AI typed edits**(见 §3):`sysml/sysmlEdits.ts` 纯源文本事务 + `add_sysml_element`/`rename_sysml_element`/`connect_sysml_elements` 三工具(写前重解析验证,拒绝会产生 SY error 的输出;从 bundle/diskFiles 权威存储读取当前文本);
 - ✅ **D3 语言服务**(见 §3):`sysml/sysmlLanguage.ts`(completionsAt/hoverAt/definitionAt/referencesOf/renameAt)+ uiStore `sourceReveal` 管道(属性面板/画布选中小卡 "Open in source" 直达 token)+ AI 导航工具 find_sysml_definition/find_sysml_references;rename 升级为**引用同步替换**(逐词重解析判定归属,跨作用域同名不动);
-- 剩余 S1:多文件项目级编辑;textarea 内的补全弹层 UI(服务函数已备);
+- ✅ **S1 收尾**(见 §3):`DocumentContribution.completions` 缝隙 + DslEditor 通用补全弹层(Ctrl+Space);`sysmlProjectIndex.ts` 多文件项目级索引(definition 跨文件回退、歧义即 null、诊断带路径聚合);
+- **S1 至此功能面补齐**。遗留(非阻塞):跨文件 relation 抽取(需要合并虚拟文档)、索引未接入 referencesOf。
 - S2:action/state/calculation/analysis/verification 的 ExecutionTargetRef + 解释器/lowering,输出 trace/evidence,建 conformance matrix。规范基线:OMG SysML v2。
 
 ## 5. 验证工作流(每个切片必须全绿)

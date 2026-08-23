@@ -15,6 +15,7 @@ import {
   type RelationVerb,
 } from '../../../sysml/sysmlEdits';
 import { definitionAt, referencesOf } from '../../../sysml/sysmlLanguage';
+import { buildSysMLProjectIndex, resolveInIndex } from '../../../sysml/sysmlProjectIndex';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
   return typeof args[key] === 'number' && Number.isFinite(args[key] as number) ? (args[key] as number) : null;
@@ -22,6 +23,19 @@ function numberArg(args: Record<string, unknown>, key: string): number | null {
 
 function stringArg(args: Record<string, unknown>, key: string): string | null {
   return typeof args[key] === 'string' && args[key].trim() !== '' ? (args[key] as string) : null;
+}
+
+/** Every .sysml source in the workspace, for project-level lookups. */
+function collectSysmlSources(): Record<string, string> {
+  const sources: Record<string, string> = {};
+  const bundle = useProjectStore.getState().bundle;
+  for (const [path, content] of Object.entries(bundle?.files ?? {})) {
+    if (/\.sysml$/i.test(path)) sources[path] = content;
+  }
+  for (const [path, content] of Object.entries(useUiStore.getState().diskFiles)) {
+    if (/\.sysml$/i.test(path)) sources[path] = content;
+  }
+  return sources;
 }
 
 /** Read the CURRENT authoritative text straight from the owning store
@@ -123,6 +137,7 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
         })),
         relations: state.projection.relations,
         diagnostics: state.projection.diagnostics,
+        projectFiles: Object.keys(collectSysmlSources()),
       };
     },
   },
@@ -347,10 +362,24 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
         const line = Math.min(Math.max(1, numberArg(args, 'line') ?? 1), lines.length);
         offset = lines.slice(0, line - 1).reduce((sum, text) => sum + text.length + 1, 0);
       }
-      const found = definitionAt(state.source, state.projection!, offset);
+      let found = definitionAt(state.source, state.projection!, offset);
+      let file: string | null = state.path;
+      if (found === null) {
+        // Project-wide fallback: other .sysml files may declare it.
+        const word =
+          typeof args.query === 'string'
+            ? stringArg(args, 'query')!
+            : state.source.slice(offset).match(/^[A-Za-z_][A-Za-z0-9_.:]*/)?.[0] ?? '';
+        const hit = resolveInIndex(buildSysMLProjectIndex(collectSysmlSources()), word);
+        if (hit !== null) {
+          found = hit.element;
+          file = hit.path;
+        }
+      }
       if (found === null) return { ok: false, error: 'no SysML element resolves at that position' };
       return {
         ok: true,
+        file,
         id: found.id,
         kind: found.kind,
         qualifiedName: found.qualifiedName,

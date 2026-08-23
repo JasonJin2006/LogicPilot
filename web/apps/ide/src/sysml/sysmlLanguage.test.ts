@@ -32,12 +32,22 @@ describe('sysmlLanguage services', () => {
     expect(wordAt(SOURCE, at + 1).word).toBe('car');
   });
 
-  it('suggests elements after by/to/from and keywords otherwise', () => {
+  it('suggests elements in traceability slots and keywords otherwise', () => {
     const projection = projectSysML(SOURCE);
     const afterBy = offsetOf('by car') + 'by '.length;
     const items = completionsAt(SOURCE, afterBy, projection);
     expect(items.every((item) => item.kind === 'element')).toBe(true);
     expect(items.map((item) => item.label)).toContain('Vehicle::car');
+
+    // The target slot of a satisfy line is also an element reference.
+    const satisfyLine = SOURCE.indexOf('satisfy requirement ') + 'satisfy requirement '.length;
+    const targetItems = completionsAt(
+      SOURCE.slice(0, satisfyLine),
+      satisfyLine,
+      projection,
+    );
+    expect(targetItems.every((item) => item.kind === 'element')).toBe(true);
+    expect(targetItems.map((item) => item.label)).toContain('Power');
 
     const freshLine = offsetOf('satisfy requirement Power by car;');
     const keywords = completionsAt(SOURCE, freshLine, projection);
