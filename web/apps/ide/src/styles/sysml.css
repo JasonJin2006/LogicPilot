@@ -125,7 +125,8 @@
   stroke: transparent;
 }
 
-.sysml-relation line {
+.sysml-relation line,
+.sysml-relation path {
   fill: none;
   stroke-width: 1.4;
   opacity: 0.85;

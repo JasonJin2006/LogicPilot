@@ -5,6 +5,12 @@ import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { extractExecutionTargets } from './sysmlExecution';
 import {
+  orthogonalRoute,
+  polylineLabelPoint,
+  routePathData,
+  type RouteRect,
+} from './sysmlEdgeRouting';
+import {
   SYML_NODE_HEIGHT,
   SYML_NODE_WIDTH,
   type SysMLElement,
@@ -65,6 +71,22 @@ function relationPoint(element: SysMLElement, positions: Record<string, SysMLPos
   return {
     x: position.x + (side === 'from' ? SYML_NODE_WIDTH : 0),
     y: position.y + SYML_NODE_HEIGHT / 2,
+  };
+}
+
+/** Element footprint for edge routing; compound containers use their
+ *  persisted ELK-enlarged bounds when present. */
+function routedRect(
+  element: SysMLElement,
+  positions: Record<string, SysMLPosition>,
+  sizes?: Record<string, { width: number; height: number }>,
+): RouteRect {
+  const position = positionOf(element, positions);
+  return {
+    x: position.x,
+    y: position.y,
+    width: sizes?.[element.id]?.width ?? SYML_NODE_WIDTH,
+    height: sizes?.[element.id]?.height ?? SYML_NODE_HEIGHT,
   };
 }
 
@@ -370,15 +392,46 @@ export function SysMLCanvas() {
             const from = projection.elements.find((element) => element.id === relation.from);
             const to = projection.elements.find((element) => element.id === relation.to);
             if (!from || !to) return null;
-            const a = relationPoint(from, positions, 'from');
-            const b = relationPoint(to, positions, 'to');
             const style = RELATION_STYLES[relation.kind];
+            if (relation.kind === 'contains') {
+              // Structural nesting guide: straight dashed line (the ELK
+              // pipeline nests containment into frames instead of edges).
+              const a = relationPoint(from, positions, 'from');
+              const b = relationPoint(to, positions, 'to');
+              return (
+                <g key={relation.id} className="sysml-relation">
+                  <line
+                    x1={a.x}
+                    y1={a.y}
+                    x2={b.x}
+                    y2={b.y}
+                    stroke={style.color}
+                    strokeDasharray={style.dash}
+                    markerEnd="url(#sysml-arrow)"
+                  />
+                </g>
+              );
+            }
+            // Orthogonal Manhattan routing: cross-container edges bend in a
+            // channel instead of cutting through container frames, and the
+            // geometry is recomputed per render so manual drags stay glued.
+            const route = orthogonalRoute(
+              routedRect(from, positions, layout?.sizes),
+              routedRect(to, positions, layout?.sizes),
+            );
+            const label = polylineLabelPoint(route);
             return (
               <g key={relation.id} className="sysml-relation">
-                <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={style.color} strokeDasharray={style.dash} markerEnd="url(#sysml-arrow)" />
-                {relation.label !== 'contains' && (
-                  <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} className="sysml-relation-label">{relation.label}</text>
-                )}
+                <path
+                  d={routePathData(route)}
+                  fill="none"
+                  stroke={style.color}
+                  strokeDasharray={style.dash}
+                  markerEnd="url(#sysml-arrow)"
+                />
+                <text x={label.x} y={label.y - 6} className="sysml-relation-label">
+                  {relation.label}
+                </text>
               </g>
             );
           })}
