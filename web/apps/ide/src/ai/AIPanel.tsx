@@ -79,7 +79,7 @@ import { documentContributionFor } from '../workbench/documentTypes';
 import { ScrollArea } from '../components/ScrollArea';
 import { useCanvasView } from '../state/canvasView';
 import { getAppConfig } from '../state/appConfig';
-import { getAiProviderState } from './providerConfig';
+import { getAiProviderState, listAiProviderModels, saveAiProvider } from './providerConfig';
 import { isAssistantNotConfiguredError } from './assistantErrors';
 
 function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentSettings): boolean {
@@ -180,6 +180,8 @@ export function AIPanel() {
   const [toolsEnabled, setToolsEnabled] = useState(true);
   const [sourceEditingEnabled, setSourceEditingEnabled] = useState(false);
   const [modelLabel, setModelLabel] = useState('Auto');
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [providerConfigured, setProviderConfigured] = useState(true);
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [voiceError, setVoiceError] = useState('');
@@ -596,6 +598,34 @@ export function AIPanel() {
     activeSessionScopeRef.current = null;
     setActiveSessionId(null);
     setPrompt('');
+  };
+
+  const refreshModelList = async () => {
+    if (!providerConfigured) return;
+    setModelsLoading(true);
+    try {
+      const result = await listAiProviderModels();
+      setAvailableModels(result.models ?? []);
+    } catch {
+      setAvailableModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const switchModel = async (name: string) => {
+    try {
+      const state = await getAiProviderState();
+      await saveAiProvider({
+        providerId: state.active.providerId,
+        protocol: state.active.protocol,
+        baseUrl: state.active.baseUrl,
+        model: name,
+      });
+      setModelLabel(name);
+    } catch (error) {
+      setError(`切换模型失败:${error instanceof Error ? error.message : String(error)}`);
+    }
   };
 
   const changePermissionMode = (mode: PermissionMode) => {
@@ -1793,18 +1823,36 @@ export function AIPanel() {
               </div>
             </details>
             <details className="ai-composer-select ai-model-select">
-              <summary title="切换模型">
+              <summary title="切换模型" onClick={() => void refreshModelList()}>
                 <span>{displayModelLabel(modelLabel)}</span>
                 <ChevronDown size={11} />
               </summary>
               <div className="ai-tools-popover ai-select-popover">
-                <button type="button" onClick={() => useUiStore.getState().openSettings()}>
-                  <strong>{displayModelLabel(modelLabel)}</strong>
-                  <small>打开 Settings → AI &amp; Models 切换 provider 或模型</small>
-                </button>
                 <button type="button" onClick={() => setModelLabel('Auto')}>
                   <strong>自动</strong>
                   <small>使用已配置的 provider</small>
+                </button>
+                {providerConfigured &&
+                  availableModels.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      className={modelLabel === name ? 'selected' : ''}
+                      onClick={() => void switchModel(name)}
+                    >
+                      <strong>{name}</strong>
+                      <small>当前选择</small>
+                    </button>
+                  ))}
+                {providerConfigured && modelsLoading && (
+                  <p className="ai-tools-note">正在获取模型列表…</p>
+                )}
+                {providerConfigured && !modelsLoading && availableModels.length === 0 && (
+                  <p className="ai-tools-note">无法获取模型列表,请打开设置检查 provider 配置。</p>
+                )}
+                <button type="button" onClick={() => useUiStore.getState().openSettings()}>
+                  <strong>设置</strong>
+                  <small>打开 Settings → AI &amp; Models 切换 provider 或模型</small>
                 </button>
               </div>
             </details>
