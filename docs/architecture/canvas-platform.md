@@ -52,7 +52,7 @@ diff.ts`、`react/CanvasSurface.tsx + layers/`。
 | --- | --- | --- |
 | S0 | 冻结画布功能新增；盘点可提取物 | ✅ |
 | S1 | 建 `@logicpilot/canvas`：camera/culling/snapping/routing 迁入 + 共享 ELK 服务；两画布消费 | ✅ 本提交 |
-| S2 | 连线手势状态机内核化；选择/Esc/空白点击语义对齐 | 待做 |
+| S2 | 按压分类器 PressGesture 内核化（三处按压点统一 click/drag 阈值语义）；Esc/空白点击取消约定已对齐；完整状态机待做 | 🔶 部分（PressGesture ✅） |
 | S3 | ModelCanvas 拆层（Viewport/Blocks/Presentation/Live）+ Adapter 化 | 待做 |
 | S4（可选） | Canvas2D 批量渲染后端（特性开关） | 视 S3 后基准 |
 

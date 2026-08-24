@@ -58,7 +58,7 @@ import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
-import { snapRect, type SnapGuide } from '@logicpilot/canvas';
+import { PressGesture, snapRect, type SnapGuide } from '@logicpilot/canvas';
 import { graphicIntersectsViewport, worldViewportFromCamera } from '@logicpilot/canvas';
 import { diagnoseDocument } from '../workbench/diagnostics';
 // Side-effect import: registers the DES graph diagnostic provider for the
@@ -343,7 +343,8 @@ export function ModelCanvas() {
     fromId: string;
     fromPort: string;
   } | null>(null);
-  const wireStart = useRef<{ x: number; y: number } | null>(null);
+  // Slop 4px matches the old inline hypot check at pointer-up.
+  const wirePress = useRef<PressGesture | null>(null);
 
   // Live flow tokens: circles animated along a coupling when a block's
   // departed counter advances (generic process-flow telemetry). The
@@ -535,7 +536,7 @@ export function ModelCanvas() {
     startY: number;
     panX: number;
     panY: number;
-    moved: boolean;
+    press: PressGesture;
   } | null>(null);
   const elementDrag = useRef<{
     id: string;
@@ -543,7 +544,7 @@ export function ModelCanvas() {
     startY: number;
     worldX: number;
     worldY: number;
-    moved: boolean;
+    press: PressGesture;
   } | null>(null);
 
   // Track the viewport size so the grid SVG and line math match the element.
@@ -608,8 +609,9 @@ export function ModelCanvas() {
       startY: event.clientY,
       panX: view.panX,
       panY: view.panY,
-      moved: false,
+      press: new PressGesture(),
     };
+    drag.current.press.begin({ x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -626,10 +628,10 @@ export function ModelCanvas() {
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const gesture = drag.current;
     if (!gesture) return;
+    gesture.press.update({ x: event.clientX, y: event.clientY });
+    if (!gesture.press.moved) return;
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
-    if (!gesture.moved && Math.hypot(dx, dy) < 3) return;
-    gesture.moved = true;
     setPanning(true);
     setView((current) => ({ ...current, panX: gesture.panX + dx, panY: gesture.panY + dy }));
   };
@@ -638,7 +640,7 @@ export function ModelCanvas() {
     const gesture = drag.current;
     drag.current = null;
     setPanning(false);
-    if (gesture && !gesture.moved) {
+    if (gesture && !gesture.press.moved) {
       // A plain background click also disarms the two-stage connect.
       setPendingConnect(null);
       select(null);
@@ -737,7 +739,8 @@ export function ModelCanvas() {
   const startWire = (event: ReactPointerEvent<HTMLSpanElement>, node: ModelNode, port: string) => {
     event.stopPropagation();
     const anchor = portAnchor(node, port);
-    wireStart.current = { x: event.clientX, y: event.clientY };
+    wirePress.current = new PressGesture();
+    wirePress.current.begin({ x: event.clientX, y: event.clientY }, 4);
     setDraftWire({ fromId: node.id, fromPort: port, x: anchor.x, y: anchor.y });
     setWireTarget(null);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -745,6 +748,7 @@ export function ModelCanvas() {
 
   const moveWire = (event: ReactPointerEvent<HTMLSpanElement>) => {
     if (!draftWire) return;
+    wirePress.current?.update({ x: event.clientX, y: event.clientY });
     const world = clientToWorld(event.clientX, event.clientY);
     setDraftWire((wire) => (wire ? { ...wire, x: world.x, y: world.y } : wire));
     setWireTarget(findWireTarget(world, draftWire.fromId));
@@ -752,9 +756,7 @@ export function ModelCanvas() {
 
   const endWire = (event: ReactPointerEvent<HTMLSpanElement>) => {
     if (!draftWire) return;
-    const start = wireStart.current;
-    const moved =
-      start !== null && Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 4;
+    const moved = wirePress.current?.moved ?? false;
     if (moved) {
       const world = clientToWorld(event.clientX, event.clientY);
       const target = findWireTarget(world, draftWire.fromId);
@@ -779,7 +781,7 @@ export function ModelCanvas() {
       // on an in port completes it.
       setPendingConnect({ fromId: draftWire.fromId, fromPort: draftWire.fromPort });
     }
-    wireStart.current = null;
+    wirePress.current = null;
     setDraftWire(null);
     setWireTarget(null);
   };
@@ -830,7 +832,7 @@ export function ModelCanvas() {
   };
 
   const cancelWire = () => {
-    wireStart.current = null;
+    wirePress.current = null;
     setDraftWire(null);
     setWireTarget(null);
   };
@@ -1070,8 +1072,9 @@ export function ModelCanvas() {
       startY: event.clientY,
       worldX: node.x,
       worldY: node.y,
-      moved: false,
+      press: new PressGesture(),
     };
+    elementDrag.current.press.begin({ x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     setDraggingId(node.id);
   };
@@ -1084,8 +1087,7 @@ export function ModelCanvas() {
     if (!gesture || gesture.id !== node.id) return;
     const dx = event.clientX - gesture.startX;
     const dy = event.clientY - gesture.startY;
-    if (!gesture.moved && Math.hypot(dx, dy) < 3) return;
-    gesture.moved = true;
+    if (!gesture.press.update({ x: event.clientX, y: event.clientY })) return;
     let x = gesture.worldX + dx / view.scale;
     let y = gesture.worldY + dy / view.scale;
     const current = useModelStore
@@ -1130,7 +1132,7 @@ export function ModelCanvas() {
     elementDrag.current = null;
     setDraggingId(null);
     setSnapGuides([]);
-    if (gesture && gesture.id === node.id && !gesture.moved) {
+    if (gesture && gesture.id === node.id && !gesture.press.moved) {
       select(node.id);
     }
   };
