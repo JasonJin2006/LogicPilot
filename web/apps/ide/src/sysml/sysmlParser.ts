@@ -341,12 +341,21 @@ export function parseSysMLSource(source: string): SysMLParseResult {
 
       if (declaration && !/^\s*[{}]/.test(indented)) {
         const kind = normalizeKind(declaration[1]!);
+        // SysML semantics: a definition says `def`; a keyword-less part /
+        // item / port / ... declaration IS a usage. Packages (and kinds
+        // without the def/usage axis) stay 'unknown'.
+        const USAGE_DEFAULT_KINDS = new Set([
+          'part', 'item', 'port', 'attribute', 'action', 'calculation',
+          'calc', 'state', 'constraint', 'occurrence', 'flow', 'interface',
+        ]);
         const declarationKind =
           declaration[2] === 'def'
             ? 'definition'
             : declaration[2] === 'usage'
               ? 'usage'
-              : 'unknown';
+              : USAGE_DEFAULT_KINDS.has(declaration[1]!)
+                ? 'usage'
+                : 'unknown';
         const name = declaration[3] ?? declaration[4]!;
         const nameStartInLine = declaration[0].lastIndexOf(name);
         const qualifiedName = owner ? `${owner.qualifiedName}::${name}` : name;

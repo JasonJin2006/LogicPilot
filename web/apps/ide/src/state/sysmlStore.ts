@@ -27,7 +27,23 @@ import {
   type SysMLFileUnit,
 } from '../sysml/sysmlLinkedModel';
 
-export type SysMLViewMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';
+export type SysMLViewMode =
+  | 'all'
+  | 'structure'
+  | 'requirements'
+  | 'behavior'
+  | 'traceability'
+  | 'definitions'
+  | 'usages'
+  | 'tables';
+
+/** Layout backends only know the five geometric modes; the declaration and
+ *  table views position everything (visibility filters canvas-side). */
+export function layoutModeOf(
+  mode: SysMLViewMode,
+): 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability' {
+  return mode === 'definitions' || mode === 'usages' || mode === 'tables' ? 'all' : mode;
+}
 
 const LAYOUT_PREFIX = 'logicpilot.sysml.layout.';
 const EVIDENCE_PREFIX = 'logicpilot.sysml.evidence.';
@@ -419,7 +435,7 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     state.checkpoint();
     try {
       // The active view mode picks the diagram-kind reading direction.
-      const layout = await autoLayoutWithElk(state.source, state.projection, state.viewMode);
+      const layout = await autoLayoutWithElk(state.source, state.projection, layoutModeOf(state.viewMode));
       // The user may have switched files while ELK was computing.
       if (get().path !== state.path) return;
       persistLayout(state.path, layout);
@@ -449,7 +465,7 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     const state = get();
     if (!state.path || !state.projection) return;
     if (state.layout) set({ past: [...state.past, state.layout].slice(-80), future: [] });
-    const layout = autoLayoutSysML(state.projection, state.viewMode);
+    const layout = autoLayoutSysML(state.projection, layoutModeOf(state.viewMode));
     persistLayout(state.path, layout);
     set({ layout, selectedId: null, layoutDirty: true });
   },

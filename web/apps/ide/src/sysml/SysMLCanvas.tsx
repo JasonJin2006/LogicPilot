@@ -9,6 +9,7 @@ import { CanvasToolbar, useCanvasShortcuts } from '../workbench/canvasShell';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { SelectionBadge } from '../workbench/SelectionBadge';
 import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
+import { SysMLTables } from './SysMLTablesView';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
@@ -250,7 +251,10 @@ function CornerMark({
   return null;
 }
 
-function visibleInMode(kind: SysMLVisualKind, mode: SysMLViewMode): boolean {
+function visibleInMode(element: SysMLElement, mode: SysMLViewMode): boolean {
+  const kind = element.kind;
+  if (mode === 'definitions') return element.declaration === 'definition';
+  if (mode === 'usages') return element.declaration === 'usage';
   if (mode === 'all') return true;
   if (mode === 'structure')
     return [
@@ -468,13 +472,13 @@ export function SysMLCanvas() {
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
-  }, [canvasReady]);
+  }, [canvasReady, viewMode]);
 
   const positions = layout?.positions ?? {};
   const visibleElements = useMemo(() => {
     if (!projection) return [];
     if (viewMode !== 'traceability') {
-      return projection.elements.filter((element) => visibleInMode(element.kind, viewMode));
+      return projection.elements.filter((element) => visibleInMode(element, viewMode));
     }
     const ids = new Set(
       projection.relations
@@ -774,6 +778,9 @@ export function SysMLCanvas() {
           <option value="requirements">Requirements</option>
           <option value="behavior">Behavior</option>
           <option value="traceability">Traceability</option>
+          <option value="definitions">Definitions</option>
+          <option value="usages">Usages</option>
+          <option value="tables">Tables</option>
         </select>
         <span className="sysml-canvas-count">
           {visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length}{' '}
@@ -821,6 +828,9 @@ export function SysMLCanvas() {
           </>
         )}
       </div>
+      {viewMode === 'tables' && <SysMLTables />}
+      {viewMode !== 'tables' && (
+        <>
       <div className="sysml-overlays">
         {runError !== null && (
           <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
@@ -1000,6 +1010,8 @@ export function SysMLCanvas() {
               : undefined
           }
         />
+      )}
+        </>
       )}
       {projection.diagnostics.length > 0 && (
         <div className="sysml-diagnostics">

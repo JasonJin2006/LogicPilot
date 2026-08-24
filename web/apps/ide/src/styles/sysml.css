@@ -539,3 +539,90 @@
 .sysml-node[data-kind='calculation'] {
   color: var(--ok-text);
 }
+
+/* ── Table views (Part / Requirement / Allocation) ─────────────────── */
+.sysml-tables {
+  position: absolute;
+  inset: 44px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sysml-tables-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.sysml-tables-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.sysml-tables-tab.active {
+  color: var(--text);
+  border-color: var(--accent, #7aa2f7);
+}
+
+.sysml-tables-count {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.sysml-tables-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.sysml-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.sysml-table th {
+  position: sticky;
+  top: 0;
+  padding: 4px 8px;
+  text-align: left;
+  background: var(--bg-strong, #20242b);
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.sysml-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.sysml-table tbody tr {
+  cursor: pointer;
+}
+
+.sysml-table tbody tr:hover {
+  background: rgba(128, 145, 165, 0.12);
+}
+
+.sysml-table tbody tr.selected {
+  background: rgba(122, 162, 247, 0.18);
+}
+
+.sysml-tables-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 14px 0 !important;
+}
