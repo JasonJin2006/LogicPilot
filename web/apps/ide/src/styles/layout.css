@@ -1058,6 +1058,45 @@
 /* ── Canvas interaction shell (canvas-platform S5) ─────────────────────
    One mechanism for every paradigm canvas: overlay toolbar slot, right-click
    menu, and the space-pan affordance. Colors reuse the panel variables. */
+/* Bottom-right floating summary for the current canvas selection. */
+.selection-badge {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  max-width: min(420px, 50%);
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bg-strong) 94%, transparent);
+  box-shadow: var(--shadow);
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.selection-badge strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.selection-badge small {
+  color: var(--text-muted);
+}
+
+.selection-badge button {
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent, #7aa2f7);
+  font-size: 10px;
+  cursor: pointer;
+}
+
 .canvas-overlay-bar {
   display: inline-flex;
   align-items: center;

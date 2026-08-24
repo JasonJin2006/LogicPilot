@@ -179,7 +179,6 @@
   border-color: color-mix(in srgb, #f0a294 55%, transparent);
 }
 
-.sysml-selection,
 .sysml-diagnostics {
   position: absolute;
   z-index: 3;
@@ -196,15 +195,6 @@
   box-shadow: var(--shadow);
   color: var(--text-muted);
   font-size: 10px;
-}
-
-.sysml-selection strong {
-  color: var(--text);
-  font-size: 11px;
-}
-
-.sysml-selection small {
-  color: var(--text-muted);
 }
 
 .sysml-diagnostics {

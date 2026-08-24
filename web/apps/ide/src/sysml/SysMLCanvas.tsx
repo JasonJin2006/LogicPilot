@@ -7,6 +7,7 @@ import { Focus, LayoutTemplate, Minus, Plus, Undo2, Redo2, ExternalLink, Copy, T
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { CanvasToolbar, useCanvasShortcuts } from '../workbench/canvasShell';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
+import { SelectionBadge } from '../workbench/SelectionBadge';
 import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
@@ -925,18 +926,16 @@ export function SysMLCanvas() {
         </g>
       </svg>
       {selected && (
-        <div className="sysml-selection">
-          <span>{selected.kind}</span>
-          <strong>{selected.qualifiedName}</strong>
-          <small>
-            line {selected.span.line} · {selected.id}
-          </small>
-          {currentPath !== null && (
-            <button type="button" className="sysml-link" onClick={openSourceOf(selected.id)}>
-              Go to source
-            </button>
-          )}
-        </div>
+        <SelectionBadge
+          title={selected.kind}
+          detail={selected.qualifiedName}
+          hint={`line ${selected.span.line} · ${selected.id}`}
+          action={
+            currentPath !== null
+              ? { label: 'Go to source', onSelect: openSourceOf(selected.id) }
+              : undefined
+          }
+        />
       )}
       {projection.diagnostics.length > 0 && (
         <div className="sysml-diagnostics">
