@@ -72,6 +72,25 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
     level: 'supported',
     note: 'accepted and contained; typed_by recorded, machine semantics not applied',
   },
+  // --- linked multi-file slice (visualization layer) ---
+  {
+    construct:
+      'multi-file projects: import-closure loading and cross-file reference resolution',
+    level: 'supported',
+    note: 'visualization only; execution/lowering stay per-file on the owning unit',
+  },
+  {
+    construct:
+      'standard-library typed usages (ScalarValues scalars, SI quantities)',
+    level: 'supported',
+    note: 'external by design - resolved silently, never SY0002 noise',
+  },
+  {
+    construct:
+      'continuation clauses (:>/:>> specializations, feature value assignments, wrapped type clauses, assert constraint bodies)',
+    level: 'supported',
+    note: 'accepted as prose of the owning declaration; values/constraint expressions are not interpreted',
+  },
   {
     construct: 'guard conditions (when/otherwise)',
     level: 'planned',

@@ -78,13 +78,14 @@ function dequoteName(raw: string): string {
   return raw;
 }
 
-/** De-quote a whole qualified reference, preserving `::` splits. */
-function dequoteRef(raw: string): string {
+/** De-quote a whole qualified reference, preserving `::` splits. Exported
+ *  for the linked-model layer, which parses import directives itself. */
+export function dequoteRef(raw: string): string {
   return raw.split('::').map(dequoteName).join('::');
 }
 
 const DECLARATION = new RegExp(
-  '^(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)' +
+  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
@@ -458,11 +459,32 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           // State-machine entry marker (initial state from `then`): accepted;
           // execution treats the first declared state as initial.
         } else if (
-          /^then\s+action\b/.test(indented) ||
+          /^(?:entry;\s*)?then\s+action\b/.test(indented) ||
           /^entry;?$/.test(indented) ||
           /^exit;?$/.test(indented)
         ) {
           // exhibit-body effect lines: accepted, not interpreted (matrix).
+        } else if (/^then\s+[^{}]*=[^=]/.test(indented)) {
+          // `then <feature> = <value>;` action-effect assignments inside
+          // state bodies: accepted as prose (matrix: never interpreted).
+        } else if (/^:\s*['A-Za-z_]/.test(indented) && indented.endsWith(';')) {
+          // Wrapped type clause of the previous declaration
+          // (`exhibit state 'x'\n : 'Pkg'::'Type';`): accepted - typing is
+          // recorded where it shares the declaration line.
+        } else if (/^(?:not|and|or)\b|^\(/.test(indented)) {
+          // Constraint expression fragments (`not ('a' and 'b')`): recorded
+          // as prose of the owning constraint; expressions are not evaluated
+          // by the visual subset (conformance matrix).
+        } else if (/^(?:attribute\s+)?\s*:{1,2}>{1,2}\s/.test(indented)) {
+          // Specialization/redefinition continuation lines (`:> base : T;`,
+          // `attribute :>> 'name' = #.# [g];`): refinements of the previous
+          // declaration. Accepted - the containment/projection tree does not
+          // depend on them (matrix: recorded verbatim, never interpreted).
+        } else if (/^'[^']+'\s*=/.test(indented) || /^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]/.test(indented)) {
+          // Feature value assignments ('制造商' = "自制"; /
+          // '类别' = '零件类别'::'飞行器零件';): accepted as prose. The
+          // assigned value belongs to the owning attribute's declaration;
+          // re-deriving it here would duplicate state without a consumer.
         } else {
           const exhibit = EXHIBIT_LINE.exec(indented);
           if (exhibit !== null && !exhibit[1]!.startsWith('{')) {

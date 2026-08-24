@@ -63,6 +63,11 @@ export function ProblemsPanel() {
             <span className="problem-origin">{entry.origin}</span>
             <strong className="problem-code">{entry.code}</strong>
             <span className="problem-message">{entry.message}</span>
+            {entry.path !== undefined && (
+              <span className="problem-line" title={entry.path}>
+                {entry.path.split('/').pop()}
+              </span>
+            )}
             {entry.line !== undefined && <span className="problem-line">line {entry.line}</span>}
           </button>
         ))}

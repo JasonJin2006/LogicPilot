@@ -7,7 +7,13 @@
 // lives in ./sysmlParser (stable SYxxxx diagnostics); this layer resolves
 // references, dedupes relations and derives the layout sidecar.
 
-import { elementIdFor, fnv1aHex, parseSysMLSource, type RelationTrigger } from './sysmlParser';
+import {
+  elementIdFor,
+  fnv1aHex,
+  parseSysMLSource,
+  type RelationTrigger,
+  type SysMLParseResult,
+} from './sysmlParser';
 
 export type SysMLVisualKind =
   | 'package'
@@ -88,6 +94,8 @@ export interface SysMLProjectionDiagnostic {
   severity: 'warning' | 'error';
   message: string;
   line?: number;
+  /** Owning file in a linked (multi-file) projection; absent per-file. */
+  path?: string;
 }
 
 export interface SysMLProjection {
@@ -136,9 +144,39 @@ function resolveReference(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-/** Parse the visual subset without pretending to be a complete SysML parser. */
-export function projectSysML(source: string): SysMLProjection {
-  const parsed = parseSysMLSource(source);
+/** Names owned by the SysML v2 standard libraries (ScalarValues scalars, SI
+ *  quantities, ...). A typed usage referencing them cannot resolve to a
+ *  local element - they are external by design - so they stay silent instead
+ *  of warning SY0002. Shared by the single-file and linked projections so
+ *  both modes report identically. */
+export const STDLIB_REFERENCE_NAMES: ReadonlySet<string> = new Set([
+  'string',
+  'integer',
+  'real',
+  'number',
+  'boolean',
+  'rational',
+  'complex',
+  'natural',
+  'mass',
+  'length',
+  'time',
+  'speed',
+  'volume',
+  'area',
+  'angle',
+  'temperature',
+]);
+
+export function isStdLibraryReference(reference: string): boolean {
+  const last = reference.split('::').pop()?.trim().toLowerCase() ?? '';
+  return STDLIB_REFERENCE_NAMES.has(last);
+}
+
+/** Relation resolution over an already-parsed source. Split from
+ *  `projectSysML` so the linked multi-file model can reuse the exact
+ *  single-file rules before applying its cross-file tiers. */
+export function resolveParsedSysML(source: string, parsed: SysMLParseResult): SysMLProjection {
   const elements: SysMLElement[] = parsed.elements.map((element) => ({
     ...element,
     id: elementIdFor(element.kind, element.qualifiedName),
@@ -150,9 +188,18 @@ export function projectSysML(source: string): SysMLProjection {
   const diagnostics = [...parsed.diagnostics];
   for (const candidate of parsed.pending) {
     const from = resolveReference(candidate.from, elements, byQualified);
-    const to = resolveReference(candidate.to, elements, byQualified);
+    // A usage typed by a same-named definition (`part 'x' : 'x';` where the
+    // def 'x' exists) must not resolve its type to ITSELF - exclude the
+    // resolved source element from the target scope.
+    const targetScope =
+      from === undefined ? elements : elements.filter((element) => element.id !== from.id);
+    const to = resolveReference(candidate.to, targetScope, byQualified);
     if (!from || !to) {
-      if (candidate.kind !== 'contains') {
+      if (
+        candidate.kind !== 'contains' &&
+        !isStdLibraryReference(candidate.from) &&
+        !isStdLibraryReference(candidate.to)
+      ) {
         // SY0002: stable unresolved-reference warning (parser code table).
         diagnostics.push({
           code: 'SY0002',
@@ -183,6 +230,11 @@ export function projectSysML(source: string): SysMLProjection {
     relations,
     diagnostics,
   };
+}
+
+/** Parse the visual subset without pretending to be a complete SysML parser. */
+export function projectSysML(source: string): SysMLProjection {
+  return resolveParsedSysML(source, parseSysMLSource(source));
 }
 
 export type SysMLLayoutMode = 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability';

@@ -278,6 +278,10 @@ export function SysMLCanvas() {
   const parseDirty = useSysMLStore((state) => state.parseDirty);
   const currentPath = useSysMLStore((state) => state.path);
   const source = useSysMLStore((state) => state.source);
+  // Per-file units back execution/lowering: spans index into their own
+  // source text, so a linked (multi-file) projection must resolve the
+  // owning unit per target instead of using the active file's text.
+  const units = useSysMLStore((state) => state.units);
   const execution = useSysMLStore((state) => state.execution);
   const runError = useSysMLStore((state) => state.runError);
   const runTarget = useSysMLStore((state) => state.runTarget);
@@ -362,10 +366,27 @@ export function SysMLCanvas() {
   );
   const selected = projection?.elements.find((element) => element.id === selectedId) ?? null;
   const execTargets = useMemo(
-    () => (projection === null ? [] : extractExecutionTargets(source, projection)),
-    [projection, source],
+    () =>
+      units.length === 0 && projection !== null
+        ? extractExecutionTargets(source, projection)
+        : units.flatMap((unit) => extractExecutionTargets(unit.source, unit.projection)),
+    [units, projection, source],
   );
+  /** The unit whose text/spans own a target id (linked-model aware). */
+  const ownerUnitOf = (targetId: string) => {
+    const owner = units.find((unit) =>
+      unit.projection.elements.some((element) => element.id === targetId),
+    );
+    if (owner) return owner;
+    return projection !== null
+      ? { path: currentPath ?? '', source, projection, dirty: parseDirty }
+      : undefined;
+  };
   const supportedTargets = execTargets.filter((target) => target.supported);
+  const effectiveRunId = runTargetId ?? supportedTargets[0]?.id ?? null;
+  // In a linked workspace only the OWNING file's parse state blocks a run;
+  // one broken sibling must not disable every other file's targets.
+  const runBlocked = effectiveRunId === null || (ownerUnitOf(effectiveRunId)?.dirty ?? true);
 
   if (!projection || !layout) {
     return <div className="sysml-empty">Open a .sysml file to visualize its model.</div>;
@@ -425,7 +446,9 @@ export function SysMLCanvas() {
    *  complete standalone model, never a fragment of this project's model. */
   const lowerToDsl = (targetId: string) => {
     if (projection === null) return;
-    const result = lowerStateMachine(source, projection, targetId);
+    const owner = ownerUnitOf(targetId);
+    if (!owner) return;
+    const result = lowerStateMachine(owner.source, owner.projection, targetId);
     if (!result.ok) {
       setLoweringErrors(result.diagnostics.filter((diagnostic) => diagnostic.severity === 'error'));
       return;
@@ -517,7 +540,7 @@ export function SysMLCanvas() {
             <select
               className="sysml-view-mode"
               aria-label="Execution target"
-              value={runTargetId ?? supportedTargets[0]!.id}
+              value={effectiveRunId ?? ''}
               onChange={(event) => setRunTargetId(event.target.value)}
             >
               {supportedTargets.map((target) => (
@@ -529,13 +552,13 @@ export function SysMLCanvas() {
             <button
               type="button"
               title={
-                parseDirty
+                runBlocked
                   ? 'Fix the parse errors before running (the projection is stale)'
                   : 'Execute the selected target (subset 0.2: expressions, action successions, state/time-trigger machines)'
               }
-              disabled={parseDirty}
+              disabled={runBlocked}
               onClick={() => {
-                const id = runTargetId ?? supportedTargets[0]!.id;
+                const id = effectiveRunId ?? supportedTargets[0]!.id;
                 setRunTargetId(id);
                 runTarget(id);
               }}

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useSysMLStore } from '../state/sysmlStore';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
+import { useProjectStore } from '../state/projectStore';
 
 export function SysMLPropertiesPanel() {
   const projection = useSysMLStore((state) => state.projection);
@@ -22,13 +23,30 @@ export function SysMLPropertiesPanel() {
   );
 
   const path = useSysMLStore((state) => state.path);
+  const origins = useSysMLStore((state) => state.origins);
   if (!projection || !layout || !selected) {
     return <div className="sysml-properties-empty">Select a SysML element to inspect it.</div>;
   }
+  const originPath = origins[selected.id];
+  const foreign = originPath !== undefined && originPath !== path;
   const openInSource = () => {
-    if (path === null) return;
+    // In a linked workspace the element may live in a sibling file; open
+    // whichever document owns it, then reveal the declaration offset.
+    const targetPath = originPath ?? path;
+    if (targetPath === null) return;
+    if (targetPath !== useUiStore.getState().activeFile) {
+      const bundled = useProjectStore.getState().bundle?.files[targetPath];
+      const ui = useUiStore.getState();
+      if (bundled !== undefined) {
+        ui.openFile(targetPath);
+      } else if (ui.diskFiles[targetPath] !== undefined) {
+        ui.openDiskFile(targetPath, ui.diskFiles[targetPath]!);
+      } else {
+        return;
+      }
+    }
     useLayoutStore.getState().openPanel('center', 'dsl');
-    useUiStore.getState().revealInSource(path, selected.nameSpan.start, selected.nameSpan.end);
+    useUiStore.getState().revealInSource(targetPath, selected.nameSpan.start, selected.nameSpan.end);
   };
   const position = layout.positions[selected.id] ?? { x: 80, y: 80 };
   const setPosition = (axis: 'x' | 'y', value: string) => {
@@ -57,6 +75,12 @@ export function SysMLPropertiesPanel() {
           </button>
         </strong>
       </div>
+      {foreign && originPath !== undefined && (
+        <div className="sysml-property-row">
+          <span>Defined in</span>
+          <strong title={originPath}>{originPath.split('/').pop()}</strong>
+        </div>
+      )}
       {owner && (
         <div className="sysml-property-row">
           <span>Owner</span>

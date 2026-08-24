@@ -11,9 +11,13 @@ import type { SysMLElement, SysMLProjection } from './sysmlProjection';
 function SysMLOutline({
   projection,
   selectedId,
+  origins,
+  entryPath,
 }: {
   projection: SysMLProjection;
   selectedId: string | null;
+  origins: Record<string, string>;
+  entryPath: string | null;
 }) {
   const select = useSysMLStore((state) => state.select);
   const children = new Map<string | undefined, SysMLElement[]>();
@@ -23,23 +27,32 @@ function SysMLOutline({
     children.set(element.ownerId, list);
   }
   const render = (ownerId: string | undefined, depth: number): ReactNode =>
-    (children.get(ownerId) ?? []).map((element) => (
-      <div key={element.id}>
-        <div
-          className={`tree-row tree-file${element.id === selectedId ? ' tree-selected' : ''}`}
-          style={{ paddingLeft: (depth + 1) * 14 + 8 }}
-          title={`${element.kind} ${element.qualifiedName}`}
-          onClick={() => select(element.id)}
-        >
-          <span className="tree-glyph">
-            <SysMLElementIcon kind={element.kind} size={12} />
-          </span>
-          <span className="outline-name">{element.name}</span>
-          <span className="sysml-outline-kind">{element.kind}</span>
+    (children.get(ownerId) ?? []).map((element) => {
+      const origin = origins[element.id];
+      const foreign = origin !== undefined && origin !== entryPath;
+      return (
+        <div key={element.id}>
+          <div
+            className={`tree-row tree-file${element.id === selectedId ? ' tree-selected' : ''}`}
+            style={{ paddingLeft: (depth + 1) * 14 + 8 }}
+            title={`${element.kind} ${element.qualifiedName}${foreign ? ` · ${origin}` : ''}`}
+            onClick={() => select(element.id)}
+          >
+            <span className="tree-glyph">
+              <SysMLElementIcon kind={element.kind} size={12} />
+            </span>
+            <span className="outline-name">{element.name}</span>
+            {foreign && (
+              <span className="sysml-outline-origin" title={origin}>
+                {origin.split('/').pop()}
+              </span>
+            )}
+            <span className="sysml-outline-kind">{element.kind}</span>
+          </div>
+          {render(element.id, depth + 1)}
         </div>
-        {render(element.id, depth + 1)}
-      </div>
-    ));
+      );
+    });
   return (
     <div className="side-panel-body model-info-panel sysml-outline-panel">
       <div className="sysml-outline-header">SysML Outline</div>
@@ -54,6 +67,8 @@ function SysMLOutline({
 function SysMLOutlinePanel() {
   const projection = useSysMLStore((state) => state.projection);
   const selectedId = useSysMLStore((state) => state.selectedId);
+  const origins = useSysMLStore((state) => state.origins);
+  const entryPath = useSysMLStore((state) => state.path);
   if (!projection) {
     return (
       <div className="side-panel-body model-info-panel sysml-outline-panel">
@@ -62,7 +77,14 @@ function SysMLOutlinePanel() {
       </div>
     );
   }
-  return <SysMLOutline projection={projection} selectedId={selectedId} />;
+  return (
+    <SysMLOutline
+      projection={projection}
+      selectedId={selectedId}
+      origins={origins}
+      entryPath={entryPath}
+    />
+  );
 }
 
 OUTLINE_CONTRIBUTIONS.register({

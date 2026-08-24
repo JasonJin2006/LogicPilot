@@ -21,6 +21,8 @@ export interface ProblemEntry {
   nodeId?: string;
   /** 1-based text line (text-backed origins). */
   line?: number;
+  /** Owning file for linked (multi-file) SysML projections. */
+  path?: string;
 }
 
 export interface SysmlProblemsInput {
@@ -61,6 +63,7 @@ function sysmlProblems(
       severity: diagnostic.severity,
       message: diagnostic.message,
       line: diagnostic.line,
+      ...(diagnostic.path !== undefined ? { path: diagnostic.path } : {}),
     });
   }
   return entries;

@@ -249,6 +249,25 @@
   font-size: 9px;
 }
 
+/* Owning-file chip for elements pulled in from sibling .sysml files
+ * (linked multi-file projection). */
+.sysml-outline-origin {
+  margin-left: auto;
+  padding-left: 6px;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: italic;
+}
+
+.sysml-outline-origin + .sysml-outline-kind {
+  margin-left: 0;
+  padding-left: 4px;
+}
+
 .sysml-outline-summary {
   padding: 10px 8px 3px;
   color: var(--text-muted);

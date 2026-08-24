@@ -27,6 +27,21 @@ export function SysMLWorkspace() {
     () => (activeFile ? (bundle?.files[activeFile] ?? diskFiles[activeFile] ?? '') : ''),
     [activeFile, bundle, diskFiles],
   );
+  // Every sibling .sysml source the workspace can see - the linked-model
+  // layer derives the import closure from this set and only pulls in the
+  // files the open document actually references.
+  const workspaceSources = useMemo(() => {
+    const sources: Record<string, string> = {};
+    for (const [path, content] of Object.entries(bundle?.files ?? {})) {
+      if (/\.sysml$/i.test(path)) sources[path] = content;
+    }
+    if (Object.keys(sources).length === 0) {
+      for (const [path, content] of Object.entries(diskFiles)) {
+        if (/\.sysml$/i.test(path)) sources[path] = content;
+      }
+    }
+    return sources;
+  }, [bundle, diskFiles]);
   const currentPath = useSysMLStore((state) => state.path);
   const layout = useSysMLStore((state) => state.layout);
   const layoutDirty = useSysMLStore((state) => state.layoutDirty);
@@ -60,24 +75,24 @@ export function SysMLWorkspace() {
       return;
     }
     if (documentContributionFor(path)?.id === 'sysml') {
-      if (useSysMLStore.getState().path !== path) {
-        useSysMLStore.getState().load(
-          path,
-          source,
-          bundle?.files[sysmlLayoutPath(path)],
-          // New journals live under presentation/history/; projects saved
-          // before the relocation keep theirs at the legacy path.
-          parseEvidence(
-            bundle?.files[sysmlEvidencePath(path)] ?? bundle?.files[legacySysmlEvidencePath(path)],
-          ),
-        );
-      } else if (useSysMLStore.getState().source !== source) {
-        refresh(source);
-      }
+      // openDocument is idempotent for an unchanged document + sibling set;
+      // it upgrades the store to the linked multi-file model when the
+      // closure spans several files.
+      useSysMLStore.getState().openDocument(
+        path,
+        source,
+        workspaceSources,
+        bundle?.files[sysmlLayoutPath(path)],
+        // New journals live under presentation/history/; projects saved
+        // before the relocation keep theirs at the legacy path.
+        parseEvidence(
+          bundle?.files[sysmlEvidencePath(path)] ?? bundle?.files[legacySysmlEvidencePath(path)],
+        ),
+      );
       return;
     }
     useSysMLStore.getState().clear();
-  }, [activeFile, source, refresh]);
+  }, [activeFile, source, workspaceSources, bundle, refresh]);
 
   // A project bundle carries the visual projection as a sidecar. External
   // .sysml files without a LogicPilot project continue to use localStorage.
