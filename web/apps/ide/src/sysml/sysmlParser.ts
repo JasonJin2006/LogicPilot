@@ -61,16 +61,38 @@ export interface SysMLParseResult {
   diagnostics: SysMLProjectionDiagnostic[];
 }
 
-const DECLARATION =
-  /^(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)\s+(?:(def|usage)\s+)?([A-Za-z_][A-Za-z0-9_]*)/;
+// Identifiers may be bare SysML ASCII names or single-quoted strings (the
+// form used throughout the amphibious-robot model). Group layout keeps the
+// kind/def indexes of the old DECLARATION: [1] kind, [2] def, [3] quoted
+// inner name, [4] bare name.
+const IDENT = String.raw`(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))`;
+
+/** Qualified reference: `Name`, `'Chinese Name'`, `Pkg::'Named'::X`. */
+const REFERENCE = String.raw`(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*)(?:::(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*))*`;
+
+/** De-quote a raw identifier token: `'a b'` -> `a b`; bare stays bare. */
+function dequoteName(raw: string): string {
+  if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
+    return raw.slice(1, -1);
+  }
+  return raw;
+}
+
+/** De-quote a whole qualified reference, preserving `::` splits. */
+function dequoteRef(raw: string): string {
+  return raw.split('::').map(dequoteName).join('::');
+}
+
+const DECLARATION = new RegExp(
+  '^(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)' +
+    '\\s+(?:(def|usage)\\s+)?' +
+    IDENT,
+);
 
 /** `calc` is the common shorthand; both project to the 'calculation' kind. */
 function normalizeKind(raw: string): SysMLVisualKind {
   return (raw === 'calc' ? 'calculation' : raw) as SysMLVisualKind;
 }
-
-// Reference tokens exclude terminators (';') so they survive line syntax.
-const REFERENCE = '[A-Za-z_][A-Za-z0-9_.:]*';
 
 const RELATION_LINE_PATTERNS: Array<{
   re: RegExp;
@@ -78,19 +100,39 @@ const RELATION_LINE_PATTERNS: Array<{
 }> = [
   {
     re: new RegExp(`^satisfy\\s+requirement\\s+(${REFERENCE})\\s+by\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'satisfies', from: m[2]!, to: m[1]!, label: 'satisfies' }),
+    build: (m) => ({
+      kind: 'satisfies',
+      from: dequoteRef(m[2]!),
+      to: dequoteRef(m[1]!),
+      label: 'satisfies',
+    }),
   },
   {
     re: new RegExp(`^verify\\s+requirement\\s+(${REFERENCE})\\s+by\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'verifies', from: m[2]!, to: m[1]!, label: 'verifies' }),
+    build: (m) => ({
+      kind: 'verifies',
+      from: dequoteRef(m[2]!),
+      to: dequoteRef(m[1]!),
+      label: 'verifies',
+    }),
   },
   {
     re: new RegExp(`^flow\\s+(${REFERENCE})\\s+from\\s+(${REFERENCE})\\s+to\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'flows', from: m[2]!, to: m[3]!, label: m[1]! }),
+    build: (m) => ({
+      kind: 'flows',
+      from: dequoteRef(m[2]!),
+      to: dequoteRef(m[3]!),
+      label: dequoteRef(m[1]!),
+    }),
   },
   {
     re: new RegExp(`^connect\\s+(${REFERENCE})\\s+(?:to|with)\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'connects', from: m[1]!, to: m[2]!, label: 'connects' }),
+    build: (m) => ({
+      kind: 'connects',
+      from: dequoteRef(m[1]!),
+      to: dequoteRef(m[2]!),
+      label: 'connects',
+    }),
   },
   {
     // Anchored to end-of-statement so unsupported trigger forms (guard
@@ -102,8 +144,8 @@ const RELATION_LINE_PATTERNS: Array<{
     ),
     build: (m) => ({
       kind: 'transitions' as const,
-      from: m[1]!,
-      to: m[2]!,
+      from: dequoteRef(m[1]!),
+      to: dequoteRef(m[2]!),
       label: 'transitions',
       ...(m[3]
         ? {
@@ -118,7 +160,12 @@ const RELATION_LINE_PATTERNS: Array<{
   },
   {
     re: new RegExp(`^trace\\s+(${REFERENCE})\\s+(?:to|from)\\s+(${REFERENCE})`),
-    build: (m) => ({ kind: 'traces', from: m[1]!, to: m[2]!, label: 'trace' }),
+    build: (m) => ({
+      kind: 'traces',
+      from: dequoteRef(m[1]!),
+      to: dequoteRef(m[2]!),
+      label: 'trace',
+    }),
   },
   {
     re: new RegExp(
@@ -143,15 +190,87 @@ const RELATION_LINE_PATTERNS: Array<{
                       : m[1] === 'include'
                         ? 'includes'
                         : 'depends_on',
-      from: m[2]!,
-      to: m[3]!,
+      from: dequoteRef(m[2]!),
+      to: dequoteRef(m[3]!),
       label: m[1]!,
     }),
   },
 ];
 
+/** `exhibit <kind> 'name' : 'Type' { ... }` - a state machine/part usage
+ *  applied inside a part body. Groups: 1 kind, 2 quoted name, 3 bare name,
+ *  4 optional type reference. */
+const EXHIBIT_LINE = new RegExp(
+  `^exhibit\\s+(state|part|action|port|requirement|attribute)\\s+${IDENT}` +
+    `(?:\\s*:\\s*(${REFERENCE}))?`,
+);
+
+type LooseTransition =
+  | {
+      ok: true;
+      from: string;
+      to: string;
+      trigger?: { kind: 'after' | 'at'; amount: number; unit?: string };
+    }
+  | { ok: false };
+
+/** Tolerant parse for multi-line transition statements - the SysML spec
+ *  spelling this product targets ('first A ... effect action 'x'
+ *  : 'P::Q' ... then B after N s;') plus the interactive form
+ *  (transition A then B). `first start then B` marks the machine entry; it
+ *  carries no resolvable 'from' state, so callers treat it as accepted
+ *  (execution assumes the first declared state is initial). */
+function parseTransitionStatement(text: string): LooseTransition {
+  const clean = text.replace(/;\s*$/, '');
+  const thenMatch = new RegExp(`then\\s+(${REFERENCE})`).exec(clean);
+  const target = thenMatch?.[1];
+  if (target === undefined) return { ok: false };
+  const firstMatch = new RegExp(`first\\s+(?:start|(${REFERENCE}))`).exec(clean);
+  let from = firstMatch?.[1];
+  if (from === undefined) {
+    const firstToken = clean.match(new RegExp(`transition\\s+(${REFERENCE})`));
+    from = firstToken?.[1];
+  }
+  const triggerMatch = new RegExp(
+    `(after|at)\\s+([0-9]+(?:\\.[0-9]+)?)\\s*([A-Za-z_][A-Za-z0-9_]*)?`,
+  ).exec(clean);
+  if (from === 'start' || from === undefined) {
+    // Entry marker: accepted, no resolvable edge.
+    return { ok: false };
+  }
+  return {
+    ok: true,
+    from: dequoteRef(from),
+    to: dequoteRef(target),
+    ...(triggerMatch
+      ? {
+          trigger: {
+            kind: triggerMatch[1] as 'after' | 'at',
+            amount: Number(triggerMatch[2]),
+            ...(triggerMatch[3] ? { unit: triggerMatch[3] } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function stripComments(line: string): string {
   return line.replace(/\/\/.*$/, '').trimEnd();
+}
+
+/** Strip a `/* ... *\/` block comment; callers carry `blockOpen` across
+ *  lines until the closing `*\/` arrives. */
+function stripBlockComment(line: string, blockOpen: boolean): { line: string; open: boolean } {
+  if (blockOpen) {
+    const end = line.indexOf('*/');
+    if (end === -1) return { line: '', open: true };
+    return { line: stripComments(line.slice(end + 2)), open: false };
+  }
+  const start = line.indexOf('/*');
+  if (start === -1) return { line: stripComments(line), open: false };
+  const end = line.indexOf('*/', start + 2);
+  if (end === -1) return { line: stripComments(line.slice(0, start)), open: true };
+  return { line: stripComments(line.slice(0, start) + line.slice(end + 2)), open: false };
 }
 
 /** Portable stable identity: fnv1a over kind + qualified name. Shared by the
@@ -195,10 +314,16 @@ export function parseSysMLSource(source: string): SysMLParseResult {
   };
 
   const lines = source.split(/\r?\n/);
+  let blockCommentOpen = false;
+  // Multi-line transition statements (`transition '连接至分离'\n first ...\n
+  // then '分离';`) accumulate until the terminating ';'.
+  let pendingTransition = '';
   lines.forEach((rawLine, index) => {
     const lineNumber = index + 1;
     const lineEnd = offset + rawLine.length;
-    const stripped = stripComments(rawLine);
+    const commentClean = stripBlockComment(rawLine, blockCommentOpen);
+    blockCommentOpen = commentClean.open;
+    const stripped = commentClean.line;
     const opens = (stripped.match(/{/g) ?? []).length;
     const closes = (stripped.match(/}/g) ?? []).length;
 
@@ -221,7 +346,7 @@ export function parseSysMLSource(source: string): SysMLParseResult {
             : declaration[2] === 'usage'
               ? 'usage'
               : 'unknown';
-        const name = declaration[3]!;
+        const name = declaration[3] ?? declaration[4]!;
         const nameStartInLine = declaration[0].lastIndexOf(name);
         const qualifiedName = owner ? `${owner.qualifiedName}::${name}` : name;
 
@@ -284,9 +409,9 @@ export function parseSysMLSource(source: string): SysMLParseResult {
         if (specializes) {
           pushPending(pending, 'specializes', qualifiedName, specializes[1]!, ':>', lineNumber);
         }
-        const typed = /:\s*([A-Za-z_][A-Za-z0-9_.:]*)/.exec(indented.replace(/:>/g, ''));
+        const typed = new RegExp(`:\\s*(${REFERENCE})`).exec(indented.replace(/:>/g, ''));
         if (typed && declarationKind !== 'definition') {
-          pushPending(pending, 'typed_by', qualifiedName, typed[1]!, ':', lineNumber);
+          pushPending(pending, 'typed_by', qualifiedName, dequoteRef(typed[1]!), ':', lineNumber);
         }
 
         const delta = opens - closes;
@@ -294,33 +419,128 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           openScopes.push({ elementIndex: elements.length - 1, closeDepth: depth + delta });
         }
       } else {
-        // Allman style: the opening brace sits on the line below the
-        // declaration (or alone with a closing brace for an empty body).
-        // Such a line carries no statement, but it still opens the scope of
-        // the element declared on the previous line.
-        const allmanOpen =
-          (/^\{[^{}]*\}$/.test(indented) || /^\{;?$/.test(indented)) && opens === 1 && closes <= 1;
-        if (allmanOpen) {
-          const lastElement = elements[elements.length - 1];
-          const lastScope = openScopes[openScopes.length - 1];
-          if (
-            lastElement !== undefined &&
-            (lastScope === undefined || lastScope.elementIndex !== elements.length - 1)
-          ) {
-            openScopes.push({
-              elementIndex: elements.length - 1,
-              closeDepth: depth + 1,
-            });
+        // Multi-line transition statement: accumulate until ';'.
+        if (pendingTransition !== '') {
+          pendingTransition += ` ${stripped.trim()}`;
+          if (indented.endsWith(';')) {
+            const parsedTransition = parseTransitionStatement(pendingTransition);
+            pendingTransition = '';
+            if (parsedTransition.ok) {
+              pending.push({
+                kind: 'transitions',
+                from: parsedTransition.from,
+                to: parsedTransition.to,
+                label: 'transitions',
+                ...(parsedTransition.trigger ? { trigger: parsedTransition.trigger } : {}),
+                line: lineNumber,
+              });
+            } else {
+              diagnostics.push({
+                code: 'SY0001',
+                severity: 'error',
+                message: `unrecognized SysML transition: '${pendingTransition.slice(0, 80)}'`,
+                line: lineNumber,
+              });
+            }
           }
-        } else if (matchRelationLine(indented) !== null) {
-          pending.push({ ...matchRelationLine(indented)!, line: lineNumber });
-        } else if (opens === 0 && closes === 0) {
-          diagnostics.push({
-            code: 'SY0001',
-            severity: 'error',
-            message: `unrecognized SysML statement: '${indented.slice(0, 60)}${indented.length > 60 ? '…' : ''}'`,
-            line: lineNumber,
-          });
+        } else if (
+          indented.startsWith('transition') &&
+          !indented.endsWith(';') &&
+          !indented.includes('{')
+        ) {
+          pendingTransition = stripped.trim();
+        } else if (/^(private\s+)?import\b/.test(indented)) {
+          // Import directives are project-level: accepted as a directive and
+          // resolved by the project index, never a visual element.
+        } else if (/^(doc|metadata|language)\b/.test(indented)) {
+          // Documentation/metadata keywords: accepted as prose, not elements.
+        } else if (/^first\s+start\s+then\s+/.test(indented)) {
+          // State-machine entry marker (initial state from `then`): accepted;
+          // execution treats the first declared state as initial.
+        } else if (
+          /^then\s+action\b/.test(indented) ||
+          /^entry;?$/.test(indented) ||
+          /^exit;?$/.test(indented)
+        ) {
+          // exhibit-body effect lines: accepted, not interpreted (matrix).
+        } else {
+          const exhibit = EXHIBIT_LINE.exec(indented);
+          if (exhibit !== null && !exhibit[1]!.startsWith('{')) {
+            const exhibitKind = normalizeKind(exhibit[1]!);
+            const exhibitName = exhibit[2] ?? exhibit[3]!;
+            const exhibitOwnerId = ownerId;
+            elements.push({
+              kind: exhibitKind,
+              name: exhibitName,
+              qualifiedName: owner ? `${owner.qualifiedName}::${exhibitName}` : exhibitName,
+              ownerId: exhibitOwnerId,
+              declaration: 'usage',
+              span: { start: base, end: lineEnd, line: lineNumber },
+              nameSpan: {
+                start: base + exhibit[0].lastIndexOf(exhibitName),
+                end: base + exhibit[0].lastIndexOf(exhibitName) + exhibitName.length,
+                line: lineNumber,
+              },
+            });
+            if (owner && exhibitOwnerId !== undefined) {
+              pushPending(
+                pending,
+                'contains',
+                owner.qualifiedName,
+                exhibitName,
+                'contains',
+                lineNumber,
+              );
+            }
+            if (exhibit[4] !== undefined) {
+              pushPending(
+                pending,
+                'typed_by',
+                exhibitName,
+                dequoteRef(exhibit[4]),
+                ':',
+                lineNumber,
+              );
+            }
+            const exhibitDelta = opens - closes;
+            if (exhibitDelta > 0) {
+              openScopes.push({
+                elementIndex: elements.length - 1,
+                closeDepth: depth + exhibitDelta,
+              });
+            }
+          } else {
+            // Allman style: the opening brace sits on the line below the
+            // declaration (or alone with a closing brace for an empty body).
+            // Such a line carries no statement, but it still opens the scope of
+            // the element declared on the previous line.
+            const allmanOpen =
+              (/^\{[^{}]*\}$/.test(indented) || /^\{;?$/.test(indented)) &&
+              opens === 1 &&
+              closes <= 1;
+            if (allmanOpen) {
+              const lastElement = elements[elements.length - 1];
+              const lastScope = openScopes[openScopes.length - 1];
+              if (
+                lastElement !== undefined &&
+                (lastScope === undefined || lastScope.elementIndex !== elements.length - 1)
+              ) {
+                openScopes.push({
+                  elementIndex: elements.length - 1,
+                  closeDepth: depth + 1,
+                });
+              }
+            } else if (matchRelationLine(indented) !== null) {
+              pending.push({ ...matchRelationLine(indented)!, line: lineNumber });
+            } else if (opens === 0 && closes === 0) {
+              diagnostics.push({
+                code: 'SY0001',
+                severity: 'error',
+                message: `unrecognized SysML statement: '${indented.slice(0, 60)}${indented.length > 60 ? '…' : ''}'`,
+                line: lineNumber,
+              });
+            }
+          }
         }
       }
     }

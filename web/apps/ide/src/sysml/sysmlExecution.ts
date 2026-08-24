@@ -45,10 +45,37 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
     level: 'supported',
     note: 'units recorded verbatim, never converted',
   },
+  // --- wide-parse slice (visualization layer) ---
+  {
+    construct: 'quoted identifiers as element names and references (SysML spec spelling)',
+    level: 'supported',
+    note: 'declarations and qualified refs de-quoted; ids/nameSpans stay byte-stable',
+  },
+  {
+    construct: 'import directives (so that "Pkg::*") and doc/metadata keywords',
+    level: 'supported',
+    note: 'accepted as directives/prose, never visual elements',
+  },
+  {
+    construct: 'enum def members and typed usages with multiplicities (part : T [4])',
+    level: 'supported',
+    note: 'enumerated values render as children of the enum def; multiplicity recorded, not evaluated',
+  },
+  {
+    construct:
+      'multi-line transitions (first/effect clauses) and `first start then X` entry markers',
+    level: 'supported',
+    note: 'scanner accumulates to `;`; effect actions accepted, not interpreted',
+  },
+  {
+    construct: 'exhibit state / exhibit part inside a part body',
+    level: 'supported',
+    note: 'accepted and contained; typed_by recorded, machine semantics not applied',
+  },
   {
     construct: 'guard conditions (when/otherwise)',
     level: 'planned',
-    note: 'targeted for a later execution slice; parser rejects via SY0001 meanwhile',
+    note: 'targeted for a later execution slice; parser still rejects via SY0001.',
   },
   {
     construct: 'hierarchical (nested) state decomposition',

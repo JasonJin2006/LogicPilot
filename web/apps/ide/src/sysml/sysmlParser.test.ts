@@ -124,3 +124,56 @@ requirement R;
     expect(errors[1]!.line).toBe(5);
   });
 });
+
+describe('sysml wide subset (quoted identifiers etc.)', () => {
+  it('parses quoted declarations, enum members and typed usages with zero diagnostics', () => {
+    const parsed = parseSysMLSource(
+      "package 'B 公共定义' {\n" +
+        '  private import ScalarValues::*;\n' +
+        '  doc /* 多行\n注释 */\n' +
+        "  part def '飞行器' {\n" +
+        "    part '动力电池' : '6S 5200mAh动力电池'[4];\n" +
+        "    attribute '运动中' : ScalarValues::Boolean;\n" +
+        '  }\n' +
+        "  enum def '零件类别' {\n    enum '飞行器零件';\n  }\n" +
+        "  state def '地面母平台工作状态' {\n" +
+        "    first start then '移动巡检';\n" +
+        "    state '移动巡检';\n" +
+        "    state '驻停作业';\n" +
+        "    transition '移动至驻停'\n" +
+        "      first '移动巡检'\n" +
+        "      then '驻停作业';\n" +
+        '  }\n' +
+        "  part def '地面母平台' {\n" +
+        "    exhibit state '工作状态'\n" +
+        "      : '地面母平台工作状态' {\n" +
+        "      state '移动巡检' {\n" +
+        '        entry;\n' +
+        "        then action '置位' { '运动中' = true; }\n" +
+        '      }\n' +
+        '    }\n' +
+        '  }\n' +
+        '}\n',
+    );
+    expect(parsed.diagnostics).toHaveLength(0);
+    const names = new Set(parsed.elements.map((e) => e.name));
+    for (const expected of [
+      '动力电池',
+      '运动中',
+      '零件类别',
+      '飞行器零件',
+      '移动巡检',
+      '驻停作业',
+      '工作状态',
+    ]) {
+      expect(names.has(expected)).toBe(true);
+    }
+    // The multi-line transition resolves through the tolerant statement
+    // scanner instead of the strict single-line relation pattern.
+    expect(
+      parsed.pending.some(
+        (r) => r.kind === 'transitions' && r.from === '移动巡检' && r.to === '驻停作业',
+      ),
+    ).toBe(true);
+  });
+});
