@@ -3,14 +3,10 @@ import { PressGesture, zoomAtPoint } from '@logicpilot/canvas';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
-import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
+import { Focus, LayoutTemplate, Minus, Plus, Undo2, Redo2, ExternalLink, Copy, Trash2 } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
-import {
-  CanvasContextMenu,
-  CanvasToolbar,
-  useCanvasShortcuts,
-  type CanvasContextMenuState,
-} from '../workbench/canvasShell';
+import { CanvasToolbar, useCanvasShortcuts } from '../workbench/canvasShell';
+import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
@@ -334,7 +330,7 @@ export function SysMLCanvas() {
   // pointer handlers via a ref plus one re-render for the cursor class.
   const spaceRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-  const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(null);
 
   const canvasReady = projection !== null && layout !== null;
 
@@ -513,20 +509,31 @@ export function SysMLCanvas() {
     useUiStore.getState().revealInSource(targetPath, target.nameSpan.start, target.nameSpan.end);
   };
 
-  /** Background context menu (view + layout verbs). */
+  /** Background context menu (view + layout verbs). Same shell and shape
+   *  as the model canvas menu: icons, shortcut hints, edge clamping. */
   const openCanvasMenu = (event: React.MouseEvent<SVGSVGElement>) => {
     event.preventDefault();
     setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        { label: 'Auto layout', onSelect: () => void autoLayout() },
+      x: Math.min(event.clientX, window.innerWidth - 226),
+      y: Math.min(event.clientY, window.innerHeight - 220),
+      actions: [
+        { label: 'Undo', icon: <Undo2 />, shortcut: 'Ctrl Z', onSelect: undo },
+        { label: 'Redo', icon: <Redo2 />, shortcut: 'Ctrl Y', onSelect: redo },
+        {
+          label: 'Auto layout',
+          icon: <LayoutTemplate />,
+          separatorBefore: true,
+          onSelect: () => void autoLayout(),
+        },
         {
           label: 'Reset view',
+          icon: <Focus />,
           onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }),
         },
         {
           label: 'Paste',
+          icon: <Copy />,
+          shortcut: 'Ctrl V',
           disabled: copyRef.current === null,
           onSelect: () => {
             if (copyRef.current !== null) duplicateSelected(copyRef.current);
@@ -544,13 +551,21 @@ export function SysMLCanvas() {
     const target = projection?.elements.find((element) => element.id === elementId);
     if (!target) return;
     setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        { label: 'Open in source', onSelect: openSourceOf(elementId) },
-        { label: 'Duplicate', disabled: parseDirty, onSelect: () => duplicateSelected(elementId) },
+      x: Math.min(event.clientX, window.innerWidth - 226),
+      y: Math.min(event.clientY, window.innerHeight - 180),
+      actions: [
+        { label: 'Open in source', icon: <ExternalLink />, onSelect: openSourceOf(elementId) },
+        {
+          label: 'Duplicate',
+          icon: <Copy />,
+          shortcut: 'Ctrl V',
+          disabled: parseDirty,
+          onSelect: () => duplicateSelected(elementId),
+        },
         {
           label: 'Delete…',
+          icon: <Trash2 />,
+          shortcut: 'Del',
           danger: true,
           disabled: parseDirty,
           onSelect: () => {
@@ -933,7 +948,15 @@ export function SysMLCanvas() {
           Source has errors - showing the last valid model.
         </div>
       )}
-      <CanvasContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
+      {contextMenu && (
+        <ContextMenu
+          x={Math.max(8, contextMenu.x)}
+          y={Math.max(8, contextMenu.y)}
+          label="SysML canvas actions"
+          actions={contextMenu.actions}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

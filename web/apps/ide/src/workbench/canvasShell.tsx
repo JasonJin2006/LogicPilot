@@ -63,67 +63,6 @@ export function useCanvasShortcuts(handlers: ShortcutHandlers): void {
   });
 }
 
-export interface ContextMenuItem {
-  label: string;
-  onSelect: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-}
-
-export interface CanvasContextMenuState {
-  x: number;
-  y: number;
-  items: ContextMenuItem[];
-}
-
-/** Fixed-position action list for right-click menus. Rendering, dismissal
- *  (any click / Escape / blur) and positioning live here; canvases only
- *  describe items. */
-export function CanvasContextMenu({
-  menu,
-  onClose,
-}: {
-  menu: CanvasContextMenuState | null;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (menu === null) return;
-    const dismiss = () => onClose();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') dismiss();
-    };
-    window.addEventListener('pointerdown', dismiss);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('blur', dismiss);
-    return () => {
-      window.removeEventListener('pointerdown', dismiss);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('blur', dismiss);
-    };
-  }, [menu !== null, onClose]);
-  if (menu === null) return null;
-  return (
-    <div className="canvas-context-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
-      {menu.items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          className={`canvas-context-item${item.danger ? ' danger' : ''}`}
-          disabled={item.disabled}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => {
-            item.onSelect();
-            onClose();
-          }}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /** Overlay toolbar slot (top-left of any canvas viewport). Items are plain
  *  descriptors so each canvas keeps its own verbs while position, spacing,
  *  hover styling and stacking stay identical everywhere. */
