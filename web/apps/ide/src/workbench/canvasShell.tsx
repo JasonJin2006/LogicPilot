@@ -16,6 +16,9 @@ export interface ShortcutHandlers {
   onPaste?: () => void;
   /** Escape / explicit cancel (drag, connect gesture, selection). */
   onCancel?: () => void;
+  /** Canvas-specific keys (pen tools, arrow nudges, grouping...). Return
+   *  true when the event was consumed - it never reaches the shared set. */
+  onCustomKey?: (event: KeyboardEvent) => boolean;
 }
 
 function eventIsEditableTarget(target: EventTarget | null): boolean {
@@ -32,6 +35,7 @@ export function useCanvasShortcuts(handlers: ShortcutHandlers): void {
     if (handlers.enabled === false) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (eventIsEditableTarget(event.target)) return;
+      if (handlers.onCustomKey?.(event)) return;
       const control = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (control && key === 'z') {

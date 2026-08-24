@@ -273,7 +273,12 @@ export function PalettePanel() {
                   moved: false,
                 };
                 (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-                setGhost({ x: event.clientX, y: event.clientY, kind: block.kind });
+setGhost({
+                  x: event.clientX,
+                  y: event.clientY,
+                  kind: block.kind,
+                  library: block.library,
+                });
               }}
               onPointerMove={(event) => {
                 const drag = dragRef.current;
@@ -285,7 +290,12 @@ export function PalettePanel() {
                   drag.moved = true;
                 }
                 if (drag.moved) {
-                  setGhost({ x: event.clientX, y: event.clientY, kind: block.kind });
+setGhost({
+                    x: event.clientX,
+                    y: event.clientY,
+                    kind: block.kind,
+                    library: block.library,
+                  });
                 }
               }}
               onPointerUp={endDrag}

@@ -18,6 +18,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
+import { useCanvasShortcuts } from '../workbench/canvasShell';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import { autoArrangePositions } from './autoLayoutElk';
 import { useCanvasCamera } from './useCanvasCamera';
@@ -281,51 +282,51 @@ export function ModelCanvas() {
   const [pathEdit, setPathEdit] = useState<{ id: string; point: PathPoint } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // Delete/Backspace removes the selected block (unless typing in a field).
-  useEffect(() => {
-    if (!selectedId) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
-      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+  // Shared interaction shell (canvas-platform S5): one keybinding surface
+  // for every canvas. Canvas-specific verbs (pen tools, grouping, z-order,
+  // arrow nudges) go through the custom-key escape hatch; the standard set
+  // (undo/redo, delete, copy/paste, escape) is the shell's.
+  const pasteShape = () => {
+    if (!shapeClipboard) return;
+    const t = shapeClipboard.object.transform;
+    addBlock({
+      kind: shapeClipboard.kind,
+      name: shapeClipboard.kind,
+      x: t.x + 24,
+      y: t.y + 24,
+      params: {},
+      library: 'presentation',
+      presentation: {
+        ...shapeClipboard.object,
+        transform: { ...t, x: t.x + 24, y: t.y + 24 },
+      },
+    });
+  };
+  useCanvasShortcuts({
+    enabled: true,
+    onUndo: () => undo(),
+    onRedo: () => redo(),
+    onDelete: () => {
+      if (!selectedId) return;
       const selected = useModelStore
         .getState()
         .document.nodes.find((entry) => entry.id === selectedId);
       if (selected?.presentation?.locked) return;
-      event.preventDefault();
       removeBlock(selectedId);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, removeBlock]);
-
-  // Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z / Ctrl+Y redo.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
-      const mod = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
-      if (!mod) return;
-      if (key === 'z') {
-        event.preventDefault();
-        if (event.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-      } else if (key === 'y') {
-        event.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo]);
-
-  // Presentation editing shortcuts: copy/paste/duplicate shapes, group/
-  // ungroup, arrow-key nudge and Escape to clear the selection.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement).closest('input, textarea, select')) return;
+    },
+    onCopy: () => {
+      const node = useModelStore
+        .getState()
+        .document.nodes.find((entry) => entry.id === selectedId);
+      if (node?.presentation) shapeClipboard = { kind: node.kind, object: node.presentation };
+    },
+    onPaste: () => pasteShape(),
+    onCancel: () => {
+      setEditingTextId(null);
+      useShapeSelection.getState().clear();
+      select(null);
+    },
+    onCustomKey: (event) => {
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       const doc = () => useModelStore.getState().document;
@@ -334,40 +335,18 @@ export function ModelCanvas() {
         if (event.key === 'Enter') {
           event.preventDefault();
           finishPen();
-          return;
+          return true;
         }
         if (event.key === 'Escape') {
           event.preventDefault();
           cancelPen();
-          return;
+          return true;
         }
       }
-
-      if (mod && key === 'c') {
-        const node = doc().nodes.find((entry) => entry.id === selectedId);
-        if (node?.presentation) {
-          shapeClipboard = { kind: node.kind, object: node.presentation };
-          event.preventDefault();
-        }
-        return;
-      }
-      if (mod && (key === 'v' || key === 'd')) {
-        if (!shapeClipboard) return;
+      if (mod && key === 'd') {
         event.preventDefault();
-        const t = shapeClipboard.object.transform;
-        addBlock({
-          kind: shapeClipboard.kind,
-          name: shapeClipboard.kind,
-          x: t.x + 24,
-          y: t.y + 24,
-          params: {},
-          library: 'presentation',
-          presentation: {
-            ...shapeClipboard.object,
-            transform: { ...t, x: t.x + 24, y: t.y + 24 },
-          },
-        });
-        return;
+        pasteShape();
+        return true;
       }
       if (mod && key === 'g' && !event.shiftKey) {
         event.preventDefault();
@@ -379,7 +358,7 @@ export function ModelCanvas() {
         if (useModelStore.getState().groupShapes([...ids])) {
           useShapeSelection.getState().clear();
         }
-        return;
+        return true;
       }
       if (mod && event.shiftKey && key === 'g') {
         event.preventDefault();
@@ -387,49 +366,32 @@ export function ModelCanvas() {
         if (node?.presentation?.type === 'group') {
           useModelStore.getState().ungroupShape(node.id);
         }
-        return;
+        return true;
       }
       if (mod && (key === ']' || key === '[')) {
-        if (!selectedId) return;
+        if (!selectedId) return true;
         const node = doc().nodes.find((entry) => entry.id === selectedId);
-        if (node?.presentation?.locked) return;
+        if (node?.presentation?.locked) return true;
         event.preventDefault();
         const store = useModelStore.getState();
         if (key === ']') store.bringToFront(selectedId);
         else store.sendToBack(selectedId);
-        return;
+        return true;
       }
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-        if (!selectedId) return;
+        if (!selectedId) return true;
         event.preventDefault();
         const node = doc().nodes.find((entry) => entry.id === selectedId);
-        if (!node?.presentation || node.presentation.locked) return;
+        if (!node?.presentation || node.presentation.locked) return true;
         const step = event.shiftKey ? 10 : 1;
         const dx = key === 'arrowright' ? step : key === 'arrowleft' ? -step : 0;
         const dy = key === 'arrowdown' ? step : key === 'arrowup' ? -step : 0;
         moveBlock(node.id, node.x + dx, node.y + dy);
-        return;
+        return true;
       }
-      if (event.key === 'Escape') {
-        setEditingTextId(null);
-        useShapeSelection.getState().clear();
-        select(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [
-    selectedId,
-    shapeIds,
-    editingTextId,
-    tool,
-    drawingKind,
-    penPoints,
-    addBlock,
-    moveBlock,
-    select,
-    stopDrawing,
-  ]);
+      return false;
+    },
+  });
 
   const drag = useRef<{
     startX: number;
