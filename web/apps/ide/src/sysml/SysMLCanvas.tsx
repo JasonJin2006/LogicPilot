@@ -315,6 +315,19 @@ export function SysMLCanvas() {
   const dragRef = useRef<DragState | null>(null);
   const documentRef = useRef<SVGSVGElement>(null);
 
+  // Escape cancels an in-flight drag (same convention as the model canvas).
+  // Must sit above the early return below: the hook order must be stable
+  // across the empty-projection and loaded renders.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        dragRef.current = null;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const positions = layout?.positions ?? {};
   const visibleElements = useMemo(() => {
     if (!projection) return [];
@@ -406,17 +419,6 @@ export function SysMLCanvas() {
   const endDrag = () => {
     dragRef.current = null;
   };
-
-  // Escape cancels an in-flight drag (same convention as the model canvas).
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        dragRef.current = null;
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   /** One-click lowering: generate .lp DSL into generated/<Name>.lp and open
    *  it as a text tab. Outside model/ on purpose - the artifact is a
