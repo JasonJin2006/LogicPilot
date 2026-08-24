@@ -109,6 +109,10 @@ package '综合示例' {
         '采样频率' >= '最小频率'
     }
 
+    constraint '负载估算' {
+        '采样频率' = '滤波系数' * '轮次' + 0.5;
+    }
+
     usecase '远程巡检';
 
     allocate CalcTask to Gateway;

@@ -494,9 +494,21 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           // Enumeration literal members (`'高';`): prose of the owning enum.
         } else if (/^(subject|actor|render|objective|stakeholders|doc)/.test(indented)) {
           // use-case/view body keywords: accepted as prose (matrix).
-        } else if (/^'[^']*'\s*(>=|<=|==|>|<)/.test(indented)) {
-          // Constraint comparison expression lines: prose of the owning
-          // constraint; expressions are never evaluated (matrix).
+        } else if (/^'[^']*'\s*(>=|<=|==|>|<|=)/.test(indented)) {
+          // Constraint binding expression (`'A' >= 'B' + 3`): every quoted
+          // reference in the line binds to the owning constraint; the full
+          // expression rides along as the label for the parametric view.
+          // The expression itself is never evaluated (matrix).
+          // Bindings only make sense inside a constraint; the same line
+          // shape in other bodies (state assignments, feature values) stays
+          // tolerated prose.
+          const ownerConstraint = owner?.kind === 'constraint' ? owner : undefined;
+          if (ownerConstraint !== undefined) {
+            const refs = [...stripped.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+            for (const ref of refs) {
+              pushPending(pending, 'binds', ref, ownerConstraint.name, stripped.trim(), lineNumber);
+            }
+          }
         } else if (/^then\s+[^{}]*=[^=]/.test(indented)) {
           // `then <feature> = <value>;` action-effect assignments inside
           // state bodies: accepted as prose (matrix: never interpreted).

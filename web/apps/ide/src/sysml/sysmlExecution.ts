@@ -87,6 +87,12 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
   },
   {
     construct:
+      'parametric diagrams: constraint binding expressions (quoted refs with comparison/arithmetic)',
+    level: 'supported',
+    note: 'bindings visualized with the expression as label; expressions are never evaluated',
+  },
+  {
+    construct:
       'sequence diagrams: interaction bodies with actor participants and message/reply ... from ... to ...',
     level: 'supported',
     note: 'lifelines in declaration order, arrows ordered by source line; fragments (alt/loop) are outside the subset',

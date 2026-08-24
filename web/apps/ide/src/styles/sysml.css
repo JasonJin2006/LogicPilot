@@ -700,3 +700,21 @@
   stroke-dasharray: 5 3;
   fill: none;
 }
+
+/* ── Parametric diagram view ───────────────────────────────────────── */
+.sysml-par-svg { display: block; }
+.sysml-par-attr {
+  fill: color-mix(in srgb, var(--bg-strong) 60%, #8be0c233);
+  stroke: #8be0c2;
+  cursor: pointer;
+}
+.sysml-par-attr.selected { stroke-width: 2; }
+.sysml-par-constraint {
+  fill: color-mix(in srgb, var(--bg-strong) 60%, #f1c27d33);
+  stroke: #f1c27d;
+  cursor: pointer;
+}
+.sysml-par-constraint.selected { stroke-width: 2; }
+.sysml-par-text { fill: var(--text); font-size: 11px; }
+.sysml-par-edge { stroke: #9aa8ba; stroke-width: 1; }
+.sysml-par-expr { fill: var(--text-muted); font-size: 9px; }
