@@ -87,6 +87,12 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
   },
   {
     construct:
+      'sequence diagrams: interaction bodies with actor participants and message/reply ... from ... to ...',
+    level: 'supported',
+    note: 'lifelines in declaration order, arrows ordered by source line; fragments (alt/loop) are outside the subset',
+  },
+  {
+    construct:
       'continuation clauses (:>/:>> specializations, feature value assignments, wrapped type clauses, assert constraint bodies)',
     level: 'supported',
     note: 'accepted as prose of the owning declaration; values/constraint expressions are not interpreted',

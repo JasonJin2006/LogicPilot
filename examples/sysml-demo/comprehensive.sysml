@@ -123,4 +123,13 @@ package '综合示例' {
 
     analysis '频率分析';
     verification '需求验证案例';
+
+    interaction def '数据上传场景' {
+        actor Operator;
+        actor SensorUnit;
+        actor DataSink;
+        message '上传请求' from Operator to SensorUnit;
+        message '采样数据' from SensorUnit to DataSink;
+        reply '确认回执' from DataSink to Operator;
+    }
 }

@@ -10,6 +10,7 @@ import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { SelectionBadge } from '../workbench/SelectionBadge';
 import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
 import { SysMLTables } from './SysMLTablesView';
+import { SysMLSequenceView } from './SysMLSequenceView';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
@@ -44,6 +45,8 @@ const RELATION_STYLES: Record<SysMLRelationKind, { dash?: string; color: string 
   subsets: { dash: '3 3', color: '#9ec3e6' },
   exposes: { color: '#a9e0cf' },
   binds: { color: '#f2d18c' },
+  messages: { color: '#7ad1ff' },
+  replies: { dash: '4 3', color: '#7ad1ff' },
   includes: { dash: '3 3', color: '#d0b4ee' },
   depends_on: { dash: '2 4', color: '#a7b4c7' },
 };
@@ -781,6 +784,7 @@ export function SysMLCanvas() {
           <option value="definitions">Definitions</option>
           <option value="usages">Usages</option>
           <option value="tables">Tables</option>
+          <option value="sequence">Sequence</option>
         </select>
         <span className="sysml-canvas-count">
           {visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length}{' '}
@@ -829,7 +833,8 @@ export function SysMLCanvas() {
         )}
       </div>
       {viewMode === 'tables' && <SysMLTables />}
-      {viewMode !== 'tables' && (
+      {viewMode === 'sequence' && <SysMLSequenceView projection={projection} />}
+      {viewMode !== 'tables' && viewMode !== 'sequence' && (
         <>
       <div className="sysml-overlays">
         {runError !== null && (

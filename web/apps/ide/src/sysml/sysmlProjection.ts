@@ -36,6 +36,7 @@ export type SysMLVisualKind =
   | 'occurrence'
   | 'stakeholder'
   | 'flow'
+  | 'interaction'
   | 'unknown';
 
 export type SysMLRelationKind =
@@ -56,7 +57,9 @@ export type SysMLRelationKind =
   | 'exposes'
   | 'binds'
   | 'includes'
-  | 'depends_on';
+  | 'depends_on'
+  | 'messages'
+  | 'replies';
 
 export interface SysMLSourceSpan {
   start: number;

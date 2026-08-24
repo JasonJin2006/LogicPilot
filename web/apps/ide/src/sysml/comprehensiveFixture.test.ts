@@ -39,12 +39,13 @@ describe('comprehensive example fixture', () => {
       'viewpoint',
       'stakeholder',
       'occurrence',
+      'interaction',
       'analysis',
       'verification',
     ]) {
       expect(projection.elements.some((element) => element.kind === kind)).toBe(true);
     }
-    for (const relation of ['typed_by', 'connects', 'transitions', 'allocates']) {
+    for (const relation of ['typed_by', 'connects', 'transitions', 'allocates', 'messages', 'replies']) {
       expect(projection.relations.some((r) => r.kind === relation)).toBe(true);
     }
   });

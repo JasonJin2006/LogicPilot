@@ -626,3 +626,77 @@
   text-align: center;
   padding: 14px 0 !important;
 }
+
+/* ── Sequence diagram view ─────────────────────────────────────────── */
+.sysml-seq-scroll {
+  position: absolute;
+  inset: 44px 10px 10px;
+}
+
+.sysml-seq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 10px;
+}
+
+.sysml-seq-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-strong) 92%, transparent);
+  overflow: auto;
+}
+
+.sysml-seq-title {
+  padding: 6px 10px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.sysml-seq-svg {
+  display: block;
+}
+
+.sysml-seq-participant {
+  cursor: pointer;
+}
+
+.sysml-seq-head {
+  fill: color-mix(in srgb, var(--bg-strong) 60%, #7aa2f733);
+  stroke: #8cc4ff;
+}
+
+.sysml-seq-head.selected {
+  stroke-width: 2;
+}
+
+.sysml-seq-head-text {
+  fill: var(--text);
+  font-size: 11px;
+}
+
+.sysml-seq-lifeline {
+  stroke: var(--text-muted);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.sysml-seq-label {
+  fill: var(--text);
+  font-size: 10px;
+}
+
+.sysml-seq-message {
+  stroke: #7ad1ff;
+  stroke-width: 1.4;
+  fill: none;
+}
+
+.sysml-seq-reply {
+  stroke: #9aa8ba;
+  stroke-width: 1.2;
+  stroke-dasharray: 5 3;
+  fill: none;
+}

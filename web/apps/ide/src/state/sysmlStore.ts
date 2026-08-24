@@ -35,14 +35,17 @@ export type SysMLViewMode =
   | 'traceability'
   | 'definitions'
   | 'usages'
-  | 'tables';
+  | 'tables'
+  | 'sequence';
 
 /** Layout backends only know the five geometric modes; the declaration and
  *  table views position everything (visibility filters canvas-side). */
 export function layoutModeOf(
   mode: SysMLViewMode,
 ): 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability' {
-  return mode === 'definitions' || mode === 'usages' || mode === 'tables' ? 'all' : mode;
+  return mode === 'definitions' || mode === 'usages' || mode === 'tables' || mode === 'sequence'
+    ? 'all'
+    : mode;
 }
 
 const LAYOUT_PREFIX = 'logicpilot.sysml.layout.';

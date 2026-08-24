@@ -85,20 +85,37 @@ export function dequoteRef(raw: string): string {
 }
 
 const DECLARATION = new RegExp(
-  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow)' +
+  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
 
 /** `calc` is the common shorthand; both project to the 'calculation' kind. */
 function normalizeKind(raw: string): SysMLVisualKind {
-  return (raw === 'calc' ? 'calculation' : raw) as SysMLVisualKind;
+  // `actor` renders with the stakeholder stick figure; `interaction` is the
+  // sequence-diagram container of the controlled subset.
+  if (raw === 'calc') return 'calculation';
+  if (raw === 'actor') return 'stakeholder';
+  return raw as SysMLVisualKind;
 }
 
 const RELATION_LINE_PATTERNS: Array<{
   re: RegExp;
   build: (m: RegExpExecArray) => Omit<PendingRelation, 'line'> | null;
 }> = [
+  {
+    // `message 'name' from A to B;` / `reply from A to B;` (name optional) -
+    // the sequence-diagram subset (interaction bodies).
+    re: new RegExp(
+      `^(message|reply)(?:\\s+(${REFERENCE}))?\\s+from\\s+(${REFERENCE})\\s+to\\s+(${REFERENCE})`,
+    ),
+    build: (m) => ({
+      kind: m[1] === 'reply' ? 'replies' : 'messages',
+      from: dequoteRef(m[3]!),
+      to: dequoteRef(m[4]!),
+      label: m[2] !== undefined ? dequoteRef(m[2]!) : m[1]!,
+    }),
+  },
   {
     re: new RegExp(`^satisfy\\s+requirement\\s+(${REFERENCE})\\s+by\\s+(${REFERENCE})`),
     build: (m) => ({
