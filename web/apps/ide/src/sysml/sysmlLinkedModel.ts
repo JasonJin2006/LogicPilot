@@ -59,7 +59,7 @@ const SYSML_SUFFIX = /\.sysml$/i;
 const IMPORT_LINE =
   /^[ \t]*(?:(?:private|public|protected|abstract)\s+)*import\s+([^;]+);/;
 
-function importedPrefixes(source: string): string[] {
+export function importedPrefixes(source: string): string[] {
   const prefixes: string[] = [];
   for (const line of source.split(/\r?\n/)) {
     if (line.trimStart().startsWith('//')) continue;

@@ -88,7 +88,7 @@ export function dequoteRef(raw: string): string {
 }
 
 const DECLARATION = new RegExp(
-  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject|snapshot|timeslice)' +
+  '^(?:(?:assert|abstract|individual|variation|ref)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject|snapshot|timeslice)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
@@ -379,6 +379,12 @@ export function parseSysMLSource(source: string): SysMLParseResult {
                 ? 'usage'
                 : 'unknown';
         const name = declaration[3] ?? declaration[4]!;
+        // Feature continuation keywords (attribute redefines mass;) would
+        // otherwise become elements literally named after the keyword
+        // (SY0003 duplicates) - tolerate them as prose instead.
+        if (/^(redefines|subsets|references|values|end|readonly)$/.test(name)) {
+          return;
+        }
         const nameStartInLine = declaration[0].lastIndexOf(name);
         const qualifiedName = owner ? `${owner.qualifiedName}::${name}` : name;
 
@@ -481,7 +487,51 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           !indented.includes('{')
         ) {
           pendingTransition = stripped.trim();
-        } else if (/^(private\s+)?import\b/.test(indented)) {
+        } else if (/^(?:entry|do|exit)[\s;]/.test(indented)) {
+          // State entry/do/exit behavior clauses: tolerated prose.
+        } else if (/^perform\s+action\s+/.test(indented)) {
+          // `perform action x;`: a part performing an action usage.
+          const performMatch = /perform\s+action\s+'?([^';]+)'?/.exec(indented);
+          const performIdent = performMatch?.[1]?.trim() ?? '';
+          if (performIdent !== '' && owner !== undefined && ownerId !== undefined) {
+            const nameStart = indented.indexOf(performIdent);
+            elements.push({
+              kind: 'action',
+              name: performIdent,
+              qualifiedName: owner.qualifiedName + '::' + performIdent,
+              ownerId,
+              declaration: 'usage',
+              span: { start: base, end: lineEnd, line: lineNumber },
+              nameSpan: {
+                start: base + nameStart,
+                end: base + nameStart + performIdent.length,
+                line: lineNumber,
+              },
+            });
+          }
+        } else if (/^(?:in|out|inout)\s/.test(indented) || /^(?:redefines|subsets|references|values|succession)\b/.test(indented)) {
+          // Directed feature declarations (`in t :> ISQ::torque;`) become
+          // port usages; pure continuation keywords (redefines/subsets/
+          // succession) are tolerated prose of the owning block.
+          const featureMatch = /^(?:in|out|inout)\s+'?([^':;]+)'?/.exec(indented);
+          const featureName = featureMatch?.[1]?.trim() ?? '';
+          if (featureName !== '' && owner !== undefined && ownerId !== undefined) {
+            const fNameStart = indented.indexOf(featureName);
+            elements.push({
+              kind: 'port',
+              name: featureName,
+              qualifiedName: owner.qualifiedName + '::' + featureName,
+              ownerId,
+              declaration: 'usage',
+              span: { start: base, end: lineEnd, line: lineNumber },
+              nameSpan: {
+                start: base + fNameStart,
+                end: base + fNameStart + featureName.length,
+                line: lineNumber,
+              },
+            });
+          }
+        } else if (/^(?:(?:private|public|protected|abstract)\s+)*import\b/.test(indented)) {
           // Import directives are project-level: accepted as a directive and
           // resolved by the project index, never a visual element.
         } else if (/^(doc|metadata|language)\b/.test(indented)) {
