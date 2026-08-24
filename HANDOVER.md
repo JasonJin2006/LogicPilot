@@ -48,15 +48,9 @@
 ### B. F6 稳定 ElementRef —— 会话内链接已迁 id;剩余收口
 - 已完成:`containerId` 权威链接 + 双写过渡、消费方切换(canvasView/nodePath/创建路径)、removeNode 级联缺陷修复;
 - 剩余:IDE 手工建块的路径已传 id,但 ModelInfoPanel(F9 文本 Outline)开的视图仍是名字式(sync 兼容);`container` 名字字段仍保留作 DSL 序列化元数据——彻底删除需等 patch wire/dsl 文本格式演进,非近期必须。
+- 架构背景:`ModelNode.container` 仍存容器**名**(`web/packages/editor/src/graph.ts`);缓解:renameNode 级联、LP3103 同名嵌套警告、项目层 `sceneUid` + `manifest.containerIds`(project/syncEngine)、布局键 `nodePath()` 按名字链推导(project.ts ~L388)。彻底迁移(`container` 改存 ID、canvasView 键改 ID、`modelPatch.diffModelDocuments` 匹配键迁移)**必须保持 DSL round-trip 门禁**(`parse(generate(parse(src))) == parse(src)`,editor 73 vitest + corpus)。
 
-### B. F6 稳定 ElementRef(架构根,优先级最高但工程量大)
-现状:`ModelNode.container` 存容器**名**(`web/packages/editor/src/graph.ts`);
-缓解措施已有:renameNode 级联、LP3103 同名嵌套警告、项目层 `sceneUid` +
-`manifest.containerIds`(project/syncEngine)、布局键 `nodePath()` 按名字链推导(project.ts ~L388)。
-剩余:`container` 改存容器节点 ID;canvasView 键改 ID(消掉改名残tab);
-`modelPatch.diffModelDocuments` 匹配键迁移;**必须保持 DSL round-trip 门禁**
-(`parse(generate(parse(src))) == parse(src)`,editor 68 vitest + corpus)。
-建议切法:先在 graph 层加 `containerId?` 并行字段过渡,消费方逐个切换后再删 name 链路。
+> 说明:原 §4 曾并排两个 "B. F6 稳定 ElementRef" 小节,现已合并(上面的"剩余"清单 + 本段架构背景)。
 
 ### C. F9/F8/F10 + DocumentSession 核心同步已完成(见 §3),剩余:更细粒度的会话治理
 - 已完成:`refreshCanvasDocument` 温和刷新(文本编辑器防抖触发、树/AI/场景流改走,不再关标签/视图;坏语法保留最后有效模型并记控制台);canvasView 支持跨 reparse 的按名恢复;
@@ -83,9 +77,9 @@
 
 ```powershell
 # 前端门禁(最快路径)
-pnpm --filter @logicpilot/editor run test   # 68 tests(round-trip 守护)
+pnpm --filter @logicpilot/editor run test   # 73 tests(round-trip 守护)
 pnpm --filter @logicpilot/ide run typecheck
-pnpm --filter @logicpilot/ide run test      # 237 tests(随切片递增)
+pnpm --filter @logicpilot/ide run test      # 299 tests / 47 files(随切片递增)
 pnpm --filter @logicpilot/ide run build     # tsc + vite production
 pnpm docs:build                             # VitePress
 
@@ -97,7 +91,8 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
 
 - E2E 截图落在 `.verify/out/*.png`,**用 read_image 人工复核**;
 - 针对性小验证脚本可仿照 `.verify/rename-check.mjs`(playwright-core 用绝对路径导入 `file:///.../web/apps/ide/node_modules/playwright-core/index.mjs`);
-- 内核侧如需跑 CTest:`./scripts/windows-build.ps1 -Preset windows-msvc-dev -Test`(clean gate 曾 492/492)。
+- 内核侧如需跑 CTest:`./scripts/windows-build.ps1 -Preset windows-msvc-dev -Test`(clean gate 492/492)。
+- **数字基线校正**:README `测试与门禁` 已改为 492 ctest;IDE vitest 实际 47 文件/299 用例(§3 中的历史里程碑数字 237→320 系当时的快照,不代表当前值);editor 73、renderer2d 5、protocol interop 74。浏览器 E2E 的 AI 段依赖已配置的 provider(mock 或真实 key)——无 provider 时 `.ai-patch-preview` 不会出现(E2E 已适配为新 UX,见其脚本内说明)。
 
 ## 5.5 战略上下文(2026-08-23 校准,来源:用户提供的内核深挖对话)
 
@@ -137,6 +132,6 @@ README/docs/index 的陈旧"M/M/c 独占流式"描述已修正为全方法实时
   E2E 不受影响);
 - 新增前端依赖:`elkjs@0.9.2`(EPL-2.0,布局引擎,worker 经 Vite `?url` 引入);
 - `.verify/` 为未跟踪 scratch 目录(E2E 输出/临时脚本);`.playwright-cli/` 是历史 console 日志;
-- 测试基线数字:IDE vitest ~41 文件 288 用例、editor 73、kernel ctest 492(clean 时);
+- 测试基线数字:IDE vitest 47 文件 299 用例、editor 73、kernel ctest 492(clean 时);
 - 截图人工复核:模型可直接用 Read 工具读 `.verify/out/*.png`(旧 vision.js
   流程已按用户要求废弃);`.verify/screenshot-sanity.mjs` 的像素统计仍可作辅助。

@@ -22,10 +22,10 @@ Registry 只是路由元数据的最小骨架**，Workbench 核心仍存在多�
 | F4 | `validateDesModel()` 被 4 处直接 import：画布徽标、Properties、Run 门禁、AI preflight——Process 校验位于全局路径，新增校验器需改每个消费方 | `model/ModelCanvas.tsx`、`model/PropertiesPanel.tsx`、`run/RunDialog.tsx`、`ai/capabilities/logicpilot-modeling/compile.ts` | §9.1 全局 Process 校验迁为 DiagnosticProvider | 高（已修） |
 | F5 | AI 工具静态全量挂载：SYSML_TOOLS 与 DSL mutation 工具对任何活动文档都可见 | `ai/capabilities/logicpilot-modeling/registry.ts` | §7 按活动文档动态发现 | 高（已修） |
 | F6 | 容器身份是**名字**：`container` 字段存容器名，同名嵌套容器靠 LP3103 警告兜底；且 `renameNode` 不级联子节点——重命名容器会把全部子成员孤立出子图（画布视图、DSL 生成、布局键同步漂移） | `web/packages/editor/src/graph.ts`、`parseDsl.ts`、`dsl.ts`、`modelPatch.ts`、`project.ts nodePath` | §13 稳定 ID，显示名不承担引用身份 | 高（级联修复已落地；ElementRef 迁移待做） |
-| F7 | Palette 直接 import 固定 `BLOCK_DEFS/LIBRARIES` union | `layout/PalettePanel.tsx` | §9.3 PaletteProvider | 中（未修） |
-| F8 | `PanelId` 为含 `'sysml'/'sysmlProperties'` 的硬编码 union；第三种文档类型需要改 core 面板表 | `layout/panels.tsx` | §13 | 中（未修） |
-| F9 | Project Outline 面板自行解析 `.lp` 并按元素种类渲染（含 `path.endsWith('.lp')` 分支） | `layout/ModelInfoPanel.tsx` | §9.2 通用 Outline host | 中（未修） |
-| F10 | Workspace 用 `selectedId/sysmlSelectedId` 二元判断决定右侧属性面板 | `layout/Workspace.tsx` | §13 不新增 kind switch | 低（未修） |
+| F7 | Palette 直接 import 固定 `BLOCK_DEFS/LIBRARIES` union | `layout/PalettePanel.tsx` | §9.3 PaletteProvider | 中（✅ 已修：`workbench/palette.ts` + `model/paletteContributions.ts`，`PalettePanel.tsx` 为纯宿主） |
+| F8 | `PanelId` 为含 `'sysml'/'sysmlProperties'` 的硬编码 union；第三种文档类型需要改 core 面板表 | `layout/panels.tsx` | §13 | 中（✅ 已修：`PanelId = string` + `registerPanel()`，sysml 面板迁至 `sysml/sysmlPanelsContribution.tsx`） |
+| F9 | Project Outline 面板自行解析 `.lp` 并按元素种类渲染（含 `path.endsWith('.lp')` 分支） | `layout/ModelInfoPanel.tsx` | §9.2 通用 Outline host | 中（✅ 已修：`workbench/outline.ts` `OUTLINE_CONTRIBUTIONS`，项目树与 sysml 各贡献方，ModelInfoPanel 为纯宿主） |
+| F10 | Workspace 用 `selectedId/sysmlSelectedId` 二元判断决定右侧属性面板 | `layout/Workspace.tsx` | §13 不新增 kind switch | 低（✅ 已修：`focusedPanelId('right')` 注册表解析，二元分支删除） |
 | F11 | 内核侧边界良好：`SimulationMethod` 已定位为 runtime adapter、kernel 不 include `methods/`、`SemanticsRef.library` 声明为兼容键 | `kernel/runtime/`、`methods/*`、`docs/specs/method-runtime.md` | 符合 §10 | ✅ |
 
 ## 3. 本批整改（均已通过 typecheck + vitest + 浏览器 E2E）

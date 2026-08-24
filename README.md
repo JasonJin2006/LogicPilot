@@ -79,22 +79,23 @@ pnpm install
 pnpm --filter @logicpilot/ide dev          # http://localhost:5173
 ```
 
-在 IDE 里可以：拖拽建模（39 个 process 块 + presentation/statechart/action
+在 IDE 里可以：拖拽建模（process 库全量可执行块 + presentation/statechart/action
 库）、DSL 编译诊断、全部方法的实时遥测可视化、通用模型批量运行摘要、AI 面板
 生成/优化/归因，以及外部 SysML v2 文档的投影可视化与语义执行子集。桌面客户端见
 [desktop/README.md](desktop/README.md)。
 
 ### 离散事件（process）块语义
 
-process 库 23 块中 22 块已有内核真语义（以 AnyLogic 官方文档为参考）：
+process 库全部 26 个可执行块均有内核真语义（以 AnyLogic 官方文档为参考）：
 `source/queue/wait/delay/service/sink`、`resource`（含故障/修复）、
 `seize/release`（资源持有与归还）、`batch/unbatch`
 （临时/永久批）、`combine`、`match`（纯同步或按属性配对）、
 `selectOutput/hold`（运行时条件，支持 `==`/`!=`）、`exit`、`enter`、
-`timeMeasureStart/End`、`assembler`、`moveTo`（tripTime/速度位移）；
-实体属性（source `state` 声明）驱动条件路由、优先级排队与抢占
-（`outTimeout`/`outPreempted`）。**process 库 23 块全部有内核语义**
-（完整 node/path 空间建模为后续项）。组合模型见 `examples/des_shop.lp`。
+`timeMeasureStart/End`、`assembler`、`moveTo`（tripTime/速度位移）、`count`
+与 `selectOutput5/In/Out` 路由族；node/path 空间建模与网络路由亦已落地
+（`methods/process/process_flow.cpp`）。实体属性（source `state` 声明）驱动
+条件路由、优先级排队与抢占（`outTimeout`/`outPreempted`）。
+组合模型见 `examples/des_shop.lp`。
 
 流程契约：普通输出端口不允许隐式扇出（编译期 `LP5007`），复制实体使用
 显式 `split`（副本为独立实体，arrivals/departures/in-system 计数一致；
@@ -141,7 +142,7 @@ pause/step）。
 
 ## 测试与门禁
 
-- **kernel/DSL**：395 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
+- **kernel/DSL**：492 ctest（单元/集成/确定性/验收/规模冒烟/AI 闭环/LSP/包工具）
 - **前端**：editor / renderer2d / protocol vitest + 浏览器 E2E
 - **契约**：F1/F2 schema conform + 基线 SHA256 双门禁；C++↔TS 互操作逐字段校验
 - **性能**：bench 门禁（≥ 1M events/s，`bench/`）
