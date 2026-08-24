@@ -80,6 +80,9 @@ interface DragState {
    *  graphBounds into the viewport, so pixel deltas must be scaled into
    *  scene units or pan/zoom feel wrong away from scale 1. */
   vx?: number;
+  /** Dragged-element position accumulated during the gesture; committed to
+   *  the store once on release. */
+  pending?: SysMLPosition;
 }
 
 function positionOf(
@@ -731,7 +734,14 @@ export function SysMLCanvas() {
           nextY = Math.min(Math.max(nextY, parentPos.y + 64), parentPos.y + parentSize.height - nodeH - 12);
         }
       }
-      move(drag.id, { x: nextX, y: nextY });
+      // Gesture path: transform only the dragged node in the DOM; the store
+      // commits once on release (a 600-element scene cannot re-render per
+      // pointermove).
+      drag.pending = { x: nextX, y: nextY };
+      const node = documentRef.current?.querySelector(
+        `g[data-id="${CSS.escape(drag.id)}"]`,
+      );
+      node?.setAttribute('transform', `translate(${nextX} ${nextY})`);
     } else {
       applyCameraNow({
         ...drag.camera,
@@ -742,9 +752,13 @@ export function SysMLCanvas() {
   };
 
   const endDrag = () => {
+    const drag = dragRef.current;
     dragRef.current = null;
     if (cameraRef.current !== camera) {
       setCamera(cameraRef.current);
+    }
+    if (drag?.id !== null && drag !== null && drag.pending !== undefined) {
+      move(drag.id!, drag.pending);
     }
   };
 
@@ -1041,6 +1055,7 @@ export function SysMLCanvas() {
                 transform={`translate(${point.x} ${point.y})`}
                 className={`sysml-node${isSelected ? ' selected' : ''}`}
                 data-kind={element.kind}
+                data-id={element.id}
                 onPointerDown={(event) => beginMove(event, element)}
                 onContextMenu={(event) => openNodeMenu(event, element.id)}
                 onClick={(event) => {

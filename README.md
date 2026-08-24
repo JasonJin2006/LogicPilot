@@ -32,7 +32,7 @@ flowchart LR
     end
     subgraph IDE[Web / Tauri]
         H --> I[WebSocket wire 帧]
-        I --> J[React + PixiJS 可视化]
+        I --> J[React + SVG 可视化]
         C -. 诊断 JSON .-> K[AI 闭环]
         K --> A
     end
@@ -126,7 +126,7 @@ pause/step）。
 | `methods/` | 方法运行时插件库（`process`、`statechart`） |
 | `libraries/` | DSL 库注册表（`process.lplib`、行业示例 `manufacturing.lplib`） |
 | `schemas/` | 冻结契约 F1（IR v2）/ F2（wire 遥测），flatc 生成 |
-| `web/` | Web IDE（React + zustand + PixiJS）、editor 图文档包、protocol/renderer2d |
+| `web/` | Web IDE（React + zustand + SVG 可视化）、editor 图文档包、protocol/renderer2d |
 | `desktop/` | Tauri 2 桌面壳（Rust），嵌入同一 Web IDE |
 | `examples/` | 示例模型（mm1、制造线、call-center 工程等） |
 | `bench/` | 性能门禁基准（scheduler/RNG/MM1/ProcessFlow） |

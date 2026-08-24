@@ -219,3 +219,89 @@ export async function autoLayoutWithElk(
   }
   return { version: 1, sourceHash: projection.sourceHash, positions, sizes };
 }
+
+
+/** Chunked compound layout for large models (plan S4 follow-up): one ELK
+ *  run per TOP-LEVEL root element instead of a single graph with hundreds
+ *  of nodes - each chunk stays inside the worker's comfort zone, results
+ *  land in seconds, and chunks are packed left-to-right deterministically.
+ *  Relations whose endpoints live in different chunks are dropped from the
+ *  per-chunk graphs (cross-chunk edges re-emerge visually as the chunks sit
+ *  side by side). */
+export async function autoLayoutChunkedWithElk(
+  projection: SysMLProjection,
+  chunkThreshold = 250,
+): Promise<SysMLLayout & { sizes: ElkLayoutOutput['sizes'] }> {
+  if (projection.elements.length <= chunkThreshold) {
+    return autoLayoutWithElk('', projection);
+  }
+  const byId = new Map(projection.elements.map((element) => [element.id, element]));
+  // Chunk units: top-level roots, or - when the model is one giant root
+  // package (the spec vehicle shape) - its second-level children.
+  let units = projection.elements.filter(
+    (element) => element.ownerId === undefined || !byId.has(element.ownerId),
+  );
+  if (units.length <= 1) {
+    units = projection.elements.filter(
+      (element) => element.ownerId !== undefined && byId.has(element.ownerId) &&
+        (byId.get(element.ownerId)!.ownerId === undefined ||
+          !byId.has(byId.get(element.ownerId)!.ownerId!)),
+    );
+  }
+  if (units.length <= 1) {
+    return autoLayoutWithElk('', projection);
+  }
+  const descendants = (rootId: string): Set<string> => {
+    const ids = new Set<string>([rootId]);
+    const walk = (ownerId: string) => {
+      for (const element of projection.elements) {
+        if (element.ownerId === ownerId && !ids.has(element.id)) {
+          ids.add(element.id);
+          walk(element.id);
+        }
+      }
+    };
+    walk(rootId);
+    return ids;
+  };
+  const positions: Record<string, SysMLPosition> = {};
+  const sizes: Record<string, { width: number; height: number }> = {};
+  const CHUNK_GAP = 90;
+  const PER_ROW = 3;
+  let cursorX = 80;
+  let cursorY = 80;
+  let rowHeight = 0;
+  let placed = 0;
+  for (const unit of units) {
+    const ids = descendants(unit.id);
+    const elements = projection.elements.filter((element) => ids.has(element.id));
+    const relations = projection.relations.filter(
+      (relation) => ids.has(relation.from) && ids.has(relation.to) && relation.kind !== 'contains',
+    );
+    const sub = { elements, relations, sourceHash: projection.sourceHash } as SysMLProjection;
+    const { positions: chunkPositions, sizes: chunkSizes } = await runElk(buildElkGraph(sub));
+    let maxX = 0;
+    let maxY = 0;
+    for (const [id, pos] of Object.entries(chunkPositions)) {
+      positions[id] = { x: pos.x + cursorX, y: pos.y + cursorY };
+      maxX = Math.max(maxX, pos.x + (chunkSizes[id]?.width ?? SYML_NODE_WIDTH));
+      maxY = Math.max(maxY, pos.y + (chunkSizes[id]?.height ?? SYML_NODE_HEIGHT));
+    }
+    for (const [id, size] of Object.entries(chunkSizes)) sizes[id] = size;
+    placed += 1;
+    cursorX += maxX + CHUNK_GAP;
+    rowHeight = Math.max(rowHeight, maxY + 60);
+    if (placed % PER_ROW === 0) {
+      cursorX = 80;
+      cursorY += rowHeight;
+      rowHeight = 0;
+    }
+  }
+  // The root package itself lives in no chunk - pin it above the grid.
+  for (const element of projection.elements) {
+    if (positions[element.id] === undefined) {
+      positions[element.id] = { x: 80, y: 24 };
+    }
+  }
+  return { version: 1, sourceHash: projection.sourceHash, positions, sizes };
+}

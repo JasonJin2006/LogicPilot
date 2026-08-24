@@ -21,7 +21,7 @@ import {
   serializeEvidence,
   type SysMLEvidenceRecord,
 } from '../sysml/sysmlEvidence';
-import { autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
+import { autoLayoutChunkedWithElk, autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
 import {
   buildLinkedSysMLModel,
   type SysMLFileUnit,
@@ -446,8 +446,12 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     if (!state.projection || !state.path) return;
     state.checkpoint();
     try {
-      // The active view mode picks the diagram-kind reading direction.
-      const layout = await autoLayoutWithElk(state.source, state.projection, layoutModeOf(state.viewMode));
+      // The active view mode picks the diagram-kind reading direction;
+      // large models go through the chunked pipeline.
+      const layout =
+        state.projection.elements.length > 250
+          ? await autoLayoutChunkedWithElk(state.projection)
+          : await autoLayoutWithElk(state.source, state.projection, layoutModeOf(state.viewMode));
       // The user may have switched files while ELK was computing.
       if (get().path !== state.path) return;
       persistLayout(state.path, layout);
