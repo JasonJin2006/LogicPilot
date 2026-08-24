@@ -42,6 +42,8 @@ export interface RequirementRow {
   id: string;
   name: string;
   qualifiedName: string;
+  /** Stated text from the owning doc block, when present. */
+  text?: string;
   owner?: string;
   line: number;
   /** Traceability degree: satisfy/verify/trace relations touching it. */
@@ -66,6 +68,7 @@ export function requirementRows(projection: SysMLProjection): RequirementRow[] {
         id: element.id,
         name: element.name,
         qualifiedName: element.qualifiedName,
+        ...(element.doc !== undefined ? { text: element.doc } : {}),
         ...(owner !== undefined ? { owner } : {}),
         line: element.span.line,
         relations,

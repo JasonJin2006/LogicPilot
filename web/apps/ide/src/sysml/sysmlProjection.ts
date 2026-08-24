@@ -78,6 +78,9 @@ export interface SysMLElement {
   /** The identifier token inside the declaration line - the anchor for
    *  go-to-definition/rename style language features (plan §8 S1). */
   nameSpan: SysMLSourceSpan;
+  /** Documentation text from the owning `doc` block (whitespace-normalized),
+   *  surfaced in requirement tables and the element inspector. */
+  doc?: string;
 }
 
 export interface SysMLRelation {

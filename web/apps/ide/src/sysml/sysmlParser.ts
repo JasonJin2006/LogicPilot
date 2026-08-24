@@ -35,6 +35,9 @@ export interface ParsedElement {
   span: SysMLSourceSpan;
   /** The identifier token inside the declaration line. */
   nameSpan: SysMLSourceSpan;
+  /** Documentation text of the owning `doc /* ... *\/` block (or the quoted
+   *  `doc "..."` form), whitespace-normalized. First block wins. */
+  doc?: string;
 }
 
 /** A time trigger on a transition (`after 5 s` / `at 10`). Execution 0.2
@@ -652,6 +655,37 @@ export function parseSysMLSource(source: string): SysMLParseResult {
       message:
         'no visual SysML declarations were recognized; the source remains available in the text editor',
     });
+  }
+  // Documentation post-pass: `doc /* ... */` blocks (and `doc "..."` one
+  // liners) attach to the declaration whose extent contains them, so
+  // requirement tables and the inspector can show the stated text without
+  // re-scanning. Runs on the ORIGINAL source - spans index it directly.
+  const attachDoc = (start: number, text: string) => {
+    // Innermost containing declaration wins - a root package's span covers
+    // the whole file and must not steal docs addressed to nested members.
+    const candidates = elements.filter(
+      (element) => start > element.span.start && start < element.span.end,
+    );
+    const owner = candidates.reduce<(typeof elements)[number] | undefined>((best, element) => {
+      if (best === undefined || element.span.start > best.span.start) return element;
+      return best;
+    }, undefined);
+    if (owner !== undefined && owner.doc === undefined) {
+      owner.doc = text;
+    }
+  };
+  for (const match of source.matchAll(/\/\*+\s*([\s\S]*?)\s*\*+\//g)) {
+    const normalized = match[1]!
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^\s*\*+\s?/, ''))
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (normalized !== '') attachDoc(match.index ?? 0, normalized);
+  }
+  for (const match of source.matchAll(/\bdoc\s+"([^"]*)"/g)) {
+    const text = match[1]!.trim();
+    if (text !== '') attachDoc(match.index ?? 0, text);
   }
   return { elements, pending, diagnostics };
 }

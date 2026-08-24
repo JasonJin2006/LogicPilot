@@ -738,3 +738,14 @@
 .sysml-uc-subject.selected { stroke-width: 2; }
 .sysml-uc-link { stroke: #9aa8ba; stroke-width: 1; }
 .sysml-uc-label { fill: var(--text); font-size: 10px; }
+
+.sysml-doc-text {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--border);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

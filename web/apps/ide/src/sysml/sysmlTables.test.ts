@@ -2,6 +2,10 @@
 // Allocation tables): pure projections over the model, pinned here.
 
 import { describe, expect, it } from 'vitest';
+// @ts-expect-error - node builtins are available in the vitest runtime.
+import { readFileSync } from 'node:fs';
+// @ts-expect-error - see above.
+import { fileURLToPath } from 'node:url';
 import { projectSysML } from './sysmlProjection';
 import { allocationRows, partRows, requirementRows } from './sysmlTables';
 
@@ -36,6 +40,15 @@ describe('sysmlTables row builders', () => {
     const touched = rows.find((row) => row.name === '流量要求');
     expect(touched?.relations).toBe(1);
     expect(rows.find((row) => row.name === '系统要求')?.relations).toBe(0);
+    // Doc blocks attach to their owner as stated requirement text.
+    const fixture = projectSysML(
+      readFileSync(
+        fileURLToPath(new URL('../../../../../examples/sysml-demo/comprehensive.sysml', import.meta.url)),
+        'utf8',
+      ),
+    );
+    const stated = requirementRows(fixture).find((row) => row.name === '数据要求');
+    expect(stated?.text).toContain('采样数据必须实时上传');
   });
 
   it('flattens allocation statements to endpoint rows', () => {

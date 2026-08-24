@@ -148,6 +148,11 @@ export function SysMLPropertiesPanel() {
         <span>Qualified name</span>
         <code>{selected.qualifiedName}</code>
       </div>
+      {selected.doc !== undefined && (
+        <p className="sysml-properties-muted sysml-doc-text" title={selected.doc}>
+          {selected.doc}
+        </p>
+      )}
       <div className="sysml-property-row">
         <span>Source line</span>
         <strong>

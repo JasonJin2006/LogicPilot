@@ -90,6 +90,7 @@ export function SysMLTables() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Text</th>
                 <th>Owner</th>
                 <th>Relations</th>
                 <th>Line</th>
@@ -102,7 +103,7 @@ export function SysMLTables() {
                   className={row.id === selectedId ? ' selected' : ''}
                   onClick={() => pick(row.id)}
                 >
-                  <td>{row.name}</td>
+                  <td title={row.text}>{row.text ? (row.text.length > 60 ? `${row.text.slice(0, 60)}…` : row.text) : '—'}</td>
                   <td>{row.owner ?? '—'}</td>
                   <td>{row.relations}</td>
                   <td>{row.line}</td>
