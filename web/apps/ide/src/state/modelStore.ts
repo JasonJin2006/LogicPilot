@@ -142,6 +142,8 @@ interface ModelState {
   ungroupShape: (id: string) => string | null;
   /** Align ≥2 presentation shapes along an axis (undoable). */
   alignShapes: (ids: string[], axis: AlignAxis) => void;
+  /** Batch-move flow nodes onto an ELK-arranged layout (one undo step). */
+  arrangeNodes: (positions: Record<string, { x: number; y: number }>) => void;
   /** Evenly space ≥3 shapes along the union span (undoable). */
   distributeShapes: (ids: string[], axis: DistributeAxis) => void;
   /** Move a node to the end of the render order (on top). */
@@ -492,6 +494,35 @@ export const useModelStore = create<ModelState>()((set, get) => ({
         x,
         y,
         presentation: { ...target.presentation, transform: { ...tr, x, y } },
+      };
+    });
+    set({ ...commit(state, { ...state.document, nodes }) });
+  },
+  arrangeNodes: (positions) => {
+    const state = useModelStore.getState();
+    const ids = Object.keys(positions);
+    if (ids.length === 0) {
+      return;
+    }
+    const nodes = state.document.nodes.map((node) => {
+      const position = positions[node.id];
+      if (position === undefined) {
+        return node;
+      }
+      return {
+        ...node,
+        x: position.x,
+        y: position.y,
+        // Keep presentation shapes in step so layered views and any bound
+        // graphic stay glued to their block.
+        ...(node.presentation
+          ? {
+              presentation: {
+                ...node.presentation,
+                transform: { ...node.presentation.transform, x: position.x, y: position.y },
+              },
+            }
+          : {}),
       };
     });
     set({ ...commit(state, { ...state.document, nodes }) });

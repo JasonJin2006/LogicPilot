@@ -872,6 +872,24 @@
   transform: translate(-50%, -50%) scale(1.5);
 }
 
+/* Two-stage connect armed: every valid in port advertises itself as a
+ * click target (the next click completes the wire). */
+.model-canvas.pending-connect .model-port.port-in {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: pending-connect-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pending-connect-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1.35);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.75);
+  }
+}
+
 /* Live run feedback on the canvas blocks (10 Hz viz state). */
 .model-block-badge {
   position: absolute;

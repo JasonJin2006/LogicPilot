@@ -5,10 +5,26 @@
 // arrowheads and numeric ticks. Blocks from the palette drop in world coords.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent, PointerEvent as ReactPointerEvent, ReactElement } from 'react';
-import { Focus, Plus, Redo2, RotateCcw, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import type {
+  DragEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactElement,
+} from 'react';
+import {
+  Focus,
+  LayoutGrid,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Trash2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
+import { autoArrangePositions } from './autoLayoutElk';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
 import {
   createGraphicNode,
@@ -282,6 +298,30 @@ export function ModelCanvas() {
       fitVisibleModel();
     }
   }, [fitVisibleModel, size.height, size.width, viewKey, visibleNodes.length]);
+  // ELK auto-arrange for the flow subgraph of the open view. Presentation
+  // shapes keep their manual positions; one undo step covers the move.
+  const [arranging, setArranging] = useState(false);
+  const flowNodes = useMemo(
+    () => visibleNodes.filter((node) => !node.presentation),
+    [visibleNodes],
+  );
+  const flowNodeCount = flowNodes.length;
+  const handleAutoArrange = async () => {
+    if (arranging || flowNodes.length < 2) return;
+    const ids = new Set(flowNodes.map((node) => node.id));
+    const flowEdges = visibleEdges.filter((edge) => ids.has(edge.from) && ids.has(edge.to));
+    setArranging(true);
+    try {
+      const positions = await autoArrangePositions(flowNodes, flowEdges);
+      if (Object.keys(positions).length > 0) {
+        useModelStore.getState().arrangeNodes(positions);
+      }
+    } catch {
+      // Layout is best-effort: keep the current arrangement on failure.
+    } finally {
+      setArranging(false);
+    }
+  };
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   // Port-to-port wiring: a live wire from an out port to the cursor, plus
@@ -295,6 +335,13 @@ export function ModelCanvas() {
   const [wireTarget, setWireTarget] = useState<{
     id: string;
     port: string;
+  } | null>(null);
+  // Two-stage connect: a plain click (no drag) on an out port arms the
+  // connection; the next click on an in port completes it. Esc, another
+  // canvas click or re-clicking the armed port cancels.
+  const [pendingConnect, setPendingConnect] = useState<{
+    fromId: string;
+    fromPort: string;
   } | null>(null);
   const wireStart = useRef<{ x: number; y: number } | null>(null);
 
@@ -591,7 +638,11 @@ export function ModelCanvas() {
     const gesture = drag.current;
     drag.current = null;
     setPanning(false);
-    if (gesture && !gesture.moved) select(null);
+    if (gesture && !gesture.moved) {
+      // A plain background click also disarms the two-stage connect.
+      setPendingConnect(null);
+      select(null);
+    }
   };
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -723,10 +774,38 @@ export function ModelCanvas() {
           connectBlocks(draftWire.fromId, target.id, draftWire.fromPort, target.port);
         }
       }
+    } else {
+      // A click without a drag arms the two-stage connect: the next click
+      // on an in port completes it.
+      setPendingConnect({ fromId: draftWire.fromId, fromPort: draftWire.fromPort });
     }
     wireStart.current = null;
     setDraftWire(null);
     setWireTarget(null);
+  };
+
+  // Second stage of the click-click connect: complete onto whatever in port
+  // sits at the click point (findWireTarget snaps within its threshold).
+  const onPortClick = (event: ReactMouseEvent<HTMLSpanElement>) => {
+    if (pendingConnect === null) return;
+    event.stopPropagation();
+    const world = clientToWorld(event.clientX, event.clientY);
+    const target = findWireTarget(world, pendingConnect.fromId);
+    if (target !== null) {
+      const from = visibleNodes.find((node) => node.id === pendingConnect.fromId);
+      const to = visibleNodes.find((node) => node.id === target.id);
+      if (
+        from !== undefined &&
+        to !== undefined &&
+        STATECHART_KINDS.has(from.kind) &&
+        STATECHART_KINDS.has(to.kind)
+      ) {
+        createStatechartTransition(from, to);
+      } else if (to !== undefined) {
+        connectBlocks(pendingConnect.fromId, target.id, pendingConnect.fromPort, target.port);
+      }
+    }
+    setPendingConnect(null);
   };
 
   // Create a transition block between two statechart elements (from/to by
@@ -899,15 +978,18 @@ export function ModelCanvas() {
     };
   }, [transformDrag, setPresentation, visibleDocument, view]);
 
-  // Escape cancels an in-flight wire.
+  // Escape cancels an in-flight wire or the armed two-stage connect.
   useEffect(() => {
-    if (!draftWire) return;
+    if (!draftWire && !pendingConnect) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') cancelWire();
+      if (event.key === 'Escape') {
+        cancelWire();
+        setPendingConnect(null);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draftWire]);
+  }, [draftWire, pendingConnect]);
 
   // Lightweight poll on the 10 Hz viz state so live run badges re-render
   // without routing every frame through React.
@@ -1538,6 +1620,7 @@ export function ModelCanvas() {
                       onPointerMove={moveWire}
                       onPointerUp={endWire}
                       onPointerCancel={cancelWire}
+                      onClick={onPortClick}
                     />
                   );
                 })}
@@ -1614,7 +1697,7 @@ export function ModelCanvas() {
   return (
     <div
       ref={viewportRef}
-      className={`model-canvas${panning ? ' panning' : ''}${draftWire ? ' wiring' : ''}`}
+      className={`model-canvas${panning ? ' panning' : ''}${draftWire ? ' wiring' : ''}${pendingConnect ? ' pending-connect' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -1838,6 +1921,7 @@ export function ModelCanvas() {
                       onPointerMove={moveWire}
                       onPointerUp={endWire}
                       onPointerCancel={cancelWire}
+                      onClick={onPortClick}
                     />
                   );
                 })}
@@ -1893,6 +1977,16 @@ export function ModelCanvas() {
         </button>
         <button aria-label="Fit model" title="Fit model in view" onClick={fitVisibleModel}>
           <Focus size={14} />
+        </button>
+        <button
+          aria-label="Auto arrange"
+          title="Auto arrange the flow in this view (ELK layered layout; undoable)"
+          disabled={arranging || flowNodeCount < 2}
+          onClick={() => {
+            void handleAutoArrange();
+          }}
+        >
+          <LayoutGrid size={14} />
         </button>
         <button
           aria-label="Reset view"
