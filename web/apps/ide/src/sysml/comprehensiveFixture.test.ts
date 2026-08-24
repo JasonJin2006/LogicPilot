@@ -45,7 +45,7 @@ describe('comprehensive example fixture', () => {
     ]) {
       expect(projection.elements.some((element) => element.kind === kind)).toBe(true);
     }
-    for (const relation of ['typed_by', 'connects', 'transitions', 'allocates', 'messages', 'replies', 'binds']) {
+    for (const relation of ['typed_by', 'connects', 'transitions', 'allocates', 'messages', 'replies', 'binds', 'contains']) {
       expect(projection.relations.some((r) => r.kind === relation)).toBe(true);
     }
   });

@@ -13,6 +13,7 @@ import { SysMLTables } from './SysMLTablesView';
 import { SysMLSequenceView } from './SysMLSequenceView';
 import { SysMLParametricView } from './SysMLParametricView';
 import { SysMLUseCaseView } from './SysMLUseCaseView';
+import { SysMLOccurrenceView } from './SysMLOccurrenceView';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
@@ -789,6 +790,7 @@ export function SysMLCanvas() {
           <option value="sequence">Sequence</option>
           <option value="parametric">Parametric</option>
           <option value="usecase">Use Case</option>
+          <option value="occurrence">Occurrence</option>
         </select>
         <span className="sysml-canvas-count">
           {visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length}{' '}
@@ -840,7 +842,12 @@ export function SysMLCanvas() {
       {viewMode === 'sequence' && <SysMLSequenceView projection={projection} />}
       {viewMode === 'parametric' && <SysMLParametricView projection={projection} />}
       {viewMode === 'usecase' && <SysMLUseCaseView projection={projection} />}
-      {viewMode !== 'tables' && viewMode !== 'sequence' && viewMode !== 'parametric' && viewMode !== 'usecase' && (
+      {viewMode === 'occurrence' && <SysMLOccurrenceView projection={projection} />}
+      {viewMode !== 'tables' &&
+        viewMode !== 'sequence' &&
+        viewMode !== 'parametric' &&
+        viewMode !== 'usecase' &&
+        viewMode !== 'occurrence' && (
         <>
       <div className="sysml-overlays">
         {runError !== null && (

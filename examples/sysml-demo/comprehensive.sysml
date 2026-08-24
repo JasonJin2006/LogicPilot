@@ -136,7 +136,18 @@ package '综合示例' {
         actor SensorUnit;
         actor DataSink;
         message '上传请求' from Operator to SensorUnit;
-        message '采样数据' from SensorUnit to DataSink;
-        reply '确认回执' from DataSink to Operator;
+        alt 'ack 等待' {
+            message '采样数据' from SensorUnit to DataSink;
+            reply '确认回执' from DataSink to Operator;
+        }
+        loop '重试 3 次' {
+            message '重发请求' from Operator to SensorUnit;
+        }
+    }
+
+    occurrence '示范运行' {
+        snapshot '部署完成';
+        snapshot '巡检中';
+        timeslice '采样窗口';
     }
 }

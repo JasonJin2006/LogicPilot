@@ -88,7 +88,7 @@ export function dequoteRef(raw: string): string {
 }
 
 const DECLARATION = new RegExp(
-  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject)' +
+  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject|snapshot|timeslice)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
@@ -100,6 +100,7 @@ function normalizeKind(raw: string): SysMLVisualKind {
   if (raw === 'calc') return 'calculation';
   if (raw === 'actor') return 'stakeholder';
   if (raw === 'subject') return 'part';
+  if (raw === 'snapshot' || raw === 'timeslice') return 'occurrence';
   return raw as SysMLVisualKind;
 }
 
@@ -494,6 +495,32 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           /^exit;?$/.test(indented)
         ) {
           // exhibit-body effect lines: accepted, not interpreted (matrix).
+        } else if (/^(alt|loop|parallel)\b/.test(indented) && indented.includes('{')) {
+          // Sequence-combination fragment (controlled subset): `alt`, `loop`
+          // or `parallel` opening a block. The element span covers the whole
+          // frame so the sequence view can group member messages by line;
+          // the name carries the guard/counts text.
+          const fragmentName = stripped.replace(/\{+$/, '').trim();
+          elements.push({
+            kind: 'fragment',
+            name: fragmentName || 'frame',
+            qualifiedName: owner ? `${owner.qualifiedName}::${fragmentName}` : fragmentName,
+            ownerId,
+            declaration: 'usage',
+            span: { start: base, end: lineEnd, line: lineNumber },
+            nameSpan: {
+              start: base,
+              end: base + fragmentName.length,
+              line: lineNumber,
+            },
+          });
+          if (owner !== undefined && ownerId !== undefined) {
+            pushPending(pending, 'contains', owner.qualifiedName, fragmentName, 'contains', lineNumber);
+          }
+          const fragmentDelta = opens - closes;
+          if (fragmentDelta > 0) {
+            openScopes.push({ elementIndex: elements.length - 1, closeDepth: depth + fragmentDelta });
+          }
         } else if (/^'[^']+';?$/.test(indented)) {
           // Enumeration literal members (`'高';`): prose of the owning enum.
         } else if (/^(render|objective|stakeholders|doc)/.test(indented)) {

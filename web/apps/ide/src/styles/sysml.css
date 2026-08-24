@@ -749,3 +749,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Sequence fragments + occurrence timeline ──────────────────────── */
+.sysml-seq-frame {
+  fill: color-mix(in srgb, #7aa2f7 8%, transparent);
+  stroke: #7aa2f766;
+}
+.sysml-seq-frame-label {
+  fill: #7aa2f7;
+  font-size: 10px;
+  font-style: italic;
+}
+.sysml-oc-svg { display: block; }
+.sysml-oc-axis { stroke: var(--text-muted); stroke-width: 1.5; }
+.sysml-oc-axis-label { fill: var(--text-muted); font-size: 10px; }
+.sysml-oc-stem { stroke: var(--text-muted); stroke-dasharray: 3 3; }
+.sysml-oc-marker { fill: #f1c27d; stroke: #b8860b; cursor: pointer; }
+.sysml-oc-marker.timeslice { fill: #8be0c2; stroke: #2f9e77; }
+.sysml-oc-marker.selected { stroke-width: 2.6; }
+.sysml-oc-label { fill: var(--text); font-size: 10px; }
+.sysml-oc-node { cursor: pointer; }

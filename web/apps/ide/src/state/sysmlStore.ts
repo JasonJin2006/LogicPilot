@@ -38,7 +38,8 @@ export type SysMLViewMode =
   | 'tables'
   | 'sequence'
   | 'parametric'
-  | 'usecase';
+  | 'usecase'
+  | 'occurrence';
 
 /** Layout backends only know the five geometric modes; the declaration and
  *  table views position everything (visibility filters canvas-side). */
@@ -50,7 +51,8 @@ export function layoutModeOf(
     mode === 'tables' ||
     mode === 'sequence' ||
     mode === 'parametric' ||
-    mode === 'usecase'
+    mode === 'usecase' ||
+    mode === 'occurrence'
     ? 'all'
     : mode;
 }

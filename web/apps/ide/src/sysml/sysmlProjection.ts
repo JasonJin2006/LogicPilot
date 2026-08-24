@@ -37,6 +37,7 @@ export type SysMLVisualKind =
   | 'stakeholder'
   | 'flow'
   | 'interaction'
+  | 'fragment'
   | 'unknown';
 
 export type SysMLRelationKind =

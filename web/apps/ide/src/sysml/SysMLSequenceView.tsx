@@ -17,6 +17,9 @@ interface SequenceChart {
   participants: SysMLElement[];
   /** (participantId, participantId, label, isReply, line) in source order. */
   messages: Array<{ from: string; to: string; label: string; reply: boolean; line: number }>;
+  /** alt/loop/parallel frames: element span covers the block extent, so
+   *  member messages group by source line. Single level (no nesting). */
+  fragments: Array<{ id: string; name: string; start: number; end: number }>;
   width: number;
   height: number;
 }
@@ -45,9 +48,21 @@ function buildCharts(projection: SysMLProjection): SequenceChart[] {
         line: relation.line,
       }));
     if (participants.length === 0 || messages.length === 0) continue;
+    const fragments = projection.elements
+      .filter(
+        (element) =>
+          element.kind === 'fragment' &&
+          element.ownerId === interaction.id,
+      )
+      .map((fragment) => ({
+        id: fragment.id,
+        name: fragment.name,
+        start: fragment.span.start,
+        end: fragment.span.end,
+      }));
     const width = Math.max(participants.length * LIFELINE_GAP + 40, 420);
     const height = TOP_PAD + HEADER_H + messages.length * MESSAGE_GAP + 26;
-    charts.push({ interaction, participants, messages, width, height });
+    charts.push({ interaction, participants, messages, fragments, width, height });
   }
   return charts;
 }
@@ -86,6 +101,31 @@ function SequenceChartSvg({ chart }: { chart: SequenceChart }) {
               y2={lifelineEnd}
               className="sysml-seq-lifeline"
             />
+          </g>
+        );
+      })}
+      {chart.fragments.map((fragment) => {
+        const memberLines = chart.messages.filter(
+          (message) => message.line >= fragment.start && message.line <= fragment.end,
+        );
+        if (memberLines.length === 0) return null;
+        const first = chart.messages.indexOf(memberLines[0]!);
+        const last = chart.messages.indexOf(memberLines[memberLines.length - 1]!);
+        const top = TOP_PAD + HEADER_H + first * MESSAGE_GAP;
+        const bottom = TOP_PAD + HEADER_H + (last + 1) * MESSAGE_GAP;
+        return (
+          <g key={fragment.id}>
+            <rect
+              x={12}
+              y={top + 2}
+              width={chart.width - 24}
+              height={bottom - top - 4}
+              rx={6}
+              className="sysml-seq-frame"
+            />
+            <text x={22} y={top + 16} className="sysml-seq-frame-label">
+              {fragment.name}
+            </text>
           </g>
         );
       })}
