@@ -85,7 +85,7 @@ export function dequoteRef(raw: string): string {
 }
 
 const DECLARATION = new RegExp(
-  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor)' +
+  '^(?:(?:assert|abstract|individual|variation)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
@@ -96,6 +96,7 @@ function normalizeKind(raw: string): SysMLVisualKind {
   // sequence-diagram container of the controlled subset.
   if (raw === 'calc') return 'calculation';
   if (raw === 'actor') return 'stakeholder';
+  if (raw === 'subject') return 'part';
   return raw as SysMLVisualKind;
 }
 
@@ -492,7 +493,7 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           // exhibit-body effect lines: accepted, not interpreted (matrix).
         } else if (/^'[^']+';?$/.test(indented)) {
           // Enumeration literal members (`'高';`): prose of the owning enum.
-        } else if (/^(subject|actor|render|objective|stakeholders|doc)/.test(indented)) {
+        } else if (/^(render|objective|stakeholders|doc)/.test(indented)) {
           // use-case/view body keywords: accepted as prose (matrix).
         } else if (/^'[^']*'\s*(>=|<=|==|>|<|=)/.test(indented)) {
           // Constraint binding expression (`'A' >= 'B' + 3`): every quoted

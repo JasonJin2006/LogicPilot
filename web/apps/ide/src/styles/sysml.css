@@ -718,3 +718,23 @@
 .sysml-par-text { fill: var(--text); font-size: 11px; }
 .sysml-par-edge { stroke: #9aa8ba; stroke-width: 1; }
 .sysml-par-expr { fill: var(--text-muted); font-size: 9px; }
+
+/* ── Use-case diagram view ─────────────────────────────────────────── */
+.sysml-uc-svg { display: block; }
+.sysml-uc-node { cursor: pointer; }
+.sysml-uc-ellipse {
+  fill: color-mix(in srgb, var(--bg-strong) 60%, #8cc4ff26);
+  stroke: #8cc4ff;
+  cursor: pointer;
+}
+.sysml-uc-ellipse.selected { stroke-width: 2.4; }
+.sysml-uc-title { fill: var(--text); font-size: 13px; font-weight: 600; }
+.sysml-uc-actor { stroke: #c79bf2; fill: none; stroke-width: 1.5; }
+.sysml-uc-actor.selected { stroke-width: 2.6; }
+.sysml-uc-subject {
+  fill: color-mix(in srgb, var(--bg-strong) 60%, #8be0c226);
+  stroke: #8be0c2;
+}
+.sysml-uc-subject.selected { stroke-width: 2; }
+.sysml-uc-link { stroke: #9aa8ba; stroke-width: 1; }
+.sysml-uc-label { fill: var(--text); font-size: 10px; }

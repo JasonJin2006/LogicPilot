@@ -87,6 +87,12 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
   },
   {
     construct:
+      'use-case diagrams: usecase bodies with actor participants and a subject part',
+    level: 'supported',
+    note: 'classic ellipse + stick-figure actors + subject box with association lines',
+  },
+  {
+    construct:
       'parametric diagrams: constraint binding expressions (quoted refs with comparison/arithmetic)',
     level: 'supported',
     note: 'bindings visualized with the expression as label; expressions are never evaluated',

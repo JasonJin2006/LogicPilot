@@ -113,7 +113,10 @@ package '综合示例' {
         '采样频率' = '滤波系数' * '轮次' + 0.5;
     }
 
-    usecase '远程巡检';
+    usecase '远程巡检' {
+        subject MonitorSystem;
+        actor '巡检员';
+    }
 
     allocate CalcTask to Gateway;
 

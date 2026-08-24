@@ -12,6 +12,7 @@ import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
 import { SysMLTables } from './SysMLTablesView';
 import { SysMLSequenceView } from './SysMLSequenceView';
 import { SysMLParametricView } from './SysMLParametricView';
+import { SysMLUseCaseView } from './SysMLUseCaseView';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
@@ -787,6 +788,7 @@ export function SysMLCanvas() {
           <option value="tables">Tables</option>
           <option value="sequence">Sequence</option>
           <option value="parametric">Parametric</option>
+          <option value="usecase">Use Case</option>
         </select>
         <span className="sysml-canvas-count">
           {visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length}{' '}
@@ -837,7 +839,8 @@ export function SysMLCanvas() {
       {viewMode === 'tables' && <SysMLTables />}
       {viewMode === 'sequence' && <SysMLSequenceView projection={projection} />}
       {viewMode === 'parametric' && <SysMLParametricView projection={projection} />}
-      {viewMode !== 'tables' && viewMode !== 'sequence' && viewMode !== 'parametric' && (
+      {viewMode === 'usecase' && <SysMLUseCaseView projection={projection} />}
+      {viewMode !== 'tables' && viewMode !== 'sequence' && viewMode !== 'parametric' && viewMode !== 'usecase' && (
         <>
       <div className="sysml-overlays">
         {runError !== null && (
