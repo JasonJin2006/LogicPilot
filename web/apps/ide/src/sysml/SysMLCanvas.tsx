@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { PressGesture, zoomAtPoint } from '@logicpilot/canvas';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
@@ -48,11 +49,15 @@ interface Camera {
   y: number;
 }
 
+const SYSML_MIN_SCALE = 0.35;
+const SYSML_MAX_SCALE = 2.2;
+
 interface DragState {
   id: string | null;
-  startX: number;
-  startY: number;
   origin?: SysMLPosition;
+  /** Classifies the press: a sub-slop release is a click, not a drag
+   *  (canvas-platform S2 semantics). */
+  press: PressGesture;
   camera: Camera;
 }
 
@@ -355,7 +360,9 @@ export function SysMLCanvas() {
 
   const beginPan = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.button !== 0) return;
-    dragRef.current = { id: null, startX: event.clientX, startY: event.clientY, camera };
+    const press = new PressGesture();
+    press.begin({ x: event.clientX, y: event.clientY });
+    dragRef.current = { id: null, press, camera };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -363,14 +370,9 @@ export function SysMLCanvas() {
     event.stopPropagation();
     if (event.button !== 0) return;
     const origin = positionOf(element, positions);
-    checkpoint();
-    dragRef.current = {
-      id: element.id,
-      startX: event.clientX,
-      startY: event.clientY,
-      origin,
-      camera,
-    };
+    const press = new PressGesture();
+    press.begin({ x: event.clientX, y: event.clientY });
+    dragRef.current = { id: element.id, origin, press, camera };
     select(element.id);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -378,15 +380,25 @@ export function SysMLCanvas() {
   const handleMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
-    const dx = (event.clientX - drag.startX) / drag.camera.scale;
-    const dy = (event.clientY - drag.startY) / drag.camera.scale;
+    // Sub-slop movement keeps the press a click; only a genuine drag moves
+    // (canvas-platform S2 semantics - plain clicks no longer checkpoint).
+    const dragStarted = drag.press.update({ x: event.clientX, y: event.clientY });
+    if (!drag.press.moved) return;
+    const start = drag.press.origin!;
+    const dx = (event.clientX - start.x) / drag.camera.scale;
+    const dy = (event.clientY - start.y) / drag.camera.scale;
     if (drag.id && drag.origin) {
+      // Element drag: the undo step is taken ONCE when the drag actually
+      // starts, not on every pointer-down (old behavior checkpointed clicks).
+      if (dragStarted) {
+        checkpoint();
+      }
       move(drag.id, { x: Math.max(20, drag.origin.x + dx), y: Math.max(20, drag.origin.y + dy) });
     } else {
       setCamera({
         ...drag.camera,
-        x: drag.camera.x + event.clientX - drag.startX,
-        y: drag.camera.y + event.clientY - drag.startY,
+        x: drag.camera.x + event.clientX - start.x,
+        y: drag.camera.y + event.clientY - start.y,
       });
     }
   };
@@ -394,6 +406,17 @@ export function SysMLCanvas() {
   const endDrag = () => {
     dragRef.current = null;
   };
+
+  // Escape cancels an in-flight drag (same convention as the model canvas).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        dragRef.current = null;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   /** One-click lowering: generate .lp DSL into generated/<Name>.lp and open
    *  it as a text tab. Outside model/ on purpose - the artifact is a
@@ -421,10 +444,20 @@ export function SysMLCanvas() {
   };
 
   const zoom = (factor: number) =>
-    setCamera((current) => ({
-      ...current,
-      scale: Math.min(2.2, Math.max(0.35, current.scale * factor)),
-    }));
+    setCamera((current) => {
+      // Kernel camera math: zoom about the viewport center instead of the
+      // world origin (old behavior drifted the visible region on zoom).
+      const rect = documentRef.current?.getBoundingClientRect();
+      const next = zoomAtPoint(
+        { scale: current.scale, panX: current.x, panY: current.y },
+        factor,
+        (rect?.width ?? 0) / 2,
+        (rect?.height ?? 0) / 2,
+        SYSML_MIN_SCALE,
+        SYSML_MAX_SCALE,
+      );
+      return { scale: next.scale, x: next.panX, y: next.panY };
+    });
 
   return (
     <div className="sysml-canvas">

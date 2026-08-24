@@ -43,4 +43,14 @@ describe('PressGesture', () => {
     const g = new PressGesture();
     expect(() => g.begin({ x: 0, y: 0 }, 0)).toThrow(RangeError);
   });
+
+  it('exposes the press origin as a copy and nulls it after end()', () => {
+    const g = new PressGesture();
+    expect(g.origin).toBeNull();
+    g.begin({ x: 5, y: 7 });
+    const origin = g.origin!;
+    expect(origin).toEqual({ x: 5, y: 7 });
+    g.end();
+    expect(g.origin).toBeNull();
+  });
 });
