@@ -58,8 +58,8 @@ import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
-import { snapRect, type SnapGuide } from '../presentation/snapping';
-import { graphicIntersectsViewport, worldViewportFromCamera } from '../presentation/viewport';
+import { snapRect, type SnapGuide } from '@logicpilot/canvas';
+import { graphicIntersectsViewport, worldViewportFromCamera } from '@logicpilot/canvas';
 import { diagnoseDocument } from '../workbench/diagnostics';
 // Side-effect import: registers the DES graph diagnostic provider for the
 // DSL document type (the validator itself is not referenced here).

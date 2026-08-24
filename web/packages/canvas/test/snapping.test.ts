@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { snapRect } from './snapping';
+import { snapRect } from '../src/core/snapping';
 
-describe('presentation snapping', () => {
+describe('canvas snapping', () => {
   const peer = { id: 'peer', x: 100, y: 80, width: 40, height: 30 };
 
   it('snaps matching edges and emits both smart guides', () => {

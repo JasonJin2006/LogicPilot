@@ -14,6 +14,7 @@
 
 import ELK from 'elkjs/lib/elk-api.js';
 import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url';
+import { runElkLayout } from '@logicpilot/canvas';
 import {
   SYML_NODE_HEIGHT,
   SYML_NODE_WIDTH,
@@ -36,21 +37,6 @@ interface ElkShape {
 
 interface ElkGraph extends ElkShape {
   layoutOptions: Record<string, string>;
-}
-
-let workerElk: import('elkjs/lib/elk-api.js').ELK | null = null;
-
-function workerInstance(): import('elkjs/lib/elk-api.js').ELK {
-  if (workerElk === null) {
-    if (typeof Worker === 'undefined') {
-      // Non-browser environment (unit tests): fail fast into the main-thread
-      // fallback instead of throwing deep inside the worker shim.
-      throw new Error('Worker is not available in this environment');
-    }
-    // Classic worker shipped by elkjs; Vite copies it via ?url.
-    workerElk = new ELK({ workerUrl: elkWorkerUrl });
-  }
-  return workerElk;
 }
 
 /** Pure builder: projection → ELK compound graph. Exported for tests -
@@ -160,10 +146,6 @@ function collectPositions(
   }
 }
 
-type LayoutResult = {
-  children?: Array<{ id: string; x?: number; y?: number; children?: unknown[] }>;
-};
-
 export interface ElkLayoutOutput {
   positions: Record<string, SysMLPosition>;
   /** ELK-enlarged bounds for compound containers (parents wrapping their
@@ -172,27 +154,38 @@ export interface ElkLayoutOutput {
 }
 
 async function runElk(graph: ElkGraph): Promise<ElkLayoutOutput> {
-  // `never` parameter keeps every elkjs flavor assignable regardless of its
-  // declared graph node interface.
-  const run = async (elk: { layout: (g: never) => Promise<unknown> }) =>
-    (await elk.layout(graph as never)) as LayoutResult;
-  let result;
-  try {
-    result = await run(workerInstance());
-  } catch (workerError) {
-    // Worker unavailable (CSP, exotic bundler): main thread keeps working.
-    // eslint-disable-next-line no-console -- one-shot fallback diagnostic.
-    console.warn('[sysml] ELK worker failed, falling back to main thread', workerError);
-    const bundled = await import('elkjs/lib/elk.bundled.js');
-    const MainThreadELK =
-      (bundled as unknown as { default: new () => { layout: (g: never) => Promise<unknown> } })
-        .default ??
-      (bundled as unknown as { ELK: new () => { layout: (g: never) => Promise<unknown> } }).ELK;
-    result = await run(new MainThreadELK());
-  }
+  // Worker/bundled orchestration lives in the canvas platform kernel; this
+  // site only supplies the two elkjs constructors and the collector.
+  const result = await runElkLayout({
+    graph,
+    createWorkerElk: () => new ELK({ workerUrl: elkWorkerUrl }),
+    createBundledElk: async () => {
+      const bundled = await import('elkjs/lib/elk.bundled.js');
+      const ctor =
+        (bundled as unknown as { default: new () => { layout: (g: never) => Promise<unknown> } })
+          .default ??
+        (bundled as unknown as { ELK: new () => { layout: (g: never) => Promise<unknown> } }).ELK;
+      return new ctor();
+    },
+  });
   const positions: Record<string, SysMLPosition> = {};
   const sizes: Record<string, { width: number; height: number }> = {};
-  collectPositions(result.children, 0, 0, positions, sizes);
+  collectPositions(
+    result.children as
+      | Array<{
+          id?: string;
+          x?: number;
+          y?: number;
+          width?: number;
+          height?: number;
+          children?: unknown[];
+        }>
+      | undefined,
+    0,
+    0,
+    positions,
+    sizes,
+  );
   return { positions, sizes };
 }
 

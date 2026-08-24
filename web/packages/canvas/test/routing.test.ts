@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultGraphicTransform } from '@logicpilot/editor';
-import { routeOrthogonal } from './routing';
+import { routeOrthogonal } from '../src/core/routing';
 
 describe('orthogonal connector routing', () => {
   it('leaves a horizontal source from its facing edge', () => {

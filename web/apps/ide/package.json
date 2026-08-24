@@ -15,6 +15,7 @@
     "verify:browser": "node scripts/browser-verify.mjs"
   },
   "dependencies": {
+    "@logicpilot/canvas": "workspace:^",
     "@logicpilot/editor": "workspace:^",
     "@logicpilot/protocol": "workspace:*",
     "@logicpilot/renderer2d": "workspace:*",

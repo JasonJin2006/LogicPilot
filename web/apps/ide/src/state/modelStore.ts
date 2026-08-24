@@ -29,7 +29,7 @@ import {
   type ModelNode,
 } from '@logicpilot/editor';
 import { blockPorts } from '../model/blockDefs';
-import { routeOrthogonal } from '../presentation/routing';
+import { routeOrthogonal } from '@logicpilot/canvas';
 import { updatePresentationLayer } from '../presentation/layers';
 
 const MAX_HISTORY = 100;

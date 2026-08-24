@@ -1,11 +1,11 @@
 // ELK layered auto-arrange for model-canvas flow subgraphs (UX audit
-// follow-up). Shares elkjs and its worker plumbing with the SysML
-// projection layout, but scopes to ONE container view's flat node/edge
-// set: presentation shapes and hand-pinned positions never participate,
-// and results stay deterministic through a pinned random seed.
+// follow-up). Shares the ELK orchestration policy with every other canvas
+// through @logicpilot/canvas; this site owns the flow graph builder
+// (deterministic pinned seed, RIGHT reading direction) and the collector.
 
 import ELK from 'elkjs/lib/elk-api.js';
 import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url';
+import { runElkLayout } from '@logicpilot/canvas';
 
 export interface ArrangeNode {
   id: string;
@@ -23,7 +23,7 @@ interface ElkGraph {
   edges: Array<{ id: string; sources: string[]; targets: string[] }>;
 }
 
-type LayoutResult = {
+type ElkLayoutResult = {
   children?: Array<{ id?: string; x?: number; y?: number }>;
 };
 
@@ -31,21 +31,6 @@ type LayoutResult = {
  *  for layered ordering - only relative sizes matter to ELK. */
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 64;
-
-let workerElk: import('elkjs/lib/elk-api.js').ELK | null = null;
-
-function workerInstance(): import('elkjs/lib/elk-api.js').ELK {
-  if (workerElk === null) {
-    if (typeof Worker === 'undefined') {
-      // Non-browser environment (unit tests): fail fast into the main-thread
-      // fallback instead of throwing deep inside the worker shim.
-      throw new Error('Worker is not available in this environment');
-    }
-    // Classic worker shipped by elkjs; Vite copies it via ?url.
-    workerElk = new ELK({ workerUrl: elkWorkerUrl });
-  }
-  return workerElk;
-}
 
 /** Pure builder: flat node/edge set → ELK layered graph. Exported for
  *  tests - same input always yields the same graph. */
@@ -70,30 +55,20 @@ export function buildArrangeGraph(nodes: ArrangeNode[], edges: ArrangeEdge[]): E
   };
 }
 
-async function runElk(graph: ElkGraph): Promise<Record<string, { x: number; y: number }>> {
-  const run = async (elk: { layout: (g: never) => Promise<unknown> }) =>
-    (await elk.layout(graph as never)) as LayoutResult;
-  let result;
-  try {
-    result = await run(workerInstance());
-  } catch (workerError) {
-    // Worker unavailable (CSP, exotic bundler): main thread keeps working.
-    // eslint-disable-next-line no-console -- one-shot fallback diagnostic.
-    console.warn('[model] ELK worker failed, falling back to main thread', workerError);
-    const bundled = await import('elkjs/lib/elk.bundled.js');
-    const MainThreadELK =
-      (bundled as unknown as { default: new () => { layout: (g: never) => Promise<unknown> } })
-        .default ??
-      (bundled as unknown as { ELK: new () => { layout: (g: never) => Promise<unknown> } }).ELK;
-    result = await run(new MainThreadELK());
-  }
-  const positions: Record<string, { x: number; y: number }> = {};
-  for (const child of result.children ?? []) {
-    if (child.id !== undefined) {
-      positions[child.id] = { x: Math.round(child.x ?? 0), y: Math.round(child.y ?? 0) };
-    }
-  }
-  return positions;
+async function runElk(graph: ElkGraph): Promise<ElkLayoutResult> {
+  // Worker/bundled orchestration lives in the canvas platform kernel.
+  return runElkLayout({
+    graph,
+    createWorkerElk: () => new ELK({ workerUrl: elkWorkerUrl }),
+    createBundledElk: async () => {
+      const bundled = await import('elkjs/lib/elk.bundled.js');
+      const ctor =
+        (bundled as unknown as { default: new () => { layout: (g: never) => Promise<unknown> } })
+          .default ??
+        (bundled as unknown as { ELK: new () => { layout: (g: never) => Promise<unknown> } }).ELK;
+      return new ctor();
+    },
+  });
 }
 
 /** Layered positions for one flow subgraph. Rejects empty input up front;
@@ -106,5 +81,16 @@ export async function autoArrangePositions(
   if (nodes.length === 0) {
     return {};
   }
-  return runElk(buildArrangeGraph(nodes, edges));
+  const result = await runElk(buildArrangeGraph(nodes, edges));
+  const positions: Record<string, { x: number; y: number }> = {};
+  for (const child of result.children ?? []) {
+    const id = child.id;
+    if (typeof id === 'string') {
+      positions[id] = {
+        x: Math.round(typeof child.x === 'number' ? child.x : 0),
+        y: Math.round(typeof child.y === 'number' ? child.y : 0),
+      };
+    }
+  }
+  return positions;
 }
