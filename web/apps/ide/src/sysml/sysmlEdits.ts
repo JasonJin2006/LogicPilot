@@ -32,6 +32,10 @@ const KIND_TOKENS: ReadonlySet<string> = new Set([
   'occurrence',
   'stakeholder',
   'flow',
+  'interaction',
+  'actor',
+  'snapshot',
+  'timeslice',
 ]);
 
 /** `calc` writes the full keyword so identity stays canonical. */

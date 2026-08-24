@@ -1,147 +1,184 @@
-// Standard SysML glyphs (OMG graphical notation, miniaturized). Shapes follow
-// the official notation vocabulary: tabbed-folder package, ELLIPSE use case,
-// stick-figure actor/stakeholder, rounded-rectangle states and actions,
-// rectangle-with-title-compartment requirements («requirement», no invented
-// letter badges), ball-and-socket interfaces (UML assembly notation),
-// square ports, compartmented enumerations. The keyword text itself
-// («part def» etc.) is rendered by the canvas node stereotypes, not these
-// 16px glyphs.
+// SysML glyphs in the HOUSE icon style: same drawing system as BlockIcon
+// (40x40 grid, 1.5 stroke, round caps/joins, currentColor, no fills) so the
+// palette reads as one family - while every SHAPE stays SysML/UML canonical
+// (tab-folder package, ellipse use case, stick-figure actor, compartment
+// rectangles, ball-and-socket interface, boundary-square port). Keyword
+// stereotypes live in the node text on canvas, not in these glyphs.
 
 import type { SysMLVisualKind } from './sysmlProjection';
 
-function Svg({ size, children }: { size: number; children: React.ReactNode }) {
+function Glyph({ children }: { children: React.ReactNode }) {
   return (
     <svg
-      width={size}
-      height={size}
-      viewBox="0 0 16 16"
+      viewBox="0 0 40 40"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.1}
+      strokeWidth={1.5}
+      strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden="true"
+      style={{ display: 'block', width: '100%', height: '100%' }}
+      aria-hidden
     >
       {children}
     </svg>
   );
 }
 
-/** The standard SysML diagram frame: outer frame with a title compartment. */
-export function SysMLFileIcon({ size = 12 }: { size?: number }) {
+/** Classifier block with a title compartment - the base SysML notation. */
+function CompartmentBlock({ rows = 0 }: { rows?: number }) {
   return (
-    <Svg size={size}>
-      <rect x={1.5} y={2.5} width={13} height={11} rx={0.8} />
-      <path d="M1.5 5.7 H8" />
-    </Svg>
+    <Glyph>
+      <rect x={6} y={7} width={28} height={26} rx={2} />
+      <path d="M6 15 H34" />
+      {rows > 0 &&
+        Array.from({ length: rows }, (_, index) => (
+          <path key={index} d={`M11 ${20 + index * 5} H29`} strokeWidth={1.1} />
+        ))}
+    </Glyph>
   );
 }
 
-/** Rectangle with a name-compartment separator - the base form behind
- *  «requirement» / «analysis» / «verification» / «constraint» notation. */
-function CompartmentRect({ tag }: { tag: string }) {
+/** The standard SysML diagram frame: outer frame with title compartment. */
+export function SysMLFileIcon(/** Size is kept in the API for call-site parity; the glyph fills its box. */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _props: { size?: number }) {
   return (
-    <Svg size={12}>
-      <rect x={1.8} y={2.6} width={12.4} height={10.8} rx={0.8} />
-      <path d="M1.8 6 H14.2" strokeWidth={0.9} />
-      <text
-        x={8}
-        y={11.4}
-        textAnchor="middle"
-        fontSize={4.4}
-        stroke="none"
-        fill="currentColor"
-      >
-        {tag}
-      </text>
-    </Svg>
+    <Glyph>
+      <rect x={4} y={7} width={32} height={26} rx={2} />
+      <path d="M4 16 H20" />
+    </Glyph>
   );
 }
 
-/** Per-kind element glyph matching the canvas's notation shapes. */
-export function SysMLElementIcon({ kind, size = 12 }: { kind: SysMLVisualKind; size?: number }) {
+/** Per-kind element glyph: canonical shape, house stroke. */
+export function SysMLElementIcon({ kind }: { kind: SysMLVisualKind; size?: number }) {
   switch (kind) {
     case 'package':
-      // Tabbed folder (UML package).
+      // Tabbed folder.
       return (
-        <Svg size={size}>
-          <rect x={2} y={5.5} width={12} height={8} rx={0.6} />
-          <path d="M2 5.5 V3 H6.6 L8.4 5.5" />
-        </Svg>
+        <Glyph>
+          <rect x={5} y={14} width={30} height={19} rx={2} />
+          <path d="M5 14 V8 H17 L21 14" />
+        </Glyph>
       );
     case 'usecase':
-      // Ellipse - the actor stick figure belongs to stakeholders, NOT here.
+      // Ellipse - actors are the stick figures, never the use case.
       return (
-        <Svg size={size}>
-          <ellipse cx={8} cy={8} rx={6.6} ry={5.2} />
-        </Svg>
-      );
-    case 'state':
-      // Rounded rectangle.
-      return (
-        <Svg size={size}>
-          <rect x={1.8} y={3.6} width={12.4} height={8.8} rx={4.2} />
-        </Svg>
-      );
-    case 'action':
-    case 'calculation':
-      // Activity action: rounded rectangle (no play-arrow; that is media
-      // player iconography, not OMG notation).
-      return (
-        <Svg size={size}>
-          <rect x={1.8} y={3.6} width={12.4} height={8.8} rx={2.2} />
-        </Svg>
-      );
-    case 'requirement':
-      return <CompartmentRect tag="«req»" />;
-    case 'analysis':
-      return <CompartmentRect tag="«an»" />;
-    case 'verification':
-      return <CompartmentRect tag="«ver»" />;
-    case 'constraint':
-      return <CompartmentRect tag="{ }" />;
-    case 'port':
-      // Full port: the small square on the boundary.
-      return (
-        <Svg size={size}>
-          <rect x={3.4} y={3.4} width={9.2} height={9.2} />
-          <rect x={6.2} y={6.2} width={3.6} height={3.6} fill="currentColor" stroke="none" />
-        </Svg>
-      );
-    case 'interface':
-      // Ball-and-socket (provided/required), the assembly notation an
-      // interface definition binds.
-      return (
-        <Svg size={size}>
-          <circle cx={4.6} cy={8} r={2.6} />
-          <path d="M15.2 5.4 A2.6 2.6 0 0 0 15.2 10.6" />
-          <path d="M7.2 8 H12.6" strokeWidth={0.9} />
-        </Svg>
-      );
-    case 'enum':
-      // Enumeration: name compartment plus literal rows.
-      return (
-        <Svg size={size}>
-          <rect x={1.8} y={2.6} width={12.4} height={10.8} rx={0.8} />
-          <path d="M1.8 6 H14.2" strokeWidth={0.9} />
-          <path d="M4 8.4 H12 M4 11 H12" strokeWidth={0.8} strokeDasharray="2 1.6" />
-        </Svg>
+        <Glyph>
+          <ellipse cx={20} cy={20} rx={16} ry={11.5} />
+        </Glyph>
       );
     case 'stakeholder':
       // Actor stick figure.
       return (
-        <Svg size={size}>
-          <circle cx={8} cy={3.6} r={1.9} />
-          <path d="M8 5.5 V10.4 M4.6 7.2 H11.4 M8 10.4 L5.4 13.8 M8 10.4 L10.6 13.8" />
-        </Svg>
+        <Glyph>
+          <circle cx={20} cy={9} r={4.5} />
+          <path d="M20 13.5 V22 M12 17 H28 M20 22 L14 32 M20 22 L26 32" />
+        </Glyph>
+      );
+    case 'state':
+      // Rounded rectangle.
+      return (
+        <Glyph>
+          <rect x={5} y={10} width={30} height={20} rx={10} />
+        </Glyph>
+      );
+    case 'action':
+      // Activity action: rounded rectangle.
+      return (
+        <Glyph>
+          <rect x={5} y={10} width={30} height={20} rx={6} />
+        </Glyph>
+      );
+    case 'calculation':
+      // Rounded rect with a function divider.
+      return (
+        <Glyph>
+          <rect x={5} y={10} width={30} height={20} rx={6} />
+          <path d="M12 24 L17 19 M17 24 L12 19 M20 24 H28" strokeWidth={1.2} />
+        </Glyph>
+      );
+    case 'requirement':
+    case 'analysis':
+    case 'verification':
+      // «requirement» notation: title compartment over a text compartment.
+      return <CompartmentBlock />;
+    case 'constraint':
+      return <CompartmentBlock />;
+    case 'enum':
+      // Enumeration: name compartment plus literal rows.
+      return <CompartmentBlock rows={2} />;
+    case 'port':
+      // Full port: the small square on the boundary.
+      return (
+        <Glyph>
+          <rect x={9} y={9} width={22} height={22} />
+          <rect x={15.5} y={15.5} width={9} height={9} />
+        </Glyph>
+      );
+    case 'interface':
+      // Ball-and-socket (provided / required).
+      return (
+        <Glyph>
+          <circle cx={12} cy={20} r={6} />
+          <path d="M36 13.2 A6.8 6.8 0 0 0 36 26.8" />
+          <path d="M18 20 H29" strokeWidth={1.2} />
+        </Glyph>
+      );
+    case 'interaction':
+      // Sequence frame: diagram frame with lifeline dashes.
+      return (
+        <Glyph>
+          <rect x={4} y={7} width={32} height={26} rx={2} />
+          <path d="M4 15 H18" />
+          <path d="M20 22 V30 M28 22 V30" strokeWidth={1.1} strokeDasharray="3 3" />
+        </Glyph>
+      );
+    case 'occurrence':
+      // Occurrence: two offset snapshots on a stem.
+      return (
+        <Glyph>
+          <rect x={8} y={12} width={18} height={14} rx={2} />
+          <rect x={14} y={17} width={18} height={14} rx={2} />
+        </Glyph>
+      );
+    case 'view':
+    case 'viewpoint':
+      // View: frame with a render diagonal.
+      return (
+        <Glyph>
+          <rect x={6} y={7} width={28} height={26} rx={2} />
+          <path d="M6 15 H16 M12 33 L28 15" strokeWidth={1.2} />
+        </Glyph>
+      );
+    case 'item':
+      // Flowing item: block with a through-arrow.
+      return (
+        <Glyph>
+          <rect x={6} y={12} width={28} height={16} rx={2} />
+          <path d="M11 20 H26 M23 16.5 L27 20 L23 23.5" strokeWidth={1.2} />
+        </Glyph>
+      );
+    case 'flow':
+      return (
+        <Glyph>
+          <path d="M6 20 H30 M27 15.5 L32 20 L27 24.5" />
+        </Glyph>
+      );
+    case 'attribute':
+      return (
+        <Glyph>
+          <rect x={6} y={13} width={28} height={14} rx={2} />
+          <circle cx={12} cy={20} r={1.4} fill="currentColor" stroke="none" />
+          <path d="M17 20 H29" strokeWidth={1.2} />
+        </Glyph>
       );
     default:
-      // part / item / attribute / occurrence / view / viewpoint / flow /
-      // unknown: plain classifier block; the distinguishing keyword lives in
-      // the node's stereotype text per the standard.
+      // part and any future kinds: the plain classifier block.
       return (
-        <Svg size={size}>
-          <rect x={1.8} y={3.4} width={12.4} height={9.2} rx={0.8} />
-        </Svg>
+        <Glyph>
+          <rect x={6} y={10} width={28} height={20} rx={2} />
+        </Glyph>
       );
   }
 }
