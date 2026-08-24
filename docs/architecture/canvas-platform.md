@@ -53,8 +53,8 @@ diff.ts`、`react/CanvasSurface.tsx + layers/`。
 | S0 | 冻结画布功能新增；盘点可提取物 | ✅ |
 | S1 | 建 `@logicpilot/canvas`：camera/culling/snapping/routing 迁入 + 共享 ELK 服务；两画布消费 | ✅ 本提交 |
 | S2 | 按压分类器 PressGesture 内核化（三处按压点统一 click/drag 阈值语义）；Esc/空白点击取消约定已对齐；完整状态机待做 | 🔶 部分（PressGesture ✅） |
-| S3 | ModelCanvas 拆层（Viewport/Blocks/Presentation/Live）+ Adapter 化 | 待做 |
-| S4（可选） | Canvas2D 批量渲染后端（特性开关） | 视 S3 后基准 |
+| S3 | ModelCanvas 拆层：相机（S3.1）、连线（S3.2）、流令牌（S3.3）已抽为独立模块；presentation 交互（TransformHandles/pen）与 SysML adapter 化待做 | 🔶 部分 |
+| S4（可选） | 块级视口裁剪已落地（阈值 120，小模型行为不变）；Canvas2D 批量后端待基准证据 | 🔶 部分 |
 
 ## 验收
 

@@ -139,6 +139,15 @@ function firstInPort(node: ModelNode): string {
   return ins.find((port) => port.name === 'in')?.name ?? ins[0]?.name ?? 'in';
 }
 
+// Conservative on-screen card extents used for block-level viewport
+// culling (canvas-platform S4-lite): blocks have no fixed size in the DOM,
+// so these overshoot real cards to keep edges of the viewport covered.
+const BLOCK_EST_WIDTH = 180;
+const BLOCK_EST_HEIGHT = 90;
+// Culling activates only above this node count so ordinary models render
+// byte-identically to before.
+const BLOCK_CULL_THRESHOLD = 120;
+
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
   0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500,
@@ -1036,6 +1045,22 @@ export function ModelCanvas() {
         !node.presentation ||
         graphicIntersectsViewport(node.presentation.transform, shapeViewport)),
   );
+
+  // Block cards: cull off-viewport cards on large canvases. Selection and
+  // edits of a culled node still work - the document store is the source of
+  // truth, the render list only what is worth drawing.
+  const renderedNodes =
+    visibleNodes.length <= BLOCK_CULL_THRESHOLD
+      ? visibleNodes
+      : visibleNodes.filter((node) => {
+          if (PRESENTATION_KINDS.has(node.kind)) return true; // culled above
+          return (
+            node.x + BLOCK_EST_WIDTH >= shapeViewport.left &&
+            node.x <= shapeViewport.right &&
+            node.y + BLOCK_EST_HEIGHT >= shapeViewport.top &&
+            node.y <= shapeViewport.bottom
+          );
+        });
   const runtime = live
     ? {
         queueLength: vizState.queueLength,
@@ -1559,7 +1584,7 @@ export function ModelCanvas() {
         {scShapesView}
         {chartsView}
         {controlsView}
-        {visibleNodes.map((node) => {
+        {renderedNodes.map((node) => {
           const nodeLive = live ? vizState.blocks.get(node.name) : undefined;
           const nodeDiagnostics = diagnosticsByNode.get(node.id) ?? [];
           const diagnosticClass = nodeDiagnostics.some(
