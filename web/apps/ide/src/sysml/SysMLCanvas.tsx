@@ -66,6 +66,9 @@ interface DragState {
    *  (canvas-platform S2 semantics). */
   press: PressGesture;
   camera: Camera;
+  /** Pure-pan drags (middle button / space+left) carry no click semantics,
+   *  so they skip the click-vs-drag slop and respond from the first pixel. */
+  immediate?: boolean;
 }
 
 function positionOf(
@@ -536,7 +539,7 @@ export function SysMLCanvas() {
     event.preventDefault();
     const press = new PressGesture();
     press.begin({ x: event.clientX, y: event.clientY });
-    dragRef.current = { id: null, press, camera };
+    dragRef.current = { id: null, press, camera, immediate: true };
     // Suppress the browser's middle-click autoscroll latch.
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -656,7 +659,7 @@ export function SysMLCanvas() {
     // Sub-slop movement keeps the press a click; only a genuine drag moves
     // (canvas-platform S2 semantics - plain clicks no longer checkpoint).
     const dragStarted = drag.press.update({ x: event.clientX, y: event.clientY });
-    if (!drag.press.moved) return;
+    if (!drag.press.moved && !drag.immediate) return;
     const start = drag.press.origin!;
     const dx = (event.clientX - start.x) / drag.camera.scale;
     const dy = (event.clientY - start.y) / drag.camera.scale;
