@@ -167,7 +167,16 @@ try {
   }
   Invoke-Checked 'cmake' @('--build', '--preset', $Preset)
   if ($Test) {
-    Invoke-Checked 'ctest' @('--preset', $Preset)
+    # The 1M events/s baseline (test_perf_baseline.cpp, [perf] tag) only
+    # holds with optimizations on; Debug presets skip it here and the CI
+    # bench job enforces it against the Release build.
+    $ctestArgs = @('--preset', $Preset)
+    if ($Preset -notmatch 'release') {
+      $ctestArgs += @('-E', '1M events')
+    }
+    # Plain variable, NOT @splatting: '@ctestArgs' would treat the leading
+    # '-' elements as parameter names and drop the preset value.
+    Invoke-Checked 'ctest' $ctestArgs
   }
 } finally {
   Pop-Location

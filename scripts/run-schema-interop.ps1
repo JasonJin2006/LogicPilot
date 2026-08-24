@@ -48,8 +48,8 @@ $ninja = if ($env:NINJA) { $env:NINJA } else {
 if ($ninja -and -not [System.IO.Path]::IsPathRooted($ninja)) {
     $ninja = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $ninja))
 }
-if (-not $env:VCPKG_ROOT -and (Test-Path (Join-Path $root '.deps\vcpkg\vcpkg.exe'))) {
-    $env:VCPKG_ROOT = Join-Path $root '.deps\vcpkg'
+if (-not $env:VCPKG_ROOT -and (Test-Path (Join-Path $root '.deps/vcpkg/vcpkg.exe'))) {
+    $env:VCPKG_ROOT = Join-Path $root '.deps/vcpkg'
 }
 
 Write-Host '==> [1/6] ensure flatc'

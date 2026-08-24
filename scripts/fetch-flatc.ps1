@@ -32,7 +32,10 @@ function Get-FlatcPath {
 $flatc = Get-FlatcPath
 if ((Test-Path $flatc) -and -not $Force) {
     Write-Host "flatc already present: $flatc"
-    exit 0
+    # `return`, not `exit`: `exit` is runspace-wide and kills the *caller*
+    # (check-schema-conform.ps1 / run-schema-interop.ps1 invoke this script
+    # with `&`), silently skipping the rest of the contract gate.
+    return
 }
 
 $isWin = $IsWindows -or ($env:OS -eq 'Windows_NT')

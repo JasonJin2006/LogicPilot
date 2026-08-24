@@ -11,7 +11,25 @@
 //   node scripts/logicpkg.mjs install <pkg.lpkg> --dir <target>
 //   node scripts/logicpkg.mjs list <pkg.lpkg>
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
+
+// Text (JSON/DSL/README) stays human-readable in the .lpkg; anything that is
+// not valid UTF-8 (icons, fonts) is stored as base64 and restored on install.
+// Without this, Pack readFileSync(path,'utf8') silently replaced every
+// invalid byte with U+FFFD and repeated pack/install roundtrips corrupted
+// binary assets.
+function encodeFile(path) {
+  const data = readFileSync(path);
+  try {
+    return { text: new TextDecoder('utf-8', { fatal: true }).decode(data) };
+  } catch {
+    return { text: data.toString('base64'), binary: true };
+  }
+}
+
+function decodeContent(content, binary) {
+  return binary ? Buffer.from(content, 'base64') : content;
+}
 
 const SCHEMA = 'logicpilot.lpkg';
 const VERSION = 1;
@@ -66,9 +84,13 @@ function cmdPack(dir, outPath) {
     version: VERSION,
     files: {},
   };
+  const binary = [];
   for (const [rel, path] of files) {
-    bundle.files[rel] = readFileSync(path, 'utf8');
+    const encoded = encodeFile(path);
+    bundle.files[rel] = encoded.text;
+    if (encoded.binary) binary.push(rel);
   }
+  if (binary.length > 0) bundle.binary = binary;
   writeFileSync(outPath, JSON.stringify(bundle, null, 2) + '\n', 'utf8');
   console.log(`packed ${files.length} files -> '${outPath}'`);
 }
@@ -78,15 +100,20 @@ function cmdInstall(pkgPath, target) {
   if (bundle.schema !== SCHEMA) {
     throw new Error(`not a ${SCHEMA} package: '${pkgPath}'`);
   }
-  mkdirSync(target, { recursive: true });
+  const root = resolve(target);
+  const binary = new Set(bundle.binary ?? []);
+  mkdirSync(root, { recursive: true });
   let count = 0;
   for (const [rel, content] of Object.entries(bundle.files ?? {})) {
-    const dest = resolve(target, rel);
-    if (!dest.startsWith(resolve(target))) {
+    // Separator-aware containment: '..' or absolute rel must never escape
+    // the install root (a bare startsWith prefix check let '../libs2/x'
+    // through on Windows, where 'libs' is a prefix of 'libs2').
+    const dest = resolve(root, rel);
+    if (dest !== root && !dest.startsWith(root + sep)) {
       throw new Error(`unsafe path in package: '${rel}'`);
     }
     mkdirSync(join(dest, '..'), { recursive: true });
-    writeFileSync(dest, content, 'utf8');
+    writeFileSync(dest, decodeContent(content, binary.has(rel)));
     ++count;
   }
   console.log(`installed ${count} files into '${target}'`);

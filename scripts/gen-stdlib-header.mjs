@@ -2,8 +2,12 @@
 // libraries/process.lplib (ADR-0005-style checked-in generated artifact).
 // The compiler embeds this file as the builtin process-library registry.
 import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+// fileURLToPath, not URL.pathname: the latter stays percent-encoded, so a
+// checkout under a path with spaces or non-ASCII characters broke this
+// generator before it could open the library file.
+const root = fileURLToPath(new URL('..', import.meta.url));
 const source = readFileSync(`${root}/libraries/process.lplib`, 'utf8');
 
 // Split the embedded library source into chunked string literals: MSVC

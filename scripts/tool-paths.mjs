@@ -14,6 +14,9 @@ export function logicPilotRoot() {
 export const NATIVE_BUILD_DIRS = [
   'release',
   'windows-msvc-dev',
+  'windows-msvc-release',
+  'linux-clang-dev',
+  'linux-clang-release',
   'architecture-verify',
   'codex-verify',
   'integration-dev',

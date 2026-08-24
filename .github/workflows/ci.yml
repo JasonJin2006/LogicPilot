@@ -75,7 +75,9 @@ jobs:
 
       - name: Test (Linux ctest)
         if: runner.os == 'Linux'
-        run: ctest --preset ${{ matrix.preset }} || ctest --test-dir build/${{ matrix.preset }} --output-on-failure
+        # Debug job: the 1M events/s perf baseline only holds with
+        # optimizations on; the dedicated bench job enforces it in Release.
+        run: ctest --preset ${{ matrix.preset }} -E "1M events" || ctest --test-dir build/${{ matrix.preset }} -E "1M events" --output-on-failure
 
       - name: Schema interop (F1/F2 C++ <-> TS runtime)
         # Runs after the C++ build: scripts/run-schema-interop.ps1 builds the
@@ -86,6 +88,14 @@ jobs:
         # that the .fbs schemas stay conformant.
         shell: pwsh
         run: scripts/run-schema-interop.ps1
+
+      - name: Generated artifacts drift (regenerate + diff)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          node scripts/gen-stdlib-header.mjs
+          node scripts/codegen-ts.mjs
+          git diff --exit-code -- dsl/compiler/include/logicpilot/dsl/stdlib_process.h web/packages/protocol/src/generated
 
       - name: Install Web IDE dependencies (Linux browser E2E)
         if: runner.os == 'Linux'
