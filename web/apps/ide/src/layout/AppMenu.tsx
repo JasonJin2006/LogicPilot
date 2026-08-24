@@ -196,22 +196,9 @@ export function AppMenu() {
     }
     const result = await readProjectDir(dir);
     if (!result.ok || !result.manifestJson || !result.files) {
-      // Not a LogicPilot project: offer to open it as a plain folder anyway
-      // so the user can edit code and Save to initialize the project.
-      const reason = result.error ?? 'cannot read the project folder';
-      const proceed = await new Promise<boolean>((resolve) => {
-        useUiStore.getState().openConfirm({
-          title: 'Not a LogicPilot project',
-          body: `'${dir}' is not a LogicPilot project (${reason}). Open it anyway and edit files? Saving will initialize the project.`,
-          actions: [
-            { label: 'Open anyway', primary: true, onSelect: () => resolve(true) },
-            { label: 'Cancel', onSelect: () => resolve(false) },
-          ],
-        });
-      });
-      if (!proceed) {
-        return;
-      }
+      // VS Code model: any folder is a valid workspace. No blocking prompt -
+      // the Console note explains the one Save-away initialization, and
+      // File > Initialize Project Here converts explicitly on demand.
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(dir);
       useWorkspaceStore.getState().openFolder(dir);
@@ -619,6 +606,14 @@ export function AppMenu() {
           : [{ label: 'No recent models', disabled: true as const, action: undefined }]),
         { kind: 'separator' },
         { label: 'Save', shortcut: 'Ctrl+S', action: fileSave },
+        {
+          label: 'Initialize Project Here',
+          action: () => {
+            if (useProjectStore.getState().path !== null && !useProjectStore.getState().bundle) {
+              void fileSave();
+            }
+          },
+        },
         { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: fileSave },
         { kind: 'separator' },
         { label: 'Close Workspace', disabled: !workspaceOpen, action: fileClose },
