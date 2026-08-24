@@ -11,6 +11,7 @@
 //   textDocument/completion                   -> block + core kind items
 //   textDocument/hover                        -> block summary
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <iostream>
 #include <optional>
@@ -37,6 +38,10 @@ using logicpilot::lsp::json_string;
 using logicpilot::lsp::parse_json;
 
 // Read one Content-Length framed JSON-RPC message from stdin.
+// Hard input cap mirrors compile.cpp: a bogus header must never make
+// std::stoull throw or std::string(length, '\0') bad_alloc.
+inline constexpr std::uint64_t kMaxMessageBytes = 16 * 1024 * 1024;  // 16 MiB
+
 std::optional<std::string> read_message() {
   std::size_t length = 0;
   for (;;) {
@@ -51,7 +56,23 @@ std::optional<std::string> read_message() {
       break;
     }
     if (line.rfind("Content-Length:", 0) == 0) {
-      length = static_cast<std::size_t>(std::stoull(line.substr(15)));
+      const std::string value = line.substr(15);
+      // Tolerate the conventional space after the colon ("Content-Length: 42");
+      // from_chars does not skip whitespace on its own.
+      const std::size_t digit_start = value.find_first_not_of(" \t");
+      if (digit_start == std::string::npos) {
+        return std::nullopt;
+      }
+      const char* first = value.data() + digit_start;
+      const char* last = value.data() + value.size();
+      std::uint64_t parsed = 0;
+      if (first == last || std::from_chars(first, last, parsed).ec != std::errc{}) {
+        return std::nullopt;
+      }
+      if (parsed > kMaxMessageBytes) {
+        return std::nullopt;
+      }
+      length = static_cast<std::size_t>(parsed);
     }
   }
   if (length == 0) {

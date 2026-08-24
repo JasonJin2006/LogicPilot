@@ -392,6 +392,30 @@ inline bool read_project_bundle(const std::string& text,
   return true;
 }
 
+// Manifest member paths must stay inside the project directory: absolute
+// paths and '..' escapes would let a malicious .lpproj read arbitrary files
+// (their content is merged into the compiled model).
+inline bool path_under(const std::filesystem::path& root, const std::string& raw,
+                       std::filesystem::path& resolved) {
+  if (raw.empty() || std::filesystem::path{raw}.is_absolute()) {
+    return false;
+  }
+  try {
+    const std::filesystem::path joined = root / raw;
+    const std::filesystem::path root_norm = std::filesystem::weakly_canonical(root);
+    const std::filesystem::path joined_norm = std::filesystem::weakly_canonical(joined);
+    const auto [root_it, joined_it] =
+        std::mismatch(root_norm.begin(), root_norm.end(), joined_norm.begin(), joined_norm.end());
+    if (root_it != root_norm.end()) {
+      return false;  // the joined path leaves root
+    }
+    resolved = joined;
+    return true;
+  } catch (const std::filesystem::filesystem_error&) {
+    return false;
+  }
+}
+
 // Read an on-disk project directory: <dir>/logicpilot.json plus the declared
 // model source and part fragments (merged), mirroring read_project_bundle.
 inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
@@ -420,14 +444,21 @@ inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
     }
   }
   std::string main_source;
-  if (!read_text_file((root / model_path).string(), main_source)) {
+  std::filesystem::path model_file;
+  if (!path_under(root, model_path, model_file) ||
+      !read_text_file(model_file.string(), main_source)) {
     error = "cannot read model source '" + model_path + "'";
     return false;
   }
   std::vector<std::pair<std::string, std::string>> parts;
   for (const std::string& part_path : part_paths) {
+    std::filesystem::path part_file;
+    if (!path_under(root, part_path, part_file)) {
+      error = "model part '" + part_path + "' escapes the project directory";
+      return false;
+    }
     std::string content;
-    if (read_text_file((root / part_path).string(), content)) {
+    if (read_text_file(part_file.string(), content)) {
       parts.emplace_back(part_path, std::move(content));
     }
   }
@@ -437,8 +468,12 @@ inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
   out.model_source = detail::merge_model_parts(main_source, parts);
   // Expand `instance` members by reading the referenced scenes from disk.
   out.model_source = resolve_instances(out.model_source, [&](const std::string& path) {
+    std::filesystem::path instance_file;
+    if (!path_under(root, path, instance_file)) {
+      return std::string{};
+    }
     std::string content;
-    read_text_file((root / path).string(), content);
+    read_text_file(instance_file.string(), content);
     return content;
   });
   return true;

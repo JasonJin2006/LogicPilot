@@ -1560,13 +1560,25 @@ private:
         error("LP3001", "axis '" + axis.name + "' step must be > 0",
               axis.step_span);
       } else if (axis.range_max >= axis.range_min) {
-        const auto count = static_cast<std::size_t>(
-            std::floor((axis.range_max - axis.range_min) / axis.step + 1e-9)) + 1;
-        if (count > 100000 || combinations > 100000 / std::max<std::size_t>(count, 1)) {
+        // The quotient below can overflow to +/-inf for extreme ranges or a
+        // denormal step (finite checks above do not cover the quotient);
+        // floor(inf) into size_t is UB, so bound it before casting.
+        const long double span =
+            static_cast<long double>(axis.range_max) - static_cast<long double>(axis.range_min);
+        const long double quotient = span / static_cast<long double>(axis.step);
+        const long double count_ld = std::floor(quotient + 1e-9L) + 1.0L;
+        // NaN/Inf fail the inversion, hence the single readable bound.
+        if (!(count_ld <= 100000.0L)) {
           error("LP3001", "parameter variation experiment '" + experiment.name +
                               "' exceeds 100000 combinations", experiment.span);
         } else {
-          combinations *= count;
+          const auto count = static_cast<std::size_t>(count_ld);
+          if (combinations > 100000 / std::max<std::size_t>(count, 1)) {
+            error("LP3001", "parameter variation experiment '" + experiment.name +
+                                "' exceeds 100000 combinations", experiment.span);
+          } else {
+            combinations *= count;
+          }
         }
       }
       const auto param_type = model_param_types.find(axis.variable);
@@ -1616,6 +1628,30 @@ private:
     require_integer(experiment.max_replications_count,
                     experiment.has_max_replications, "max_replications",
                     experiment.max_replications_span);
+    // The IR stores these as uint32; a larger literal would silently wrap.
+    constexpr std::int64_t kMaxLiteralCount = 4'000'000'000LL - 1;
+    const auto require_u32_bounded = [&](std::int64_t value, const char* name,
+                                         const Span& span) {
+      if (value > kMaxLiteralCount) {
+        error("LP3001", "experiment '" + experiment.name + "' " + name +
+                            " exceeds " + std::to_string(kMaxLiteralCount), span);
+      }
+    };
+    if (experiment.has_budget) {
+      require_u32_bounded(experiment.budget, "budget", experiment.budget_span);
+    }
+    if (experiment.has_replications) {
+      require_u32_bounded(experiment.replications, "replications",
+                          experiment.replications_span);
+    }
+    if (experiment.has_min_replications) {
+      require_u32_bounded(experiment.min_replications, "min_replications",
+                          experiment.min_replications_span);
+    }
+    if (experiment.has_max_replications) {
+      require_u32_bounded(experiment.max_replications, "max_replications",
+                          experiment.max_replications_span);
+    }
     if (experiment.confidence_count > 0 && !experiment.has_confidence) {
       error("LP2006", "experiment '" + experiment.name +
                           "' confidence must be a numeric literal",

@@ -116,7 +116,36 @@ inline bool parse_string(const char*& p, const char* end,
             else return false;
           }
           p += 4;
-          // Encode as UTF-8 (BMP; surrogate pairs are left as-is for v1).
+          // UTF-16 surrogate pairs decode into 4-byte UTF-8; lone halves are
+          // invalid and rejected instead of being verbatim-encoded.
+          if (code >= 0xD800 && code <= 0xDBFF) {
+            if (p + 6 >= end || p[1] != '\\' || p[2] != 'u') {
+              return false;
+            }
+            std::uint32_t low = 0;
+            for (int i = 0; i < 4; ++i) {
+              const char c = p[i + 3];
+              low <<= 4;
+              if (c >= '0' && c <= '9') low |= static_cast<std::uint32_t>(c - '0');
+              else if (c >= 'a' && c <= 'f') low |= static_cast<std::uint32_t>(c - 'a' + 10);
+              else if (c >= 'A' && c <= 'F') low |= static_cast<std::uint32_t>(c - 'A' + 10);
+              else return false;
+            }
+            if (low < 0xDC00 || low > 0xDFFF) {
+              return false;
+            }
+            p += 6;
+            code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+            out += static_cast<char>(0xF0 | (code >> 18));
+            out += static_cast<char>(0x80 | ((code >> 12) & 0x3F));
+            out += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+            out += static_cast<char>(0x80 | (code & 0x3F));
+            break;
+          }
+          if (code >= 0xDC00 && code <= 0xDFFF) {
+            return false;  // lone low surrogate
+          }
+          // Encode as UTF-8 (BMP).
           if (code < 0x80) {
             out += static_cast<char>(code);
           } else if (code < 0x800) {
@@ -188,9 +217,16 @@ inline bool parse_number(const char*& p, const char* end, double& out) {
 
 namespace detail {
 
-inline bool parse_value(const char*& p, const char* end, JsonValue& out);
+// Depth cap: a degenerate client payload ('[[[[[ ...') must fail fast
+// instead of overflowing the C++ stack.
+inline constexpr int kMaxJsonDepth = 200;
 
-inline bool parse_array(const char*& p, const char* end, JsonValue& out) {
+inline bool parse_value(const char*& p, const char* end, JsonValue& out, int depth);
+
+inline bool parse_array(const char*& p, const char* end, JsonValue& out, int depth) {
+  if (depth >= kMaxJsonDepth) {
+    return false;
+  }
   ++p;  // '['
   out.type = JsonValue::Type::kArray;
   skip_ws(p, end);
@@ -200,7 +236,7 @@ inline bool parse_array(const char*& p, const char* end, JsonValue& out) {
   }
   for (;;) {
     JsonValue item;
-    if (!parse_value(p, end, item)) {
+    if (!parse_value(p, end, item, depth + 1)) {
       return false;
     }
     out.array.push_back(std::move(item));
@@ -220,7 +256,10 @@ inline bool parse_array(const char*& p, const char* end, JsonValue& out) {
   }
 }
 
-inline bool parse_object(const char*& p, const char* end, JsonValue& out) {
+inline bool parse_object(const char*& p, const char* end, JsonValue& out, int depth) {
+  if (depth >= kMaxJsonDepth) {
+    return false;
+  }
   ++p;  // '{'
   out.type = JsonValue::Type::kObject;
   skip_ws(p, end);
@@ -240,7 +279,7 @@ inline bool parse_object(const char*& p, const char* end, JsonValue& out) {
     }
     ++p;
     JsonValue value;
-    if (!parse_value(p, end, value)) {
+    if (!parse_value(p, end, value, depth + 1)) {
       return false;
     }
     out.object.emplace_back(std::move(key),
@@ -261,7 +300,10 @@ inline bool parse_object(const char*& p, const char* end, JsonValue& out) {
   }
 }
 
-inline bool parse_value(const char*& p, const char* end, JsonValue& out) {
+inline bool parse_value(const char*& p, const char* end, JsonValue& out, int depth = 0) {
+  if (depth >= kMaxJsonDepth) {
+    return false;
+  }
   skip_ws(p, end);
   if (p >= end) {
     return false;
@@ -306,9 +348,9 @@ inline bool parse_value(const char*& p, const char* end, JsonValue& out) {
       out.type = JsonValue::Type::kString;
       return parse_string(p, end, out.string_value);
     case '[':
-      return parse_array(p, end, out);
+      return parse_array(p, end, out, depth);
     case '{':
-      return parse_object(p, end, out);
+      return parse_object(p, end, out, depth);
     default:
       out.type = JsonValue::Type::kNumber;
       return parse_number(p, end, out.number_value);

@@ -40,6 +40,13 @@ std::string read_text_file(const std::string& path) {
 // own directory, then `libraries/` under the working directory.
 std::string find_library(const std::string& name, const std::string& model_path,
                          const std::vector<std::string>& library_dirs) {
+  // Library names are bare identifiers: any path separator, drive letter or
+  // '..' segment would escape the library search dirs and read arbitrary
+  // '.lplib'-suffixed files (reachable through the network compile command).
+  if (name.empty() || name.find_first_of("/\\:") != std::string::npos ||
+      name.find("..") != std::string::npos) {
+    return "";
+  }
   const std::string file_name = name + ".lplib";
   std::vector<std::string> dirs = library_dirs;
   if (!model_path.empty()) {

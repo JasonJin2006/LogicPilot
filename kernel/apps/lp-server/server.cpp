@@ -133,6 +133,12 @@ bool frame_kind(
     return false;
   }
   const wire::Frame* root = wire::GetSizePrefixedFrame(frame->data());
+  if (root != nullptr) {
+    flatbuffers::Verifier verifier(frame->data(), frame->size());
+    if (!wire::VerifySizePrefixedFrameBuffer(verifier)) {
+      return false;
+    }
+  }
   const wire::FrameHeader* header = root != nullptr ? root->header() : nullptr;
   if (header == nullptr) {
     return false;
@@ -157,7 +163,7 @@ class Session : public std::enable_shared_from_this<Session> {
   void send_text(std::string text);
   void request_close();
   [[nodiscard]] std::uint64_t dropped_frames() const {
-    return dropped_frames_;
+    return dropped_frames_.load(std::memory_order_relaxed);
   }
 
  private:
@@ -182,7 +188,7 @@ class Session : public std::enable_shared_from_this<Session> {
   beast::flat_buffer read_buffer_;
   std::deque<OutMessage> write_queue_;
   OutMessage in_flight_;
-  std::uint64_t dropped_frames_{0};
+  std::atomic<std::uint64_t> dropped_frames_{0};
   bool writing_{false};
   bool closing_{false};
 };
@@ -263,6 +269,9 @@ struct SimServer::Impl {
   // True from the moment a start command is accepted until the worker has
   // emitted RunFinished (closes the pickup race for pause/stop commands).
   bool active_run_{false};
+  // stop() is reachable from both the run loop and the console-signal
+  // handler; only one thread may join worker/net threads.
+  std::atomic<bool> stop_called_{false};
 
   // --- hub operations -------------------------------------------------------
 
@@ -322,6 +331,13 @@ struct SimServer::Impl {
     double speed_value = number;
 
     if (cmd == "start") {
+      // Sane upper bounds: the client sends raw doubles, and values past
+      // these limits either exhaust memory (bad_alloc inside the worker) or
+      // run nearly forever - both would take the whole server down.
+      constexpr double kMaxReps = 1'000'000.0;
+      constexpr double kMaxArrivals = 1'000'000'000.0;
+      constexpr double kMaxEvents = 4'000'000'000.0;
+      constexpr double kMaxServers = 1024.0;
       RunParams params;
       params.seed = config.seed;
       params.reps = config.reps;
@@ -340,16 +356,28 @@ struct SimServer::Impl {
         }
         params.random_seed = mode == "random";
       }
-      if (json_number_field(message, "reps", value) && value >= 1.0) {
+      if (json_number_field(message, "reps", value)) {
+        if (value < 1.0 || value > kMaxReps) {
+          return json_error("reps must be between 1 and 1000000");
+        }
         params.reps = static_cast<std::uint64_t>(value);
       }
-      if (json_number_field(message, "arrivals", value) && value >= 1.0) {
+      if (json_number_field(message, "arrivals", value)) {
+        if (value < 1.0 || value > kMaxArrivals) {
+          return json_error("arrivals must be between 1 and 1000000000");
+        }
         params.arrivals = static_cast<std::uint64_t>(value);
       }
-      if (json_number_field(message, "warmup", value) && value >= 0.0) {
+      if (json_number_field(message, "warmup", value)) {
+        if (value < 0.0 || value > kMaxArrivals) {
+          return json_error("warmup must be between 0 and 1000000000");
+        }
         params.warmup = static_cast<std::uint64_t>(value);
       }
-      if (json_number_field(message, "maxEvents", value) && value >= 0.0) {
+      if (json_number_field(message, "maxEvents", value)) {
+        if (value < 0.0 || value > kMaxEvents) {
+          return json_error("maxEvents must be between 0 and 4000000000");
+        }
         params.max_events = static_cast<std::uint64_t>(value);
       }
       if (json_number_field(message, "confidence", value)) {
@@ -370,10 +398,16 @@ struct SimServer::Impl {
         }
         params.animated = mode == "animated";
       }
-      if (json_number_field(message, "minReps", value) && value >= 2.0) {
+      if (json_number_field(message, "minReps", value)) {
+        if (value < 2.0 || value > kMaxReps) {
+          return json_error("minReps must be between 2 and 1000000");
+        }
         params.min_reps = static_cast<std::uint64_t>(value);
       }
-      if (json_number_field(message, "maxReps", value) && value >= 2.0) {
+      if (json_number_field(message, "maxReps", value)) {
+        if (value < 2.0 || value > kMaxReps) {
+          return json_error("maxReps must be between 2 and 1000000");
+        }
         params.max_reps = static_cast<std::uint64_t>(value);
       }
       if (json_number_field(message, "errorPercent", value) && value > 0.0) {
@@ -397,7 +431,10 @@ struct SimServer::Impl {
       if (json_number_field(message, "mu", value) && value > 0.0) {
         params.mu = value;
       }
-      if (json_number_field(message, "servers", value) && value >= 1.0) {
+      if (json_number_field(message, "servers", value)) {
+        if (value < 1.0 || value > kMaxServers) {
+          return json_error("servers must be between 1 and 1024");
+        }
         params.servers = static_cast<std::int64_t>(value);
       }
       if (json_number_field(message, "failure_rate", value) && value >= 0.0) {
@@ -1965,6 +2002,10 @@ bool SimServer::start(std::string* error) {
 
 void SimServer::stop() {
   Impl& d = *impl_;
+  bool expected = false;
+  if (!d.stop_called_.compare_exchange_strong(expected, true)) {
+    return; // another thread is already stopping (e.g. the signal handler)
+  }
   if (d.worker_thread_.joinable()) {
     {
       std::lock_guard lock{d.run_mutex_};

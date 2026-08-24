@@ -14,7 +14,13 @@ bool FileCheckpointBlobStore::write(std::span<const std::uint8_t> bytes,
   const std::filesystem::path backup = path_.string() + ".bak";
   std::error_code filesystem_error;
   std::filesystem::remove(temporary, filesystem_error);
-  std::filesystem::remove(backup, filesystem_error);
+  // A crash between the two renames below leaves the good blob in .bak and
+  // the primary missing; recover it before touching anything, otherwise
+  // removing .bak destroys the only known-good copy.
+  if (!std::filesystem::exists(path_) && std::filesystem::exists(backup)) {
+    std::filesystem::rename(backup, path_, filesystem_error);
+    filesystem_error.clear();
+  }
   std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
   if (!output) {
     if (error != nullptr) *error = "cannot open checkpoint blob temp file";
@@ -30,6 +36,9 @@ bool FileCheckpointBlobStore::write(std::span<const std::uint8_t> bytes,
   }
   output.close();
   if (std::filesystem::exists(path_)) {
+    // Windows rename fails when the destination exists; a staged backup may
+    // linger after an interrupted install.
+    std::filesystem::remove(backup, filesystem_error);
     std::filesystem::rename(path_, backup, filesystem_error);
     if (filesystem_error) {
       if (error != nullptr) *error = "cannot stage checkpoint blob backup";
@@ -56,8 +65,13 @@ bool FileCheckpointBlobStore::read(std::vector<std::uint8_t>& bytes,
   if (error != nullptr) error->clear();
   std::ifstream input(path_, std::ios::binary);
   if (!input) {
-    if (error != nullptr) *error = "cannot open checkpoint blob";
-    return false;
+    // Interrupted install fallback: the last known-good blob is staged in
+    // .bak after a crash between the renames.
+    input.open(path_.string() + ".bak", std::ios::binary);
+    if (!input) {
+      if (error != nullptr) *error = "cannot open checkpoint blob";
+      return false;
+    }
   }
   bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
   if (!input.eof() && input.fail()) {
