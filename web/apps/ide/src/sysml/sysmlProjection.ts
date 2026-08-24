@@ -314,6 +314,12 @@ export function autoLayoutSysML(
     group.push(element);
     byOwner.set(element.ownerId, group);
   }
+  // Containers reserve a title band: children start BELOW the header, never
+  // on top of the parent's own box (the old same-y stacking drew child
+  // frames straight over the parent title).
+  const HEADER_BAND = 64;
+  const CHILD_DX = 300;
+  const CHILD_DY = 112;
   const queue: Array<{ ownerId?: string; x: number; y: number }> = [
     { ownerId: undefined, x: 80, y: 80 },
   ];
@@ -321,15 +327,36 @@ export function autoLayoutSysML(
     const current = queue.shift()!;
     const children = byOwner.get(current.ownerId) ?? [];
     children.forEach((element, index) => {
-      const x = current.x;
-      const y = current.y + index * 112;
+      const x = current.x + (current.ownerId === undefined ? 0 : CHILD_DX);
+      const y = current.y + HEADER_BAND + index * CHILD_DY;
       positions[element.id] = { x, y };
-      queue.push({ ownerId: element.id, x: x + 300, y });
+      queue.push({ ownerId: element.id, x, y });
     });
   }
   // Relations to non-contained elements use a deterministic second column.
   projection.elements.forEach((element, index) => {
     positions[element.id] ??= { x: 80 + (index % 4) * 280, y: 80 + Math.floor(index / 4) * 112 };
   });
-  return { version: 1, sourceHash: projection.sourceHash, positions };
+  // Compound frames wrap their whole subtree: bottom-up bounds so every
+  // container gets a `sizes` entry (the canvas draws the frame from it),
+  // mirroring what the ELK pipeline reports for enlarged containers.
+  const sizes: Record<string, { width: number; height: number }> = {};
+  const subtreeSize = (element: SysMLElement): { width: number; height: number } => {
+    const children = byOwner.get(element.id) ?? [];
+    const origin = positions[element.id]!;
+    let width = SYML_NODE_WIDTH;
+    let height = SYML_NODE_HEIGHT;
+    for (const child of children) {
+      const childSize = subtreeSize(child);
+      const childPos = positions[child.id]!;
+      width = Math.max(width, childPos.x - origin.x + childSize.width + 24);
+      height = Math.max(height, childPos.y - origin.y + childSize.height + 24);
+    }
+    sizes[element.id] = { width: Math.round(width), height: Math.round(height) };
+    return sizes[element.id]!;
+  };
+  for (const element of projection.elements) {
+    if (element.ownerId === undefined) subtreeSize(element);
+  }
+  return { version: 1, sourceHash: projection.sourceHash, positions, sizes };
 }

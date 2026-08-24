@@ -46,7 +46,7 @@ package Vehicle {
     const projection = projectSysML('package P {\n  part def A {}\n  part def B {}\n}\n');
     const layout = autoLayoutSysML(projection);
     expect(Object.keys(layout.positions)).toHaveLength(3);
-    expect(layout.positions[projection.elements[0]!.id]).toEqual({ x: 80, y: 80 });
+    expect(layout.positions[projection.elements[0]!.id]).toEqual({ x: 80, y: 144 });
     expect(layout.sourceHash).toBe(projection.sourceHash);
   });
 

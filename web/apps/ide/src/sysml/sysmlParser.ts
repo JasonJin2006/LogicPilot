@@ -464,6 +464,13 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           /^exit;?$/.test(indented)
         ) {
           // exhibit-body effect lines: accepted, not interpreted (matrix).
+        } else if (/^'[^']+';?$/.test(indented)) {
+          // Enumeration literal members (`'高';`): prose of the owning enum.
+        } else if (/^(subject|actor|render|objective|stakeholders|doc)/.test(indented)) {
+          // use-case/view body keywords: accepted as prose (matrix).
+        } else if (/^'[^']*'\s*(>=|<=|==|>|<)/.test(indented)) {
+          // Constraint comparison expression lines: prose of the owning
+          // constraint; expressions are never evaluated (matrix).
         } else if (/^then\s+[^{}]*=[^=]/.test(indented)) {
           // `then <feature> = <value>;` action-effect assignments inside
           // state bodies: accepted as prose (matrix: never interpreted).
