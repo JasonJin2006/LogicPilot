@@ -11,15 +11,20 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
 import { portGlyphPoint } from '../model/blockDefs';
-// Side-effect import: registers the built-in element libraries into the
-// palette provider registry consumed below (plan §9.3).
+// Side-effect imports: register the built-in element libraries (modeling
+// process libraries + the SysML visual subset) into the palette provider
+// registry consumed below (plan §9.3).
 import '../model/paletteContributions';
+import '../sysml/sysmlPaletteContribution';
 import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import type { PaletteItem as CatalogItem } from '../workbench/palette';
+import { documentContributionFor } from '../workbench/documentTypes';
 import { insertBlockAt } from '../model/canvasInsert';
 import { BlockIcon } from '../model/BlockIcon';
 import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
+import { useUiStore } from '../state/uiStore';
+import { insertFromPalette } from '../sysml/sysmlEditBridge';
 import { ScrollArea } from '../components/ScrollArea';
 
 interface PaletteBlock {
@@ -71,6 +76,17 @@ interface DragSession {
   startX: number;
   startY: number;
   moved: boolean;
+}
+
+/** A SysML palette item carries its declaration form in the kind
+ *  (`part:def`); model-library kinds never contain a colon. */
+function splitSysmlItem(kind: string): { baseKind: string; declaration: 'def' | 'usage' } | null {
+  const colon = kind.indexOf(':');
+  if (colon === -1) return null;
+  return {
+    baseKind: kind.slice(0, colon),
+    declaration: kind.slice(colon + 1) === 'def' ? 'def' : 'usage',
+  };
 }
 
 const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
@@ -150,14 +166,30 @@ export function PalettePanel() {
     label: custom.name,
   }));
 
-  // Finish a pointer drag: if released over the model canvas, map the
-  // screen point to world coordinates (camera synced by ModelCanvas) and
-  // insert the block there.
+  // Finish a pointer drag: over the model canvas the block inserts at the
+  // mapped world point; over the SysML canvas (while a .sysml document is
+  // active) a declaration is written into the source instead.
   const endDrag = (event: ReactPointerEvent<HTMLLIElement>) => {
     const drag = dragRef.current;
     dragRef.current = null;
     setGhost(null);
     if (!drag || !drag.moved) {
+      return;
+    }
+    const activeFile = useUiStore.getState().activeFile;
+    const sysmlItem =
+      activeFile !== null &&
+      documentContributionFor(activeFile)?.id === 'sysml'
+        ? splitSysmlItem(drag.kind)
+        : null;
+    if (sysmlItem !== null) {
+      const overCanvas = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest('.sysml-canvas');
+      if (overCanvas) {
+        const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
+        if (result.ok) recordUse(drag.kind);
+      }
       return;
     }
     const canvas = document
@@ -247,6 +279,17 @@ export function PalettePanel() {
                 setGhost(null);
               }}
               onDoubleClick={() => {
+                const activeFile = useUiStore.getState().activeFile;
+                const sysmlItem =
+                  activeFile !== null &&
+                  documentContributionFor(activeFile)?.id === 'sysml'
+                    ? splitSysmlItem(block.kind)
+                    : null;
+                if (sysmlItem !== null) {
+                  const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
+                  if (result.ok) recordUse(block.kind);
+                  return;
+                }
                 if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
                   startDrawing(block.kind as 'line' | 'polyline' | 'curve');
                   recordUse(block.kind);

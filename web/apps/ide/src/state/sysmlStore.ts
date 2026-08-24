@@ -418,7 +418,8 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     if (!state.projection || !state.path) return;
     state.checkpoint();
     try {
-      const layout = await autoLayoutWithElk(state.source, state.projection);
+      // The active view mode picks the diagram-kind reading direction.
+      const layout = await autoLayoutWithElk(state.source, state.projection, state.viewMode);
       // The user may have switched files while ELK was computing.
       if (get().path !== state.path) return;
       persistLayout(state.path, layout);

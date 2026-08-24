@@ -49,8 +49,11 @@ interface Camera {
   y: number;
 }
 
-const SYSML_MIN_SCALE = 0.35;
-const SYSML_MAX_SCALE = 2.2;
+const SYSML_MIN_SCALE = 0.08;
+const SYSML_MAX_SCALE = 12;
+/** Wheel zoom sensitivity: exp(-deltaY * k) mirrors the model canvas, so one
+ *  detent feels identical across canvases (canvas-platform parity rule). */
+const SYSML_WHEEL_ZOOM_RATE = 0.0015;
 
 interface DragState {
   id: string | null;
@@ -332,6 +335,30 @@ export function SysMLCanvas() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Wheel = smooth exponential zoom about the cursor (native listener so
+  // preventDefault works; same rate and feel as the model canvas).
+  useEffect(() => {
+    const element = documentRef.current;
+    if (!element) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = element.getBoundingClientRect();
+      const mx = event.clientX - rect.left;
+      const my = event.clientY - rect.top;
+      setCamera((current) => {
+        const scale = Math.min(
+          SYSML_MAX_SCALE,
+          Math.max(SYSML_MIN_SCALE, current.scale * Math.exp(-event.deltaY * SYSML_WHEEL_ZOOM_RATE)),
+        );
+        const worldX = (mx - current.x) / current.scale;
+        const worldY = (my - current.y) / current.scale;
+        return { scale, x: mx - worldX * scale, y: my - worldY * scale };
+      });
+    };
+    element.addEventListener('wheel', onWheel, { passive: false });
+    return () => element.removeEventListener('wheel', onWheel);
+  }, []);
+
   const positions = layout?.positions ?? {};
   const visibleElements = useMemo(() => {
     if (!projection) return [];
@@ -491,7 +518,7 @@ export function SysMLCanvas() {
           <LayoutTemplate size={13} />
           <span>Auto layout</span>
         </button>
-        <button type="button" title="Zoom out" onClick={() => zoom(0.85)}>
+        <button type="button" title="Zoom out" onClick={() => zoom(1 / 1.25)}>
           <Minus size={13} />
         </button>
         <button
@@ -501,7 +528,7 @@ export function SysMLCanvas() {
         >
           <Focus size={13} />
         </button>
-        <button type="button" title="Zoom in" onClick={() => zoom(1.18)}>
+        <button type="button" title="Zoom in" onClick={() => zoom(1.25)}>
           <Plus size={13} />
         </button>
         <button type="button" title="Undo layout edit" disabled={pastLength === 0} onClick={undo}>

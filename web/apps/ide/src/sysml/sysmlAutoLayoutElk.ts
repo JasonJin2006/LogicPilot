@@ -42,8 +42,17 @@ interface ElkGraph extends ElkShape {
 /** Pure builder: projection → ELK compound graph. Exported for tests -
  *  containment nests as children, `contains` edges disappear into that
  *  hierarchy, every other relation becomes an edge. Element order follows
- *  the document order of the projection, keeping results deterministic. */
-export function buildElkGraph(projection: SysMLProjection): ElkGraph {
+ *  the document order of the projection, keeping results deterministic.
+ *
+ *  Per-kind reading directions (SysML diagram conventions):
+ *   - structure / all: containment grows left→right (block definition);
+ *   - behavior: state machines and activity flows read top→down;
+ *   - requirements: satisfaction trees grow top→down;
+ *   - traceability: cross-cutting matrix-like flows read left→right. */
+export function buildElkGraph(
+  projection: SysMLProjection,
+  mode: 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability' = 'all',
+): ElkGraph {
   const byId = new Map<string, ElkShape>();
   const roots: ElkShape[] = [];
   const nodeById = new Map(projection.elements.map((element) => [element.id, element]));
@@ -75,18 +84,22 @@ export function buildElkGraph(projection: SysMLProjection): ElkGraph {
       targets: [relation.to],
     }));
 
+  const direction =
+    mode === 'behavior' || mode === 'requirements' ? 'DOWN' : 'RIGHT';
+
   return {
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      // RIGHT makes same-parent siblings stack VERTICALLY inside their
-      // container while depth grows left-to-right - the reading direction
-      // of block/containment diagrams.
-      'elk.direction': 'RIGHT',
+      // Reading direction of the active diagram kind (see doc above).
+      'elk.direction': direction,
       // Deterministic runs: same projection + options ⇒ same layout.
       'elk.randomSeed': '1',
-      'elk.spacing.nodeNode': '36',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '90',
+      // DOWN layouts stack siblings horizontally; give them room so labels
+      // do not collide, matching how statechart regions spread.
+      'elk.spacing.nodeNode': mode === 'behavior' ? '48' : '36',
+      'elk.layered.spacing.nodeNodeBetweenLayers':
+        mode === 'behavior' || mode === 'requirements' ? '80' : '90',
       // Cross-hierarchy edges participate in one global layering pass.
       'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
       'elk.padding': '[top=140,left=60,bottom=60,right=60]',
@@ -191,13 +204,15 @@ async function runElk(graph: ElkGraph): Promise<ElkLayoutOutput> {
 
 /** Compute an ELK-layered layout for one projection. Throws when both the
  *  worker and the main-thread fallback fail; callers keep their synchronous
- *  fallback layout in that case. */
+ *  fallback layout in that case. `mode` picks the diagram-kind reading
+ *  direction (see buildElkGraph). */
 export async function autoLayoutWithElk(
   source: string,
   projection: SysMLProjection,
+  mode: 'all' | 'structure' | 'requirements' | 'behavior' | 'traceability' = 'all',
 ): Promise<SysMLLayout & { sizes: ElkLayoutOutput['sizes'] }> {
   void projectSysML; // kept for API symmetry with other layout backends
-  const graph = buildElkGraph(projection);
+  const graph = buildElkGraph(projection, mode);
   const { positions, sizes } = await runElk(graph);
   if (Object.keys(positions).length !== projection.elements.length) {
     throw new Error('ELK layout did not position every element');

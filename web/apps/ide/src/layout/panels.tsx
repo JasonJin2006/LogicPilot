@@ -17,9 +17,10 @@ import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
 import { ProblemsPanel } from './ProblemsPanel';
-import { PropertiesPanel } from '../model/PropertiesPanel';
+import { PropertiesHost } from './PropertiesHost';
 import { WelcomePanel } from './WelcomePanel';
 import { useModelStore } from '../state/modelStore';
+import { useSysMLStore } from '../state/sysmlStore';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
@@ -45,13 +46,15 @@ const registry: Record<PanelId, PanelDef> = {
   welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
-  // right: selected block properties; focused while a canvas block is
-  // selected, handing focus back when the selection clears.
+  // right: properties host - one Properties tab that shows the model block
+  // inspector or the SysML element inspector depending on the active
+  // document kind; focused while either canvas has a selection.
   properties: {
     title: 'Properties',
     area: 'right',
-    component: PropertiesPanel,
-    focus: () => useModelStore.getState().selectedId !== null,
+    component: PropertiesHost,
+    focus: () =>
+      useModelStore.getState().selectedId !== null || useSysMLStore.getState().selectedId !== null,
   },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },

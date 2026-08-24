@@ -275,8 +275,46 @@ export function renameElement(
   };
 }
 
-export type RelationVerb = 'satisfy' | 'verify' | 'trace' | 'connect' | 'allocate' | 'bind';
+/** Remove one element's declaration block (keyword through closing brace or
+ *  the `;` of a single-line member), including its whole line. Nested
+ *  children live inside the span and are removed with it - the caller
+ *  confirms that in the UI. Dangling references afterwards surface honestly
+ *  as SY0002 warnings through the normal reparse. */
+export function deleteElement(
+  source: string,
+  projection: SysMLProjection,
+  query: string,
+): SysMLEditResult {
+  const element = findElement(projection, query);
+  if (element === undefined) {
+    return { ok: false, error: `no SysML element matches '${query}'` };
+  }
+  const lineStart = source.lastIndexOf('\n', Math.max(0, element.span.start - 1)) + 1;
+  let end = element.span.end;
+  // Swallow the rest of the last line (trailing comment) and, when the
+  // declaration is alone on its line(s), exactly one following newline so
+  // consecutive members do not leave blank gaps behind.
+  const lineEnd = source.indexOf('\n', end);
+  if (lineEnd !== -1 && source.slice(lineStart, element.span.start).trim() === '') {
+    end = lineEnd + 1;
+  } else if (lineEnd !== -1) {
+    end = lineEnd; // statement shares its line with other text: keep the newline
+  }
+  const removedCount =
+    1 +
+    projection.elements.filter((candidate) => {
+      const inside =
+        candidate.span.start >= element.span.start && candidate.span.end <= element.span.end;
+      return inside && candidate.id !== element.id;
+    }).length;
+  return {
+    ok: true,
+    source: `${source.slice(0, lineStart)}${source.slice(end)}`,
+    detail: `removed ${element.kind} '${element.name}'${removedCount > 1 ? ` (+${removedCount - 1} nested)` : ''}`,
+  };
+}
 
+export type RelationVerb = 'satisfy' | 'verify' | 'trace' | 'connect' | 'allocate' | 'bind';
 const RELATION_TEMPLATES: Record<RelationVerb, (from: string, to: string) => string> = {
   satisfy: (from, to) => `satisfy requirement ${to} by ${from}`,
   verify: (from, to) => `verify requirement ${to} by ${from}`,

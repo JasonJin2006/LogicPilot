@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { projectSysML } from './sysmlProjection';
-import { addRelationStatement, insertElement, renameElement } from './sysmlEdits';
+import {
+  addRelationStatement,
+  deleteElement,
+  insertElement,
+  renameElement,
+} from './sysmlEdits';
 
 const BASE = `package Vehicle {
   part def Engine;
@@ -155,5 +160,37 @@ describe('sysmlEdits scope safety', () => {
     ).toBe(true);
     const clash = insertElement(source, projection, { kind: 'part', name: 'Wheel' });
     expect(clash.ok).toBe(false);
+  });
+
+  it('deletes a declaration block with its whole line and nested members', () => {
+    const source = `package Plant {
+  part def Pump {
+    attribute ratedFlow;
+    port out flowPort;
+  }
+  part def Valve;
+}
+`;
+    const projection = projectSysML(source);
+    const result = deleteElement(source, projection, 'Pump');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.detail).toContain('+2 nested');
+    const next = projectSysML(result.source);
+    // The container and its children are gone; siblings survive untouched.
+    expect(next.elements.some((element) => element.name === 'Pump')).toBe(false);
+    expect(next.elements.some((element) => element.name === 'ratedFlow')).toBe(false);
+    expect(next.elements.some((element) => element.name === 'Valve')).toBe(true);
+    // No blank-line debris where the block used to be.
+    expect(result.source).toBe('package Plant {\n  part def Valve;\n}\n');
+  });
+
+  it('deleting keeps dangling references honest as SY0002', () => {
+    const source = 'part def A {}\nconnect A to Missing;\n';
+    const projection = projectSysML(source);
+    const result = deleteElement(source, projection, 'A');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(projectSysML(result.source).diagnostics.map((d) => d.code)).toContain('SY0002');
   });
 });
