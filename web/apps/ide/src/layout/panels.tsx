@@ -16,6 +16,7 @@ import { ConsolePanel } from './ConsolePanel';
 import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
 import { PalettePanel } from './PalettePanel';
+import { ProblemsPanel } from './ProblemsPanel';
 import { PropertiesPanel } from '../model/PropertiesPanel';
 import { WelcomePanel } from './WelcomePanel';
 import { useModelStore } from '../state/modelStore';
@@ -54,6 +55,8 @@ const registry: Record<PanelId, PanelDef> = {
   },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
+  // bottom: aggregated, navigable problems across document kinds.
+  problems: { title: 'Problems', area: 'bottom', component: ProblemsPanel },
   // left: side panels switched by the activity bar (VS Code style).
   explorer: { title: 'Explorer', area: 'left', component: ExplorerPanel },
   modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
@@ -103,5 +106,5 @@ export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId
   left: { panels: ['explorer', 'modelInfo', 'palette'], active: 'explorer' },
   center: { panels: ['model', 'dsl'], active: 'model' },
   right: { panels: ['ai', 'properties'], active: 'ai' },
-  bottom: { panels: ['console'], active: 'console' },
+  bottom: { panels: ['problems', 'console'], active: 'problems' },
 };

@@ -7,13 +7,14 @@ import { useEffect } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { Hammer, Play, Save, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
-import { useConnectionStore } from '../state/connectionStore';
+import { logConsoleEvent, useConnectionStore } from '../state/connectionStore';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { useCanvasView } from '../state/canvasView';
 import { useSysMLStore } from '../state/sysmlStore';
 import { mergeModelSource } from '../project/project';
+import { generateDsl, parseDsl } from '@logicpilot/editor';
 import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, focusedPanelId, type AreaId, type PanelId } from './panels';
 import { ScrollArea } from '../components/ScrollArea';
@@ -110,19 +111,52 @@ function TabBar({ area }: { area: AreaId }) {
   // Right/bottom panels can be collapsed; the model workspace stays open.
   const closable = area !== 'center';
   const perTabClose = area === 'center';
-  // Compile the merged model source (file editors compile the whole project).
+  // Compile follows the front tab. A DSL file tab compiles the merged file
+  // source, so its parse/semantic errors reach the console (the file is the
+  // thing being edited). The canvas view compiles the LIVE document instead
+  // of the files: canvas-only edits never touch the files until Save, and
+  // the old behaviour quietly compiled an empty/stale model with a success
+  // reply - the worst kind of false negative. Any divergence in that path
+  // is surfaced as LP4100 rather than silently resolved.
   const handleCompile = () => {
     const { compile } = useConnectionStore.getState();
+    const activeFile = useUiStore.getState().activeFile;
+    if (activeFile !== null) {
+      // File-editor context: compile the whole project's file text.
+      if (bundle) {
+        compile(
+          mergeModelSource(
+            bundle.files[bundle.manifest.model] ?? '',
+            bundle.files,
+            bundle.manifest.modelParts ?? [],
+          ),
+        );
+      } else {
+        compile();
+      }
+      return;
+    }
+    const docSource = generateDsl(useModelStore.getState().document);
     if (bundle) {
       const merged = mergeModelSource(
         bundle.files[bundle.manifest.model] ?? '',
         bundle.files,
         bundle.manifest.modelParts ?? [],
       );
-      compile(merged);
-    } else {
-      compile();
+      const parsedFiles = parseDsl(merged);
+      if (!parsedFiles.ok) {
+        logConsoleEvent(
+          'warn',
+          'LP4100: file text has parse errors - compiling the last valid canvas model',
+        );
+      } else if (generateDsl(parsedFiles.document) !== docSource) {
+        logConsoleEvent(
+          'warn',
+          'LP4100: file text differs from the canvas model - compiling the canvas model (save to persist it)',
+        );
+      }
     }
+    compile(docSource);
   };
   // Write the currently open disk file back to the project folder.
   const handleSaveDiskFile = () => {

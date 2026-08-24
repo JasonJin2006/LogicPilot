@@ -714,8 +714,16 @@ export function AppMenu() {
           },
         },
         {
+          label: 'Problems',
+          checked: !areas.bottom.collapsed && areas.bottom.activePanel === 'problems',
+          action: () => {
+            useLayoutStore.getState().openPanel('bottom', 'problems');
+            close();
+          },
+        },
+        {
           label: 'Console',
-          checked: !areas.bottom.collapsed,
+          checked: !areas.bottom.collapsed && areas.bottom.activePanel === 'console',
           action: showConsole,
         },
       ],
@@ -780,6 +788,35 @@ export function AppMenu() {
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // Global shortcuts the menus advertise. The handlers close any open
+  // dropdown first so state stays consistent; Ctrl+S must preventDefault or
+  // the browser's native save dialog fires instead.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 's' && !event.shiftKey) {
+        event.preventDefault();
+        setOpen(null);
+        void fileSave();
+      } else if (key === 'n') {
+        event.preventDefault();
+        setOpen(null);
+        fileNewProject();
+      } else if (key === 'o') {
+        event.preventDefault();
+        setOpen(null);
+        fileOpen();
+      } else if (key === 'f') {
+        event.preventDefault();
+        setOpen(null);
+        find();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <nav className="app-menu" ref={barRef} aria-label="Application menu">

@@ -62,7 +62,10 @@ describe('layoutStore', () => {
     expect(areas.center.panels).toEqual(['model', 'dsl']);
     expect(areas.right.panels).toEqual(['ai', 'properties']);
     expect(areas.left.panels).toEqual(['explorer', 'modelInfo', 'palette']);
-    expect(areas.bottom.panels).toEqual(['console']);
+    // Problems leads the bottom area: the aggregated list is the tab users
+    // reach for first when something looks off.
+    expect(areas.bottom.panels).toEqual(['problems', 'console']);
+    expect(areas.bottom.activePanel).toBe('problems');
   });
 
   it('merge drops panels that are no longer registered', () => {
