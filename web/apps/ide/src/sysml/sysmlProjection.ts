@@ -327,19 +327,24 @@ export function autoLayoutSysML(
   const HEADER_BAND = 64;
   const CHILD_DX = 300;
   const CHILD_DY = 112;
-  const queue: Array<{ ownerId?: string; x: number; y: number }> = [
-    { ownerId: undefined, x: 80, y: 80 },
-  ];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const children = byOwner.get(current.ownerId) ?? [];
-    children.forEach((element, index) => {
-      const x = current.x + (current.ownerId === undefined ? 0 : CHILD_DX);
-      const y = current.y + HEADER_BAND + index * CHILD_DY;
-      positions[element.id] = { x, y };
-      queue.push({ ownerId: element.id, x, y });
-    });
-  }
+  // Sibling stacking by SUBTREE height, not a fixed slot: a deep child used
+  // to overflow its 112px row and collide with the next sibling (the
+  // vehicle-model occlusion). Two passes - measure bottom-up, place top-down.
+  const subtreeHeight = (element: SysMLElement): number => {
+    const children = byOwner.get(element.id) ?? [];
+    const own = children.length > 0 ? HEADER_BAND + SYML_NODE_HEIGHT : SYML_NODE_HEIGHT;
+    return children.reduce((max, child) => Math.max(max, subtreeHeight(child)), own);
+  };
+  const placeChildren = (ownerId: string | undefined, x: number, y: number) => {
+    const children = byOwner.get(ownerId) ?? [];
+    let cursor = y + HEADER_BAND;
+    for (const child of children) {
+      positions[child.id] = { x, y: cursor };
+      placeChildren(child.id, x + (ownerId === undefined ? 0 : CHILD_DX), cursor);
+      cursor += subtreeHeight(child) + (CHILD_DY - SYML_NODE_HEIGHT) * 0.4 + 8;
+    }
+  };
+  placeChildren(undefined, 80, 80);
   // Relations to non-contained elements use a deterministic second column.
   projection.elements.forEach((element, index) => {
     positions[element.id] ??= { x: 80 + (index % 4) * 280, y: 80 + Math.floor(index / 4) * 112 };

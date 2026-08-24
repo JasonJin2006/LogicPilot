@@ -1035,7 +1035,8 @@ export function SysMLCanvas() {
                   {stereotypeFor(element)}
                 </text>
                 <text x={12} y={44} className="sysml-node-name">
-                  {element.name}
+                  {element.name.length > 20 ? element.name.slice(0, 19) + '…' : element.name}
+                  <title>{element.name}</title>
                 </text>
                 <CornerMark
                   kind={element.kind}
