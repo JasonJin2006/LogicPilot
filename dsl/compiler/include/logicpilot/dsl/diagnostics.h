@@ -17,6 +17,7 @@
 //           or non-constant arithmetic)
 //   LP2010  `use`d library file was not found on any search path
 //   LP2011  `use`d library file is invalid (parse error or name mismatch)
+//   LP2014  `instance` scene reference compiled outside a project context
 //   LP5006  runtime condition references an unknown identifier (only
 //           `t`/`time` and the block's own numeric fields are in scope)
 //   LP3002  unsupported Statechart transition action syntax

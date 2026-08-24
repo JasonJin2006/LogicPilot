@@ -97,6 +97,49 @@ CompileResult compile_source(const std::string& source,
     return result;
   }
 
+  // `instance <name> = "<scene>"` is a project-format reference expanded by
+  // the project loader (lpcli --project / the IDE). The grammar itself has
+  // no such statement, so a bare-file compile would otherwise die with a
+  // generic LP0001 syntax error - give the targeted guidance instead.
+  {
+    std::uint32_t line_number = 1;
+    std::size_t cursor = 0;
+    const std::size_t length = source.size();
+    bool reported = false;
+    while (!reported && cursor < length) {
+      std::size_t line_end = source.find('\n', cursor);
+      if (line_end == std::string::npos) {
+        line_end = length;
+      }
+      const std::size_t line_length = line_end - cursor;
+      const std::string text = source.substr(cursor, line_length);
+      const std::size_t first = text.find_first_not_of(" \t\r");
+      if (first != std::string::npos && text.compare(first, 8, "instance") == 0 &&
+          text.find('"', first + 8) != std::string::npos &&
+          text.find('=', first + 8) != std::string::npos) {
+        Diagnostic diagnostic;
+        diagnostic.severity = Severity::kError;
+        diagnostic.code = "LP2014";
+        diagnostic.message =
+            "'instance' scene references are a project-format construct; "
+            "compile via --project <path.lpproj> / the project folder "
+            "instead of the bare file";
+        diagnostic.span.line = line_number;
+        diagnostic.span.column = static_cast<std::uint32_t>(first) + 1;
+        diagnostic.span.byte_offset = static_cast<std::uint32_t>(cursor + first);
+        diagnostic.span.byte_length =
+            static_cast<std::uint32_t>(text.size() - first);
+        result.diagnostics.push_back(std::move(diagnostic));
+        reported = true;
+      }
+      cursor = line_end < length ? line_end + 1 : length;
+      ++line_number;
+    }
+    if (reported) {
+      return result;
+    }
+  }
+
   ParseOutput parsed = parse_source(source, path);
   if (!parsed.ok()) {
     result.diagnostics = std::move(parsed.diagnostics);

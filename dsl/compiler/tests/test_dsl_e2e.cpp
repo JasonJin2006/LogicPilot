@@ -206,6 +206,23 @@ TEST_CASE("compile: unknown `use`d library is LP2010",
   REQUIRE(result.diagnostics.front().code == "LP2010");
 }
 
+TEST_CASE("compile: bare-file instance scene reference is LP2014",
+          "[dsl][compile][project]") {
+  // `instance` is a project-format construct expanded by the project
+  // loader; a bare-file compile must give the targeted guidance instead of
+  // a generic syntax error.
+  const dsl::CompileResult result = dsl::compile_source(
+      "model M {\n"
+      "  use process\n"
+      "  instance Drone = \"model/Drone.lp\"\n"
+      "}\n",
+      "main.lp", {});
+  REQUIRE_FALSE(result.ok);
+  REQUIRE(!result.diagnostics.empty());
+  REQUIRE(result.diagnostics.front().code == "LP2014");
+  REQUIRE(result.diagnostics.front().span.line == 3);
+}
+
 TEST_CASE("compile: selectOutput runtime condition lowers as a string param",
           "[dsl][compile][condition]") {
   const std::string source =

@@ -383,12 +383,21 @@ inline bool read_project_bundle(const std::string& text,
   out.part_paths = std::move(part_paths);
   out.model_source = detail::merge_model_parts(source, parts);
   // Expand `instance` members by looking the referenced scenes up in the
-  // bundle's files table.
+  // bundle's files table. A scene missing from the table is a corrupt
+  // bundle - report it instead of leaking a confusing unknown-kind error.
+  std::vector<std::string> missing_scenes;
   out.model_source = resolve_instances(out.model_source, [&](const std::string& path) {
     std::string content;
-    detail::find_string(text, path, files_value, text.size(), content);
+    if (!detail::find_string(text, path, files_value, text.size(), content)) {
+      missing_scenes.push_back(path);
+      return std::string{};
+    }
     return content;
   });
+  if (!missing_scenes.empty()) {
+    error = "bundle references missing scene(s): " + missing_scenes.front();
+    return false;
+  }
   return true;
 }
 
@@ -467,15 +476,27 @@ inline bool read_project_dir(const std::string& dir, ProjectBundleInfo& out,
   out.part_paths = std::move(part_paths);
   out.model_source = detail::merge_model_parts(main_source, parts);
   // Expand `instance` members by reading the referenced scenes from disk.
+  // A missing/unreadable scene previously fell through as an empty lookup
+  // and surfaced later as a baffling "unknown kind 'instance'" compile
+  // error - report it at the project layer instead.
+  std::vector<std::string> missing_scenes;
   out.model_source = resolve_instances(out.model_source, [&](const std::string& path) {
     std::filesystem::path instance_file;
     if (!path_under(root, path, instance_file)) {
+      missing_scenes.push_back(path);
       return std::string{};
     }
     std::string content;
-    read_text_file(instance_file.string(), content);
+    if (!read_text_file(instance_file.string(), content)) {
+      missing_scenes.push_back(path);
+      return std::string{};
+    }
     return content;
   });
+  if (!missing_scenes.empty()) {
+    error = "project references missing scene(s): " + missing_scenes.front();
+    return false;
+  }
   return true;
 }
 
