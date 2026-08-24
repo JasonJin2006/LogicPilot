@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { PressGesture, zoomAtPoint } from '@logicpilot/canvas';
+import { fitBounds, PressGesture, zoomAtPoint } from '@logicpilot/canvas';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
-import { Focus, LayoutTemplate, Minus, Plus, Undo2, Redo2, ExternalLink, Copy, Trash2 } from 'lucide-react';
+import { Focus, LayoutTemplate, Maximize2, Minus, Plus, Undo2, Redo2, ExternalLink, Copy, Trash2 } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { CanvasToolbar, useCanvasShortcuts } from '../workbench/canvasShell';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
@@ -339,6 +339,14 @@ export function SysMLCanvas() {
   // hooks order must stay above the empty-projection early return.
   useCanvasShortcuts({
     enabled: canvasReady,
+    onCustomKey: (event) => {
+      if (event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        fitView();
+        return true;
+      }
+      return false;
+    },
     onUndo: () => undo(),
     onRedo: () => redo(),
     onCancel: () => {
@@ -392,6 +400,47 @@ export function SysMLCanvas() {
       window.removeEventListener('keyup', onKey);
     };
   }, []);
+
+  /** Fit every visible element into the viewport (toolbar, context menu,
+   *  F key, and once automatically per opened document). */
+  const fitView = () => {
+    const rect = documentRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || visibleElements.length === 0) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const element of visibleElements) {
+      const point = positions[element.id] ?? { x: 0, y: 0 };
+      const width = layout?.sizes?.[element.id]?.width ?? SYML_NODE_WIDTH;
+      const height = layout?.sizes?.[element.id]?.height ?? SYML_NODE_HEIGHT;
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x + width);
+      maxY = Math.max(maxY, point.y + height);
+    }
+    const next = fitBounds(
+      { minX, minY, maxX, maxY },
+      { width: rect.width, height: rect.height },
+      {
+        minScale: SYSML_MIN_SCALE,
+        maxScale: Math.min(1.4, SYSML_MAX_SCALE),
+        padding: 96,
+      },
+    );
+    if (next !== null) setCamera({ scale: next.scale, x: next.panX, y: next.panY });
+  };
+
+  // A freshly opened document fits once; later edits keep the user's view
+  // (same policy as the model canvas's once-per-view auto-fit).
+  const fittedPathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!canvasReady || currentPath === null) return;
+    if (fittedPathRef.current === currentPath) return;
+    fittedPathRef.current = currentPath;
+    const frame = window.requestAnimationFrame(() => fitView());
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvasReady, currentPath]);
 
   // Wheel = smooth exponential zoom about the cursor. Bound natively so
   // preventDefault works; REBOUND when the SVG mounts (the early return
@@ -525,6 +574,12 @@ export function SysMLCanvas() {
           icon: <LayoutTemplate />,
           separatorBefore: true,
           onSelect: () => void autoLayout(),
+        },
+        {
+          label: 'Fit view',
+          icon: <Maximize2 />,
+          shortcut: 'F',
+          onSelect: () => fitView(),
         },
         {
           label: 'Reset view',
@@ -683,6 +738,12 @@ export function SysMLCanvas() {
             { key: 'zoomOut', title: 'Zoom out', icon: Minus, onSelect: () => zoom(1 / 1.25) },
             { key: 'reset', title: 'Reset view', icon: Focus, onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }) },
             { key: 'zoomIn', title: 'Zoom in', icon: Plus, onSelect: () => zoom(1.25) },
+            {
+              key: 'fit',
+              title: 'Fit view (F)',
+              icon: Maximize2,
+              onSelect: () => fitView(),
+            },
             {
               key: 'undo',
               title: 'Undo layout edit (Ctrl+Z)',
