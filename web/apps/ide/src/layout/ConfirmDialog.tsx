@@ -3,10 +3,12 @@
 
 import { X } from 'lucide-react';
 import { useUiStore } from '../state/uiStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 
 export function ConfirmDialog() {
   const confirm = useUiStore((state) => state.confirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
+  useEscapeToClose(confirm !== null, closeConfirm);
   if (!confirm) {
     return null;
   }

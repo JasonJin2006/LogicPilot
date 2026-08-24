@@ -27,6 +27,7 @@ import {
 import { useConnectionStore } from '../state/connectionStore';
 import { useThemeStore, type ThemeMode } from '../state/themeStore';
 import { useUiStore } from '../state/uiStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 
 export function SettingsDialog() {
   const [section, setSection] = useState<'appearance' | 'ai' | 'connection'>('appearance');
@@ -36,6 +37,8 @@ export function SettingsDialog() {
   const connect = useConnectionStore((state) => state.connect);
   const disconnect = useConnectionStore((state) => state.disconnect);
   const closeSettings = useUiStore((state) => state.closeSettings);
+  const settingsOpen = useUiStore((state) => state.settingsOpen);
+  useEscapeToClose(settingsOpen, closeSettings);
   const aiToolsEnabled = useUiStore((state) => state.aiToolsEnabled);
   const aiSourceEditingEnabled = useUiStore((state) => state.aiSourceEditingEnabled);
   const setAiToolsEnabled = useUiStore((state) => state.setAiToolsEnabled);

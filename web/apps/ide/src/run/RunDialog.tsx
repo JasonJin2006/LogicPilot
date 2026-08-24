@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { StartOptions } from '../client/simClient';
 import { useConnectionStore } from '../state/connectionStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
@@ -45,6 +46,8 @@ export function RunDialog() {
   const open = useUiStore((state) => state.runDialogOpen);
   const closeRunDialog = useUiStore((state) => state.closeRunDialog);
   const conn = useConnectionStore((state) => state.conn);
+  const controlState = useConnectionStore((state) => state.controlState);
+  useEscapeToClose(open, closeRunDialog);
   const start = useConnectionStore((state) => state.start);
   const pause = useConnectionStore((state) => state.pause);
   const resume = useConnectionStore((state) => state.resume);
@@ -290,16 +293,32 @@ export function RunDialog() {
             >
               Start
             </button>
-            <button disabled={!connected} onClick={pause}>
+            <button
+              disabled={!connected || controlState !== 'running'}
+              title={controlState !== 'running' ? 'Pause needs a running simulation' : undefined}
+              onClick={pause}
+            >
               Pause
             </button>
-            <button disabled={!connected} onClick={resume}>
+            <button
+              disabled={!connected || controlState !== 'paused'}
+              title={controlState !== 'paused' ? 'Resume needs a paused simulation' : undefined}
+              onClick={resume}
+            >
               Resume
             </button>
-            <button disabled={!connected} onClick={step}>
+            <button
+              disabled={!connected || controlState !== 'paused'}
+              title={controlState !== 'paused' ? 'Step requires a paused run' : undefined}
+              onClick={step}
+            >
               Step
             </button>
-            <button disabled={!connected} onClick={stop}>
+            <button
+              disabled={!connected || controlState === 'idle'}
+              title={controlState === 'idle' ? 'Nothing is running' : undefined}
+              onClick={stop}
+            >
               Stop
             </button>
           </div>

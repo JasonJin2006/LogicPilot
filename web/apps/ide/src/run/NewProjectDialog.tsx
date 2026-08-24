@@ -12,10 +12,12 @@ import { useProjectStore } from '../state/projectStore';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import { createProjectDir, isTauri, pickProjectFolder } from '../state/tauriFs';
 import { useUiStore } from '../state/uiStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 
 export function NewProjectDialog() {
   const open = useUiStore((state) => state.newProjectOpen);
   const closeNewProject = useUiStore((state) => state.closeNewProject);
+  useEscapeToClose(open, closeNewProject);
   const openBundle = useProjectStore((state) => state.openBundle);
   const setPath = useProjectStore((state) => state.setPath);
   const markClean = useProjectStore((state) => state.markClean);

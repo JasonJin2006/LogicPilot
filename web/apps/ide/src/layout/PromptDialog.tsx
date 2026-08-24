@@ -5,10 +5,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useUiStore } from '../state/uiStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 
 export function PromptDialog() {
   const prompt = useUiStore((state) => state.prompt);
   const closePrompt = useUiStore((state) => state.closePrompt);
+  useEscapeToClose(prompt !== null, closePrompt);
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 

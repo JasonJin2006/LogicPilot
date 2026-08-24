@@ -24,6 +24,10 @@ export interface LogEvent {
 interface ConnectionStore {
   url: string;
   conn: ConnState;
+  /** Client-side run control state for button gating. Optimistic on
+   *  pause/resume (the server ack corrects via console events); frames are
+   *  authoritative for start/finish. */
+  controlState: 'idle' | 'running' | 'paused';
   seq: bigint | null;
   simTimeNs: bigint | null;
   lastAck: string;
@@ -169,6 +173,7 @@ function applyFrame(frame: WireFrame): void {
       useRunStore.getState().started(frame.payload);
       useConnectionStore.setState((state) => ({
         badFrames: 0,
+        controlState: 'running',
         events: appendEvent(state, 'info', `run ${frame.payload.runId} started`),
       }));
       break;
@@ -235,6 +240,7 @@ function applyFrame(frame: WireFrame): void {
     case 'run-finished': {
       useRunStore.getState().finished(frame.payload);
       useConnectionStore.setState((state) => ({
+        controlState: 'idle',
         events: appendEvent(state, 'info', `run ${frame.payload.runId} finished`),
       }));
       break;
@@ -284,6 +290,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
   return {
     url: DEFAULT_URL,
     conn: 'disconnected',
+    controlState: 'idle',
     seq: null,
     simTimeNs: null,
     lastAck: '',
@@ -330,18 +337,23 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => {
     },
     start: (options) => {
       client?.start(options);
+      set({ controlState: 'running' });
     },
     pause: () => {
       client?.pause();
+      set({ controlState: 'paused' });
     },
     resume: () => {
       client?.resume();
+      set({ controlState: 'running' });
     },
     step: () => {
-      client?.step();
+      // A step keeps the run paused afterwards.
+      if (get().controlState === 'paused') client?.step();
     },
     stop: () => {
       client?.stop();
+      set({ controlState: 'idle' });
     },
     setSpeed: (speed) => {
       client?.setSpeed(speed);

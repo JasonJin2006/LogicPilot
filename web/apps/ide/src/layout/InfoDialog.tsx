@@ -2,10 +2,12 @@
 
 import { X } from 'lucide-react';
 import { useUiStore } from '../state/uiStore';
+import { useEscapeToClose } from '../components/useEscapeToClose';
 
 export function InfoDialog() {
   const info = useUiStore((state) => state.info);
   const closeInfo = useUiStore((state) => state.closeInfo);
+  useEscapeToClose(info !== null, closeInfo);
   if (!info) {
     return null;
   }
