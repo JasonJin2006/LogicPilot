@@ -76,6 +76,10 @@ interface DragState {
   /** Pure-pan drags (middle button / space+left) carry no click semantics,
    *  so they skip the click-vs-drag slop and respond from the first pixel. */
   immediate?: boolean;
+  /** viewBox units per screen pixel at gesture start - the SVG stretches
+   *  graphBounds into the viewport, so pixel deltas must be scaled into
+   *  scene units or pan/zoom feel wrong away from scale 1. */
+  vx?: number;
 }
 
 function positionOf(
@@ -489,8 +493,11 @@ export function SysMLCanvas() {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = element.getBoundingClientRect();
-      const mx = event.clientX - rect.left;
-      const my = event.clientY - rect.top;
+      const b = boundsRef.current;
+      const vx = rect.width > 0 ? b.width / rect.width : 1;
+      const vy = rect.height > 0 ? b.height / rect.height : 1;
+      const mx = (event.clientX - rect.left) * vx;
+      const my = (event.clientY - rect.top) * vy;
       const current = cameraRef.current;
       const scale = Math.min(
         SYSML_MAX_SCALE,
@@ -536,6 +543,8 @@ export function SysMLCanvas() {
     () => (projection ? bounds(visibleElements, positions) : { width: 960, height: 640 }),
     [projection, visibleElements, positions],
   );
+  const boundsRef = useRef(graphBounds);
+  boundsRef.current = graphBounds;
   const selected = projection?.elements.find((element) => element.id === selectedId) ?? null;
   const execTargets = useMemo(
     () =>
@@ -573,7 +582,9 @@ export function SysMLCanvas() {
     event.preventDefault();
     const press = new PressGesture();
     press.begin({ x: event.clientX, y: event.clientY });
-    dragRef.current = { id: null, press, camera, immediate: true };
+    const rect = documentRef.current?.getBoundingClientRect();
+    const vx = rect && rect.width > 0 ? boundsRef.current.width / rect.width : 1;
+    dragRef.current = { id: null, press, camera, immediate: true, vx };
     // Suppress the browser's middle-click autoscroll latch.
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -677,8 +688,8 @@ export function SysMLCanvas() {
   };
 
   const beginMove = (event: React.PointerEvent<SVGGElement>, element: SysMLElement) => {
+    if (event.button !== 0) return; // middle/space pans bubble to the svg
     event.stopPropagation();
-    if (event.button !== 0) return;
     const origin = positionOf(element, positions);
     const press = new PressGesture();
     press.begin({ x: event.clientX, y: event.clientY });
@@ -695,15 +706,32 @@ export function SysMLCanvas() {
     const dragStarted = drag.press.update({ x: event.clientX, y: event.clientY });
     if (!drag.press.moved && !drag.immediate) return;
     const start = drag.press.origin!;
-    const dx = (event.clientX - start.x) / drag.camera.scale;
-    const dy = (event.clientY - start.y) / drag.camera.scale;
+    const vx = drag.vx ?? 1;
+    const dx = (event.clientX - start.x) / (vx * drag.camera.scale);
+    const dy = (event.clientY - start.y) / (vx * drag.camera.scale);
     if (drag.id && drag.origin) {
       // Element drag: the undo step is taken ONCE when the drag actually
       // starts, not on every pointer-down (old behavior checkpointed clicks).
       if (dragStarted) {
         checkpoint();
       }
-      move(drag.id, { x: Math.max(20, drag.origin.x + dx), y: Math.max(20, drag.origin.y + dy) });
+      let nextX = Math.max(20, drag.origin.x + dx);
+      let nextY = Math.max(20, drag.origin.y + dy);
+      // Containment is real: a child cannot be dragged outside its parent's
+      // frame (SysML ownership is source semantics, the canvas mirrors it).
+      const dragged = projection?.elements.find((element) => element.id === drag.id);
+      const parentId = dragged?.ownerId;
+      if (parentId !== undefined) {
+        const parentPos = positions[parentId];
+        const parentSize = layout?.sizes?.[parentId];
+        if (parentPos !== undefined && parentSize !== undefined) {
+          const nodeW = layout?.sizes?.[drag.id]?.width ?? SYML_NODE_WIDTH;
+          const nodeH = layout?.sizes?.[drag.id]?.height ?? SYML_NODE_HEIGHT;
+          nextX = Math.min(Math.max(nextX, parentPos.x + 12), parentPos.x + parentSize.width - nodeW - 12);
+          nextY = Math.min(Math.max(nextY, parentPos.y + 64), parentPos.y + parentSize.height - nodeH - 12);
+        }
+      }
+      move(drag.id, { x: nextX, y: nextY });
     } else {
       applyCameraNow({
         ...drag.camera,
