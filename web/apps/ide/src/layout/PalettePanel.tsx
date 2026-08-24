@@ -8,7 +8,7 @@
 // every WebView2/Chromium host, unlike HTML5 drag-and-drop which WebView2
 // rejects with a no-drop cursor.
 import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
+import type { ChangeEvent, ComponentType, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
 import { portGlyphPoint } from '../model/blockDefs';
 // Side-effect imports: register the built-in element libraries (modeling
@@ -71,7 +71,8 @@ function blockIndex(customLibraries: Record<string, { blocks: PaletteBlock[] }>)
 
 interface DragSession {
   kind: string;
-  library: string;
+  /** Owning library id when the block came from a registered catalog. */
+  library?: string;
   pointerId: number;
   startX: number;
   startY: number;
@@ -91,6 +92,18 @@ function splitSysmlItem(kind: string): { baseKind: string; declaration: 'def' | 
 
 const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
 
+/** The icon renderer a library contribution provides, if any. */
+function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | undefined {
+  const contribution = PALETTE_CONTRIBUTIONS
+    .list()
+    .find((entry) => entry.library.id === item.library);
+  return contribution?.iconFor?.({
+    kind: item.kind,
+    library: item.library ?? 'process',
+    name: item.name,
+  });
+}
+
 export function PalettePanel() {
   const library = usePaletteStore((state) => state.library);
   const customLibraries = usePaletteStore((state) => state.customLibraries);
@@ -104,7 +117,7 @@ export function PalettePanel() {
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragSession | null>(null);
-  const [ghost, setGhost] = useState<{ x: number; y: number; kind: string } | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; kind: string; library?: string } | null>(null);
 
   // The mouse wheel scrolls the library bar horizontally.
   useEffect(() => {
@@ -203,7 +216,7 @@ export function PalettePanel() {
     const scale = viewport?.scale ?? 1;
     const panX = viewport?.panX ?? 48;
     const panY = viewport?.panY ?? 48;
-    insertBlockAt(drag.kind, drag.library, {
+    insertBlockAt(drag.kind, drag.library ?? 'process', {
       x: (event.clientX - rect.left - panX) / scale,
       y: (event.clientY - rect.top - panY) / scale,
     });
@@ -236,7 +249,9 @@ export function PalettePanel() {
       {importError !== '' && <p className="palette-import-error">{importError}</p>}
       <ScrollArea className="palette-list-scroll">
         <ul className="palette-list">
-          {visible.map((block) => (
+          {visible.map((block) => {
+            const ContributedIcon = iconForItem(block);
+            return (
             <li
               key={block.kind}
               className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
@@ -301,7 +316,11 @@ export function PalettePanel() {
             >
               <span className="palette-chip">
                 <span className="palette-chip-icon">
-                  <BlockIcon kind={block.kind} />
+                  {ContributedIcon !== undefined ? (
+                    <ContributedIcon size={26} />
+                  ) : (
+                    <BlockIcon kind={block.kind} />
+                  )}
                   {(() => {
                     // Port dots at the glyph's real port anchors (AnyLogic
                     // green-dot positions), scaled to the 30px chip icon
@@ -333,12 +352,20 @@ export function PalettePanel() {
               </span>
               <span className="palette-name">{block.name}</span>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </ScrollArea>
       {ghost && (
         <span className="palette-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>
-          <BlockIcon kind={ghost.kind} />
+          {(() => {
+            const GhostIcon = iconForItem({
+              kind: ghost.kind,
+              library: ghost.library ?? 'process',
+              name: ghost.kind,
+            });
+            return GhostIcon !== undefined ? <GhostIcon size={26} /> : <BlockIcon kind={ghost.kind} />;
+          })()}
         </span>
       )}
     </div>

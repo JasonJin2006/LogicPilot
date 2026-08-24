@@ -3,8 +3,15 @@
 // a .sysml document is active, double-click / drop inserts a typed
 // declaration into the source through sysmlEditBridge (text stays
 // authoritative); on the model canvas these items do nothing.
+//
+// Icons come from the same notation glyph set the canvas/outline use, so
+// palette, diagram and outline read as one language instead of generic
+// fallback blocks.
 
+import type { ComponentType } from 'react';
 import { PALETTE_CONTRIBUTIONS, type PaletteItem } from '../workbench/palette';
+import { SysMLElementIcon } from './sysmlIcons';
+import type { SysMLVisualKind } from './sysmlProjection';
 
 function item(
   kind: string,
@@ -20,9 +27,16 @@ function item(
   };
 }
 
+/** `'part:def'` -> the notation glyph of `part`. */
+function sysmlIcon(entry: PaletteItem): ComponentType<{ size?: number }> | undefined {
+  const base = entry.kind.split(':')[0]!;
+  return ({ size }) => <SysMLElementIcon kind={base as SysMLVisualKind} size={size ?? 12} />;
+}
+
 PALETTE_CONTRIBUTIONS.register({
   id: 'sysml.visual-subset',
   library: { id: 'sysml', name: 'SysML' },
+  iconFor: sysmlIcon,
   items: [
     item('package', 'Package', 'def', 'namespace container'),
     item('part', 'Part Definition', 'def', 'reusable component type'),

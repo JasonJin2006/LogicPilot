@@ -5,6 +5,13 @@ import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
 import { Focus, LayoutTemplate, Minus, Plus } from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
+import {
+  CanvasContextMenu,
+  CanvasToolbar,
+  useCanvasShortcuts,
+  type CanvasContextMenuState,
+} from '../workbench/canvasShell';
+import { deleteSelected, duplicateSelected } from './sysmlEditBridge';
 import { extractExecutionTargets } from './sysmlExecution';
 import { loweredDslPath, lowerStateMachine } from './sysmlLowering';
 import {
@@ -285,6 +292,7 @@ export function SysMLCanvas() {
   // source text, so a linked (multi-file) projection must resolve the
   // owning unit per target instead of using the active file's text.
   const units = useSysMLStore((state) => state.units);
+  const origins = useSysMLStore((state) => state.origins);
   const execution = useSysMLStore((state) => state.execution);
   const runError = useSysMLStore((state) => state.runError);
   const runTarget = useSysMLStore((state) => state.runTarget);
@@ -321,25 +329,79 @@ export function SysMLCanvas() {
   );
   const dragRef = useRef<DragState | null>(null);
   const documentRef = useRef<SVGSVGElement>(null);
+  const copyRef = useRef<string | null>(null);
+  // Space-hold pans like design tools; tracked outside React state for the
+  // pointer handlers via a ref plus one re-render for the cursor class.
+  const spaceRef = useRef(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
 
-  // Escape cancels an in-flight drag (same convention as the model canvas).
-  // Must sit above the early return below: the hook order must be stable
-  // across the empty-projection and loaded renders.
+  const canvasReady = projection !== null && layout !== null;
+
+  // Shared interaction shell: undo/redo, delete, duplicate, cancel. The
+  // hooks order must stay above the empty-projection early return.
+  useCanvasShortcuts({
+    enabled: canvasReady,
+    onUndo: () => undo(),
+    onRedo: () => redo(),
+    onCancel: () => {
+      dragRef.current = null;
+      select(null);
+    },
+    onDelete: () => {
+      if (selectedId === null || parseDirty) return;
+      const target = projection?.elements.find((element) => element.id === selectedId);
+      if (!target) return;
+      useUiStore.getState().openConfirm({
+        title: 'Delete SysML element',
+        body: `Remove ${target.kind} '${target.name}' (and anything nested inside it) from the source?`,
+        actions: [
+          {
+            label: 'Delete',
+            primary: true,
+            onSelect: () => deleteSelected(target.id),
+          },
+          { label: 'Cancel', onSelect: () => undefined },
+        ],
+      });
+    },
+    onCopy: () => {
+      if (selectedId !== null) copyRef.current = selectedId;
+    },
+    onPaste: () => {
+      if (copyRef.current !== null && !parseDirty) duplicateSelected(copyRef.current);
+    },
+  });
+
+  // Space bar toggles grab-cursor panning (ignored while typing).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        dragRef.current = null;
-      }
+      const target = event.target;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (event.code !== 'Space' || typing || event.repeat) return;
+      spaceRef.current = event.type === 'keydown';
+      setSpaceHeld(event.type === 'keydown');
+      if (event.type === 'keydown') event.preventDefault();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+    };
   }, []);
 
-  // Wheel = smooth exponential zoom about the cursor (native listener so
-  // preventDefault works; same rate and feel as the model canvas).
+  // Wheel = smooth exponential zoom about the cursor. Bound natively so
+  // preventDefault works; REBOUND when the SVG mounts (the early return
+  // renders without it first), which the canvasReady dependency encodes.
   useEffect(() => {
     const element = documentRef.current;
-    if (!element) return;
+    if (!element || !canvasReady) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = element.getBoundingClientRect();
@@ -357,7 +419,7 @@ export function SysMLCanvas() {
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [canvasReady]);
 
   const positions = layout?.positions ?? {};
   const visibleElements = useMemo(() => {
@@ -420,11 +482,90 @@ export function SysMLCanvas() {
   }
 
   const beginPan = (event: React.PointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0) return;
+    // Left-drag pans directly (the canvas is view-first); middle-drag and
+    // space+left pan anywhere - including over elements.
+    const middle = event.button === 1;
+    const leftPan = event.button === 0 && spaceRef.current;
+    if (!middle && !leftPan) return;
+    event.preventDefault();
     const press = new PressGesture();
     press.begin({ x: event.clientX, y: event.clientY });
     dragRef.current = { id: null, press, camera };
+    // Suppress the browser's middle-click autoscroll latch.
     event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  /** Reveal an element's declaration in its owning document. */
+  const openSourceOf = (elementId: string) => () => {
+    const target = projection?.elements.find((element) => element.id === elementId);
+    if (!target) return;
+    const targetPath = origins[target.id] ?? currentPath;
+    if (targetPath === null) return;
+    if (targetPath !== useUiStore.getState().activeFile) {
+      const bundled = useProjectStore.getState().bundle?.files[targetPath];
+      const ui = useUiStore.getState();
+      if (bundled !== undefined) ui.openFile(targetPath);
+      else if (ui.diskFiles[targetPath] !== undefined)
+        ui.openDiskFile(targetPath, ui.diskFiles[targetPath]!);
+      else return;
+    }
+    useLayoutStore.getState().openPanel('center', 'dsl');
+    useUiStore.getState().revealInSource(targetPath, target.nameSpan.start, target.nameSpan.end);
+  };
+
+  /** Background context menu (view + layout verbs). */
+  const openCanvasMenu = (event: React.MouseEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: 'Auto layout', onSelect: () => void autoLayout() },
+        {
+          label: 'Reset view',
+          onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }),
+        },
+        {
+          label: 'Paste',
+          disabled: copyRef.current === null,
+          onSelect: () => {
+            if (copyRef.current !== null) duplicateSelected(copyRef.current);
+          },
+        },
+      ],
+    });
+  };
+
+  /** Node context menu (source / duplicate / delete). */
+  const openNodeMenu = (event: React.MouseEvent, elementId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    select(elementId);
+    const target = projection?.elements.find((element) => element.id === elementId);
+    if (!target) return;
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: 'Open in source', onSelect: openSourceOf(elementId) },
+        { label: 'Duplicate', disabled: parseDirty, onSelect: () => duplicateSelected(elementId) },
+        {
+          label: 'Delete…',
+          danger: true,
+          disabled: parseDirty,
+          onSelect: () => {
+            useUiStore.getState().openConfirm({
+              title: 'Delete SysML element',
+              body: `Remove ${target.kind} '${target.name}' (and anything nested inside it) from the source?`,
+              actions: [
+                { label: 'Delete', primary: true, onSelect: () => deleteSelected(elementId) },
+                { label: 'Cancel', onSelect: () => undefined },
+              ],
+            });
+          },
+        },
+      ],
+    });
   };
 
   const beginMove = (event: React.PointerEvent<SVGGElement>, element: SysMLElement) => {
@@ -512,31 +653,36 @@ export function SysMLCanvas() {
     });
 
   return (
-    <div className="sysml-canvas">
+    <div className={`sysml-canvas${spaceHeld ? ' space-pan' : ''}`}>
       <div className="sysml-canvas-toolbar">
-        <button type="button" title="Auto layout (ELK layered)" onClick={() => void autoLayout()}>
-          <LayoutTemplate size={13} />
-          <span>Auto layout</span>
-        </button>
-        <button type="button" title="Zoom out" onClick={() => zoom(1 / 1.25)}>
-          <Minus size={13} />
-        </button>
-        <button
-          type="button"
-          title="Reset view"
-          onClick={() => setCamera({ scale: 1, x: 0, y: 0 })}
-        >
-          <Focus size={13} />
-        </button>
-        <button type="button" title="Zoom in" onClick={() => zoom(1.25)}>
-          <Plus size={13} />
-        </button>
-        <button type="button" title="Undo layout edit" disabled={pastLength === 0} onClick={undo}>
-          Undo
-        </button>
-        <button type="button" title="Redo layout edit" disabled={futureLength === 0} onClick={redo}>
-          Redo
-        </button>
+        <CanvasToolbar
+          items={[
+            {
+              key: 'layout',
+              title: 'Auto layout (ELK layered, direction follows the view mode)',
+              icon: LayoutTemplate,
+              label: 'Auto layout',
+              onSelect: () => void autoLayout(),
+            },
+            { key: 'zoomOut', title: 'Zoom out', icon: Minus, onSelect: () => zoom(1 / 1.25) },
+            { key: 'reset', title: 'Reset view', icon: Focus, onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }) },
+            { key: 'zoomIn', title: 'Zoom in', icon: Plus, onSelect: () => zoom(1.25) },
+            {
+              key: 'undo',
+              title: 'Undo layout edit (Ctrl+Z)',
+              label: 'Undo',
+              onSelect: undo,
+              disabled: pastLength === 0,
+            },
+            {
+              key: 'redo',
+              title: 'Redo layout edit (Ctrl+Shift+Z / Ctrl+Y)',
+              label: 'Redo',
+              onSelect: redo,
+              disabled: futureLength === 0,
+            },
+          ]}
+        />
         <select
           className="sysml-view-mode"
           aria-label="SysML view"
@@ -657,6 +803,7 @@ export function SysMLCanvas() {
         onPointerMove={handleMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onContextMenu={openCanvasMenu}
         onClick={() => select(null)}
       >
         <defs>
@@ -729,6 +876,7 @@ export function SysMLCanvas() {
                 className={`sysml-node${isSelected ? ' selected' : ''}`}
                 data-kind={element.kind}
                 onPointerDown={(event) => beginMove(event, element)}
+                onContextMenu={(event) => openNodeMenu(event, element.id)}
                 onClick={(event) => {
                   event.stopPropagation();
                   select(element.id);
@@ -769,16 +917,7 @@ export function SysMLCanvas() {
             line {selected.span.line} · {selected.id}
           </small>
           {currentPath !== null && (
-            <button
-              type="button"
-              className="sysml-link"
-              onClick={() => {
-                useLayoutStore.getState().openPanel('center', 'dsl');
-                useUiStore
-                  .getState()
-                  .revealInSource(currentPath!, selected.nameSpan.start, selected.nameSpan.end);
-              }}
-            >
+            <button type="button" className="sysml-link" onClick={openSourceOf(selected.id)}>
               Go to source
             </button>
           )}
@@ -794,6 +933,7 @@ export function SysMLCanvas() {
           Source has errors - showing the last valid model.
         </div>
       )}
+      <CanvasContextMenu menu={contextMenu} onClose={() => setContextMenu(null)} />
     </div>
   );
 }

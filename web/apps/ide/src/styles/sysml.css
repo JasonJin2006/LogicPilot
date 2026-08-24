@@ -115,6 +115,10 @@
   cursor: var(--cursor-grab);
 }
 
+.sysml-canvas.space-pan .sysml-svg {
+  cursor: var(--cursor-grabbing);
+}
+
 .sysml-svg:active,
 .sysml-node:active {
   cursor: var(--cursor-grabbing);

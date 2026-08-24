@@ -140,3 +140,29 @@ export function deleteSelected(query: string): EditOutcome {
 export function addRelation(verb: RelationVerb, from: string, to: string): EditOutcome {
   return runEdit((source) => addRelationStatement(source, verb, from, to));
 }
+
+/** Ctrl+C / Ctrl+V duplicate: re-inserts the same kind + declaration under
+ *  the same parent with the next free name. The declaration BODY is not
+ *  copied yet (v1 keeps the transaction simple); nested content is a
+ *  documented follow-up. */
+export function duplicateSelected(query: string): EditOutcome {
+  const store = useSysMLStore.getState();
+  if (!store.projection) return { ok: false, error: 'no SysML document is open' };
+  const original = store.projection.elements.find((element) => element.id === query);
+  if (original === undefined) return { ok: false, error: `no SysML element matches '${query}'` };
+  const owner =
+    original.ownerId !== undefined
+      ? store.projection.elements.find((element) => element.id === original.ownerId)
+      : undefined;
+  const options: InsertElementOptions = {
+    kind: original.kind,
+    name: nextFreeName(
+      store.projection,
+      original.name.replace(/\d+$/, '') || original.name,
+      owner?.qualifiedName,
+    ),
+    declaration: original.declaration === 'definition' ? 'def' : 'usage',
+    ...(owner !== undefined ? { parent: owner.id } : {}),
+  };
+  return runEdit((source, projection) => insertElement(source, projection, options));
+}

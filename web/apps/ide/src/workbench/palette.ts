@@ -17,6 +17,8 @@ export interface PaletteItem {
   outPorts?: string[];
 }
 
+import type { ComponentType } from 'react';
+
 export interface PaletteLibraryTab {
   id: string;
   name: string;
@@ -30,6 +32,10 @@ export interface PaletteContribution {
    *  honesty filters (e.g. hiding catalog-only kinds their compiler would
    *  reject) - the host renders whatever is registered. */
   items: readonly PaletteItem[];
+  /** Optional per-item glyph renderer so a language keeps its standard
+   *  notation (SysML stick figures, lollipop interfaces, ...) instead of
+   *  the generic block fallback. Return undefined for the default icon. */
+  iconFor?: (item: PaletteItem) => ComponentType<{ size?: number }> | undefined;
 }
 
 class PaletteRegistry {

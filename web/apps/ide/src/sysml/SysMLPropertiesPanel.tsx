@@ -119,28 +119,30 @@ export function SysMLPropertiesPanel() {
   };
 
   return (
-    <div className="sysml-properties">
-      <div className="sysml-properties-kind">
+    <div className="side-panel-body properties sysml-properties">
+      <div className="props-kind">
         {selected.kind} · {selected.declaration}
       </div>
-      <h3>{selected.name}</h3>
-      <label className="sysml-rename-row">
-        <input
-          value={nameDraft}
-          aria-label="Element name"
-          onChange={(event) => setNameDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') applyRename();
-          }}
-        />
-        <button
-          type="button"
-          title="Rename in source (updates every reference)"
-          disabled={nameDraft.trim() === '' || nameDraft === selected.name}
-          onClick={applyRename}
-        >
-          <Check size={13} />
-        </button>
+      <label className="props-field">
+        <span className="props-field-name">Name</span>
+        <span className="sysml-rename-row">
+          <input
+            value={nameDraft}
+            aria-label="Element name"
+            onChange={(event) => setNameDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') applyRename();
+            }}
+          />
+          <button
+            type="button"
+            title="Rename in source (updates every reference)"
+            disabled={nameDraft.trim() === '' || nameDraft === selected.name}
+            onClick={applyRename}
+          >
+            <Check size={13} />
+          </button>
+        </span>
       </label>
       <div className="sysml-property-row">
         <span>Qualified name</span>
@@ -168,8 +170,8 @@ export function SysMLPropertiesPanel() {
         </div>
       )}
       {editError !== null && <p className="sysml-edit-error">{editError}</p>}
-      <div className="sysml-property-section-title">Layout</div>
-      <label className="sysml-coordinate">
+      <div className="props-section-title">Layout</div>
+      <label className="props-field">
         <span>X</span>
         <input
           type="number"
@@ -177,7 +179,7 @@ export function SysMLPropertiesPanel() {
           onChange={(event) => setPosition('x', event.target.value)}
         />
       </label>
-      <label className="sysml-coordinate">
+      <label className="props-field">
         <span>Y</span>
         <input
           type="number"
@@ -185,7 +187,7 @@ export function SysMLPropertiesPanel() {
           onChange={(event) => setPosition('y', event.target.value)}
         />
       </label>
-      <div className="sysml-property-section-title">Relations</div>
+      <div className="props-section-title">Relations</div>
       {relations.length === 0 ? (
         <div className="sysml-properties-muted">No extracted relations.</div>
       ) : (
