@@ -25,6 +25,7 @@ import {
 import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import { autoArrangePositions } from './autoLayoutElk';
+import { useCanvasCamera } from './useCanvasCamera';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
 import {
   createGraphicNode,
@@ -65,15 +66,12 @@ import { diagnoseDocument } from '../workbench/diagnostics';
 // DSL document type (the validator itself is not referenced here).
 import './modelValidation';
 
-const MIN_SCALE = 0.1;
-const MAX_SCALE = 16;
 // Desired on-screen distance between grid lines (px); the step in world
 // units is the smallest "nice" value that lands near this spacing.
 const GRID_TARGET_PX = 40;
 const MAJOR_EVERY = 5; // every 5th line is major (carries axis ticks)
 // Default view margin: the origin sits this far in from the canvas edges so
 // the axes, arrowheads and tick labels are fully visible on first load.
-const VIEW_MARGIN = 48;
 
 // Cross-shape clipboard for Ctrl+C / Ctrl+V on presentation objects.
 let shapeClipboard: { kind: string; object: GraphicNode } | null = null;
@@ -160,22 +158,12 @@ const GRID_STEPS = [
   5000, 10_000, 20_000, 25_000, 50_000, 100_000,
 ];
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
 function niceStep(raw: number): number {
   for (const step of GRID_STEPS) {
     if (step >= raw) return step;
   }
   const largest = GRID_STEPS[GRID_STEPS.length - 1]!;
   return largest * Math.ceil(raw / largest);
-}
-
-interface View {
-  scale: number;
-  panX: number;
-  panY: number;
 }
 
 export function ModelCanvas() {
@@ -226,78 +214,27 @@ export function ModelCanvas() {
   // Pan/zoom is remembered per canvas view (the root + each open container
   // tab), like editor tabs keep their scroll position across switches.
   const viewKey = focusView ? `${focusView.kind}:${focusView.name}` : '\u0000root';
-  const cameraCache = useRef<Map<string, View>>(new Map());
-  const defaultView: View = { scale: 1, panX: VIEW_MARGIN, panY: VIEW_MARGIN };
-  const [view, setViewState] = useState<View>(
-    () => cameraCache.current.get(viewKey) ?? defaultView,
-  );
-  useEffect(() => {
-    setViewState(cameraCache.current.get(viewKey) ?? defaultView);
-  }, [viewKey]);
-  const setView = (updater: View | ((current: View) => View)) => {
-    setViewState((current) => {
-      const next =
-        typeof updater === 'function' ? (updater as (current: View) => View)(current) : updater;
-      cameraCache.current.set(viewKey, next);
-      return next;
-    });
-  };
+  const { view, setView, size, zoomAtCenter, fitVisibleModel, defaultView } = useCanvasCamera({
+    viewKey,
+    elementRef: viewportRef,
+    getVisibleBounds: () => {
+      if (visibleNodes.length === 0) return null;
+      const xs = visibleNodes.map((node) => node.x);
+      const ys = visibleNodes.map((node) => node.y);
+      return {
+        minX: Math.min(...xs),
+        minY: Math.min(...ys),
+        maxX: Math.max(...xs),
+        maxY: Math.max(...ys),
+      };
+    },
+    contentVersion: visibleNodes.length,
+  });
   // Keep the palette's pointer-drag drop in sync with the current camera.
   useEffect(() => {
     setViewport({ scale: view.scale, panX: view.panX, panY: view.panY });
   }, [view, setViewport]);
-  const [size, setSize] = useState({ width: 0, height: 0 });
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
-  const zoomAtCenter = (factor: number) => {
-    const centerX = size.width / 2;
-    const centerY = size.height / 2;
-    setView((current) => {
-      const scale = clamp(current.scale * factor, MIN_SCALE, MAX_SCALE);
-      const worldX = (centerX - current.panX) / current.scale;
-      const worldY = (centerY - current.panY) / current.scale;
-      return {
-        scale,
-        panX: centerX - worldX * scale,
-        panY: centerY - worldY * scale,
-      };
-    });
-  };
-  const fitVisibleModel = () => {
-    if (visibleNodes.length === 0 || size.width === 0 || size.height === 0) {
-      setView(defaultView);
-      return;
-    }
-    const xs = visibleNodes.map((node) => node.x);
-    const ys = visibleNodes.map((node) => node.y);
-    const minX = Math.min(...xs) - 70;
-    const maxX = Math.max(...xs) + 70;
-    const minY = Math.min(...ys) - 60;
-    const maxY = Math.max(...ys) + 60;
-    const contentWidth = Math.max(140, maxX - minX);
-    const contentHeight = Math.max(120, maxY - minY);
-    const scale = clamp(
-      Math.min((size.width - 96) / contentWidth, (size.height - 96) / contentHeight),
-      MIN_SCALE,
-      1.4,
-    );
-    setView({
-      scale,
-      panX: (size.width - (minX + maxX) * scale) / 2,
-      panY: (size.height - (minY + maxY) * scale) / 2,
-    });
-  };
-  useEffect(() => {
-    // A newly opened canvas should reveal the complete model once. After a
-    // camera is stored, subsequent model edits preserve the user's view.
-    if (
-      size.width > 0 &&
-      size.height > 0 &&
-      visibleNodes.length > 0 &&
-      !cameraCache.current.has(viewKey)
-    ) {
-      fitVisibleModel();
-    }
-  }, [fitVisibleModel, size.height, size.width, viewKey, visibleNodes.length]);
   // ELK auto-arrange for the flow subgraph of the open view. Presentation
   // shapes keep their manual positions; one undo step covers the move.
   const [arranging, setArranging] = useState(false);
@@ -546,38 +483,6 @@ export function ModelCanvas() {
     worldY: number;
     press: PressGesture;
   } | null>(null);
-
-  // Track the viewport size so the grid SVG and line math match the element.
-  useEffect(() => {
-    const element = viewportRef.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => {
-      const rect = element.getBoundingClientRect();
-      setSize({ width: rect.width, height: rect.height });
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  // Wheel = zoom about the cursor (native listener so preventDefault works).
-  useEffect(() => {
-    const element = viewportRef.current;
-    if (!element) return;
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = element.getBoundingClientRect();
-      const mx = event.clientX - rect.left;
-      const my = event.clientY - rect.top;
-      setView((current) => {
-        const scale = clamp(current.scale * Math.exp(-event.deltaY * 0.0015), MIN_SCALE, MAX_SCALE);
-        const worldX = (mx - current.panX) / current.scale;
-        const worldY = (my - current.panY) / current.scale;
-        return { scale, panX: mx - worldX * scale, panY: my - worldY * scale };
-      });
-    };
-    element.addEventListener('wheel', onWheel, { passive: false });
-    return () => element.removeEventListener('wheel', onWheel);
-  }, []);
 
   // Drag on empty space pans the plane; a plain click deselects.
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
