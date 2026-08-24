@@ -75,7 +75,9 @@ export class SimClient {
       }
     };
     ws.onerror = () => {
-      this.events.onError(`websocket error (${url})`);
+      if (this.ws === ws) {
+        this.events.onError(`websocket error (${url})`);
+      }
     };
     ws.onmessage = (ev: MessageEvent) => this.handleMessage(ev.data);
     this.ws = ws;

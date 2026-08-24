@@ -344,7 +344,9 @@ export function AIPanel() {
   const loadToCanvas = async () => {
     if (proposal?.patch == null) return;
     if (!useWorkspaceStore.getState().isOpen()) {
-      setError('No project is open, so this model change cannot be applied. Use File > New Project or File > Open a .lpproj/.lp first.');
+      setError(
+        'No project is open, so this model change cannot be applied. Use File > New Project or File > Open a .lpproj/.lp first.',
+      );
       setProposal(null);
       return;
     }
@@ -419,7 +421,9 @@ export function AIPanel() {
     // user closes and creates projects, so the render-captured workspace flag
     // can otherwise reject a valid request from a newly opened workspace.
     if (!useWorkspaceStore.getState().isOpen()) {
-      setError('No project is open, so this modeling action cannot run. Use File > New Project or File > Open a .lpproj/.lp first; external .sysml files open directly without a project.');
+      setError(
+        'No project is open, so this modeling action cannot run. Use File > New Project or File > Open a .lpproj/.lp first; external .sysml files open directly without a project.',
+      );
       return;
     }
     // Analysis tools also see metrics produced by assistant-driven runs.
@@ -662,10 +666,6 @@ export function AIPanel() {
     if (activeSessionRef.current !== null) updateSessionPermission(activeSessionRef.current, mode);
   };
 
-  const currentAssistantScope = () =>
-    activeSessionRef.current === null
-      ? workspaceScope
-      : aiSessionScope(activeSessionScopeRef.current ?? workspaceScope, activeSessionRef.current);
   const workspacePermissionAllowed =
     permissionMode !== 'Workspace' ||
     activeSessionScopeRef.current === null ||
@@ -749,9 +749,7 @@ export function AIPanel() {
   // Assistant Runtime: one continuous conversation turn with inline tool
   // execution.
   const sendAssistant = async (resume = false, explicitRequest?: string) => {
-    const request = resume
-      ? 'ResumeUnfinished Agent turn。'
-      : (explicitRequest ?? prompt.trim());
+    const request = resume ? 'Resume unfinished Agent turn.' : (explicitRequest ?? prompt.trim());
     if ((!resume && request === '') || busy) {
       return;
     }
@@ -773,9 +771,7 @@ export function AIPanel() {
       .slice()
       .reverse()
       .find((message: AssistantTurnMessage) => message.role === 'user')?.content;
-    const resumedRequest = resume
-      ? (resumedMessage ?? 'ResumeUnfinished Agent turn。')
-      : request;
+    const resumedRequest = resume ? (resumedMessage ?? 'ResumeUnfinished Agent turn。') : request;
     if (resume && pendingCheckpoint === undefined) return;
     const session = sessionForScope(scope);
     const current = useModelStore.getState().document;
@@ -874,8 +870,7 @@ export function AIPanel() {
       // Dynamic discovery (plan §7): capabilities see the active document's
       // contribution type and mount only their relevant tools.
       toolScope: {
-        documentType:
-          documentContributionFor(useUiStore.getState().activeFile)?.id ?? null,
+        documentType: documentContributionFor(useUiStore.getState().activeFile)?.id ?? null,
       },
       capabilities: [
         ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
@@ -1405,12 +1400,12 @@ export function AIPanel() {
               <strong>Unfinished Agent turn</strong>
               <small>You can resume the last checkpoint or discard it.</small>
             </div>
-              <button className="secondary" onClick={() => void sendAssistant(true)}>
-                Resume
-              </button>
-              <button className="btn-ghost" onClick={() => clearCheckpoint(conversationScope)}>
-                Discard
-              </button>
+            <button className="secondary" onClick={() => void sendAssistant(true)}>
+              Resume
+            </button>
+            <button className="btn-ghost" onClick={() => clearCheckpoint(conversationScope)}>
+              Discard
+            </button>
           </div>
         )}
         {busy && streamingRequest !== null && (
@@ -1731,7 +1726,8 @@ export function AIPanel() {
           <div className="ai-result">
             <p className="ai-meta">Before/after comparison using identical run settings</p>
             <p className="ai-meta">
-              paired evidence: {comparison.statisticalEvidence.matchedReplicationPairs} matching replication pair(s)
+              paired evidence: {comparison.statisticalEvidence.matchedReplicationPairs} matching
+              replication pair(s)
             </p>
             <ul className="ai-findings">
               {comparison.findings.map((finding, index) => (
@@ -1889,7 +1885,10 @@ export function AIPanel() {
                   <p className="ai-tools-note">Loading model list…</p>
                 )}
                 {providerConfigured && !modelsLoading && availableModels.length === 0 && (
-                  <p className="ai-tools-note">Could not fetch the model list. Open settings to check the provider configuration.</p>
+                  <p className="ai-tools-note">
+                    Could not fetch the model list. Open settings to check the provider
+                    configuration.
+                  </p>
                 )}
                 <button type="button" onClick={() => useUiStore.getState().openSettings()}>
                   <strong>Settings</strong>

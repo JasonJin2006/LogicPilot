@@ -134,7 +134,9 @@ export class AgentCapabilityRegistry {
 
   tools(ids: readonly string[] | undefined, scope?: AgentToolScope): readonly AgentTool[] {
     const tools = this.resolve(ids).flatMap((capability) =>
-      scope === undefined ? (capability.tools ?? []) : (capability.toolsForScope?.(scope) ?? capability.tools ?? []),
+      scope === undefined
+        ? (capability.tools ?? [])
+        : (capability.toolsForScope?.(scope) ?? capability.tools ?? []),
     );
     return [...new Map(tools.map((tool) => [tool.name, tool])).values()];
   }

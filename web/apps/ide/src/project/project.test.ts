@@ -250,7 +250,11 @@ describe('project bundle', () => {
     const current = createProject('Keep');
     current.files['model/vehicle.sysml'] = 'part def Vehicle {}\n';
     current.files['presentation/sysml/vehicle.layout.json'] = '{"version":1}\n';
-    const merged = mergeCanvasSplit(base, splitModelSource(base.files[DEFAULT_MODEL_PATH]!), current);
+    const merged = mergeCanvasSplit(
+      base,
+      splitModelSource(base.files[DEFAULT_MODEL_PATH]!),
+      current,
+    );
     expect(merged.files['model/vehicle.sysml']).toContain('Vehicle');
     expect(merged.files['presentation/sysml/vehicle.layout.json']).toContain('version');
     expect(merged.manifest.modelParts).toEqual([]);

@@ -85,14 +85,7 @@ export function SysMLElementIcon({ kind, size = 12 }: { kind: SysMLVisualKind; s
       return (
         <Svg size={size}>
           <rect x={1.8} y={2.6} width={12.4} height={10.8} rx={0.8} />
-          <text
-            x={8}
-            y={11}
-            textAnchor="middle"
-            fontSize={7}
-            stroke="none"
-            fill="currentColor"
-          >
+          <text x={8} y={11} textAnchor="middle" fontSize={7} stroke="none" fill="currentColor">
             {'{ }'}
           </text>
         </Svg>

@@ -903,6 +903,12 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
     } catch (error) {
       const aborted = options.signal?.aborted || isAbortError(error);
       try {
+        // An 'error' close is only legal when every proposed tool call has
+        // a result; otherwise endStep throws and the checkpoint keeps an
+        // open step that no resume can close.
+        if (!aborted) {
+          kernel.abandonOpenCalls('assistant step failed before the tool call completed');
+        }
         closeStep(aborted ? 'aborted' : 'error');
         closeTurn(aborted ? 'aborted' : 'error');
       } catch {

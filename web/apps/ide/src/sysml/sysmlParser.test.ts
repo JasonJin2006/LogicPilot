@@ -39,9 +39,6 @@ describe('sysmlParser (stable identity, spans, SYxxxx diagnostics)', () => {
   requirement newOne;
 }
 `);
-    const engineBefore = before.elements.find((element) => element.name === 'Engine')!;
-    const engineAfter = after.elements.find((element) => element.name === 'Engine')!;
-    void engineBefore;
     // Identity is qualified-name based: siblings joining elsewhere never
     // renumber existing elements (the layout sidecar depends on this).
     expect(after.elements.map((element) => element.qualifiedName)).toContain('Vehicle::Engine');
@@ -86,7 +83,9 @@ requirement R;
   part def A;
 }
 }`);
-    expect(extraClose.diagnostics.some((d) => d.code === 'SY0004' && d.severity === 'error')).toBe(true);
+    expect(extraClose.diagnostics.some((d) => d.code === 'SY0004' && d.severity === 'error')).toBe(
+      true,
+    );
 
     const missingClose = parseSysMLSource(`package P {
   part def A;

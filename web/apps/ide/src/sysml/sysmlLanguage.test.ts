@@ -41,11 +41,7 @@ describe('sysmlLanguage services', () => {
 
     // The target slot of a satisfy line is also an element reference.
     const satisfyLine = SOURCE.indexOf('satisfy requirement ') + 'satisfy requirement '.length;
-    const targetItems = completionsAt(
-      SOURCE.slice(0, satisfyLine),
-      satisfyLine,
-      projection,
-    );
+    const targetItems = completionsAt(SOURCE.slice(0, satisfyLine), satisfyLine, projection);
     expect(targetItems.every((item) => item.kind === 'element')).toBe(true);
     expect(targetItems.map((item) => item.label)).toContain('Power');
 

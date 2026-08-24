@@ -5,17 +5,33 @@
 // route from text to visualization. Callers verify the result by re-running
 // projectSysML and reporting any new SYxxxx diagnostics back to the model.
 
-import type { SysMLProjection, SysMLVisualKind } from './sysmlProjection';
+import type { SysMLProjection } from './sysmlProjection';
 
 export type SysMLEditResult =
-  | { ok: true; source: string; detail: string }
-  | { ok: false; error: string };
+  { ok: true; source: string; detail: string } | { ok: false; error: string };
 
 const KIND_TOKENS: ReadonlySet<string> = new Set([
-  'package', 'part', 'item', 'port', 'interface', 'requirement', 'action',
-  'calculation', 'calc', 'state', 'analysis', 'verification', 'attribute',
-  'constraint', 'usecase', 'view', 'viewpoint', 'enum', 'occurrence',
-  'stakeholder', 'flow',
+  'package',
+  'part',
+  'item',
+  'port',
+  'interface',
+  'requirement',
+  'action',
+  'calculation',
+  'calc',
+  'state',
+  'analysis',
+  'verification',
+  'attribute',
+  'constraint',
+  'usecase',
+  'view',
+  'viewpoint',
+  'enum',
+  'occurrence',
+  'stakeholder',
+  'flow',
 ]);
 
 /** `calc` writes the full keyword so identity stays canonical. */
@@ -78,23 +94,35 @@ export function insertElement(
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
     return { ok: false, error: `'${options.name}' is not a valid SysML identifier` };
   }
-  if (findElement(projection, name) !== undefined) {
-    return { ok: false, error: `an element named '${name}' already exists` };
+  // Clash check is scope-relative: the same name in a nested block is a
+  // legal SysML nesting, and the inserted element's qualified name is the
+  // only identity that must stay unique.
+  const parent =
+    options.parent !== undefined && options.parent.trim() !== ''
+      ? findElement(projection, options.parent)
+      : undefined;
+  if (options.parent !== undefined && options.parent.trim() !== '' && parent === undefined) {
+    return { ok: false, error: `no SysML element matches '${options.parent}'` };
+  }
+  const qualifiedName = parent === undefined ? name : `${parent.qualifiedName}::${name}`;
+  if (
+    projection.elements.some(
+      (element) => element.qualifiedName.toLowerCase() === qualifiedName.toLowerCase(),
+    )
+  ) {
+    return {
+      ok: false,
+      error: `an element named '${name}' already exists in the same scope`,
+    };
   }
 
   const header =
-    options.declaration === 'def'
-      ? `${kindToken} def ${name}`
-      : `${kindToken} ${name}`;
+    options.declaration === 'def' ? `${kindToken} def ${name}` : `${kindToken} ${name}`;
   const body = (options.bodyLines ?? []).map((line) => line.trimEnd());
   let qualifiedParent: string | undefined;
 
   let insertion: string;
-  if (options.parent !== undefined && options.parent.trim() !== '') {
-    const parent = findElement(projection, options.parent);
-    if (parent === undefined) {
-      return { ok: false, error: `no SysML element matches '${options.parent}'` };
-    }
+  if (parent !== undefined) {
     const blockText = source.slice(parent.span.start, parent.span.end);
     if (!blockText.includes('{')) {
       return {
@@ -108,7 +136,11 @@ export function insertElement(
     // a two-line `{ }`.
     const memberLines =
       body.length > 0
-        ? [`${memberIndent}${header} {`, ...body.map((line) => `${memberIndent}  ${line}`), `${memberIndent}}`]
+        ? [
+            `${memberIndent}${header} {`,
+            ...body.map((line) => `${memberIndent}  ${line}`),
+            `${memberIndent}}`,
+          ]
         : [`${memberIndent}${header};`];
     insertion = `${memberLines.join('\n')}\n`;
     qualifiedParent = parent.qualifiedName;
@@ -133,9 +165,8 @@ export function insertElement(
     };
   }
 
-  const memberLines = body.length > 0
-    ? [`${header} {`, ...body.map((line) => `  ${line}`), `}`]
-    : [`${header};`];
+  const memberLines =
+    body.length > 0 ? [`${header} {`, ...body.map((line) => `  ${line}`), `}`] : [`${header};`];
   const trimmedEnd = source.replace(/\s*$/, '');
   insertion = `\n${memberLines.join('\n')}\n`;
   return {
@@ -190,10 +221,8 @@ export function renameElement(
     // Bare references ('car'), qualified tails ('Vehicle::car') - anything
     // else containing the name as a segment (e.g. 'carbon') never matches.
     const bareOrTail =
-      lowerWord === oldName.toLowerCase() ||
-      lowerWord.endsWith(`::${oldName.toLowerCase()}`);
+      lowerWord === oldName.toLowerCase() || lowerWord.endsWith(`::${oldName.toLowerCase()}`);
     if (!bareOrTail) continue;
-    void lowerWord;
     const start = match.index;
     const withinOtherDeclaration =
       // Another element's declaration token, or our own (already a range).
@@ -216,10 +245,15 @@ export function renameElement(
         (candidate) =>
           candidate !== element &&
           (candidate.name.toLowerCase() === normalized ||
+            candidate.qualifiedName.toLowerCase() === normalized ||
             candidate.qualifiedName.toLowerCase().endsWith(`::${normalized}`)),
       );
-      if (bareOrTail && candidates.length === 0) {
-        refers = true; // unambiguous bare/qualified reference to oldName
+      // A qualified chain resolves only through exact qualified-name/tail
+      // matching above, so 'Plant::Pump' never falls through to a top-level
+      // 'Pump' being renamed. The unambiguous fallback below is bare-name
+      // only.
+      if (bareOrTail && !normalized.includes('::') && candidates.length === 0) {
+        refers = true; // unambiguous bare reference to oldName
       }
     }
     if (refers) {
@@ -231,9 +265,7 @@ export function renameElement(
   for (const range of ranges) {
     const segment = nextSource.slice(range.start, range.end);
     const replaced =
-      range.start === element.nameSpan.start
-        ? name
-        : segment.split(oldName).join(name);
+      range.start === element.nameSpan.start ? name : segment.split(oldName).join(name);
     nextSource = `${nextSource.slice(0, range.start)}${replaced}${nextSource.slice(range.end)}`;
   }
   return {
@@ -243,13 +275,7 @@ export function renameElement(
   };
 }
 
-export type RelationVerb =
-  | 'satisfy'
-  | 'verify'
-  | 'trace'
-  | 'connect'
-  | 'allocate'
-  | 'bind';
+export type RelationVerb = 'satisfy' | 'verify' | 'trace' | 'connect' | 'allocate' | 'bind';
 
 const RELATION_TEMPLATES: Record<RelationVerb, (from: string, to: string) => string> = {
   satisfy: (from, to) => `satisfy requirement ${to} by ${from}`,

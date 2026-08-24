@@ -3,7 +3,11 @@
 // The runtime does not know what "modeling" means. This module is the IDE's
 // capability adapter; future file/web/MCP packages can register beside it.
 
-import { AgentCapabilityRegistry, type AgentCapability, type AgentToolScope } from './agentContracts';
+import {
+  AgentCapabilityRegistry,
+  type AgentCapability,
+  type AgentToolScope,
+} from './agentContracts';
 import {
   logicpilotModelingCapability,
   logicpilotModelingToolsForScope,

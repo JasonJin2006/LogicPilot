@@ -188,9 +188,9 @@ export function collectModelParts(files: Record<string, string>): string[] {
   return Object.keys(files)
     .filter(
       (path) =>
-      path.startsWith('model/') &&
-      path.endsWith('.lp') &&
-      path !== DEFAULT_MODEL_PATH &&
+        path.startsWith('model/') &&
+        path.endsWith('.lp') &&
+        path !== DEFAULT_MODEL_PATH &&
         !path.startsWith(`${MODEL_SCENE_DIR}/`),
     )
     .sort();

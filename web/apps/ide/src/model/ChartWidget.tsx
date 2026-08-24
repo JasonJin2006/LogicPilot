@@ -2,7 +2,7 @@
 // data binding). The shared vizState is updated at 10 Hz by the wire-frame
 // handler, so a chart block bound to a metric (queue length, throughput,
 // mean wait, ...) scrolls live during a run without a dedicated socket.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { vizState } from '../state/vizState';
 
 const WINDOW = 60; // samples kept (10 Hz -> ~6 s of history)
@@ -221,9 +221,16 @@ export function ChartWidget({
   const metric = resolveMetric(params['value']);
   const title = String(params['title'] ?? name);
   const color = KIND_COLORS[kind] ?? '#4cc2ff';
+  const lastMetric = useRef(metric);
 
   useEffect(() => {
     if (!active) return undefined;
+    // A binding change must not keep the previous metric's samples: the
+    // chart would start from a mixed series.
+    if (lastMetric.current !== metric) {
+      lastMetric.current = metric;
+      setSamples([]);
+    }
     const id = window.setInterval(() => {
       setSamples((previous) => {
         const next = [...previous, metric()];

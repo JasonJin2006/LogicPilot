@@ -1762,7 +1762,9 @@ export function ModelCanvas() {
                   elementDrag.current = null;
                   setDraggingId(null);
                 }}
-                onDoubleClick={() => setFocusView({ kind: node.kind, name: node.name, containerId: node.id })}
+                onDoubleClick={() =>
+                  setFocusView({ kind: node.kind, name: node.name, containerId: node.id })
+                }
                 title={`Open ${node.name} (${childCount} blocks)`}
               >
                 <span className="model-block-icon">

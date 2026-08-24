@@ -41,6 +41,14 @@ function describe(operation: ModelPatchOperation): string {
   }
 }
 
+/** Duplicate member names defeat the name-keyed diff: one of the twins
+ *  silently wins the map slot and the patch lands on the wrong block. */
+function duplicateMemberNames(nodes: ModelDocument['nodes']): string[] {
+  const counts = new Map<string, number>();
+  for (const node of nodes) counts.set(node.name, (counts.get(node.name) ?? 0) + 1);
+  return [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+}
+
 /** Convert an AI-produced, compiler-validated DSL candidate into the only
  * mutation protocol accepted by the editor. The caller previews this object;
  * no model state changes occur here. */
@@ -55,6 +63,21 @@ export function createModelProposal(current: ModelDocument, candidateDsl: string
       descriptions: [],
       destructiveOperations: 0,
       error: parsed.error ?? 'AI returned DSL that the editor cannot parse',
+    };
+  }
+  const duplicates = [
+    ...duplicateMemberNames(current.nodes),
+    ...duplicateMemberNames(parsed.document.nodes),
+  ];
+  if (duplicates.length > 0) {
+    return {
+      ok: false,
+      baseDocument: current,
+      patch: null,
+      candidateDocument: null,
+      descriptions: [],
+      destructiveOperations: 0,
+      error: `cannot diff documents with duplicate block names: ${[...new Set(duplicates)].join(', ')} - rename them first`,
     };
   }
   const patch = diffModelDocuments(current, parsed.document);

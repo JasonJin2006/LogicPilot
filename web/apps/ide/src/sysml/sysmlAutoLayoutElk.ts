@@ -10,7 +10,7 @@
 // Scale contract: layout runs OFF the render path in a Web Worker by
 // default, so large graphs from future simulation paradigms cannot freeze
 // the UI. Fallbacks degrade gracefully: worker → main-thread bundle → the
- // synchronous tidy-tree layout that also serves first paint.
+// synchronous tidy-tree layout that also serves first paint.
 
 import ELK from 'elkjs/lib/elk-api.js';
 import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url';
@@ -111,7 +111,16 @@ export function buildElkGraph(projection: SysMLProjection): ElkGraph {
 }
 
 function collectPositions(
-  shapes: Array<{ id?: string; x?: number; y?: number; width?: number; height?: number; children?: unknown[] }> | undefined,
+  shapes:
+    | Array<{
+        id?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+        children?: unknown[];
+      }>
+    | undefined,
   originX: number,
   originY: number,
   positions: Record<string, SysMLPosition>,
@@ -133,7 +142,16 @@ function collectPositions(
       }
     }
     collectPositions(
-      shape.children as Array<{ id?: string; x?: number; y?: number; width?: number; height?: number; children?: unknown[] }> | undefined,
+      shape.children as
+        | Array<{
+            id?: string;
+            x?: number;
+            y?: number;
+            width?: number;
+            height?: number;
+            children?: unknown[];
+          }>
+        | undefined,
       absX,
       absY,
       positions,
@@ -142,7 +160,9 @@ function collectPositions(
   }
 }
 
-type LayoutResult = { children?: Array<{ id: string; x?: number; y?: number; children?: unknown[] }> };
+type LayoutResult = {
+  children?: Array<{ id: string; x?: number; y?: number; children?: unknown[] }>;
+};
 
 export interface ElkLayoutOutput {
   positions: Record<string, SysMLPosition>;
@@ -161,6 +181,7 @@ async function runElk(graph: ElkGraph): Promise<ElkLayoutOutput> {
     result = await run(workerInstance());
   } catch (workerError) {
     // Worker unavailable (CSP, exotic bundler): main thread keeps working.
+    // eslint-disable-next-line no-console -- one-shot fallback diagnostic.
     console.warn('[sysml] ELK worker failed, falling back to main thread', workerError);
     const bundled = await import('elkjs/lib/elk.bundled.js');
     const MainThreadELK =

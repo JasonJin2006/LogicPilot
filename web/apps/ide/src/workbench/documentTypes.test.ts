@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DOCUMENT_CONTRIBUTIONS, documentContributionFor, editorPanelFor, newFileContentFor } from './documentTypes';
+import {
+  DOCUMENT_CONTRIBUTIONS,
+  documentContributionFor,
+  editorPanelFor,
+  newFileContentFor,
+} from './documentTypes';
 // External languages register from their own modules (the composition root
 // imports them in the app); the DSL is the only core-registered type.
 import '../sysml/sysmlDocumentContribution';

@@ -132,7 +132,9 @@ export function AppMenu() {
     anchor.href = url;
     anchor.download = `${state.name ?? 'logicpilot'}.lpworkspace`;
     anchor.click();
-    URL.revokeObjectURL(url);
+    // Delay the revoke: Firefox can abort a download started from a URL
+    // that is torn down before the browser picks it up.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
     close();
   };
   const onWorkspaceChosen = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -351,6 +353,7 @@ export function AppMenu() {
                 { label: 'Overwrite', primary: true, onSelect: () => resolve(true) },
                 { label: 'Cancel', onSelect: () => resolve(false) },
               ],
+              dismiss: () => resolve(false),
             });
           });
           if (!proceed) {
@@ -371,7 +374,9 @@ export function AppMenu() {
       anchor.href = url;
       anchor.download = `${name}.lpproj`;
       anchor.click();
-      URL.revokeObjectURL(url);
+      // Delay the revoke: Firefox can abort a download started from a URL
+      // that is torn down before the browser picks it up.
+      setTimeout(() => URL.revokeObjectURL(url), 0);
     }
     openBundle(project);
     markClean();
@@ -806,7 +811,13 @@ export function AppMenu() {
           )}
         </div>
       ))}
-      <input ref={fileRef} type="file" accept=".lpproj,.lp,.sysml,.json" hidden onChange={onFileChosen} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".lpproj,.lp,.sysml,.json"
+        hidden
+        onChange={onFileChosen}
+      />
       <input
         ref={workspaceFileRef}
         type="file"

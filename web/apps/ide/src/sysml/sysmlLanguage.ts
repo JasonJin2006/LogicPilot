@@ -15,20 +15,49 @@ export interface SysMLCompletionItem {
 
 /** Declaration/statement starters of the visual subset. */
 export const SYML_KEYWORDS: readonly string[] = [
-  'package', 'part def', 'part', 'item', 'port def', 'port', 'interface',
-  'requirement def', 'requirement', 'action def', 'action', 'state def',
-  'state', 'analysis def', 'analysis', 'verification def', 'verification',
-  'attribute', 'constraint def', 'constraint', 'usecase', 'view def', 'view',
-  'viewpoint', 'enum', 'occurrence', 'stakeholder', 'flow',
-  'satisfy requirement', 'verify requirement', 'connect', 'trace', 'allocate',
+  'package',
+  'part def',
+  'part',
+  'item',
+  'port def',
+  'port',
+  'interface',
+  'requirement def',
+  'requirement',
+  'action def',
+  'action',
+  'state def',
+  'state',
+  'analysis def',
+  'analysis',
+  'verification def',
+  'verification',
+  'attribute',
+  'constraint def',
+  'constraint',
+  'usecase',
+  'view def',
+  'view',
+  'viewpoint',
+  'enum',
+  'occurrence',
+  'stakeholder',
+  'flow',
+  'satisfy requirement',
+  'verify requirement',
+  'connect',
+  'trace',
+  'allocate',
 ];
 
-export function wordAt(source: string, offset: number): { word: string; start: number; end: number } {
+export function wordAt(
+  source: string,
+  offset: number,
+): { word: string; start: number; end: number } {
   const clamped = Math.min(Math.max(0, offset), source.length);
   let start = clamped;
   let end = clamped;
-  const isWordChar = (ch: string | undefined) =>
-    ch !== undefined && /[A-Za-z0-9_.:]/.test(ch);
+  const isWordChar = (ch: string | undefined) => ch !== undefined && /[A-Za-z0-9_.:]/.test(ch);
   while (start > 0 && isWordChar(source[start - 1])) start -= 1;
   while (end < source.length && isWordChar(source[end])) end += 1;
   return { word: source.slice(start, end), start, end };
@@ -73,7 +102,10 @@ export function hoverAt(projection: SysMLProjection, offset: number): SysMLEleme
   let best: SysMLElement | null = null;
   for (const element of projection.elements) {
     if (offset >= element.span.start && offset <= element.span.end) {
-      if (best === null || element.span.end - element.span.start < best.span.end - best.span.start) {
+      if (
+        best === null ||
+        element.span.end - element.span.start < best.span.end - best.span.start
+      ) {
         best = element;
       }
     }
@@ -89,13 +121,19 @@ export function definitionAt(
   offset: number,
 ): SysMLElement | null {
   const containing = hoverAt(projection, offset);
-  if (containing !== null && offset >= containing.nameSpan.start && offset <= containing.nameSpan.end) {
+  if (
+    containing !== null &&
+    offset >= containing.nameSpan.start &&
+    offset <= containing.nameSpan.end
+  ) {
     return containing;
   }
   const { word } = wordAt(source, offset);
   if (word === '') return null;
   const normalized = word.replace(/^::/, '').toLowerCase();
-  const exact = projection.elements.find((element) => element.qualifiedName.toLowerCase() === normalized);
+  const exact = projection.elements.find(
+    (element) => element.qualifiedName.toLowerCase() === normalized,
+  );
   if (exact) return exact;
   const candidates = projection.elements.filter(
     (element) =>
@@ -107,7 +145,9 @@ export function definitionAt(
 
 /** Every relation touching the element (its references, traceability both ways). */
 export function referencesOf(projection: SysMLProjection, elementId: string): SysMLRelation[] {
-  return projection.relations.filter((relation) => relation.from === elementId || relation.to === elementId);
+  return projection.relations.filter(
+    (relation) => relation.from === elementId || relation.to === elementId,
+  );
 }
 
 /** Rename driven by a cursor position instead of a query string. */

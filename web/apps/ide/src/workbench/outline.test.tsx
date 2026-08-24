@@ -20,9 +20,7 @@ describe('outline registry', () => {
 
   it('resolves by priority, then registration order', () => {
     const low = OUTLINE_CONTRIBUTIONS.register(contribution({ id: 'test.low' }));
-    const high = OUTLINE_CONTRIBUTIONS.register(
-      contribution({ id: 'test.high', priority: 10 }),
-    );
+    const high = OUTLINE_CONTRIBUTIONS.register(contribution({ id: 'test.high', priority: 10 }));
     const context = { activePath: null, activeDocumentType: null, hasProject: true };
     expect(OUTLINE_CONTRIBUTIONS.resolve(context)?.id).toBe('test.high');
     // The lower-priority contribution applies when the higher one defers.

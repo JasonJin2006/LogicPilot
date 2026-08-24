@@ -21,8 +21,6 @@ import {
   type SysMLVisualKind,
 } from './sysmlProjection';
 
-
-
 const RELATION_STYLES: Record<SysMLRelationKind, { dash?: string; color: string }> = {
   contains: { dash: '5 5', color: '#718096' },
   typed_by: { dash: '3 4', color: '#9babc1' },
@@ -58,17 +56,30 @@ interface DragState {
   camera: Camera;
 }
 
-function positionOf(element: SysMLElement, positions: Record<string, SysMLPosition>): SysMLPosition {
+function positionOf(
+  element: SysMLElement,
+  positions: Record<string, SysMLPosition>,
+): SysMLPosition {
   return positions[element.id] ?? { x: 80, y: 80 };
 }
 
 function bounds(elements: SysMLElement[], positions: Record<string, SysMLPosition>) {
-  const width = Math.max(960, ...elements.map((element) => positionOf(element, positions).x + SYML_NODE_WIDTH + 120));
-  const height = Math.max(640, ...elements.map((element) => positionOf(element, positions).y + SYML_NODE_HEIGHT + 120));
+  const width = Math.max(
+    960,
+    ...elements.map((element) => positionOf(element, positions).x + SYML_NODE_WIDTH + 120),
+  );
+  const height = Math.max(
+    640,
+    ...elements.map((element) => positionOf(element, positions).y + SYML_NODE_HEIGHT + 120),
+  );
   return { width, height };
 }
 
-function relationPoint(element: SysMLElement, positions: Record<string, SysMLPosition>, side: 'from' | 'to') {
+function relationPoint(
+  element: SysMLElement,
+  positions: Record<string, SysMLPosition>,
+  side: 'from' | 'to',
+) {
   const position = positionOf(element, positions);
   return {
     x: position.x + (side === 'from' ? SYML_NODE_WIDTH : 0),
@@ -134,7 +145,15 @@ function NodeBody({
         </>
       );
     case 'usecase':
-      return <ellipse className={shape} cx={width / 2} cy={height / 2} rx={width / 2 - 2} ry={height / 2 - 3} />;
+      return (
+        <ellipse
+          className={shape}
+          cx={width / 2}
+          cy={height / 2}
+          rx={width / 2 - 2}
+          ry={height / 2 - 3}
+        />
+      );
     case 'state':
       return <rect className={shape} width={width} height={height} rx={Math.min(17, height / 3)} />;
     case 'action':
@@ -166,19 +185,41 @@ function CornerMark({
     return (
       <>
         <circle className="sysml-node-badge" cx={cx} cy={cy} r={8.5} />
-        <text className="sysml-node-mark sysml-node-badge-text" x={cx} y={cy + 3.4} textAnchor="middle">{mark}</text>
+        <text
+          className="sysml-node-mark sysml-node-badge-text"
+          x={cx}
+          y={cy + 3.4}
+          textAnchor="middle"
+        >
+          {mark}
+        </text>
       </>
     );
   }
   if (kind === 'constraint') {
-    return <text className="sysml-node-mark sysml-node-badge-text" x={width - 10} y={height - 9} textAnchor="end">{'{ }'}</text>;
+    return (
+      <text
+        className="sysml-node-mark sysml-node-badge-text"
+        x={width - 10}
+        y={height - 9}
+        textAnchor="end"
+      >
+        {'{ }'}
+      </text>
+    );
   }
   if (kind === 'port' || kind === 'interface') {
     // Socket notation: nested squares.
     return (
       <>
         <rect className="sysml-node-badge" x={width - 21} y={height - 21} width={13} height={13} />
-        <rect className="sysml-node-mark sysml-node-socket-pin" x={width - 17} y={height - 17} width={5} height={5} />
+        <rect
+          className="sysml-node-mark sysml-node-socket-pin"
+          x={width - 17}
+          y={height - 17}
+          width={5}
+          height={5}
+        />
       </>
     );
   }
@@ -196,10 +237,34 @@ function CornerMark({
 
 function visibleInMode(kind: SysMLVisualKind, mode: SysMLViewMode): boolean {
   if (mode === 'all') return true;
-  if (mode === 'structure') return ['package', 'part', 'item', 'port', 'interface', 'enum', 'occurrence', 'stakeholder', 'view', 'viewpoint'].includes(kind);
-  if (mode === 'requirements') return ['package', 'requirement', 'verification', 'analysis', 'constraint', 'usecase'].includes(kind);
+  if (mode === 'structure')
+    return [
+      'package',
+      'part',
+      'item',
+      'port',
+      'interface',
+      'enum',
+      'occurrence',
+      'stakeholder',
+      'view',
+      'viewpoint',
+    ].includes(kind);
+  if (mode === 'requirements')
+    return ['package', 'requirement', 'verification', 'analysis', 'constraint', 'usecase'].includes(
+      kind,
+    );
   if (mode === 'traceability') return true;
-  return ['package', 'action', 'state', 'analysis', 'verification', 'flow', 'occurrence', 'usecase'].includes(kind);
+  return [
+    'package',
+    'action',
+    'state',
+    'analysis',
+    'verification',
+    'flow',
+    'occurrence',
+    'usecase',
+  ].includes(kind);
 }
 
 export function SysMLCanvas() {
@@ -211,9 +276,7 @@ export function SysMLCanvas() {
   const execution = useSysMLStore((state) => state.execution);
   const runError = useSysMLStore((state) => state.runError);
   const runTarget = useSysMLStore((state) => state.runTarget);
-  const updateFiles = useProjectStore((state) => state.updateFiles);
   const activeFile = useUiStore((state) => state.activeFile);
-  const updateDiskFile = useUiStore((state) => state.updateDiskFile);
   const evidence = useSysMLStore((state) => state.evidence);
   const selectedId = useSysMLStore((state) => state.selectedId);
   const viewMode = useSysMLStore((state) => state.viewMode);
@@ -228,9 +291,10 @@ export function SysMLCanvas() {
   const redo = useSysMLStore((state) => state.redo);
   const [camera, setCamera] = useState<Camera>({ scale: 1, x: 0, y: 0 });
   const [runTargetId, setRunTargetId] = useState<string | null>(null);
-  const [loweringErrors, setLoweringErrors] = useState<
-    Array<{ code: string; message: string }> | null
-  >(null);
+  const [loweringErrors, setLoweringErrors] = useState<Array<{
+    code: string;
+    message: string;
+  }> | null>(null);
   const machineTargets = useMemo(
     () =>
       projection === null
@@ -254,14 +318,24 @@ export function SysMLCanvas() {
     }
     const ids = new Set(
       projection.relations
-        .filter((relation) => ['satisfies', 'verifies', 'traces', 'allocates', 'derives', 'refines'].includes(relation.kind))
+        .filter((relation) =>
+          ['satisfies', 'verifies', 'traces', 'allocates', 'derives', 'refines'].includes(
+            relation.kind,
+          ),
+        )
         .flatMap((relation) => [relation.from, relation.to]),
     );
     return projection.elements.filter((element) => ids.has(element.id));
   }, [projection, viewMode]);
-  const visibleIds = useMemo(() => new Set(visibleElements.map((element) => element.id)), [visibleElements]);
+  const visibleIds = useMemo(
+    () => new Set(visibleElements.map((element) => element.id)),
+    [visibleElements],
+  );
   const visibleRelations = useMemo(
-    () => projection?.relations.filter((relation) => visibleIds.has(relation.from) && visibleIds.has(relation.to)) ?? [],
+    () =>
+      projection?.relations.filter(
+        (relation) => visibleIds.has(relation.from) && visibleIds.has(relation.to),
+      ) ?? [],
     [projection, visibleIds],
   );
   const graphBounds = useMemo(
@@ -347,7 +421,10 @@ export function SysMLCanvas() {
   };
 
   const zoom = (factor: number) =>
-    setCamera((current) => ({ ...current, scale: Math.min(2.2, Math.max(0.35, current.scale * factor)) }));
+    setCamera((current) => ({
+      ...current,
+      scale: Math.min(2.2, Math.max(0.35, current.scale * factor)),
+    }));
 
   return (
     <div className="sysml-canvas">
@@ -356,11 +433,25 @@ export function SysMLCanvas() {
           <LayoutTemplate size={13} />
           <span>Auto layout</span>
         </button>
-        <button type="button" title="Zoom out" onClick={() => zoom(0.85)}><Minus size={13} /></button>
-        <button type="button" title="Reset view" onClick={() => setCamera({ scale: 1, x: 0, y: 0 })}><Focus size={13} /></button>
-        <button type="button" title="Zoom in" onClick={() => zoom(1.18)}><Plus size={13} /></button>
-        <button type="button" title="Undo layout edit" disabled={pastLength === 0} onClick={undo}>Undo</button>
-        <button type="button" title="Redo layout edit" disabled={futureLength === 0} onClick={redo}>Redo</button>
+        <button type="button" title="Zoom out" onClick={() => zoom(0.85)}>
+          <Minus size={13} />
+        </button>
+        <button
+          type="button"
+          title="Reset view"
+          onClick={() => setCamera({ scale: 1, x: 0, y: 0 })}
+        >
+          <Focus size={13} />
+        </button>
+        <button type="button" title="Zoom in" onClick={() => zoom(1.18)}>
+          <Plus size={13} />
+        </button>
+        <button type="button" title="Undo layout edit" disabled={pastLength === 0} onClick={undo}>
+          Undo
+        </button>
+        <button type="button" title="Redo layout edit" disabled={futureLength === 0} onClick={redo}>
+          Redo
+        </button>
         <select
           className="sysml-view-mode"
           aria-label="SysML view"
@@ -373,7 +464,10 @@ export function SysMLCanvas() {
           <option value="behavior">Behavior</option>
           <option value="traceability">Traceability</option>
         </select>
-        <span className="sysml-canvas-count">{visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length} relations</span>
+        <span className="sysml-canvas-count">
+          {visibleElements.length}/{projection.elements.length} elements · {visibleRelations.length}{' '}
+          relations
+        </span>
         {machineTargets.length > 0 && (
           <button
             type="button"
@@ -392,12 +486,19 @@ export function SysMLCanvas() {
               onChange={(event) => setRunTargetId(event.target.value)}
             >
               {supportedTargets.map((target) => (
-                <option key={target.id} value={target.id}>{target.qualifiedName}</option>
+                <option key={target.id} value={target.id}>
+                  {target.qualifiedName}
+                </option>
               ))}
             </select>
             <button
               type="button"
-              title="Execute the selected target (subset 0.2: expressions, action successions, state/time-trigger machines)"
+              title={
+                parseDirty
+                  ? 'Fix the parse errors before running (the projection is stale)'
+                  : 'Execute the selected target (subset 0.2: expressions, action successions, state/time-trigger machines)'
+              }
+              disabled={parseDirty}
               onClick={() => {
                 const id = runTargetId ?? supportedTargets[0]!.id;
                 setRunTargetId(id);
@@ -425,7 +526,9 @@ export function SysMLCanvas() {
         {execution !== null && (
           <div className="sysml-trace">
             <div className="sysml-trace-head">
-              trace · {execution.steps.length} step(s){execution.result !== null && ` · result ${execution.result}`} · rev {execution.sourceHash}
+              trace · {execution.steps.length} step(s)
+              {execution.result !== null && ` · result ${execution.result}`} · rev{' '}
+              {execution.sourceHash}
             </div>
             {execution.steps.map((step) => (
               <div key={step.index} className="sysml-trace-step">
@@ -439,7 +542,8 @@ export function SysMLCanvas() {
         {evidence.length > 0 && (
           <div className="sysml-evidence">
             <div className="sysml-trace-head">
-              evidence · last {Math.min(evidence.length, 5)} of {evidence.length} run(s) · bound to model revisions
+              evidence · last {Math.min(evidence.length, 5)} of {evidence.length} run(s) · bound to
+              model revisions
             </div>
             {evidence.slice(0, 5).map((record) => (
               <div key={record.id} className={`sysml-evidence-row${record.ok ? '' : ' failed'}`}>
@@ -452,7 +556,9 @@ export function SysMLCanvas() {
                       : `${record.steps?.length ?? 0} step(s)`
                     : `failed: ${record.error ?? 'unknown error'}`}
                 </span>
-                <span title={record.revision}>rev {record.revision.replace(/^fnv1a-/, '').slice(0, 8)}</span>
+                <span title={record.revision}>
+                  rev {record.revision.replace(/^fnv1a-/, '').slice(0, 8)}
+                </span>
               </div>
             ))}
           </div>
@@ -474,7 +580,13 @@ export function SysMLCanvas() {
           </marker>
         </defs>
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}>
-          <rect x={0} y={0} width={graphBounds.width} height={graphBounds.height} className="sysml-canvas-bg" />
+          <rect
+            x={0}
+            y={0}
+            width={graphBounds.width}
+            height={graphBounds.height}
+            className="sysml-canvas-bg"
+          />
           {visibleRelations.map((relation) => {
             const from = projection.elements.find((element) => element.id === relation.from);
             const to = projection.elements.find((element) => element.id === relation.to);
@@ -532,7 +644,10 @@ export function SysMLCanvas() {
                 className={`sysml-node${isSelected ? ' selected' : ''}`}
                 data-kind={element.kind}
                 onPointerDown={(event) => beginMove(event, element)}
-                onClick={(event) => { event.stopPropagation(); select(element.id); }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  select(element.id);
+                }}
               >
                 {/* uniform hit area: the notation shapes leave corners free */}
                 <rect
@@ -545,8 +660,12 @@ export function SysMLCanvas() {
                   width={layout?.sizes?.[element.id]?.width}
                   height={layout?.sizes?.[element.id]?.height}
                 />
-                <text x={12} y={24} className="sysml-node-kind">{stereotypeFor(element)}</text>
-                <text x={12} y={44} className="sysml-node-name">{element.name}</text>
+                <text x={12} y={24} className="sysml-node-kind">
+                  {stereotypeFor(element)}
+                </text>
+                <text x={12} y={44} className="sysml-node-name">
+                  {element.name}
+                </text>
                 <CornerMark
                   kind={element.kind}
                   width={layout?.sizes?.[element.id]?.width}
@@ -561,14 +680,18 @@ export function SysMLCanvas() {
         <div className="sysml-selection">
           <span>{selected.kind}</span>
           <strong>{selected.qualifiedName}</strong>
-          <small>line {selected.span.line} · {selected.id}</small>
+          <small>
+            line {selected.span.line} · {selected.id}
+          </small>
           {currentPath !== null && (
             <button
               type="button"
               className="sysml-link"
               onClick={() => {
                 useLayoutStore.getState().openPanel('center', 'dsl');
-                useUiStore.getState().revealInSource(currentPath!, selected.nameSpan.start, selected.nameSpan.end);
+                useUiStore
+                  .getState()
+                  .revealInSource(currentPath!, selected.nameSpan.start, selected.nameSpan.end);
               }}
             >
               Go to source
@@ -577,7 +700,9 @@ export function SysMLCanvas() {
         </div>
       )}
       {projection.diagnostics.length > 0 && (
-        <div className="sysml-diagnostics">{projection.diagnostics.length} projection warning(s); source remains authoritative.</div>
+        <div className="sysml-diagnostics">
+          {projection.diagnostics.length} projection warning(s); source remains authoritative.
+        </div>
       )}
       {parseDirty && (
         <div className="sysml-diagnostics sysml-parse-dirty">

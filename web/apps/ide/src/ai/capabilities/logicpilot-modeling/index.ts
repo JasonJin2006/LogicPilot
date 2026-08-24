@@ -16,7 +16,7 @@ import type { AgentCapability, AgentToolScope } from '../../agentContracts';
 /** DSL graph/modeling tools: everything except the SysML projection tools,
  *  which belong to `.sysml` documents (plan §7 - AI discovers contributions
  *  through the active document instead of one global tool dump). */
-const DSL_MODELING_TOOLS: readonly typeof ASSISTANT_TOOLS[number][] = [
+const DSL_MODELING_TOOLS: readonly (typeof ASSISTANT_TOOLS)[number][] = [
   ...MODEL_INSPECTION_TOOLS,
   ...MODEL_READ_TOOLS,
   ...MODEL_ANALYSIS_TOOLS,

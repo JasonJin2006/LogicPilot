@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  orthogonalRoute,
-  polylineLabelPoint,
-  routePathData,
-} from './sysmlEdgeRouting';
+import { orthogonalRoute, polylineLabelPoint, routePathData } from './sysmlEdgeRouting';
 
 const rect = (x: number, y: number, width = 196, height = 62) => ({ x, y, width, height });
 

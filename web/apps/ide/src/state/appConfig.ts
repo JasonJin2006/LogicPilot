@@ -33,6 +33,7 @@ export async function getAppConfig(): Promise<AppConfig | null> {
       // The Tauri command can briefly race the app-server bootstrap. Do not
       // cache this transient failure; the next retry must be allowed to
       // resolve the injected gateway port.
+      cached = undefined;
       return null;
     }
   }

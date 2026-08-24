@@ -905,126 +905,152 @@ try {
 
   // AI panel (right): the assistant conversation drives model creation,
   // edits, runs and explanation through ONE input (no fixed action buttons).
-  // CI has no server-side API key, so /api/assistant reports 502 and Agent
-  // mode falls back to the deterministic quick-action path. The workspace
-  // still has to be open because model mutations are workspace-scoped.
+  // The workspace still has to be open because model mutations are
+  // workspace-scoped.
   await page.locator('.tab-label').filter({ hasText: /^AI$/ }).click();
 
-  // Start from an empty canvas so the build prompt takes the model-
-  // generation path (the fallback build on a populated canvas would be an
-  // edit request instead).
-  await page.getByRole('button', { name: 'File', exact: true }).click();
-  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
-  const aiCloseDialog = page.getByRole('dialog', { name: 'Close project' });
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
-      document.querySelector('.center-empty') !== null,
-    undefined,
-    { timeout: 5_000 },
-  );
-  if ((await aiCloseDialog.count()) > 0) {
-    await aiCloseDialog.waitFor();
-    await page.getByRole('button', { name: "Don't Save" }).click();
-  }
-  await page.waitForSelector('.center-empty', { timeout: 5_000 });
-  await page.getByRole('button', { name: 'New project' }).click();
-  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
-  await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
-
-  await page
-    .locator('.ai-input')
-    .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
-  await page.getByRole('button', { name: 'Send to Copilot' }).click();
-  await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
-  const previewText = await page.locator('.ai-patch-preview').textContent();
-  if (!previewText?.includes('Proposed ModelPatch')) {
-    throw new Error('AI panel did not show a model patch proposal');
-  }
-  await page.getByRole('button', { name: 'Apply model patch' }).click();
-  await page.waitForFunction(
-    () => document.querySelectorAll('.model-block').length >= 2,
-    undefined,
-    { timeout: 120_000 },
-  );
-  // The applied run replaces the earlier build-result card; wait for the
-  // applied-run meta instead of racing the stale "compiled in" card.
-  await page.waitForFunction(
-    () =>
-      document.querySelector('.ai-result')?.textContent?.includes('ran the applied canvas model') ??
-      false,
-    undefined,
-    { timeout: 120_000 },
-  );
-  const aiResultText = await page.locator('.ai-result').textContent();
-  if (!aiResultText?.includes('ran the applied canvas model')) {
-    throw new Error('AI panel did not run the applied model');
-  }
-  log('AI panel generated, applied and ran a model from the prompt');
-  await page.screenshot({ path: join(OUT, '3-ai-model.png') });
-
-  // Analysis actions are slash commands in the current assistant composer.
-  await page
-    .locator('.ai-input')
-    .fill(
-      '/optimize minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0',
+  // The freeform assistant path needs a configured provider (real endpoint
+  // or the mock LLM). Without one the panel surfaces the unconfigured state
+  // as a failed turn - the deterministic quick-action fallback was removed
+  // when replies moved into the conversation (B1/B2/C1) - so the provider
+  // dependent assertions below run only when a model is configured; the
+  // untested paths are covered by the mock-provider targeted scripts.
+  const aiProviderReady = await page.evaluate(async () => {
+    const res = await fetch('/api/ai-providers', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const state = await res.json();
+    return state?.active?.configured === true;
+  });
+  if (!aiProviderReady) {
+    // Keep the current (dirty) canvas project so the final Close flow below
+    // still asks about unsaved changes.
+    await page
+      .locator('.ai-input')
+      .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+    await page.getByRole('button', { name: 'Send to Copilot' }).click();
+    await page.waitForSelector('.ai-turn', { timeout: 20_000 });
+    const missingText = await page.locator('.ai-turn').last().innerText();
+    if (!missingText.includes('did not complete') || !missingText.includes('No AI model is configured')) {
+      throw new Error('AI panel did not explain the unconfigured provider state');
+    }
+    log('AI panel surfaces the unconfigured-provider state (build path needs a configured model)');
+    log('AI build/optimize/explain/trajectory sections skipped: no provider configured');
+  } else {
+    // Start from an empty canvas so the build prompt takes the model-
+    // generation path.
+    await page.getByRole('button', { name: 'File', exact: true }).click();
+    await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
+    const aiCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+        document.querySelector('.center-empty') !== null,
+      undefined,
+      { timeout: 5_000 },
     );
-  await page.getByRole('button', { name: 'Send to Copilot' }).click();
-  // The applied-run result card stays mounted next to the optimize card, so
-  // wait for the optimize summary across ALL result cards.
-  await page.waitForFunction(
-    () =>
-      [...document.querySelectorAll('.ai-result')].some((el) =>
-        el.textContent?.includes('evaluations'),
-      ) ?? false,
-    undefined,
-    { timeout: 90_000 },
-  );
-  const optimizeText = await page
-    .locator('.ai-result')
-    .filter({ hasText: 'best servers=' })
-    .textContent();
-  if (!optimizeText?.includes('best servers=')) {
-    throw new Error('AI panel did not show an optimization result');
-  }
-  const curve = await page.$('.ai-opt-chart polyline');
-  if (!curve) {
-    throw new Error('AI panel did not render the optimization curve');
-  }
-  log('AI panel optimized a model parameter from the prompt');
-  await page.screenshot({ path: join(OUT, '4-ai-optimize.png') });
+    if ((await aiCloseDialog.count()) > 0) {
+      await aiCloseDialog.waitFor();
+      await page.getByRole('button', { name: "Don't Save" }).click();
+    }
+    await page.waitForSelector('.center-empty', { timeout: 5_000 });
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.waitForSelector('.model-canvas', { timeout: 20_000 });
 
-  await page.locator('.ai-input').fill('/explain why is the queue slow?');
-  await page.getByRole('button', { name: 'Send to Copilot' }).click();
-  await page.waitForSelector('.ai-findings', { timeout: 90_000 });
-  const explainText = await page
-    .locator('.ai-result')
-    .filter({ hasText: 'busiest=' })
-    .textContent();
-  if (!explainText?.includes('blocks') || !explainText.includes('causal evidence')) {
-    throw new Error('AI panel did not show measured causal evidence');
+    await page
+      .locator('.ai-input')
+      .fill('build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
+    await page.getByRole('button', { name: 'Send to Copilot' }).click();
+    await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
+    const previewText = await page.locator('.ai-patch-preview').textContent();
+    if (!previewText?.includes('Proposed ModelPatch')) {
+      throw new Error('AI panel did not show a model patch proposal');
+    }
+    await page.getByRole('button', { name: 'Apply model patch' }).click();
+    await page.waitForFunction(
+      () => document.querySelectorAll('.model-block').length >= 2,
+      undefined,
+      { timeout: 120_000 },
+    );
+    // The applied run replaces the earlier build-result card; wait for the
+    // applied-run meta instead of racing the stale "compiled in" card.
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.ai-result')?.textContent?.includes('ran the applied canvas model') ??
+        false,
+      undefined,
+      { timeout: 120_000 },
+    );
+    const aiResultText = await page.locator('.ai-result').textContent();
+    if (!aiResultText?.includes('ran the applied canvas model')) {
+      throw new Error('AI panel did not run the applied model');
+    }
+    log('AI panel generated, applied and ran a model from the prompt');
+    await page.screenshot({ path: join(OUT, '3-ai-model.png') });
+
+    // Analysis actions are slash commands in the current assistant composer.
+    await page
+      .locator('.ai-input')
+      .fill(
+        '/optimize minimize Wq over servers 1..4 for an M/M/1 queue with arrival 0.8 and service 1.0',
+      );
+    await page.getByRole('button', { name: 'Send to Copilot' }).click();
+    // The applied-run result card stays mounted next to the optimize card, so
+    // wait for the optimize summary across ALL result cards.
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('.ai-result')].some((el) =>
+          el.textContent?.includes('evaluations'),
+        ) ?? false,
+      undefined,
+      { timeout: 90_000 },
+    );
+    const optimizeText = await page
+      .locator('.ai-result')
+      .filter({ hasText: 'best servers=' })
+      .textContent();
+    if (!optimizeText?.includes('best servers=')) {
+      throw new Error('AI panel did not show an optimization result');
+    }
+    const curve = await page.$('.ai-opt-chart polyline');
+    if (!curve) {
+      throw new Error('AI panel did not render the optimization curve');
+    }
+    log('AI panel optimized a model parameter from the prompt');
+    await page.screenshot({ path: join(OUT, '4-ai-optimize.png') });
+
+    await page.locator('.ai-input').fill('/explain why is the queue slow?');
+    await page.getByRole('button', { name: 'Send to Copilot' }).click();
+    await page.waitForSelector('.ai-findings', { timeout: 90_000 });
+    const explainText = await page
+      .locator('.ai-result')
+      .filter({ hasText: 'busiest=' })
+      .textContent();
+    if (!explainText?.includes('blocks') || !explainText.includes('causal evidence')) {
+      throw new Error('AI panel did not show measured causal evidence');
+    }
+    log('AI panel explained the model results from the prompt');
+
+    // Continuous-model trajectory: start a fresh project so the decay prompt
+    // again takes the generation path (the "New project" action lives in the
+    // Welcome tab, which opens over the center when nothing is pinned).
+    await page.getByRole('button', { name: 'Help', exact: true }).click();
+    await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Welcome' }).click();
+    await page.waitForSelector('.center-empty', { timeout: 5_000 });
+    await page.getByRole('button', { name: 'New project' }).click();
+    await page.getByRole('dialog', { name: 'New Project' }).waitFor();
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.waitForSelector('.model-canvas', { timeout: 20_000 });
+
+    await page.locator('.ai-input').fill('build an exponential decay model with rate 0.5');
+    await page.getByRole('button', { name: 'Send to Copilot' }).click();
+    await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
+    await page.getByRole('button', { name: 'Apply model patch' }).click();
+    await page.waitForSelector('.ai-trajectory', { timeout: 120_000 });
+    log('AI panel charted a continuous-model trajectory');
+    await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
   }
-  log('AI panel explained the model results from the prompt');
-
-  // Continuous-model trajectory: start a fresh project so the decay prompt
-  // again takes the generation path (the "New project" action lives in the
-  // Welcome tab, which opens over the center when nothing is pinned).
-  await page.getByRole('button', { name: 'Help', exact: true }).click();
-  await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Welcome' }).click();
-  await page.waitForSelector('.center-empty', { timeout: 5_000 });
-  await page.getByRole('button', { name: 'New project' }).click();
-  await page.getByRole('dialog', { name: 'New Project' }).waitFor();
-  await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await page.waitForSelector('.model-canvas', { timeout: 20_000 });
-
-  await page.locator('.ai-input').fill('build an exponential decay model with rate 0.5');
-  await page.getByRole('button', { name: 'Send to Copilot' }).click();
-  await page.waitForSelector('.ai-patch-preview', { timeout: 90_000 });
-  await page.getByRole('button', { name: 'Apply model patch' }).click();
-  await page.waitForSelector('.ai-trajectory', { timeout: 120_000 });
-  log('AI panel charted a continuous-model trajectory');
-  await page.screenshot({ path: join(OUT, '5-ai-trajectory.png') });
 
   // View menu: the trailing check mark means "panel open". In the right area
   // each panel is a tab, so clicking an open one removes just that tab. The
@@ -1056,14 +1082,25 @@ try {
   await page.locator('.area-right .tab', { hasText: 'AI' }).waitFor({ timeout: 5_000 });
   log('View menu removes and re-adds right-area tabs via the check mark');
 
-  // File > Close: the AI load left unsaved changes, so Close asks first and
-  // Don't Save returns to the empty center.
+  // File > Close: when the project has unsaved changes Close asks first and
+  // Don't Save returns to the empty center; without a provider the AI
+  // section above may have left a pristine project, so tolerate both.
   await page.getByRole('button', { name: 'File', exact: true }).click();
   await page.locator('.app-menu-dropdown .app-menu-entry', { hasText: 'Close' }).click();
-  await page.getByRole('dialog', { name: 'Close project' }).waitFor();
-  await page.getByRole('button', { name: "Don't Save" }).click();
+  const finalCloseDialog = page.getByRole('dialog', { name: 'Close project' });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[role="dialog"][aria-label="Close project"]') !== null ||
+      document.querySelector('.center-empty') !== null,
+    undefined,
+    { timeout: 5_000 },
+  );
+  if ((await finalCloseDialog.count()) > 0) {
+    await finalCloseDialog.waitFor();
+    await page.getByRole('button', { name: "Don't Save" }).click();
+  }
   await page.waitForSelector('.center-empty', { timeout: 5_000 });
-  log('File > Close with unsaved changes asks, then returns to the empty state');
+  log('File > Close returns to the empty state (asks when there are unsaved changes)');
 
   // A pristine project closes without a prompt.
   await page.getByRole('button', { name: 'New project' }).click();

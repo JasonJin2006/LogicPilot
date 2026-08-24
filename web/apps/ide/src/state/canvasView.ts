@@ -58,13 +58,8 @@ interface CanvasViewState {
 }
 
 function sameView(a: CanvasView | null, b: CanvasView | null): boolean {
-  return (
-    a !== null &&
-    b !== null &&
-    a.kind === b.kind &&
-    a.name === b.name &&
-    a.containerId === b.containerId
-  );
+  if (a === null || b === null) return a === b;
+  return a.kind === b.kind && a.name === b.name && a.containerId === b.containerId;
 }
 
 /** Re-resolve the open views across one document revision transition.
@@ -72,10 +67,7 @@ function sameView(a: CanvasView | null, b: CanvasView | null): boolean {
  *  refreshes); legacy name-only views adopt the container's id when found,
  *  follow it through a rename via the previous revision, and close when the
  *  container is gone - so no stale empty tab lingers under an old name. */
-export function syncCanvasViewsWithDocument(
-  next: ModelDocument,
-  previous?: ModelDocument,
-): void {
+export function syncCanvasViewsWithDocument(next: ModelDocument, previous?: ModelDocument): void {
   const state = useCanvasView.getState();
   const keyOf = (entry: CanvasView): string =>
     entry.containerId ?? `${entry.kind}\u0000${entry.name}`;

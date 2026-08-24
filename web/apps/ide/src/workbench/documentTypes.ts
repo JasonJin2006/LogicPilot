@@ -86,7 +86,9 @@ DOCUMENT_CONTRIBUTIONS.register({
   newFileTemplate: (fileName) => `model ${fileName.replace(/\.lp$/i, '')} {\n}\n`,
 });
 
-export function documentContributionFor(path: string | null | undefined): DocumentContribution | undefined {
+export function documentContributionFor(
+  path: string | null | undefined,
+): DocumentContribution | undefined {
   return DOCUMENT_CONTRIBUTIONS.resolve(path);
 }
 

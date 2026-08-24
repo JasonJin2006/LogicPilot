@@ -20,10 +20,10 @@ describe('sysmlExecution (subset 0.1)', () => {
   });
 
   it('pure structure/requirement models produce NO execution targets', () => {
-    const projection = projectSysML(
-      'package P {\n  part def A;\n  requirement R;\n}\n',
-    );
-    expect(extractExecutionTargets('package P {\n  part def A;\n  requirement R;\n}\n', projection)).toEqual([]);
+    const projection = projectSysML('package P {\n  part def A;\n  requirement R;\n}\n');
+    expect(
+      extractExecutionTargets('package P {\n  part def A;\n  requirement R;\n}\n', projection),
+    ).toEqual([]);
   });
 
   it('calculations evaluate arithmetic with precedence and sibling references', () => {
@@ -187,7 +187,9 @@ describe('sysmlExecution (subset 0.2 state machines + time triggers)', () => {
     // boundary-crossing transition
     const cross = `state def X {\n  state a;\n  state b;\n  transition a then b;\n}\nstate def Y {\n  state z;\n  transition z then a;\n}\n`;
     const targets = extractExecutionTargets(cross, projectSysML(cross));
-    const yTarget = targets.find((entry) => entry.kind === 'state' && entry.reasons.length > 0 && entry.qualifiedName === 'Y');
+    const yTarget = targets.find(
+      (entry) => entry.kind === 'state' && entry.reasons.length > 0 && entry.qualifiedName === 'Y',
+    );
     expect(yTarget).toBeDefined();
     expect(yTarget!.reasons.join('; ')).toContain('crosses the machine boundary');
 

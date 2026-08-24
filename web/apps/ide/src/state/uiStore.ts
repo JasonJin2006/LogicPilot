@@ -19,6 +19,8 @@ interface UiState {
     title: string;
     body: string;
     actions: Array<{ label: string; primary?: boolean; onSelect: () => void }>;
+    /** Called when the dialog is dismissed without an action (X/backdrop). */
+    dismiss?: () => void;
   } | null;
   prompt: {
     title: string;
@@ -109,7 +111,13 @@ export const useUiStore = create<UiState>((set) => ({
   openPrompt: (prompt) => set({ prompt }),
   closePrompt: () => set({ prompt: null }),
   openConfirm: (confirm) => set({ confirm }),
-  closeConfirm: () => set({ confirm: null }),
+  closeConfirm: () =>
+    set((state) => {
+      // Dismissal must release any flow awaiting the dialog, or the
+      // underlying Save/Close continuation hangs forever.
+      state.confirm?.dismiss?.();
+      return { confirm: null };
+    }),
   openInfo: (title, body) => set({ info: { title, body } }),
   closeInfo: () => set({ info: null }),
   aiToolsEnabled: true,

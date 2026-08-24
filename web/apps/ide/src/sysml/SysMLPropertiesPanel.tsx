@@ -15,7 +15,9 @@ export function SysMLPropertiesPanel() {
     : undefined;
   const relations = useMemo(
     () =>
-      projection?.relations.filter((relation) => relation.from === selectedId || relation.to === selectedId) ?? [],
+      projection?.relations.filter(
+        (relation) => relation.from === selectedId || relation.to === selectedId,
+      ) ?? [],
     [projection, selectedId],
   );
 
@@ -38,9 +40,14 @@ export function SysMLPropertiesPanel() {
 
   return (
     <div className="sysml-properties">
-      <div className="sysml-properties-kind">{selected.kind} · {selected.declaration}</div>
+      <div className="sysml-properties-kind">
+        {selected.kind} · {selected.declaration}
+      </div>
       <h3>{selected.name}</h3>
-      <div className="sysml-property-row"><span>Qualified name</span><code>{selected.qualifiedName}</code></div>
+      <div className="sysml-property-row">
+        <span>Qualified name</span>
+        <code>{selected.qualifiedName}</code>
+      </div>
       <div className="sysml-property-row">
         <span>Source line</span>
         <strong>
@@ -50,10 +57,29 @@ export function SysMLPropertiesPanel() {
           </button>
         </strong>
       </div>
-      {owner && <div className="sysml-property-row"><span>Owner</span><strong>{owner.qualifiedName}</strong></div>}
+      {owner && (
+        <div className="sysml-property-row">
+          <span>Owner</span>
+          <strong>{owner.qualifiedName}</strong>
+        </div>
+      )}
       <div className="sysml-property-section-title">Layout</div>
-      <label className="sysml-coordinate"><span>X</span><input type="number" value={Math.round(position.x)} onChange={(event) => setPosition('x', event.target.value)} /></label>
-      <label className="sysml-coordinate"><span>Y</span><input type="number" value={Math.round(position.y)} onChange={(event) => setPosition('y', event.target.value)} /></label>
+      <label className="sysml-coordinate">
+        <span>X</span>
+        <input
+          type="number"
+          value={Math.round(position.x)}
+          onChange={(event) => setPosition('x', event.target.value)}
+        />
+      </label>
+      <label className="sysml-coordinate">
+        <span>Y</span>
+        <input
+          type="number"
+          value={Math.round(position.y)}
+          onChange={(event) => setPosition('y', event.target.value)}
+        />
+      </label>
       <div className="sysml-property-section-title">Relations</div>
       {relations.length === 0 ? (
         <div className="sysml-properties-muted">No extracted relations.</div>
@@ -62,11 +88,15 @@ export function SysMLPropertiesPanel() {
           {relations.map((relation) => {
             const otherId = relation.from === selected.id ? relation.to : relation.from;
             const other = projection.elements.find((element) => element.id === otherId);
-            return <li key={relation.id}><span>{relation.label}</span><strong>{other?.qualifiedName ?? otherId}</strong></li>;
+            return (
+              <li key={relation.id}>
+                <span>{relation.label}</span>
+                <strong>{other?.qualifiedName ?? otherId}</strong>
+              </li>
+            );
           })}
         </ul>
       )}
     </div>
   );
 }
-

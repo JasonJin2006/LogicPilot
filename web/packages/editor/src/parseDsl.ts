@@ -103,6 +103,34 @@ function tokenize(source: string): Token[] | string {
       let j = i + 1;
       let text = '';
       while (j < n && source[j] !== '"') {
+        // Decode JSON-style escapes so the stored value is the canonical
+        // content: generate(parse(src)) re-encodes with JSON.stringify and
+        // must land on the same text (round-trip gate).
+        if (source[j] === '\\' && j + 1 < n) {
+          const escaped = source[j + 1]!;
+          switch (escaped) {
+            case '"':
+              text += '"';
+              break;
+            case '\\':
+              text += '\\';
+              break;
+            case 'n':
+              text += '\n';
+              break;
+            case 't':
+              text += '\t';
+              break;
+            case 'r':
+              text += '\r';
+              break;
+            default:
+              text += '\\' + escaped;
+              break;
+          }
+          j += 2;
+          continue;
+        }
         text += source[j]!;
         j++;
       }
@@ -265,6 +293,8 @@ class Parser {
         depth--;
       } else if (token.type === 'punct' && token.text === ',') {
         out += ', ';
+      } else if (token.type === 'string') {
+        out += JSON.stringify(token.text);
       } else if (token.type === 'newline' || token.type === 'punct') {
         out += token.text;
       } else {

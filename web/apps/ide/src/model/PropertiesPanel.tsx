@@ -196,7 +196,8 @@ export function PropertiesPanel() {
 
   const node = (document?.nodes ?? []).find((entry) => entry.id === selectedId);
   const nodeDiagnostics = useMemo(
-    () => diagnoseDocument('dsl', document).filter((diagnostic) => diagnostic.nodeId === selectedId),
+    () =>
+      diagnoseDocument('dsl', document).filter((diagnostic) => diagnostic.nodeId === selectedId),
     [document, selectedId],
   );
   if (!node) {

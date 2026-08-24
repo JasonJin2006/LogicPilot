@@ -122,6 +122,27 @@ export function decodeWireFrame(bytes: Uint8Array): WireFrame | null {
   if (!hasWireIdentifier(bytes)) {
     return null;
   }
+  // Size-prefixed FlatBuffers: first 4 bytes are the payload length. A
+  // prefix past the buffer means the frame is truncated - flatbuffers would
+  // happily read out of bounds and throw RangeError from inside DataView.
+  const sizePrefix =
+    ((bytes[0] ?? 0) |
+      ((bytes[1] ?? 0) << 8) |
+      ((bytes[2] ?? 0) << 16) |
+      ((bytes[3] ?? 0) << 24)) >>>
+    0;
+  if (sizePrefix + 4 > bytes.length) {
+    return null;
+  }
+  try {
+    return decodeWireFrameUnchecked(bytes);
+  } catch {
+    // The contract above: corrupt frames surface as `null`, never throw.
+    return null;
+  }
+}
+
+function decodeWireFrameUnchecked(bytes: Uint8Array): WireFrame | null {
   const bb = new ByteBuffer(bytes);
   const frame = Frame.getSizePrefixedRootAsFrame(bb);
 

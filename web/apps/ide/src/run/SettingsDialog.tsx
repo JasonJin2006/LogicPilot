@@ -434,7 +434,10 @@ export function SettingsDialog() {
                 <div className="settings-group">
                   <div className="settings-control-label">
                     <strong>Copilot tools</strong>
-                    <span>Modeling tools are enabled by default; source editing is off. MCP tools are discovered automatically when configured.</span>
+                    <span>
+                      Modeling tools are enabled by default; source editing is off. MCP tools are
+                      discovered automatically when configured.
+                    </span>
                   </div>
                   <button
                     type="button"

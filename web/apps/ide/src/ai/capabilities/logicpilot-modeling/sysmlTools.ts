@@ -19,7 +19,9 @@ import { lowerStateMachine } from '../../../sysml/sysmlLowering';
 import { buildSysMLProjectIndex, resolveInIndex } from '../../../sysml/sysmlProjectIndex';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
-  return typeof args[key] === 'number' && Number.isFinite(args[key] as number) ? (args[key] as number) : null;
+  return typeof args[key] === 'number' && Number.isFinite(args[key] as number)
+    ? (args[key] as number)
+    : null;
 }
 
 function stringArg(args: Record<string, unknown>, key: string): string | null {
@@ -78,7 +80,8 @@ function writeSysMLSource(nextSource: string): { ok: false; error: string } | nu
 /** Shared transaction tail: re-parse the candidate source and refuse the
  *  write when it would introduce error-level diagnostics (verified patch). */
 function commitEdit(
-  edit: { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string },
+  edit:
+    { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string },
 ): Record<string, unknown> {
   if (!edit.ok) {
     return { ok: false, error: edit.error };
@@ -106,9 +109,25 @@ function commitEdit(
 }
 
 const ELEMENT_KIND_ENUM = [
-  'package', 'part', 'item', 'port', 'interface', 'requirement', 'action',
-  'state', 'analysis', 'verification', 'attribute', 'constraint', 'usecase',
-  'view', 'viewpoint', 'enum', 'occurrence', 'stakeholder', 'flow',
+  'package',
+  'part',
+  'item',
+  'port',
+  'interface',
+  'requirement',
+  'action',
+  'state',
+  'analysis',
+  'verification',
+  'attribute',
+  'constraint',
+  'usecase',
+  'view',
+  'viewpoint',
+  'enum',
+  'occurrence',
+  'stakeholder',
+  'flow',
 ] as const;
 
 export const SYSML_TOOLS: readonly AssistantTool[] = [
@@ -120,7 +139,8 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
     validate: () => null,
     execute: () => {
       const state = useSysMLStore.getState();
-      if (!state.projection || !state.layout) return { ok: false, error: 'no SysML projection is open' };
+      if (!state.projection || !state.layout)
+        return { ok: false, error: 'no SysML projection is open' };
       const layout = state.layout;
       return {
         ok: true,
@@ -151,16 +171,31 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       const state = useSysMLStore.getState();
       if (!state.projection) return { ok: false, error: 'no SysML projection is open' };
       state.autoLayout();
-      return { ok: true, message: 'SysML projection layout updated', elementCount: state.projection.elements.length };
+      return {
+        ok: true,
+        message: 'SysML projection layout updated',
+        elementCount: state.projection.elements.length,
+      };
     },
   },
   {
     name: 'set_sysml_projection_view',
-    description: 'Focus the SysML projection on all, structure, requirements, behavior, or traceability elements.',
-    parameters: { mode: { type: 'string', required: true, enum: ['all', 'structure', 'requirements', 'behavior', 'traceability'] } },
+    description:
+      'Focus the SysML projection on all, structure, requirements, behavior, or traceability elements.',
+    parameters: {
+      mode: {
+        type: 'string',
+        required: true,
+        enum: ['all', 'structure', 'requirements', 'behavior', 'traceability'],
+      },
+    },
     validate: (args) => {
       const mode = args.mode;
-      return mode === 'all' || mode === 'structure' || mode === 'requirements' || mode === 'behavior' || mode === 'traceability'
+      return mode === 'all' ||
+        mode === 'structure' ||
+        mode === 'requirements' ||
+        mode === 'behavior' ||
+        mode === 'traceability'
         ? null
         : "mode must be one of 'all', 'structure', 'requirements', 'behavior', 'traceability'";
     },
@@ -174,7 +209,8 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
   },
   {
     name: 'focus_sysml_element',
-    description: 'Select a SysML element by stable ID, name, or qualified name and reveal it in the projection.',
+    description:
+      'Select a SysML element by stable ID, name, or qualified name and reveal it in the projection.',
     parameters: { query: { type: 'string', required: true } },
     validate: (args) => {
       const query = typeof args.query === 'string' ? args.query.trim() : '';
@@ -219,8 +255,10 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       const y = numberArg(args, 'y');
       const state = useSysMLStore.getState();
       if (!state.projection) return 'no SysML projection is open';
-      if (!id || !state.projection.elements.some((element) => element.id === id)) return 'elementId is not a visible SysML element';
-      if (x === null || y === null || x < 0 || y < 0) return 'x and y must be non-negative finite numbers';
+      if (!id || !state.projection.elements.some((element) => element.id === id))
+        return 'elementId is not a visible SysML element';
+      if (x === null || y === null || x < 0 || y < 0)
+        return 'x and y must be non-negative finite numbers';
       return null;
     },
     execute: (args) => {
@@ -263,7 +301,8 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
         insertElement(source, state.projection!, {
           kind: stringArg(args, 'kind')!,
           name: stringArg(args, 'name')!,
-          declaration: args.declaration === 'def' ? 'def' : args.declaration === 'usage' ? 'usage' : undefined,
+          declaration:
+            args.declaration === 'def' ? 'def' : args.declaration === 'usage' ? 'usage' : undefined,
           parent: stringArg(args, 'parent') ?? undefined,
         }),
       );
@@ -291,7 +330,14 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       if (source === null) {
         return { ok: false, error: 'no SysML source is available to edit' };
       }
-      return commitEdit(renameElement(source, state.projection!, stringArg(args, 'query')!, stringArg(args, 'newName')!));
+      return commitEdit(
+        renameElement(
+          source,
+          state.projection!,
+          stringArg(args, 'query')!,
+          stringArg(args, 'newName')!,
+        ),
+      );
     },
   },
   {
@@ -300,7 +346,11 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       'Append one typed relation statement between two elements: satisfy/verify ' +
       '(requirement traceability), trace, connect, allocate or bind.',
     parameters: {
-      verb: { type: 'string', required: true, enum: ['satisfy', 'verify', 'trace', 'connect', 'allocate', 'bind'] },
+      verb: {
+        type: 'string',
+        required: true,
+        enum: ['satisfy', 'verify', 'trace', 'connect', 'allocate', 'bind'],
+      },
       from: { type: 'string', required: true },
       to: { type: 'string', required: true },
     },
@@ -370,7 +420,7 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
         const word =
           typeof args.query === 'string'
             ? stringArg(args, 'query')!
-            : state.source.slice(offset).match(/^[A-Za-z_][A-Za-z0-9_.:]*/)?.[0] ?? '';
+            : (state.source.slice(offset).match(/^[A-Za-z_][A-Za-z0-9_.:]*/)?.[0] ?? '');
         const hit = resolveInIndex(buildSysMLProjectIndex(collectSysmlSources()), word);
         if (hit !== null) {
           found = hit.element;
@@ -392,7 +442,8 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
   },
   {
     name: 'find_sysml_references',
-    description: 'List every extracted relation touching one SysML element (traceability both ways).',
+    description:
+      'List every extracted relation touching one SysML element (traceability both ways).',
     parameters: { query: { type: 'string', required: true } },
     validate: (args) => {
       const state = useSysMLStore.getState();
@@ -430,7 +481,8 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
           kind: relation.kind,
           label: relation.label,
           line: relation.line,
-          from: projection.elements.find((e) => e.id === relation.from)?.qualifiedName ?? relation.from,
+          from:
+            projection.elements.find((e) => e.id === relation.from)?.qualifiedName ?? relation.from,
           to: projection.elements.find((e) => e.id === relation.to)?.qualifiedName ?? relation.to,
         })),
         count: relations.length,

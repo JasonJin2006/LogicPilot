@@ -139,3 +139,31 @@ describe('assistant kernel', () => {
     ]);
   });
 });
+
+describe('assistant kernel error recovery', () => {
+  it('abandonOpenCalls resolves a recorded call so the failed step can close', () => {
+    const kernel = createAssistantKernel();
+    kernel.beginTurn({ role: 'user', content: 'run the build' });
+    kernel.beginStep();
+    kernel.recordAssistant(response);
+    kernel.recordToolCall(call);
+    expect(() => kernel.endStep('error')).toThrow(/unresolved tool call/);
+    kernel.abandonOpenCalls('tool dispatch failed');
+    kernel.endStep('error');
+    kernel.endTurn('error');
+    const results = kernel.snapshot().events.filter((event) => event.type === 'tool/result');
+    expect(results).toHaveLength(1);
+  });
+
+  it('abandonOpenCalls also records calls that were never dispatched', () => {
+    const kernel = createAssistantKernel();
+    kernel.beginTurn({ role: 'user', content: 'build' });
+    kernel.beginStep();
+    kernel.recordAssistant(response);
+    kernel.abandonOpenCalls();
+    kernel.endStep('error');
+    kernel.endTurn('error');
+    const results = kernel.snapshot().events.filter((event) => event.type === 'tool/result');
+    expect(results).toHaveLength(1);
+  });
+});

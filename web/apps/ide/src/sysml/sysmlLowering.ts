@@ -92,25 +92,23 @@ export function lowerStateMachine(
 
   // Nested sub-states would need hierarchical statechart semantics the flat
   // kernel machine does not express - refuse instead of flattening silently.
-  const nested = states.filter(
-    (state) => projection.elements.some((child) => child.ownerId === state.id),
+  const nested = states.filter((state) =>
+    projection.elements.some((child) => child.ownerId === state.id),
   );
   if (nested.length > 0) {
     diagnostics.push({
       code: 'SL0002',
       severity: 'error',
-      message:
-        `nested sub-states inside ${nested
-          .map((state) => `'${state.name}'`)
-          .join(', ')} are outside the lowering subset`,
+      message: `nested sub-states inside ${nested
+        .map((state) => `'${state.name}'`)
+        .join(', ')} are outside the lowering subset`,
     });
     return fail();
   }
 
   const stateIds = new Set(states.map((state) => state.id));
   const transitions = projection.relations.filter(
-    (relation: SysMLRelation) =>
-      relation.kind === 'transitions' && stateIds.has(relation.from),
+    (relation: SysMLRelation) => relation.kind === 'transitions' && stateIds.has(relation.from),
   );
 
   const stateLines = states.map((state) => `    state ${state.name} { }`);

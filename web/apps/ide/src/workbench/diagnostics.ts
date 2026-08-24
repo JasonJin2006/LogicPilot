@@ -42,7 +42,9 @@ class DiagnosticRegistry {
     this.entries.clear();
   }
 
-  forDocumentTypes(...documentTypes: readonly (string | null | undefined)[]): DiagnosticContribution[] {
+  forDocumentTypes(
+    ...documentTypes: readonly (string | null | undefined)[]
+  ): DiagnosticContribution[] {
     const wanted = new Set(
       documentTypes.filter((type): type is string => typeof type === 'string'),
     );

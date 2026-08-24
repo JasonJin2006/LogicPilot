@@ -7,12 +7,7 @@
 // lives in ./sysmlParser (stable SYxxxx diagnostics); this layer resolves
 // references, dedupes relations and derives the layout sidecar.
 
-import {
-  elementIdFor,
-  fnv1aHex,
-  parseSysMLSource,
-  type RelationTrigger,
-} from './sysmlParser';
+import { elementIdFor, fnv1aHex, parseSysMLSource, type RelationTrigger } from './sysmlParser';
 
 export type SysMLVisualKind =
   | 'package'
@@ -198,26 +193,51 @@ export function autoLayoutSysML(
 ): SysMLLayout {
   const positions: Record<string, SysMLPosition> = {};
   if (mode !== 'all' && mode !== 'structure') {
-    const relationKinds = mode === 'requirements'
-      ? new Set<SysMLRelationKind>(['satisfies', 'verifies', 'traces', 'derives', 'refines'])
-      : mode === 'behavior'
-        ? new Set<SysMLRelationKind>(['transitions', 'flows', 'connects', 'typed_by'])
-        : new Set<SysMLRelationKind>(['satisfies', 'verifies', 'traces', 'allocates', 'derives', 'refines']);
-    const selected = mode === 'traceability'
-      ? new Set(
-          projection.relations
-            .filter((relation) => relationKinds.has(relation.kind))
-            .flatMap((relation) => [relation.from, relation.to]),
-        )
-      : new Set(
-          projection.elements
-            .filter((element) =>
-              mode === 'requirements'
-                ? ['package', 'requirement', 'verification', 'analysis', 'constraint', 'usecase'].includes(element.kind)
-                : ['package', 'action', 'state', 'analysis', 'verification', 'flow', 'occurrence', 'usecase'].includes(element.kind),
-            )
-            .map((element) => element.id),
-        );
+    const relationKinds =
+      mode === 'requirements'
+        ? new Set<SysMLRelationKind>(['satisfies', 'verifies', 'traces', 'derives', 'refines'])
+        : mode === 'behavior'
+          ? new Set<SysMLRelationKind>(['transitions', 'flows', 'connects', 'typed_by'])
+          : new Set<SysMLRelationKind>([
+              'satisfies',
+              'verifies',
+              'traces',
+              'allocates',
+              'derives',
+              'refines',
+            ]);
+    const selected =
+      mode === 'traceability'
+        ? new Set(
+            projection.relations
+              .filter((relation) => relationKinds.has(relation.kind))
+              .flatMap((relation) => [relation.from, relation.to]),
+          )
+        : new Set(
+            projection.elements
+              .filter((element) =>
+                mode === 'requirements'
+                  ? [
+                      'package',
+                      'requirement',
+                      'verification',
+                      'analysis',
+                      'constraint',
+                      'usecase',
+                    ].includes(element.kind)
+                  : [
+                      'package',
+                      'action',
+                      'state',
+                      'analysis',
+                      'verification',
+                      'flow',
+                      'occurrence',
+                      'usecase',
+                    ].includes(element.kind),
+              )
+              .map((element) => element.id),
+          );
     const ordered = projection.elements.filter((element) => selected.has(element.id));
     const byKind = new Map<string, SysMLElement[]>();
     for (const element of ordered) {

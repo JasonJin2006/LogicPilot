@@ -27,8 +27,7 @@ for (const library of LIBRARIES) {
     // them here keeps the palette honest (dragging one would fail DSL
     // compile with LP2004).
     items: BLOCK_DEFS.filter(
-      (block) =>
-        block.library === library.id && !(library.id === 'process' && !block.executable),
+      (block) => block.library === library.id && !(library.id === 'process' && !block.executable),
     ).map(paletteItem),
   });
 }

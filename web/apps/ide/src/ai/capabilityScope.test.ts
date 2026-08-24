@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AGENT_CAPABILITY_REGISTRY,
-  LOGICPILOT_MODELING_CAPABILITY,
-  LOGICPILOT_MODELING_READONLY_CAPABILITY,
-} from './agentCapabilities';
+import { AGENT_CAPABILITY_REGISTRY, LOGICPILOT_MODELING_CAPABILITY } from './agentCapabilities';
 
 const toolNames = (tools: readonly { name: string }[]) => tools.map((tool) => tool.name);
 

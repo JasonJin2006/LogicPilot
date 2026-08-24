@@ -103,6 +103,16 @@ export const SOURCE_EDITING_TOOLS: readonly AssistantTool[] = [
       if (new TextEncoder().encode(next).byteLength > MAX_SOURCE_BYTES)
         return { ok: false, error: 'patched source exceeds the 512 KiB limit' };
       const project = useProjectStore.getState();
+      // updateFiles only writes into an in-memory .lpproj bundle; a
+      // plain-folder workspace (path set, bundle null) would silently no-op
+      // and leave the model believing the edit landed.
+      if (project.bundle === null) {
+        return {
+          ok: false,
+          error:
+            'source files in a plain-folder workspace cannot be patched from here; edit the file in the IDE or open the project as a bundle',
+        };
+      }
       project.updateFiles((files) => ({ ...files, [path]: next }));
       // Keep the user's tabs/views; only the parsed projection swaps.
       if (path.startsWith('model/')) refreshCanvasDocument();

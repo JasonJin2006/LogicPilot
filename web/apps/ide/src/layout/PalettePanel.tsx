@@ -127,10 +127,17 @@ export function PalettePanel() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    void file.text().then((source) => {
-      const result = importLibrary(source, file.name);
-      setImportError(result.ok ? '' : (result.error ?? 'import failed'));
-    });
+    void file
+      .text()
+      .then((source) => {
+        const result = importLibrary(source, file.name);
+        setImportError(result.ok ? '' : (result.error ?? 'import failed'));
+      })
+      .catch((error) => {
+        setImportError(
+          `cannot read '${file.name}': ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   };
 
   const tabs: Array<{ id: string; label: string }> = [

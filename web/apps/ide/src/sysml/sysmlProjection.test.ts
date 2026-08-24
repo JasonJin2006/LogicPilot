@@ -33,7 +33,9 @@ package Vehicle {
     const first = projectSysML(source);
     const second = projectSysML(source);
     expect(first.sourceHash).toBe(second.sourceHash);
-    expect(first.elements.map((element) => element.id)).toEqual(second.elements.map((element) => element.id));
+    expect(first.elements.map((element) => element.id)).toEqual(
+      second.elements.map((element) => element.id),
+    );
     // SY0002 is the stable unresolved-reference warning (parser code table).
     expect(first.diagnostics).toEqual([
       expect.objectContaining({ code: 'SY0002', severity: 'warning' }),
@@ -60,7 +62,11 @@ package System {
 }
 `);
     expect(projection.elements.map((element) => element.kind)).toEqual([
-      'package', 'view', 'constraint', 'part', 'part',
+      'package',
+      'view',
+      'constraint',
+      'part',
+      'part',
     ]);
     expect(projection.relations.map((relation) => relation.kind)).toEqual(
       expect.arrayContaining(['allocates', 'derives']),

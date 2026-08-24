@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectSysML } from './sysmlProjection';
-import {
-  addRelationStatement,
-  insertElement,
-  renameElement,
-} from './sysmlEdits';
+import { addRelationStatement, insertElement, renameElement } from './sysmlEdits';
 
 const BASE = `package Vehicle {
   part def Engine;
@@ -29,7 +25,7 @@ describe('sysmlEdits (typed source-text transactions)', () => {
     expect(pump.qualifiedName).toBe('Vehicle::Pump');
     expect(pump.declaration).toBe('definition');
     // The new member stays inside the package block.
-    expect(result.source).toMatch(/\n  part def Pump;\n/);
+    expect(result.source).toMatch(/\n {2}part def Pump;\n/);
     // And nothing else broke.
     expect(next.elements.map((element) => element.name)).toEqual(
       expect.arrayContaining(['Vehicle', 'Engine', 'Power', 'Pump']),
@@ -69,12 +65,18 @@ describe('sysmlEdits (typed source-text transactions)', () => {
 
   it('rejects duplicates, bad identifiers, unknown parents and body-less parents', () => {
     const projection = projectSysML(BASE);
-    expect(insertElement(BASE, projection, { kind: 'part', name: 'Engine', parent: 'Vehicle' }).ok).toBe(false);
+    expect(
+      insertElement(BASE, projection, { kind: 'part', name: 'Engine', parent: 'Vehicle' }).ok,
+    ).toBe(false);
     expect(insertElement(BASE, projection, { kind: 'part', name: '9bad' }).ok).toBe(false);
     expect(insertElement(BASE, projection, { kind: 'dragon', name: 'X' }).ok).toBe(false);
-    expect(insertElement(BASE, projection, { kind: 'part', name: 'X', parent: 'Missing' }).ok).toBe(false);
+    expect(insertElement(BASE, projection, { kind: 'part', name: 'X', parent: 'Missing' }).ok).toBe(
+      false,
+    );
     // `requirement Power;` has no block body.
-    expect(insertElement(BASE, projection, { kind: 'part', name: 'X', parent: 'Power' }).ok).toBe(false);
+    expect(insertElement(BASE, projection, { kind: 'part', name: 'X', parent: 'Power' }).ok).toBe(
+      false,
+    );
   });
 
   it('renames exactly the identifier token; children keep resolving', () => {
@@ -114,5 +116,44 @@ describe('sysmlEdits (typed source-text transactions)', () => {
     const unbalanced = addRelationStatement('package P {\n  part A;\n', 'trace', 'A', 'B');
     expect(unbalanced.ok).toBe(false);
     expect(unbalanced.ok || (unbalanced as { error: string }).error).toContain('unbalanced');
+  });
+});
+
+describe('sysmlEdits scope safety', () => {
+  it('rename keeps qualified references that resolve to another scope untouched', () => {
+    const source = [
+      'part def Pump;',
+      'part def Plant {',
+      '  part def Pump;',
+      '}',
+      'trace Plant::Pump to Plant;',
+      '',
+    ].join('\n');
+    const projection = projectSysML(source);
+    const result = renameElement(source, projection, 'Pump', 'Pump2');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.source).toContain('part def Pump2;');
+    expect(result.source).toContain('trace Plant::Pump to Plant;');
+    expect(result.source).not.toContain('Plant::Pump2');
+    // The nested twin keeps its declaration verbatim.
+    expect(result.source).toContain('part def Plant {\n  part def Pump;\n}');
+  });
+
+  it('insert rejects same-scope duplicates but allows names used elsewhere', () => {
+    const source = 'part def Wheel;\npart def Plant {\n}\n';
+    const projection = projectSysML(source);
+    const nested = insertElement(source, projection, {
+      kind: 'part',
+      name: 'Wheel',
+      parent: 'Plant',
+    });
+    expect(nested.ok).toBe(true);
+    if (!nested.ok) return;
+    expect(
+      projectSysML(nested.source).elements.some((e) => e.qualifiedName === 'Plant::Wheel'),
+    ).toBe(true);
+    const clash = insertElement(source, projection, { kind: 'part', name: 'Wheel' });
+    expect(clash.ok).toBe(false);
   });
 });

@@ -8,7 +8,9 @@ describe('SysML projection store', () => {
     const source = 'package P {\n  part def A {}\n}\n';
     useSysMLStore.getState().load('model/a.sysml', source);
     expect(useSysMLStore.getState().layoutDirty).toBe(false);
-    const element = useSysMLStore.getState().projection!.elements.find((entry) => entry.name === 'A')!;
+    const element = useSysMLStore
+      .getState()
+      .projection!.elements.find((entry) => entry.name === 'A')!;
     const original = useSysMLStore.getState().layout!.positions[element.id]!;
     useSysMLStore.getState().checkpoint();
     useSysMLStore.getState().move(element.id, { x: 420, y: 260 });
@@ -24,10 +26,9 @@ describe('SysML projection store', () => {
   });
 
   it('changes visual focus without changing the projection', () => {
-    useSysMLStore.getState().load(
-      'model/a.sysml',
-      'part def A {}\nrequirement def R {}\nstate def S {}\n',
-    );
+    useSysMLStore
+      .getState()
+      .load('model/a.sysml', 'part def A {}\nrequirement def R {}\nstate def S {}\n');
     const count = useSysMLStore.getState().projection!.elements.length;
     useSysMLStore.getState().setViewMode('requirements');
     expect(useSysMLStore.getState().viewMode).toBe('requirements');
@@ -35,26 +36,20 @@ describe('SysML projection store', () => {
   });
 });
 
-  it('keeps the last valid snapshot while the source has errors (parseDirty)', () => {
-    useSysMLStore.getState().load('model/a.sysml', 'package P {\n  part def A {}\n}\n');
-    const validProjection = useSysMLStore.getState().projection!;
-    expect(useSysMLStore.getState().parseDirty).toBe(false);
+it('keeps the last valid snapshot while the source has errors (parseDirty)', () => {
+  useSysMLStore.getState().load('model/a.sysml', 'package P {\n  part def A {}\n}\n');
+  const validProjection = useSysMLStore.getState().projection!;
+  expect(useSysMLStore.getState().parseDirty).toBe(false);
 
-    // Broken edit: the raw source updates, the semantic snapshot does not.
-    useSysMLStore.getState().refresh('package P {\n  part def A {\n');
-    const state = useSysMLStore.getState();
-    expect(state.parseDirty).toBe(true);
-    expect(state.projection).toBe(validProjection);
-    expect(state.source).toContain('part def A {');
+  // Broken edit: the raw source updates, the semantic snapshot does not.
+  useSysMLStore.getState().refresh('package P {\n  part def A {\n');
+  const state = useSysMLStore.getState();
+  expect(state.parseDirty).toBe(true);
+  expect(state.projection).toBe(validProjection);
+  expect(state.source).toContain('part def A {');
 
-    // Fixed: the projection advances again.
-    useSysMLStore
-      .getState()
-      .refresh('package P {\n  part def A {}\n  requirement R;\n}\n');
-    expect(useSysMLStore.getState().parseDirty).toBe(false);
-    expect(useSysMLStore.getState().projection!.elements.map((e) => e.name)).toEqual([
-      'P',
-      'A',
-      'R',
-    ]);
-  });
+  // Fixed: the projection advances again.
+  useSysMLStore.getState().refresh('package P {\n  part def A {}\n  requirement R;\n}\n');
+  expect(useSysMLStore.getState().parseDirty).toBe(false);
+  expect(useSysMLStore.getState().projection!.elements.map((e) => e.name)).toEqual(['P', 'A', 'R']);
+});

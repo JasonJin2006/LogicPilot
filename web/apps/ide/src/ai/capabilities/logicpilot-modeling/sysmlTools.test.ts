@@ -11,7 +11,9 @@ const tool = (name: string) => SYSML_TOOLS.find((entry) => entry.name === name)!
 describe('SysML projection AI tools', () => {
   beforeEach(() => {
     useSysMLStore.getState().clear();
-    useSysMLStore.getState().load('vehicle.sysml', 'part def Vehicle {}\nrequirement def Safe {}\n');
+    useSysMLStore
+      .getState()
+      .load('vehicle.sysml', 'part def Vehicle {}\nrequirement def Safe {}\n');
   });
 
   it('switches projection views through a typed command', () => {
@@ -84,10 +86,12 @@ describe('SysML projection AI tools', () => {
 
     it('connect_sysml_elements appends traceability that survives reparse', () => {
       expect(
-        (tool('add_sysml_element').execute(
-          { kind: 'part', name: 'car', parent: 'Vehicle' },
-          {} as never,
-        ) as Record<string, unknown>).ok,
+        (
+          tool('add_sysml_element').execute(
+            { kind: 'part', name: 'car', parent: 'Vehicle' },
+            {} as never,
+          ) as Record<string, unknown>
+        ).ok,
       ).toBe(true);
       const result = tool('connect_sysml_elements').execute(
         { verb: 'satisfy', from: 'car', to: 'Power' },
@@ -109,86 +113,92 @@ describe('SysML projection AI tools', () => {
   });
 });
 
-  describe('evidence query tools', () => {
-    const MACHINE =
-      'state def Light {\n  state red;\n  state green;\n  transition red then green after 30 s;\n}\n';
+describe('evidence query tools', () => {
+  const MACHINE =
+    'state def Light {\n  state red;\n  state green;\n  transition red then green after 30 s;\n}\n';
 
-    beforeEach(() => {
-      // Fresh virtual document with a clean evidence journal.
-      useUiStore.setState({ openFiles: [], activeFile: null, diskFiles: {} });
-      useSysMLStore.getState().clear();
-      useSysMLStore.getState().load('light.sysml', MACHINE);
-    });
-
-    it('every run lands in the journal and query filters by outcome', () => {
-      const run = tool('query_sysml_evidence');
-      // Two runs: the machine cycles deterministically, both succeed.
-      useSysMLStore.getState().runTarget(
-        useSysMLStore.getState().projection!.elements.find((e) => e.kind === 'state')!.id,
-      );
-      useSysMLStore.getState().runTarget(
-        useSysMLStore.getState().projection!.elements.find((e) => e.kind === 'state')!.id,
-      );
-      const all = run.execute({}, {} as never) as Record<string, unknown>;
-      expect(all.total).toBe(2);
-      expect(all.matched).toBe(2);
-
-      const okOnly = run.execute({ outcome: 'ok', limit: 1 }, {} as never) as Record<string, unknown>;
-      expect(okOnly.matched).toBe(2);
-      expect((okOnly.runs as unknown[]).length).toBe(1);
-
-      expect(run.validate({ outcome: 'bogus' })).toContain('outcome');
-      expect(run.validate({ limit: 99 })).toContain('limit');
-    });
-
-    it('explain_sysml_run returns the full trace of one record', () => {
-      const state = useSysMLStore.getState();
-      state.runTarget(state.projection!.elements.find((e) => e.kind === 'state')!.id);
-      const record = useSysMLStore.getState().evidence[0]!;
-      const explain = tool('explain_sysml_run');
-      expect(explain.validate({ evidenceId: 'nope' })).toContain('no evidence record');
-      const detail = explain.execute({ evidenceId: record.id }, {} as never) as Record<string, unknown>;
-      expect(detail.ok).toBe(true);
-      expect(detail.runOk).toBe(true);
-      expect(detail.target).toBe('Light');
-      expect(Array.isArray(detail.steps)).toBe(true);
-      expect((detail.steps as unknown[]).length).toBeGreaterThan(0);
-    });
+  beforeEach(() => {
+    // Fresh virtual document with a clean evidence journal.
+    useUiStore.setState({ openFiles: [], activeFile: null, diskFiles: {} });
+    useSysMLStore.getState().clear();
+    useSysMLStore.getState().load('light.sysml', MACHINE);
   });
 
-  describe('lower_sysml_state_machine tool', () => {
-    beforeEach(() => {
-      useUiStore.setState({ openFiles: [], activeFile: null, diskFiles: {} });
-      useSysMLStore.getState().clear();
-      useSysMLStore
-        .getState()
-        .load(
-          'light.sysml',
-          'state def Light {\n  state red;\n  state green;\n  transition red then green after 30 s;\n}\n',
-        );
-    });
+  it('every run lands in the journal and query filters by outcome', () => {
+    const run = tool('query_sysml_evidence');
+    // Two runs: the machine cycles deterministically, both succeed.
+    useSysMLStore
+      .getState()
+      .runTarget(useSysMLStore.getState().projection!.elements.find((e) => e.kind === 'state')!.id);
+    useSysMLStore
+      .getState()
+      .runTarget(useSysMLStore.getState().projection!.elements.find((e) => e.kind === 'state')!.id);
+    const all = run.execute({}, {} as never) as Record<string, unknown>;
+    expect(all.total).toBe(2);
+    expect(all.matched).toBe(2);
 
-    it('validates the target kind and returns kernel DSL', () => {
-      const lower = tool('lower_sysml_state_machine');
-      expect(lower.validate({ query: 'missing' })).toContain('no SysML element');
-      expect(lower.validate({ query: 'Light' })).toBeNull();
-      const result = lower.execute({ query: 'Light' }, {} as never) as Record<string, unknown>;
-      expect(result.ok).toBe(true);
-      expect(result.entryState).toBe('red');
-      expect(String(result.dsl)).toContain('statechart Light {');
-      expect(String(result.dsl)).toContain('triggeredBy = timeout; timeout = 30.0');
-    });
+    const okOnly = run.execute({ outcome: 'ok', limit: 1 }, {} as never) as Record<string, unknown>;
+    expect(okOnly.matched).toBe(2);
+    expect((okOnly.runs as unknown[]).length).toBe(1);
 
-    it('surfaces SLxxxx diagnostics for unsupported machines', () => {
-      useSysMLStore
-        .getState()
-        .load('abs.sysml', 'state def M {\n  state a;\n  transition a then b at 10;\n  state b;\n}\n');
-      const result = tool('lower_sysml_state_machine').execute(
-        { query: 'M' },
-        {} as never,
-      ) as Record<string, unknown>;
-      expect(result.ok).toBe(false);
-      const diagnostics = result.diagnostics as Array<{ code: string }>;
-      expect(diagnostics[0]!.code).toBe('SL0003');
-    });
+    expect(run.validate({ outcome: 'bogus' })).toContain('outcome');
+    expect(run.validate({ limit: 99 })).toContain('limit');
   });
+
+  it('explain_sysml_run returns the full trace of one record', () => {
+    const state = useSysMLStore.getState();
+    state.runTarget(state.projection!.elements.find((e) => e.kind === 'state')!.id);
+    const record = useSysMLStore.getState().evidence[0]!;
+    const explain = tool('explain_sysml_run');
+    expect(explain.validate({ evidenceId: 'nope' })).toContain('no evidence record');
+    const detail = explain.execute({ evidenceId: record.id }, {} as never) as Record<
+      string,
+      unknown
+    >;
+    expect(detail.ok).toBe(true);
+    expect(detail.runOk).toBe(true);
+    expect(detail.target).toBe('Light');
+    expect(Array.isArray(detail.steps)).toBe(true);
+    expect((detail.steps as unknown[]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('lower_sysml_state_machine tool', () => {
+  beforeEach(() => {
+    useUiStore.setState({ openFiles: [], activeFile: null, diskFiles: {} });
+    useSysMLStore.getState().clear();
+    useSysMLStore
+      .getState()
+      .load(
+        'light.sysml',
+        'state def Light {\n  state red;\n  state green;\n  transition red then green after 30 s;\n}\n',
+      );
+  });
+
+  it('validates the target kind and returns kernel DSL', () => {
+    const lower = tool('lower_sysml_state_machine');
+    expect(lower.validate({ query: 'missing' })).toContain('no SysML element');
+    expect(lower.validate({ query: 'Light' })).toBeNull();
+    const result = lower.execute({ query: 'Light' }, {} as never) as Record<string, unknown>;
+    expect(result.ok).toBe(true);
+    expect(result.entryState).toBe('red');
+    expect(String(result.dsl)).toContain('statechart Light {');
+    expect(String(result.dsl)).toContain('triggeredBy = timeout; timeout = 30.0');
+  });
+
+  it('surfaces SLxxxx diagnostics for unsupported machines', () => {
+    useSysMLStore
+      .getState()
+      .load(
+        'abs.sysml',
+        'state def M {\n  state a;\n  transition a then b at 10;\n  state b;\n}\n',
+      );
+    const result = tool('lower_sysml_state_machine').execute({ query: 'M' }, {} as never) as Record<
+      string,
+      unknown
+    >;
+    expect(result.ok).toBe(false);
+    const diagnostics = result.diagnostics as Array<{ code: string }>;
+    expect(diagnostics[0]!.code).toBe('SL0003');
+  });
+});

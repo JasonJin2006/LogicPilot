@@ -301,6 +301,31 @@ export class AssistantKernel {
     });
   }
 
+  /** Resolve every still-open assistant call with an aborted result so the
+   *  step can close as 'error' after a failure (a tool whose dispatch died
+   *  must not leave an un-closable step in the persisted checkpoint). */
+  abandonOpenCalls(error = 'assistant step failed before the tool call completed'): void {
+    this.requireStep();
+    for (const call of [...this.openAssistantCalls]) {
+      const alreadyRecorded = this.log.some(
+        (event) =>
+          event.type === 'tool/call' &&
+          event.turn === this.turn &&
+          event.step === this.step &&
+          event.call.id === call.id,
+      );
+      if (!alreadyRecorded) {
+        this.recordToolCall(call);
+      }
+      this.recordToolResult({
+        toolCallId: call.id,
+        ok: false,
+        result: {},
+        error,
+      });
+    }
+  }
+
   endStep(reason: 'completed' | 'tool-calls' | 'error' | 'aborted'): void {
     this.requireStep();
     const missing = this.openAssistantCalls.filter(

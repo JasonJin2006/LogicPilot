@@ -19,7 +19,7 @@ export function SysMLWorkspace() {
   const updateFiles = useProjectStore((state) => state.updateFiles);
   const updateDiskFile = useUiStore((state) => state.updateDiskFile);
   const source = useMemo(
-    () => (activeFile ? bundle?.files[activeFile] ?? diskFiles[activeFile] ?? '' : ''),
+    () => (activeFile ? (bundle?.files[activeFile] ?? diskFiles[activeFile] ?? '') : ''),
     [activeFile, bundle, diskFiles],
   );
   const currentPath = useSysMLStore((state) => state.path);
@@ -75,7 +75,14 @@ export function SysMLWorkspace() {
   // A project bundle carries the visual projection as a sidecar. External
   // .sysml files without a LogicPilot project continue to use localStorage.
   useEffect(() => {
-    if (!activeFile || documentContributionFor(activeFile)?.id !== 'sysml' || !bundle || !layout || !layoutDirty) return;
+    if (
+      !activeFile ||
+      documentContributionFor(activeFile)?.id !== 'sysml' ||
+      !bundle ||
+      !layout ||
+      !layoutDirty
+    )
+      return;
     const path = sysmlLayoutPath(activeFile);
     const serialized = JSON.stringify(layout, null, 2);
     if (bundle.files[path] === serialized) return;
@@ -87,7 +94,13 @@ export function SysMLWorkspace() {
   // journal file bound to the revisions that produced it (plan §8 S2).
   const evidence = useSysMLStore((state) => state.evidence);
   useEffect(() => {
-    if (!activeFile || documentContributionFor(activeFile)?.id !== 'sysml' || !bundle || evidence.length === 0) return;
+    if (
+      !activeFile ||
+      documentContributionFor(activeFile)?.id !== 'sysml' ||
+      !bundle ||
+      evidence.length === 0
+    )
+      return;
     const path = sysmlEvidencePath(activeFile);
     const serialized = serializeEvidence(evidence);
     if (bundle.files[path] === serialized) return;

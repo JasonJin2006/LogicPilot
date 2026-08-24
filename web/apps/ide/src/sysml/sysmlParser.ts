@@ -12,6 +12,7 @@
 //   SY0003 warning duplicate member name within one scope
 //   SY0004 error   unbalanced braces ('}' without '{' or missing at EOF)
 //   SY0005 warning no visual declarations recognized at all
+//   SY0006 warning multiple declarations on one line: only the first was parsed
 //
 // This remains a controlled subset: unsupported SysML constructs surface as
 // SY0001 instead of being guessed, and the text editor stays authoritative.
@@ -125,15 +126,23 @@ const RELATION_LINE_PATTERNS: Array<{
     ),
     build: (m) => ({
       kind:
-        m[1] === 'allocate' ? 'allocates'
-        : m[1] === 'derive' ? 'derives'
-        : m[1] === 'refine' ? 'refines'
-        : m[1] === 'redefine' ? 'redefines'
-        : m[1] === 'subset' ? 'subsets'
-        : m[1] === 'expose' ? 'exposes'
-        : m[1] === 'bind' ? 'binds'
-        : m[1] === 'include' ? 'includes'
-        : 'depends_on',
+        m[1] === 'allocate'
+          ? 'allocates'
+          : m[1] === 'derive'
+            ? 'derives'
+            : m[1] === 'refine'
+              ? 'refines'
+              : m[1] === 'redefine'
+                ? 'redefines'
+                : m[1] === 'subset'
+                  ? 'subsets'
+                  : m[1] === 'expose'
+                    ? 'exposes'
+                    : m[1] === 'bind'
+                      ? 'binds'
+                      : m[1] === 'include'
+                        ? 'includes'
+                        : 'depends_on',
       from: m[2]!,
       to: m[3]!,
       label: m[1]!,
@@ -207,10 +216,32 @@ export function parseSysMLSource(source: string): SysMLParseResult {
       if (declaration && !/^\s*[{}]/.test(indented)) {
         const kind = normalizeKind(declaration[1]!);
         const declarationKind =
-          declaration[2] === 'def' ? 'definition' : declaration[2] === 'usage' ? 'usage' : 'unknown';
+          declaration[2] === 'def'
+            ? 'definition'
+            : declaration[2] === 'usage'
+              ? 'usage'
+              : 'unknown';
         const name = declaration[3]!;
         const nameStartInLine = declaration[0].lastIndexOf(name);
         const qualifiedName = owner ? `${owner.qualifiedName}::${name}` : name;
+
+        // One declaration per line, keep the subset honest: a second block
+        // on the same line would shift the brace bookkeeping. The first one
+        // is still parsed; the rest is reported instead of silently folded.
+        const rest = indented.slice(declaration[0].length);
+        if (
+          /(^|[\s{,;)}\]])+\b(?:part|item|port|interface|requirement|state|transition|action|calculation|attribute|package|analysis|verification)\s+[A-Za-z_]/.test(
+            rest,
+          )
+        ) {
+          diagnostics.push({
+            code: 'SY0006',
+            severity: 'warning',
+            message:
+              'multiple declarations on one line are not supported; split them into separate lines',
+            line: lineNumber,
+          });
+        }
 
         const seen = namesByOwner.get(ownerId ?? '') ?? new Set<string>();
         if (seen.has(name)) {
@@ -225,7 +256,14 @@ export function parseSysMLSource(source: string): SysMLParseResult {
         namesByOwner.set(ownerId ?? '', seen);
 
         if (owner && ownerId !== undefined) {
-          pushPending(pending, 'contains', owner.qualifiedName, qualifiedName, 'contains', lineNumber);
+          pushPending(
+            pending,
+            'contains',
+            owner.qualifiedName,
+            qualifiedName,
+            'contains',
+            lineNumber,
+          );
         }
 
         elements.push({
@@ -256,9 +294,26 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           openScopes.push({ elementIndex: elements.length - 1, closeDepth: depth + delta });
         }
       } else {
-        const relation = matchRelationLine(indented);
-        if (relation !== null) {
-          pending.push({ ...relation, line: lineNumber });
+        // Allman style: the opening brace sits on the line below the
+        // declaration (or alone with a closing brace for an empty body).
+        // Such a line carries no statement, but it still opens the scope of
+        // the element declared on the previous line.
+        const allmanOpen =
+          (/^\{[^{}]*\}$/.test(indented) || /^\{;?$/.test(indented)) && opens === 1 && closes <= 1;
+        if (allmanOpen) {
+          const lastElement = elements[elements.length - 1];
+          const lastScope = openScopes[openScopes.length - 1];
+          if (
+            lastElement !== undefined &&
+            (lastScope === undefined || lastScope.elementIndex !== elements.length - 1)
+          ) {
+            openScopes.push({
+              elementIndex: elements.length - 1,
+              closeDepth: depth + 1,
+            });
+          }
+        } else if (matchRelationLine(indented) !== null) {
+          pending.push({ ...matchRelationLine(indented)!, line: lineNumber });
         } else if (opens === 0 && closes === 0) {
           diagnostics.push({
             code: 'SY0001',
@@ -306,7 +361,8 @@ export function parseSysMLSource(source: string): SysMLParseResult {
     diagnostics.push({
       code: 'SY0005',
       severity: 'warning',
-      message: 'no visual SysML declarations were recognized; the source remains available in the text editor',
+      message:
+        'no visual SysML declarations were recognized; the source remains available in the text editor',
     });
   }
   return { elements, pending, diagnostics };

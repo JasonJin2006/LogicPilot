@@ -62,9 +62,7 @@ describe('sysmlLowering (state machine → .lp statechart DSL)', () => {
   });
 
   it('refuses nested sub-states (flat kernel machine)', () => {
-    const result = lower(
-      `state def M {\n  state outer {\n    state inner;\n  }\n}\n`,
-    );
+    const result = lower(`state def M {\n  state outer {\n    state inner;\n  }\n}\n`);
     expect(result.ok).toBe(false);
     expect(result.diagnostics[0]!.code).toBe('SL0002');
     expect(result.diagnostics[0]!.message).toContain("'outer'");

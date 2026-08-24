@@ -298,7 +298,7 @@ describe('syncCanvasViewsWithDocument (id re-keying)', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-it('recovers an id-keyed view across a reparse that regenerated all ids', () => {
+  it('recovers an id-keyed view across a reparse that regenerated all ids', () => {
     const previous = agentDocument();
     const workerId = previous.nodes[0]!.id;
     // A fresh parse of the same source produces brand-new ids.

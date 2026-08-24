@@ -18,9 +18,7 @@ describe('Workbench diagnostic providers', () => {
   it('surfaces graph errors with node attribution through the seam', () => {
     const document = {
       name: 'model',
-      nodes: [
-        { id: 'q1', kind: 'queue', name: 'q', x: 0, y: 0, params: {}, library: 'process' },
-      ],
+      nodes: [{ id: 'q1', kind: 'queue', name: 'q', x: 0, y: 0, params: {}, library: 'process' }],
       edges: [],
     };
     const diagnostics = diagnoseDocument('dsl', document);

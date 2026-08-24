@@ -59,7 +59,9 @@ function loadLayout(path: string, projection: SysMLProjection, serialized?: stri
   const fallback = autoLayoutSysML(projection);
   const serializedLayout = serialized ?? undefined;
   try {
-    const raw = serializedLayout ?? (typeof window !== 'undefined' ? window.localStorage.getItem(layoutKey(path)) : null);
+    const raw =
+      serializedLayout ??
+      (typeof window !== 'undefined' ? window.localStorage.getItem(layoutKey(path)) : null);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<SysMLLayout>;
     if (parsed.version !== 1 || typeof parsed.positions !== 'object' || parsed.positions === null) {
@@ -108,7 +110,12 @@ interface SysMLState {
   parseDirty: boolean;
   /** Execution trace bound to one revision (plan §8 S2); cleared whenever a
    *  new revision arrives so stale results are never shown as current. */
-  execution: { targetId: string; sourceHash: string; steps: TraceStep[]; result: number | null } | null;
+  execution: {
+    targetId: string;
+    sourceHash: string;
+    steps: TraceStep[];
+    result: number | null;
+  } | null;
   runError: string | null;
   /** Bounded recent-runs journal (plan §8 S2): every Run appends an immutable
    *  evidence record bound to the exact revision it executed. Deliberately
@@ -121,7 +128,12 @@ interface SysMLState {
   applyElkLayout: () => Promise<void>;
   past: SysMLLayout[];
   future: SysMLLayout[];
-  load: (path: string, source: string, serialized?: string, evidence?: SysMLEvidenceRecord[]) => void;
+  load: (
+    path: string,
+    source: string,
+    serialized?: string,
+    evidence?: SysMLEvidenceRecord[],
+  ) => void;
   refresh: (source: string) => void;
   select: (id: string | null) => void;
   setViewMode: (mode: SysMLViewMode) => void;
@@ -229,6 +241,16 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
   runTarget: (targetId) => {
     const state = get();
     if (!state.projection || !state.path) return;
+    // The projection is the last VALID snapshot; running it against the new
+    // source would compute stale expressions and record an evidence entry
+    // bound to a revision hash of text we no longer hold.
+    if (state.parseDirty) {
+      set({
+        runError: 'source has parse errors: fix them before running',
+        execution: null,
+      });
+      return;
+    }
     const startedAt = new Date().toISOString();
     const startedAtMs = Date.now();
     const result = runExecutionTarget(state.source, state.projection, targetId);
@@ -280,6 +302,7 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
       persistLayout(state.path, layout);
       set({ layout, layoutDirty: true });
     } catch (error) {
+      // eslint-disable-next-line no-console -- keep the fallback trail for the canvas re-render.
       console.error('[sysml] ELK layout failed', error);
     }
   },
@@ -313,16 +336,40 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     if (!previous || !state.layout || !state.path) return;
     const past = state.past.slice(0, -1);
     persistLayout(state.path, previous);
-    set({ layout: previous, past, future: [state.layout, ...state.future].slice(0, 80), layoutDirty: true });
+    set({
+      layout: previous,
+      past,
+      future: [state.layout, ...state.future].slice(0, 80),
+      layoutDirty: true,
+    });
   },
   redo: () => {
     const state = get();
     const next = state.future[0];
     if (!next || !state.layout || !state.path) return;
     persistLayout(state.path, next);
-    set({ layout: next, past: [...state.past, state.layout].slice(-80), future: state.future.slice(1), layoutDirty: true });
+    set({
+      layout: next,
+      past: [...state.past, state.layout].slice(-80),
+      future: state.future.slice(1),
+      layoutDirty: true,
+    });
   },
   markLayoutPersisted: () => set({ layoutDirty: false }),
   clear: () =>
-    set({ path: null, source: '', projection: null, layout: null, selectedId: null, viewMode: 'all', layoutDirty: false, parseDirty: false, execution: null, runError: null, evidence: [], past: [], future: [] }),
+    set({
+      path: null,
+      source: '',
+      projection: null,
+      layout: null,
+      selectedId: null,
+      viewMode: 'all',
+      layoutDirty: false,
+      parseDirty: false,
+      execution: null,
+      runError: null,
+      evidence: [],
+      past: [],
+      future: [],
+    }),
 }));

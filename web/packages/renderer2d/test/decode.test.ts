@@ -170,4 +170,24 @@ describe('decodeWireFrame', () => {
     Frame.finishSizePrefixedFrameBuffer(builder, frameOffset);
     expect(decodeWireFrame(builder.asUint8Array())).toBeNull();
   });
+
+  it('returns null for truncated or lying-prefix frames instead of throwing', () => {
+    const full = buildCountersFrame(7n, 0n, [['queue_length', 3]]);
+    // No prefix of a valid frame may crash the decoder (contract: corrupt
+    // frames surface as null protocol violations).
+    for (let cut = 4; cut < full.length; cut += 5) {
+      const slice = full.slice(0, cut);
+      expect(() => decodeWireFrame(slice)).not.toThrow();
+    }
+    for (let cut = 4; cut < 24; cut += 3) {
+      expect(decodeWireFrame(full.slice(0, cut))).toBeNull();
+    }
+    // A size prefix claiming more bytes than the buffer holds is truncated.
+    const lying = full.slice();
+    lying[0] = 0xff;
+    lying[1] = 0xff;
+    lying[2] = 0xff;
+    lying[3] = 0x7f;
+    expect(decodeWireFrame(lying)).toBeNull();
+  });
 });

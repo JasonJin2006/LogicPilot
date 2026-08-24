@@ -16,12 +16,15 @@ import {
   type ModelNode,
 } from './graph.js';
 
-/** Container kinds emit as nested `kind name { ... }` blocks. */
+/** Container kinds emit as nested `kind name { ... }` blocks. Mirrors
+ *  parseDsl's CONTAINER_KINDS so `couple` lines collected at any nesting
+ *  depth are re-emitted for the same kinds (statechart included). */
 const CONTAINER_KINDS: ReadonlySet<string> = new Set([
   'agent',
   'atomic',
   'continuous',
   'experiment',
+  'statechart',
 ]);
 
 /** Serialize a field/param value. Parser-produced values are already
@@ -124,8 +127,7 @@ export function generateDsl(document: ModelDocument): string {
       if (!from || !to) {
         continue;
       }
-      const fromInside =
-        container === undefined ? isRootMember(from) : isChildOf(from, container);
+      const fromInside = container === undefined ? isRootMember(from) : isChildOf(from, container);
       const toInside = container === undefined ? isRootMember(to) : isChildOf(to, container);
       if (!fromInside || !toInside) {
         continue;

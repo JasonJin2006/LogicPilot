@@ -42,9 +42,7 @@ class OutlineRegistry {
   }
 
   list(): readonly OutlineContribution[] {
-    return [...this.entries.values()].sort(
-      (a, b) => (b.priority ?? 0) - (a.priority ?? 0),
-    );
+    return [...this.entries.values()].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
   }
 
   /** First applicable contribution for the context, if any. */

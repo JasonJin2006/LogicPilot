@@ -12,7 +12,10 @@ describe('sysmlProjectIndex (multi-file lookups)', () => {
       'model/main.lp': 'model X {}\n',
       'presentation/main.canvas.json': '{}',
     });
-    expect(index.files.map((file) => file.path)).toEqual(['model/vehicle.sysml', 'model/docs.sysml']);
+    expect(index.files.map((file) => file.path)).toEqual([
+      'model/vehicle.sysml',
+      'model/docs.sysml',
+    ]);
   });
 
   it('resolves unique names across files and exact qualified names', () => {

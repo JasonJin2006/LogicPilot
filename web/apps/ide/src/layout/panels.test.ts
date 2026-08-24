@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ACTIVITY_VIEWS,
-  DEFAULT_LAYOUT,
-  PANELS,
-  focusedPanelId,
-  registerPanel,
-} from './panels';
+import { ACTIVITY_VIEWS, DEFAULT_LAYOUT, PANELS, focusedPanelId, registerPanel } from './panels';
 
 describe('panel registry', () => {
   it('defines every panel with a unique id and a default area', () => {

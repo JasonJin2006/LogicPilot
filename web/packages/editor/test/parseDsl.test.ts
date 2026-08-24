@@ -401,3 +401,27 @@ describe('full DSL round-trip (parse -> generate -> parse)', () => {
 `);
   });
 });
+
+describe('string escape round-trip', () => {
+  it('keeps quotes and backslashes in string params stable across generate(parse(src))', () => {
+    const source = [
+      'model M {',
+      '  service S {',
+      '    label = "he said \\"busy\\" \\\\ done"',
+      '  }',
+      '}',
+      '',
+    ].join('\n');
+    const parsed = parseDsl(source);
+    expect(parsed.ok).toBe(true);
+    const stored = parsed.document.nodes.find((node) => node.name === 'S')?.params['label'];
+    // The parser canonicalizes the literal through JSON.stringify.
+    expect(stored).toBe('"he said \\"busy\\" \\\\ done"');
+
+    const generated = generateDsl(parsed.document);
+    const reparsed = parseDsl(generated);
+    expect(reparsed.ok).toBe(true);
+    expect(reparsed.document.nodes.find((node) => node.name === 'S')?.params['label']).toBe(stored);
+    expect(generated).toContain(`label = ${stored}`);
+  });
+});

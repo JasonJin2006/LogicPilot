@@ -28,7 +28,10 @@ export interface RoutePoint {
 
 const CHANNEL_GAP = 48;
 
-const point = (x: number, y: number): RoutePoint => ({ x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 });
+const point = (x: number, y: number): RoutePoint => ({
+  x: Math.round(x * 100) / 100,
+  y: Math.round(y * 100) / 100,
+});
 
 /** Deterministic Manhattan polyline from rectangle `a` to rectangle `b`.
  *  The first/last points sit ON the facing borders so arrowheads touch. */
@@ -98,12 +101,7 @@ export function orthogonalRoute(a: RouteRect, b: RouteRect): RoutePoint[] {
 
   // Overlapping on both axes: escape around the RIGHT side of both boxes.
   const channelX = Math.max(aRightX, bRightX) + CHANNEL_GAP;
-  return [
-    point(aRightX, aMidY),
-    point(channelX, aMidY),
-    point(channelX, bMidY),
-    point(b.x, bMidY),
-  ];
+  return [point(aRightX, aMidY), point(channelX, aMidY), point(channelX, bMidY), point(b.x, bMidY)];
 }
 
 /** Midpoint along the polyline arc length - the anchor for relation labels,

@@ -21,7 +21,8 @@ export function ModelInfoPanel() {
 
   const contribution = OUTLINE_CONTRIBUTIONS.resolve({
     activePath: activeFile,
-    activeDocumentType: activeFile !== null ? (documentContributionFor(activeFile)?.id ?? null) : null,
+    activeDocumentType:
+      activeFile !== null ? (documentContributionFor(activeFile)?.id ?? null) : null,
     hasProject: bundle !== null && bundle !== undefined,
   });
 
