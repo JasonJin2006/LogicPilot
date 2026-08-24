@@ -21,6 +21,7 @@ import { useModelStore } from '../state/modelStore';
 import { documentForView, useCanvasView } from '../state/canvasView';
 import { autoArrangePositions } from './autoLayoutElk';
 import { useCanvasCamera } from './useCanvasCamera';
+import { useFlowTokens } from './useFlowTokens';
 import { useWireGesture } from './useWireGesture';
 import type { BlockKind, GraphicNode, GraphicTransform, ModelNode } from '@logicpilot/editor';
 import {
@@ -50,7 +51,7 @@ import { PresentationRenderer } from '../presentation/renderer';
 import { TransformHandles, type ResizeHandleName } from '../presentation/TransformHandles';
 import { useShapeSelection } from '../presentation/selectionStore';
 import { insertBlockAt } from './canvasInsert';
-import { departedDelta, vizState } from '../state/vizState';
+import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
 import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
@@ -137,16 +138,6 @@ function firstInPort(node: ModelNode): string {
   );
   return ins.find((port) => port.name === 'in')?.name ?? ins[0]?.name ?? 'in';
 }
-
-/** A token animating along one coupling (world-coordinate endpoints). */
-interface FlowToken {
-  id: number;
-  a: { x: number; y: number };
-  b: { x: number; y: number };
-  born: number;
-}
-
-const FLOW_TOKEN_MS = 700;
 
 // Nice grid steps (world units per cell): 1-2-2.5-5 decade ladder.
 const GRID_STEPS = [
@@ -258,18 +249,6 @@ export function ModelCanvas() {
   const [panning, setPanning] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  // Live flow tokens: circles animated along a coupling when a block's
-  // departed counter advances (generic process-flow telemetry). The
-  // departed baseline lives in the shared vizState (not a local ref) so a
-  // new run / model switch / reconnect resets it through resetVizState -
-  // the canvas usually stays mounted across runs, so unmount cleanup alone
-  // would leave the old baseline suppressing the next run's tokens.
-  const [tokens, setTokens] = useState<FlowToken[]>([]);
-  const tokenSeq = useRef(0);
-  const flowNodesRef = useRef(visibleNodes);
-  const flowEdgesRef = useRef(visibleEdges);
-  flowNodesRef.current = visibleNodes;
-  flowEdgesRef.current = visibleEdges;
   // Active resize/rotate gesture on a selected presentation object.
   const [transformDrag, setTransformDrag] = useState<{
     id: string;
@@ -659,6 +638,13 @@ export function ModelCanvas() {
     isTransitionPair: (from, to) =>
       STATECHART_KINDS.has(from.kind) && STATECHART_KINDS.has(to.kind),
   });
+  const { tokens, lifetimeMs: flowTokenLifetimeMs } = useFlowTokens({
+    visibleNodes,
+    visibleEdges,
+    getAnchor: portAnchor,
+    firstOutPort,
+    firstInPort,
+  });
 
   // Resize / rotate gestures on the selected presentation object. The drag
 
@@ -819,55 +805,8 @@ export function ModelCanvas() {
   const live = vizState.tickVersion > 0;
   const queueLength = live ? vizState.queueLength : 0;
 
-  // Spawn flow tokens when a block's departed counter advances and prune
-  // expired ones. Reads the latest node/edge layout through refs so the
-  // animation loop can run at display rate without restarting. The raf
-  // loop is cancelled on unmount; a baseline reset (tokenGeneration bump)
-  // drops in-flight tokens immediately so leftovers from a previous run
-  // never animate across a new one.
-  useEffect(() => {
-    let raf = 0;
-    let lastSpawn = 0;
-    let seenGeneration = vizState.tokenGeneration;
-    const tick = (now: number) => {
-      if (vizState.tokenGeneration !== seenGeneration) {
-        // New run / model switch / reconnect: the baseline was reset, so
-        // drop leftover tokens and let the fresh counters spawn from 0.
-        seenGeneration = vizState.tokenGeneration;
-        setTokens([]);
-        lastSpawn = now;
-      }
-      if (now - lastSpawn > 80) {
-        lastSpawn = now;
-        for (const [name, state] of vizState.blocks) {
-          const previous = vizState.lastDeparted.get(name) ?? 0;
-          const delta = departedDelta(previous, state.departed);
-          if (delta === 0) continue;
-          vizState.lastDeparted.set(name, state.departed);
-          const fromNode = flowNodesRef.current.find((node) => node.name === name);
-          if (!fromNode) continue;
-          const outs = flowEdgesRef.current.filter((edge) => edge.from === fromNode.id);
-          if (outs.length === 0) continue;
-          for (let i = 0; i < delta; ++i) {
-            const edge = outs[i % outs.length]!;
-            const toNode = flowNodesRef.current.find((node) => node.id === edge.to);
-            if (!toNode) continue;
-            const a = portAnchor(fromNode, edge.fromPort ?? firstOutPort(fromNode));
-            const b = portAnchor(toNode, edge.toPort ?? firstInPort(toNode));
-            const id = tokenSeq.current++;
-            setTokens((prev) => [...prev.slice(-47), { id, a, b, born: now }]);
-          }
-        }
-      }
-      setTokens((prev) => {
-        const alive = prev.filter((token) => now - token.born < FLOW_TOKEN_MS);
-        return alive.length === prev.length ? prev : alive;
-      });
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
+  // Spawn/cull flow tokens (telemetry-driven coupling animation) lives in
+  // useFlowTokens; see that hook for the raf lifecycle contract.
 
   // Drag a block card or presentation shape to move it in world coordinates;
   // a plain click (no movement) selects it instead.
@@ -1063,7 +1002,7 @@ export function ModelCanvas() {
               r={2.5 / view.scale}
               style={{
                 offsetPath: `path('${d}')`,
-                animation: `flow-token ${FLOW_TOKEN_MS}ms linear forwards`,
+                animation: `flow-token ${flowTokenLifetimeMs}ms linear forwards`,
               }}
             />
           );
