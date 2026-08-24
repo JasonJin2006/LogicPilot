@@ -1,7 +1,12 @@
 import { useEffect, useMemo } from 'react';
 import { Code2, RefreshCw } from 'lucide-react';
 import { SysMLCanvas } from './SysMLCanvas';
-import { sysmlEvidencePath, parseEvidence, serializeEvidence } from './sysmlEvidence';
+import {
+  sysmlEvidencePath,
+  legacySysmlEvidencePath,
+  parseEvidence,
+  serializeEvidence,
+} from './sysmlEvidence';
 import { sysmlLayoutPath } from './sysmlProjection';
 import { useSysMLStore } from '../state/sysmlStore';
 import { SysMLFileIcon } from './sysmlIcons';
@@ -56,14 +61,16 @@ export function SysMLWorkspace() {
     }
     if (documentContributionFor(path)?.id === 'sysml') {
       if (useSysMLStore.getState().path !== path) {
-        useSysMLStore
-          .getState()
-          .load(
-            path,
-            source,
-            bundle?.files[sysmlLayoutPath(path)],
-            parseEvidence(bundle?.files[sysmlEvidencePath(path)]),
-          );
+        useSysMLStore.getState().load(
+          path,
+          source,
+          bundle?.files[sysmlLayoutPath(path)],
+          // New journals live under presentation/history/; projects saved
+          // before the relocation keep theirs at the legacy path.
+          parseEvidence(
+            bundle?.files[sysmlEvidencePath(path)] ?? bundle?.files[legacySysmlEvidencePath(path)],
+          ),
+        );
       } else if (useSysMLStore.getState().source !== source) {
         refresh(source);
       }

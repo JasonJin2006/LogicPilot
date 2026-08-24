@@ -108,11 +108,36 @@ export function saveProject(
   const split = splitModelSource(base.files[DEFAULT_MODEL_PATH] ?? '');
   const project = mergeCanvasSplit(base, split, current);
   // Stable container identities: every scene file records its uid and the
-  // manifest maps uid -> path so renames can be repaired.
+  // manifest maps uid -> path so renames can be repaired. Hand-edited scene
+  // files can break that chain (stripped uid comment, or one uid pasted into
+  // two files), so the save refuses identity collisions instead of letting
+  // a later rename repair the wrong file.
   const containerIds: Record<string, string> = {};
   for (const [path, content] of Object.entries(project.files)) {
     if (path.startsWith(`${MODEL_SCENE_DIR}/`)) {
-      containerIds[sceneUidOf(content) ?? sceneUid(path)] = path;
+      const embedded = sceneUidOf(content);
+      if (embedded === null) {
+        diagnostics.push({
+          code: 'LP4003',
+          severity: 'warning',
+          message:
+            `scene '${path}' lost its identity comment; rename-repair tracking ` +
+            'falls back to the file path - re-save to restore the uid line',
+        });
+      }
+      const uid = embedded ?? sceneUid(path);
+      const existing = containerIds[uid];
+      if (existing !== undefined && existing !== path) {
+        diagnostics.push({
+          code: 'LP4003',
+          severity: 'error',
+          message:
+            `scene identity collision: '${existing}' and '${path}' claim the same ` +
+            `container uid '${uid}' - fix the copied identity comment before saving`,
+        });
+        continue;
+      }
+      containerIds[uid] = path;
     }
   }
   project.manifest.containerIds = containerIds;

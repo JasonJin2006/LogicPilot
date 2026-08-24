@@ -120,8 +120,11 @@ export function splitModelSource(source: string): Record<string, string> {
     // token, so slice from the start of its line).
     const lineStart = source.lastIndexOf('\n', member.span.start - 1) + 1;
     const text = source.slice(lineStart, member.span.end).trimEnd();
-    if (['agent', 'atomic', 'continuous', 'experiment'].includes(member.kind)) {
+    if (['agent', 'atomic', 'continuous', 'experiment', 'statechart'].includes(member.kind)) {
       // One scene file per container node (the file is that node's subgraph).
+      // statechart joined the container set so large machines get the same
+      // per-container file/merge granularity as agents instead of inflating
+      // main.lp.
       const blocks = scenes.get(member.name) ?? [];
       blocks.push(text);
       scenes.set(member.name, blocks);

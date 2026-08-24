@@ -193,6 +193,29 @@ describe('project bundle', () => {
     expect(split['model/scenes/Drone.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
   });
 
+  it('splitModelSource gives statechart containers their own scene file', () => {
+    // Statecharts joined the container set: a large machine must get the
+    // same per-container file/merge granularity as agents, not inflate
+    // main.lp.
+    const source = `model Traffic {
+  resource Power { capacity = 1 }
+  statechart Light {
+    initial = red
+    state red { }
+    state green { }
+    transition rg { from = red; to = green; triggeredBy = timeout; timeout = 30.0 }
+  }
+}
+`;
+    const split = splitModelSource(source);
+    expect(split['model/main.lp']).toContain('resource Power');
+    expect(split['model/main.lp']).toContain('instance Light = "model/scenes/Light.lp"');
+    expect(split['model/main.lp']).not.toContain('statechart Light');
+    expect(split['model/scenes/Light.lp']).toContain('statechart Light');
+    expect(split['model/scenes/Light.lp']).toContain('transition rg');
+    expect(split['model/scenes/Light.lp']).toMatch(/^\/\/ @uid lp_[0-9a-f]{16}/);
+  });
+
   it('mergeModelSource reconstructs the full model from parts', () => {
     const main = 'model M {\n  instance Drone = "model/scenes/Drone.lp"\n}\n';
     const files = {
@@ -462,11 +485,15 @@ describe('project bundle', () => {
     const saved = saveProject(document, null);
     const errors = saved.diagnostics.filter((diagnostic) => diagnostic.severity === 'error');
     expect(errors).toEqual([]);
+    // Statecharts are containers: the machine saves into its own scene file
+    // and main.lp references it (same granularity as agents).
     const source = saved.files[DEFAULT_MODEL_PATH] ?? '';
-    expect(source).toContain('statechart statechart {');
-    expect(source).toContain('state Red { }');
-    expect(source).toContain('transition transition {');
-    expect(source).toContain('initial = Red');
+    expect(source).toContain('instance statechart = "model/scenes/statechart.lp"');
+    const scene = saved.files['model/scenes/statechart.lp'] ?? '';
+    expect(scene).toContain('statechart statechart {');
+    expect(scene).toContain('state Red { }');
+    expect(scene).toContain('transition transition {');
+    expect(scene).toContain('initial = Red');
 
     // The saved bundle must reload to the same member set.
     const json = bundleToJson(saved.bundle);

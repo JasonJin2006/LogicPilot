@@ -65,6 +65,14 @@ function tokenize(source: string): Token[] | string {
       i++;
       continue;
     }
+    if (c === ';') {
+      // Optional statement terminator: generated transition bodies
+      // (`from = red; to = green; ...`) use semicolons, and the editor's
+      // own parser accepts them - the project tokenizer must too, or any
+      // document containing one silently fell back to inline saving.
+      i++;
+      continue;
+    }
     if (c === '"') {
       const start = i;
       let j = i + 1;

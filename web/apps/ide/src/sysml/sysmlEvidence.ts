@@ -41,8 +41,17 @@ export interface SysMLEvidenceFile {
   records: SysMLEvidenceRecord[];
 }
 
-/** Portable project-side evidence artifact; mirrors the layout sidecar. */
+/** Portable project-side evidence artifact. Evidence is a run HISTORY, not
+ *  a presentation concern, so it lives under presentation/history/ (the
+ *  legacy presentation/sysml/ location is still read for older projects). */
 export function sysmlEvidencePath(sourcePath: string): string {
+  return `presentation/history/sysml/${fnv1aHex(sourcePath)}.evidence.json`;
+}
+
+/** Pre-relocation location: projects saved before the move keep their
+ *  journals there, and the loader falls back to it when the new path is
+ *  absent. */
+export function legacySysmlEvidencePath(sourcePath: string): string {
   return `presentation/sysml/${fnv1aHex(sourcePath)}.evidence.json`;
 }
 

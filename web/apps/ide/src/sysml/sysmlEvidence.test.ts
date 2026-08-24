@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendEvidence,
+  legacySysmlEvidencePath,
   makeEvidenceId,
   parseEvidence,
   serializeEvidence,
@@ -28,8 +29,14 @@ function record(overrides: Partial<SysMLEvidenceRecord> = {}): SysMLEvidenceReco
 }
 
 describe('sysmlEvidence (revision-bound run journal)', () => {
-  it('derives a stable portable sidecar path per document', () => {
+  it('derives a stable portable sidecar path per document under history/', () => {
     expect(sysmlEvidencePath('models/power.sysml')).toBe(
+      `presentation/history/sysml/${fnv1aHex('models/power.sysml')}.evidence.json`,
+    );
+  });
+
+  it('keeps the pre-relocation path available for legacy projects', () => {
+    expect(legacySysmlEvidencePath('models/power.sysml')).toBe(
       `presentation/sysml/${fnv1aHex('models/power.sysml')}.evidence.json`,
     );
   });

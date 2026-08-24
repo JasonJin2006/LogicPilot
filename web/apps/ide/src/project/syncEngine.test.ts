@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addNode, createDocument } from '@logicpilot/editor';
+import { addNode, createDocument, parseDsl } from '@logicpilot/editor';
 import { createProject, sceneUid, sceneUidOf } from './project';
 import { loadProject, saveProject } from './syncEngine';
 
@@ -195,5 +195,57 @@ describe('project sync engine', () => {
     expect(saved.diagnostics).toHaveLength(0);
     expect(saved.files['model/scenes/Drone.lp']).toContain('agent Drone');
     expect(saved.files['model/scenes/Tune.lp']).toContain('experiment Tune');
+  });
+
+  it('saveProject splits statechart containers into scenes with an instance line', () => {
+    const parsed = parseDsl(
+      'model Traffic {\n' +
+        '  use process\n' +
+        '  source In { arrival = rate(1) }\n' +
+        '  statechart Light {\n' +
+        '    initial = red\n' +
+        '    state red { }\n' +
+        '    state green { }\n' +
+        '    transition rg { from = red; to = green; triggeredBy = timeout; timeout = 30.0 }\n' +
+        '  }\n' +
+        '}\n',
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const saved = saveProject(parsed.document, null);
+    const scenePath = 'model/scenes/Light.lp';
+    expect(saved.files[scenePath]).toContain('statechart Light');
+    // Scene identity is tracked through manifest.containerIds (scenes are
+    // deliberately not legacy "modelParts").
+    const lightUid = sceneUidOf(saved.files[scenePath] ?? '');
+    expect(lightUid).not.toBeNull();
+    expect(saved.bundle.manifest.containerIds?.[lightUid!]).toBe(scenePath);
+    expect(saved.files['model/main.lp']).toContain('instance Light = "model/scenes/Light.lp"');
+  });
+
+  it('saveProject warns when a preserved hand-made scene lost its uid', () => {
+    const parsed = parseDsl('model Swarm {\n  agent Drone {\n    count = 1\n  }\n}\n');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const current = createProject('Swarm');
+    current.files['model/scenes/Ghost.lp'] = 'agent Ghost {\n}\n';
+    const saved = saveProject(parsed.document, current);
+    expect(
+      saved.diagnostics.some(
+        (d) => d.code === 'LP4003' && d.severity === 'warning' && d.message.includes('Ghost.lp'),
+      ),
+    ).toBe(true);
+  });
+
+  it('saveProject refuses scenes that claim the same container identity', () => {
+    const parsed = parseDsl('model Swarm {\n  agent Drone {\n    count = 1\n  }\n}\n');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const current = createProject('Swarm');
+    // Two hand-copied scene files carrying one pasted identity comment.
+    current.files['model/scenes/Ghost.lp'] = '// @uid lp_1234567890abcdef\nagent Ghost {\n}\n';
+    current.files['model/scenes/Ghost2.lp'] = '// @uid lp_1234567890abcdef\nagent Ghost2 {\n}\n';
+    const saved = saveProject(parsed.document, current);
+    expect(saved.diagnostics.some((d) => d.code === 'LP4003' && d.severity === 'error')).toBe(true);
   });
 });
