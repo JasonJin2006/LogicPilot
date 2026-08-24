@@ -340,11 +340,36 @@ export function SysMLCanvas() {
   const dragRef = useRef<DragState | null>(null);
   const documentRef = useRef<SVGSVGElement>(null);
   const copyRef = useRef<string | null>(null);
+  // Gesture-time camera bypasses React: pan/zoom writes the scene transform
+  // directly (a 600-element SVG cannot re-render per pointermove); the
+  // state commits once on gesture end.
+  const sceneRef = useRef<SVGGElement>(null);
+  const cameraRef = useRef<Camera>({ scale: 1, x: 0, y: 0 });
+  const commitTimerRef = useRef<number | null>(null);
+  const applyCameraNow = (next: Camera) => {
+    cameraRef.current = next;
+    sceneRef.current?.setAttribute(
+      'transform',
+      `translate(${next.x} ${next.y}) scale(${next.scale})`,
+    );
+  };
+  const applyCameraDeferred = (next: Camera) => {
+    applyCameraNow(next);
+    if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = window.setTimeout(() => {
+      commitTimerRef.current = null;
+      setCamera(cameraRef.current);
+    }, 140);
+  };
   // Space-hold pans like design tools; tracked outside React state for the
   // pointer handlers via a ref plus one re-render for the cursor class.
   const spaceRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(null);
+
+  useEffect(() => {
+    cameraRef.current = camera;
+  }, [camera]);
 
   const canvasReady = projection !== null && layout !== null;
 
@@ -466,15 +491,14 @@ export function SysMLCanvas() {
       const rect = element.getBoundingClientRect();
       const mx = event.clientX - rect.left;
       const my = event.clientY - rect.top;
-      setCamera((current) => {
-        const scale = Math.min(
-          SYSML_MAX_SCALE,
-          Math.max(SYSML_MIN_SCALE, current.scale * Math.exp(-event.deltaY * SYSML_WHEEL_ZOOM_RATE)),
-        );
-        const worldX = (mx - current.x) / current.scale;
-        const worldY = (my - current.y) / current.scale;
-        return { scale, x: mx - worldX * scale, y: my - worldY * scale };
-      });
+      const current = cameraRef.current;
+      const scale = Math.min(
+        SYSML_MAX_SCALE,
+        Math.max(SYSML_MIN_SCALE, current.scale * Math.exp(-event.deltaY * SYSML_WHEEL_ZOOM_RATE)),
+      );
+      const worldX = (mx - current.x) / current.scale;
+      const worldY = (my - current.y) / current.scale;
+      applyCameraDeferred({ scale, x: mx - worldX * scale, y: my - worldY * scale });
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
@@ -681,7 +705,7 @@ export function SysMLCanvas() {
       }
       move(drag.id, { x: Math.max(20, drag.origin.x + dx), y: Math.max(20, drag.origin.y + dy) });
     } else {
-      setCamera({
+      applyCameraNow({
         ...drag.camera,
         x: drag.camera.x + event.clientX - start.x,
         y: drag.camera.y + event.clientY - start.y,
@@ -691,6 +715,9 @@ export function SysMLCanvas() {
 
   const endDrag = () => {
     dragRef.current = null;
+    if (cameraRef.current !== camera) {
+      setCamera(cameraRef.current);
+    }
   };
 
   /** One-click lowering: generate .lp DSL into generated/<Name>.lp and open
@@ -919,7 +946,10 @@ export function SysMLCanvas() {
             <path d="M0,0 L8,4 L0,8 Z" fill="#9aa8ba" />
           </marker>
         </defs>
-        <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}>
+        <g
+          ref={sceneRef}
+          transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}
+        >
           <rect
             x={0}
             y={0}
