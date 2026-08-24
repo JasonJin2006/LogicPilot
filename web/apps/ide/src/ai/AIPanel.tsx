@@ -1,6 +1,9 @@
-// AI model panel: bootstrap an empty canvas, propose a structured ModelPatch
-// for an existing model, validate/apply/run it, or query the last run's
-// structured metrics. Optimization remains a separate experiment action.
+// AI modeling panel: session-based assistant conversation. Sending a
+// message enters (or reuses) a session, streams the reply into an in-thread
+// bubble and commits the final turn with its steps and outcome. The panel
+// also host one-shot commands (/build /optimize /sweep /explain and the
+// prompt suggestions), @-context tokens and the permission mode (Full
+// access / Workspace / Read only) that governs tool capability assembly.
 
 import { useEffect, useRef, useState } from 'react';
 import { generateDsl, type ModelPatch } from '@logicpilot/editor';
@@ -58,7 +61,6 @@ import { LOGICPILOT_MODELING_READONLY_CAPABILITY } from './agentCapabilities';
 import { createMcpTools, discoverMcpCapabilities } from './mcpClient';
 import type { AssistantTool } from './capabilities/logicpilot-modeling/tools';
 import { createAssistantKernel } from './assistantKernel';
-import type { AiAction } from './intentRouter';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
 import { buildAssistantContext } from './contextBuilder';
 import {
@@ -110,6 +112,7 @@ interface PendingToolApproval {
   arguments: Record<string, unknown>;
 }
 
+type AiAction = 'build' | 'optimize' | 'variation' | 'explain';
 type PermissionMode = 'Full access' | 'Workspace' | 'Read only';
 type VoiceState = 'idle' | 'listening' | 'transcribing' | 'error';
 

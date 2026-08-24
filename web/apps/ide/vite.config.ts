@@ -2,8 +2,9 @@
 //
 // Telemetry is consumed via a direct WebSocket to the lp-server gateway
 // (default ws://127.0.0.1:8089/sim), so no HTTP proxy is required here.
-// The AI model panel POSTs to /api/ai-build, which runs the model build
-// loop (scripts/ai-build.mjs) inside the dev server process.
+// The AI panel's one-shot actions POST to /api/ai-build etc., which run
+// inside the dev server process; the assistant runtime uses /api/assistant
+// and /api/assistant/stream through the same middleware.
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { createApiRequestPolicy } from '../../../app/request-policy.mjs';

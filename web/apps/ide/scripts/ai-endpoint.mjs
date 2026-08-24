@@ -1,7 +1,7 @@
-// HTTP endpoint wrapping the AI model build loop for the IDE dev server.
-//
-// Mounted at /api/ai-build and /api/ai-optimize by vite.config.ts (dev
-// only). Both take { "prompt": "..." } and return JSON.
+// HTTP endpoints for the IDE dev server: one-shot AI actions (build,
+// optimize, run, parameter-variation, explain, compare, query-metrics),
+// provider state/models/test, MCP capabilities/call, the assistant chat +
+// stream and the app config. Mounted by vite.config.ts (dev only).
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 

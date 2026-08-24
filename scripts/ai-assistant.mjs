@@ -630,7 +630,7 @@ export function buildSystemPrompt({
     'not the product boundary. You NEVER invent data:',
     ...(modelingReadOnly
       ? [
-          'This turn is read-only (Ask/Plan or read-only permission). You may inspect and explain',
+          'This turn is read-only (Read only permission). You may inspect and explain',
           'the model, diagnostics and measured results, but you must not propose mutation, compile,',
           'run, or undo tool calls.',
         ]

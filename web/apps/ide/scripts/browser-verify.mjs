@@ -47,8 +47,8 @@ const page = await browser.newPage({ viewport: { width: 1520, height: 900 } });
 const consoleErrors = [];
 page.on('response', (resp) => {
   // CI has no server-side API key: /api/assistant answers 502 and the panel
-  // falls back to quick actions. Allow exactly that request; any other 502
-  // is a real regression and still fails the run.
+  // surfaces it as a turn-level error. Allow exactly that request; any other
+  // 502 is a real regression and still fails the run.
   if (resp.status() === 502 && !resp.url().includes('/api/assistant')) {
     consoleErrors.push(`HTTP ${resp.status()} for ${resp.url()}`);
   }
