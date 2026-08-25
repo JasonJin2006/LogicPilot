@@ -93,7 +93,7 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
 - 针对性小验证脚本可仿照 `.verify/rename-check.mjs`(playwright-core 用绝对路径导入 `file:///.../web/apps/ide/node_modules/playwright-core/index.mjs`);
 - 内核侧如需跑 CTest:`./scripts/windows-build.ps1 -Preset windows-msvc-dev -Test`(clean gate 492/492)。
 - **数字基线校正**(2026-08-25 复核):README `测试与门禁` 为 492 ctest;IDE vitest
-  实际 51 文件/330 用例(§3 中的历史里程碑数字 237→320 系当时的快照,不代表当前值);
+  实际 52 文件/340 用例(§3 中的历史里程碑数字 237→320 系当时的快照,不代表当前值);
   editor 73、renderer2d 5、protocol interop 74。浏览器 E2E 的 AI 段依赖已配置的
   provider(mock 或真实 key)——无 provider 时 `.ai-patch-preview` 不会出现(E2E 已适配为新 UX,见其脚本内说明)。
 
@@ -136,6 +136,6 @@ README/docs/index 的陈旧"M/M/c 独占流式"描述已修正为全方法实时
   E2E 不受影响);
 - 新增前端依赖:`elkjs@0.9.2`(EPL-2.0,布局引擎,worker 经 Vite `?url` 引入);
 - `.verify/` 为未跟踪 scratch 目录(E2E 输出/临时脚本);`.playwright-cli/` 是历史 console 日志;
-- 测试基线数字:IDE vitest 51 文件 330 用例(2026-08-25 复核)、editor 73、kernel ctest 492(clean 时);
+- 测试基线数字:IDE vitest 52 文件 340 用例(2026-08-25 复核)、editor 73、kernel ctest 492(clean 时);
 - 截图人工复核:模型可直接用 Read 工具读 `.verify/out/*.png`(旧 vision.js
   流程已按用户要求废弃);`.verify/screenshot-sanity.mjs` 的像素统计仍可作辅助。
