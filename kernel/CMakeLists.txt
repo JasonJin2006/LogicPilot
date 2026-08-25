@@ -45,7 +45,9 @@ add_library(logicpilot_kernel STATIC
   src/runtime/runtime_manager.cpp
   src/runtime/simulation_kernel.cpp
   src/runtime/simulation_session.cpp
+  src/runtime/expression_evaluator.cpp
   src/devs/ir_loader.cpp
+  src/devs/trace_store.cpp
   src/devs/replication.cpp
   src/agent/soa_agent_store.cpp
 )
@@ -97,21 +99,21 @@ if(LOGICPILOT_BUILD_BENCH)
 endif()
 
 # ---------------------------------------------------------------------------
-# DEVS method plugin (ADR-0068 Phase B): the kernel-native DEVS formalism is
+# DEVS method plugin (ADR-0068): the kernel-native DEVS formalism is
 # an ordinary method runtime compiled into its own library. Sources stay
 # under kernel/src for now; only the TARGET boundary moved. Registration is
 # explicit (methods/register.cpp); the core never auto-registers it.
-# Registration-level toggle: OFF strips the devs entry from the aggregate
-# registry (models then fail KR1004). The library itself still builds until
-# the flow-engine/agent-model rehoming listed in ADR-0068 lands.
+# LOGICPILOT_METHOD_DEVS=OFF removes the library, its registry entry and
+# every consumer that hard-requires it (the streaming gateway and the
+# DEVS-flavored test executables).
 if(NOT LOGICPILOT_METHOD_DEVS)
-  message(STATUS "DEVS method plugin: registration disabled (LOGICPILOT_METHOD_DEVS=OFF)")
+  message(STATUS "DEVS method plugin: disabled (LOGICPILOT_METHOD_DEVS=OFF)")
 endif()
+if(LOGICPILOT_METHOD_DEVS)
 add_library(logicpilot_method_devs STATIC
   src/devs/executor.cpp
   src/devs/evidence.cpp
   src/devs/evidence_store.cpp
-  src/devs/trace_store.cpp
   src/devs/partition_plan.cpp
   src/devs/runtime_plan.cpp
   src/devs/ir_atomic.cpp
@@ -124,6 +126,7 @@ add_library(logicpilot_method_devs STATIC
 target_link_libraries(logicpilot_method_devs PUBLIC
   logicpilot_kernel
 )
+endif()
 
 # lpcli (Phase 1b ships the `run` subcommand; compile lands in Phase 2).
 add_subdirectory(apps/lpcli)
@@ -144,11 +147,18 @@ if(LOGICPILOT_BUILD_TESTS)
 
 # M/M/1 reference-model fixture (ADR-0068): deterministic workload for the
 # determinism/acceptance/parallelism tests and the event-loop benchmark.
+# Runs on the shared flow engine hosted by the process plugin.
 if(LOGICPILOT_BUILD_TESTS OR LOGICPILOT_BUILD_BENCH)
   add_library(logicpilot_test_models STATIC src/devs/mm1.cpp)
-  target_link_libraries(logicpilot_test_models PUBLIC logicpilot_kernel)
+  target_link_libraries(logicpilot_test_models PUBLIC
+    logicpilot_kernel
+    logicpilot_method_process
+  )
 endif()
 
+# DEVS-flavored test executable: every case exercises the DEVS runtime, so
+# it only exists when the plugin is enabled (LOGICPILOT_METHOD_DEVS).
+if(LOGICPILOT_METHOD_DEVS)
 add_executable(logicpilot_phase1b_tests
     tests/test_agent_runtime.cpp
     tests/test_state_machine.cpp
@@ -192,8 +202,9 @@ add_executable(logicpilot_phase1b_tests
   endif()
   catch_discover_tests(logicpilot_phase1b_tests)
 endif()
+endif()
 
-if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
+if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL AND LOGICPILOT_METHOD_DEVS)
   # IR atomic execution tests compile examples/pulse_chain.lp in-process, so
   # they need the DSL compiler (mirrors logicpilot_server_tests).
   target_sources(logicpilot_phase1b_tests PRIVATE
@@ -208,7 +219,12 @@ endif()
 # Phase 2c (task #7): lp-server WebSocket gateway (Boost.Beast).
 # lp_server_core is a static library so both the lp-server executable and the
 # lpcli `serve` subcommand can embed the gateway in-process.
+#
+# The gateway's streaming runner executes on the shared flow engine hosted by
+# the process plugin, and its demo path still assumes the DEVS runtime - so
+# the whole server section requires LOGICPILOT_METHOD_DEVS (ADR-0068).
 # ---------------------------------------------------------------------------
+if(LOGICPILOT_METHOD_DEVS)
 # vcpkg's boost umbrella ships BoostConfig.cmake; CONFIG mode avoids the
 # removed FindBoost module (CMP0167).
 find_package(Boost CONFIG REQUIRED)
@@ -241,7 +257,7 @@ endif()
 add_executable(lp-server apps/lp-server/main.cpp)
 target_link_libraries(lp-server PRIVATE lp_server_core)
 
-if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
+if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL AND LOGICPILOT_METHOD_DEVS)
   # Integration tests drive the full DSL -> IR -> lp-server pipeline, so the
   # DSL compiler is linked in to compile examples/mm1.lp in-process.
   add_executable(logicpilot_server_tests
@@ -260,6 +276,7 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   )
   catch_discover_tests(logicpilot_server_tests)
 endif()
+endif()  # LOGICPILOT_METHOD_DEVS
 
 if(LOGICPILOT_BUILD_BENCH)
   # MM1-style event-loop baseline (budget #2 MVP gate, bench/mm1_event_bench).
@@ -267,7 +284,7 @@ if(LOGICPILOT_BUILD_BENCH)
     ${CMAKE_SOURCE_DIR}/bench/mm1_event_bench.cpp
   )
   target_link_libraries(mm1_event_bench PRIVATE
-    logicpilot_method_devs
+    logicpilot_method_process
     logicpilot_test_models
     benchmark::benchmark_main
   )

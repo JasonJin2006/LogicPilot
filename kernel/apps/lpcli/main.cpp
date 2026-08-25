@@ -14,7 +14,9 @@
 
 #ifdef LOGICPILOT_HAS_DSL
 #include "compile_command.h"
+#if defined(LOGICPILOT_HAS_SERVE)
 #include "serve_command.h"
+#endif
 #endif
 
 namespace {
@@ -56,9 +58,11 @@ int main(int argc, char** argv) {
   if (command == "compile") {
     return logicpilot::cli::compile_command(rest);
   }
+#if defined(LOGICPILOT_HAS_SERVE)
   if (command == "serve") {
     return logicpilot::cli::serve_command(rest);
   }
+#endif
 #endif
   if (command == "help" || command == "--help" || command == "-h") {
     print_root_usage();

@@ -86,7 +86,9 @@ packaged without forking the core, and third parties can add methods.
 | `built-in:mm1` registry removed from lpcli; drivers require explicit `--model-file`/`--project` | done (2026-08-25) |
 | `LOGICPILOT_METHOD_DEVS` registration-level toggle (KR1004 when OFF) | done (2026-08-25) |
 | Engine rehoming: `QueueingFlowSim` impl -> `methods/process/queueing_flow_sim.cpp` (streaming gateway now links the process plugin); `ir_agent.cpp` (`AgentReplicationModel`) -> `methods/agent`; `Mm1Simulator` -> `logicpilot_test_models` fixture lib | done (2026-08-25) |
-| Target-level `LOGICPILOT_METHOD_DEVS=OFF`: skip building `logicpilot_method_devs`, gate devs-flavored test executables, prove a minimal-kernel CI tree | open |
+| Target-level `LOGICPILOT_METHOD_DEVS=OFF`: the library is not built; lp-server / serve subcommand / DEVS test executables are skipped (they hard-require it); neutral ExpressionEvaluator + logical-trace archive store moved into the core target | done (2026-08-25) |
+| Verified pruning combo: `LOGICPILOT_METHOD_DEVS=OFF` + `LOGICPILOT_METHOD_SD=OFF` (the SD runtime still composes `ContinuousReplicationModel`, hosted by the devs target until its own rehoming) configures, builds lpcli+dsl+agent/process/statechart and links clean | done (2026-08-25) |
+| `ContinuousReplicationModel` rehoming -> sd domain, unlocking DEVS-only pruning without touching SD | open |
 | `DevsEvidenceRecorder` parameter on `SimulationSession::start` re-hosted behind a neutral evidence seam | open |
 
 ## Consequences
