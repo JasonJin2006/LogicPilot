@@ -115,12 +115,10 @@ add_library(logicpilot_method_devs STATIC
   src/devs/partition_plan.cpp
   src/devs/runtime_plan.cpp
   src/devs/ir_atomic.cpp
-  src/devs/ir_agent.cpp
   src/devs/continuous.cpp
   src/devs/checkpoint_journal.cpp
   src/devs/checkpoint_store.cpp
   src/devs/session_checkpoint.cpp
-  src/devs/mm1.cpp
   src/runtime/builtin_methods.cpp
 )
 target_link_libraries(logicpilot_method_devs PUBLIC
@@ -144,6 +142,12 @@ if(LOGICPILOT_BUILD_TESTS)
   )
   target_compile_features(logicpilot_test_cabi_plugin PRIVATE cxx_std_20)
 
+# M/M/1 reference-model fixture (ADR-0068): deterministic workload for the
+# determinism/acceptance/parallelism tests and the event-loop benchmark.
+if(LOGICPILOT_BUILD_TESTS OR LOGICPILOT_BUILD_BENCH)
+  add_library(logicpilot_test_models STATIC src/devs/mm1.cpp)
+  target_link_libraries(logicpilot_test_models PUBLIC logicpilot_kernel)
+endif()
 
 add_executable(logicpilot_phase1b_tests
     tests/test_agent_runtime.cpp
@@ -164,6 +168,7 @@ add_executable(logicpilot_phase1b_tests
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE
     logicpilot_method_devs
+    logicpilot_test_models
     logicpilot_methods
     Catch2::Catch2WithMain
   )
@@ -216,7 +221,7 @@ target_include_directories(lp_server_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/apps/lp-server
 )
 target_link_libraries(lp_server_core PUBLIC
-  logicpilot_method_devs
+  logicpilot_method_process
   logicpilot_methods
   Boost::headers
   fmt::fmt
@@ -246,6 +251,7 @@ if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL)
   )
   target_link_libraries(logicpilot_server_tests PRIVATE
     lp_server_core
+    logicpilot_test_models
     logicpilot_dsl
     Catch2::Catch2WithMain
   )
@@ -262,6 +268,7 @@ if(LOGICPILOT_BUILD_BENCH)
   )
   target_link_libraries(mm1_event_bench PRIVATE
     logicpilot_method_devs
+    logicpilot_test_models
     benchmark::benchmark_main
   )
 
