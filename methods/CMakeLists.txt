@@ -31,8 +31,11 @@ target_include_directories(logicpilot_methods PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(logicpilot_methods PUBLIC
-  logicpilot_method_devs
 )
+if(LOGICPILOT_METHOD_DEVS)
+  target_link_libraries(logicpilot_methods PUBLIC logicpilot_method_devs)
+  target_compile_definitions(logicpilot_methods PRIVATE LP_WITH_METHOD_DEVS=1)
+endif()
 if(LOGICPILOT_METHOD_AGENT)
   target_link_libraries(logicpilot_methods PUBLIC logicpilot_method_agent)
   target_compile_definitions(logicpilot_methods PRIVATE LP_WITH_METHOD_AGENT=1)

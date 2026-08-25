@@ -67,8 +67,8 @@ MSVC/Windows SDK 环境，不需要永久配置 `INCLUDE`/`LIB`。Linux 仍直�
 lpcli compile examples/mm1.lp -o build/mm1.ir.bin
 lpcli run --model-file build/mm1.ir.bin --seed 42 --reps 3 --arrivals 500 --warmup 50
 
-# 或用内置模型 + 复现级并行
-lpcli run --model built-in:mm1 --reps 30 --threads 8
+# 同一编译产物上的复现级并行
+lpcli run --model-file build/mm1.ir.bin --reps 30 --threads 8
 ```
 
 ### Web IDE 与 AI

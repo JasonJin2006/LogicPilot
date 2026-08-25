@@ -83,6 +83,9 @@ packaged without forking the core, and third parties can add methods.
 | `logicpilot_phase1b` dissolved; DEVS engine is its own `logicpilot_method_devs` target; neutral impls (ir_loader, replication framework, agent ECS store) absorbed by the core target | done (2026-08-25) |
 | Core no longer auto-registers any method (`register_builtin_methods()` decl left runtime headers; drivers/tests register via `methods/register.cpp`) | done (2026-08-25) |
 | File-path relocation of devs sources into `methods/devs/` + renaming the `logicpilot_phase1b_tests` executable | open (cosmetic) |
+| `built-in:mm1` registry removed from lpcli; drivers require explicit `--model-file`/`--project` | done (2026-08-25) |
+| `LOGICPILOT_METHOD_DEVS` registration-level toggle (KR1004 when OFF) | done (2026-08-25) |
+| Engine rehoming that unlocks full binary pruning of devs: `QueueingFlowSim` impl -> process domain, `AgentReplicationModel` impl -> agent domain, then split mm1.cpp and gate the target | open |
 | `DevsEvidenceRecorder` parameter on `SimulationSession::start` re-hosted behind a neutral evidence seam | open |
 
 ## Consequences

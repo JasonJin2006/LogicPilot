@@ -24,7 +24,9 @@
 namespace logicpilot {
 
 void register_all_methods() {
+#if defined(LP_WITH_METHOD_DEVS)
   register_builtin_methods();
+#endif
 #if defined(LP_WITH_METHOD_AGENT)
   register_agent_method();
 #endif

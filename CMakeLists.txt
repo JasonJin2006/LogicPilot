@@ -30,6 +30,7 @@ option(LOGICPILOT_METHOD_AGENT "Include the agent method plugin" ON)
 option(LOGICPILOT_METHOD_PROCESS "Include the process (DES flow) method plugin" ON)
 option(LOGICPILOT_METHOD_SD "Include the system-dynamics method plugin" ON)
 option(LOGICPILOT_METHOD_STATECHART "Include the statechart method plugin" ON)
+option(LOGICPILOT_METHOD_DEVS "Include the kernel-native DEVS method plugin" ON)
 
 # ---------------------------------------------------------------------------
 # Compiler hygiene

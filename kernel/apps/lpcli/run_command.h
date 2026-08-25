@@ -1,7 +1,6 @@
 // lpcli `run` subcommand - replication runner + summary report.
 //
 // Usage:
-//   lpcli run --model built-in:mm1 --seed=42 --reps=30 --lambda=0.8 --mu=1.0
 //   lpcli run --model-file model.lpir --seed=42 --reps=30
 //   lpcli run --project model.lpproj --results-dir out  (DSL-enabled builds)
 #pragma once

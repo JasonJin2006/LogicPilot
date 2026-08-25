@@ -14,11 +14,9 @@
 
 #include <fmt/format.h>
 
-#include "builtin_registry.h"
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/continuous.h"
-#include "logicpilot/devs/mm1.h"
 #include "logicpilot/runtime/replication.h"
 #include "logicpilot/devs/trace_codec.h"
 #include "logicpilot/devs/trace_store.h"
@@ -496,12 +494,6 @@ int run_command(std::span<const std::string> args) {
     if (arg == "--help" || arg == "-h") {
       print_usage();
       return 0;
-    } else if (arg == "--model") {
-      if (!need_value()) {
-        fmt::print(stderr, "error: {} needs a value\n", arg);
-        return 2;
-      }
-      options.model = value;
     } else if (arg == "--model-file") {
       if (!need_value()) {
         fmt::print(stderr, "error: {} needs a value\n", arg);
@@ -596,18 +588,6 @@ int run_command(std::span<const std::string> args) {
     } else if (arg == "--warmup") {
       if (!need_value() || !parse_u64(value, options.warmup)) {
         fmt::print(stderr, "error: invalid --warmup\n");
-        return 2;
-      }
-    } else if (arg == "--lambda") {
-      if (!need_value() || !parse_double(value, options.lambda) ||
-          options.lambda <= 0.0) {
-        fmt::print(stderr, "error: invalid --lambda\n");
-        return 2;
-      }
-    } else if (arg == "--mu") {
-      if (!need_value() || !parse_double(value, options.mu) ||
-          options.mu <= 0.0) {
-        fmt::print(stderr, "error: invalid --mu\n");
         return 2;
       }
     } else if (arg == "--confidence") {
@@ -785,35 +765,10 @@ int run_command(std::span<const std::string> args) {
     model_label = fmt::format("file:{} ({})", options.model_file,
                               inspect_model(loaded.file));
   } else {
-    if (!options.experiment.empty()) {
-      fmt::print(stderr,
-                 "error: --experiment requires --model-file or --project\n");
-      return 2;
-    }
-    if (!options.model.starts_with(kBuiltinPrefix)) {
-      fmt::print(stderr,
-                 "error: --model must be 'built-in:<name>' or use "
-                 "--model-file\n");
-      return 2;
-    }
-    const std::string name = options.model.substr(
-        std::char_traits<char>::length(kBuiltinPrefix));
-    ModelBuildParams params{options.lambda, options.mu};
-    build_model = [params, name]() -> std::unique_ptr<ReplicationModel> {
-      return BuiltinModelRegistry::instance().create(name, params);
-    };
-    model = build_model();
-    if (!model) {
-      fmt::print(stderr, "error: unknown built-in model '{}'\n", name);
-      fmt::print(stderr, "available:");
-      for (const std::string& known :
-           BuiltinModelRegistry::instance().names()) {
-        fmt::print(stderr, " built-in:{}", known);
-      }
-      fmt::print(stderr, "\n");
-      return 2;
-    }
-    model_label = options.model;
+    fmt::print(stderr,
+               "error: nothing to run - pass --model-file <path.lpir>"
+               " (or --project <path.lpproj> in DSL-enabled builds)\n");
+    return 2;
   }
 
   if (!parse_replication_metric(options.precision_metric, precision_metric)) {
@@ -846,24 +801,6 @@ int run_command(std::span<const std::string> args) {
 
   if (explicit_project) {
     fmt::print("results dir: {}\n", options.results_dir);
-  }
-
-  // M/M/1 theory header for the built-in model.
-  Mm1Theory theory{};
-  const bool is_builtin_mm1 = !explicit_model_file && options.model ==
-                                  std::string(kBuiltinPrefix) + "mm1";
-  if (is_builtin_mm1) {
-    if (options.lambda >= options.mu) {
-      fmt::print(stderr,
-                 "error: unstable queue (lambda >= mu); theory diverges\n");
-      return 2;
-    }
-    theory = mm1_theory(options.lambda, options.mu);
-    fmt::print(
-        "theory: rho={:.4f} Wq={:.4f} W={:.4f} L={:.4f} Lq={:.4f} "
-        "throughput={:.4f}\n",
-        theory.rho, theory.wq, theory.w, theory.l, theory.lq,
-        theory.throughput);
   }
 
   // Run replications (per-replication deterministic stream seeds). Parallel
@@ -965,18 +902,17 @@ int run_command(std::span<const std::string> args) {
                options.precision_metric, achieved, options.error_percent,
                achieved <= options.error_percent ? "target-reached" : "max-reps");
   }
-  print_row("throughput", summary.throughput, theory.throughput,
-            is_builtin_mm1);
-  print_row("L", summary.mean_in_system, theory.l, is_builtin_mm1);
-  print_row("Lq", summary.mean_in_queue, theory.lq, is_builtin_mm1);
-  print_row("W", summary.mean_sojourn, theory.w, is_builtin_mm1);
-  print_row("Wq", summary.mean_wait, theory.wq, is_builtin_mm1);
+  print_row("throughput", summary.throughput, 0.0, false);
+  print_row("L", summary.mean_in_system, 0.0, false);
+  print_row("Lq", summary.mean_in_queue, 0.0, false);
+  print_row("W", summary.mean_sojourn, 0.0, false);
+  print_row("Wq", summary.mean_wait, 0.0, false);
   if (std::any_of(results.begin(), results.end(), [](const ReplicationMetrics& m) {
         return m.measure_count > 0;
       })) {
     print_row("measure", summary.mean_measure, 0.0, false);
   }
-  print_row("utilization", summary.utilization, theory.rho, is_builtin_mm1);
+  print_row("utilization", summary.utilization, 0.0, false);
   print_row("availability", summary.availability, 0.0, false);
   print_row("final_value", summary.final_value, 0.0, false);
 
@@ -1038,10 +974,6 @@ int run_command(std::span<const std::string> args) {
     }
   }
 
-  if (is_builtin_mm1 && !summary.mean_wait.covers(theory.wq)) {
-    fmt::print(stderr, "warning: Wq CI does not cover theory\n");
-    return 1;
-  }
   return 0;
 }
 

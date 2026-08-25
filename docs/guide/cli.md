@@ -41,8 +41,7 @@ lpcli compile <含错误的模型>.lp --diagnostics-json diag.json
 
 ```text
 usage: lpcli run [options]
-  --model <built-in:NAME>    built-in model (default built-in:mm1)
-  --model-file <path.lpir>   load model from FlatBuffers IR instead
+  --model-file <path.lpir>   load model from FlatBuffers IR (or --project)
   --project <path.lpproj>    compile the bundled DSL and run it
   --output-ir <path>         write the compiled IR (with --project)
   --results-dir <path>       write run.json + metrics.json here
@@ -52,8 +51,6 @@ usage: lpcli run [options]
   --threads <n>              parallel replication workers (default 1)
   --arrivals <n>             arrivals per replication (default 20000)
   --warmup <n>               warmup arrivals excluded from stats
-  --lambda <x>               arrival rate for built-in:mm1 (default 0.8)
-  --mu <x>                   service rate for built-in:mm1 (default 1.0)
   --confidence <x>           CI confidence level (default 0.95)
   --trajectory <path>        write continuous-model trajectory JSON
   --logical-trace <path>     write one-rep LPLT logical-step archive

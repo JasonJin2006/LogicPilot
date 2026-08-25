@@ -101,6 +101,12 @@ endif()
 # an ordinary method runtime compiled into its own library. Sources stay
 # under kernel/src for now; only the TARGET boundary moved. Registration is
 # explicit (methods/register.cpp); the core never auto-registers it.
+# Registration-level toggle: OFF strips the devs entry from the aggregate
+# registry (models then fail KR1004). The library itself still builds until
+# the flow-engine/agent-model rehoming listed in ADR-0068 lands.
+if(NOT LOGICPILOT_METHOD_DEVS)
+  message(STATUS "DEVS method plugin: registration disabled (LOGICPILOT_METHOD_DEVS=OFF)")
+endif()
 add_library(logicpilot_method_devs STATIC
   src/devs/executor.cpp
   src/devs/evidence.cpp
@@ -138,7 +144,8 @@ if(LOGICPILOT_BUILD_TESTS)
   )
   target_compile_features(logicpilot_test_cabi_plugin PRIVATE cxx_std_20)
 
-  add_executable(logicpilot_phase1b_tests
+
+add_executable(logicpilot_phase1b_tests
     tests/test_agent_runtime.cpp
     tests/test_state_machine.cpp
     tests/test_devs.cpp

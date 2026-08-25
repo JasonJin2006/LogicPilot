@@ -8,7 +8,6 @@
 
 #include <fmt/format.h>
 
-#include "builtin_registry.h"
 #include "process_runtime.h"
 #include "run_command.h"
 #include "trace_compare_command.h"
@@ -36,7 +35,6 @@ void print_root_usage() {
 
 int main(int argc, char** argv) {
   std::vector<std::string> args(argv + 1, argv + argc);
-  logicpilot::cli::register_builtin_models();
   // Method Runtime Layer: register every linked method runtime (process is
   // the first; DEVS is kernel-native, while Agent/SD are linked plugins).
   logicpilot::register_all_methods();
