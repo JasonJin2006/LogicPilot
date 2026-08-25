@@ -8,5 +8,5 @@ target_include_directories(logicpilot_method_process PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(logicpilot_method_process PUBLIC
-  logicpilot_phase1b
+  logicpilot_kernel
 )

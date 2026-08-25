@@ -79,7 +79,10 @@ packaged without forking the core, and third parties can add methods.
 | ai/run/project/layout de-paradigmatization + wider lint scope | open |
 | Replication framework + IR reader relocated under `runtime/` (forwarders keep old paths) | done (2026-08-25) |
 | `DevsCheckpoint` removed from SimulationMethod; legacy session checkpoint moved to `devs/session_checkpoint.h` capability helpers | done (2026-08-25) |
-| `builtin_methods.cpp` + `src/devs` engines moved out of core targets into `methods/devs` | open |
+| `logicpilot_phase1b` dissolved; DEVS engine is its own `logicpilot_method_devs` target; neutral impls (ir_loader, replication framework, agent ECS store) absorbed by the core target | done (2026-08-25) |
+| Core no longer auto-registers any method (`register_builtin_methods()` decl left runtime headers; drivers/tests register via `methods/register.cpp`) | done (2026-08-25) |
+| File-path relocation of devs sources into `methods/devs/` + renaming the `logicpilot_phase1b_tests` executable | open (cosmetic) |
+| `DevsEvidenceRecorder` parameter on `SimulationSession::start` re-hosted behind a neutral evidence seam | open |
 
 ## Consequences
 

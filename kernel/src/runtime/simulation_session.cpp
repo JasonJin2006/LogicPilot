@@ -81,7 +81,6 @@ bool SimulationSession::start(
                 error, diagnostics);
   }
 
-  register_builtin_methods();
   scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
   handlers_.clear();
   variables_.clear();

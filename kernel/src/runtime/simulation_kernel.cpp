@@ -81,8 +81,8 @@ std::vector<ReplicationMetrics> SimulationKernel::run(const ReplicationConfig& c
   }
 
   // Fresh per-replication world: one scheduler, empty handler registry and
-  // a clean shared variable store.
-  register_builtin_methods();
+  // a clean shared variable store. Method runtimes are registered by the
+  // driver (register_all_methods); the core never registers any itself.
   scheduler_ = std::make_unique<BinaryHeapScheduler>(64);
   handlers_.clear();
   variables_.clear();

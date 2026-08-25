@@ -19,6 +19,7 @@
 #include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/method_registry.h"
+#include "logicpilot/devs/builtin_registration.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"
 

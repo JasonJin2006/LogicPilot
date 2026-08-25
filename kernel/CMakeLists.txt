@@ -12,6 +12,8 @@
 #   add_subdirectory(apps/lp-server)  (Phase 2c, task #7)
 
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(EnTT CONFIG REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 
 set(LOGICPILOT_WASMTIME_ROOT "" CACHE PATH
   "Root of a Wasmtime C API distribution (include/ and lib/)"
@@ -30,6 +32,9 @@ if(LOGICPILOT_WASMTIME_ROOT)
   endif()
 endif()
 
+# Platform-neutral pieces that happen to live under src/devs or src/agent
+# (IR v2 contract reader, replication framework, ECS agent store) are core
+# infrastructure per ADR-0068 Phase B - no DEVS engine objects here.
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
   src/runtime/method_plugin_manifest.cpp
@@ -40,12 +45,20 @@ add_library(logicpilot_kernel STATIC
   src/runtime/runtime_manager.cpp
   src/runtime/simulation_kernel.cpp
   src/runtime/simulation_session.cpp
+  src/devs/ir_loader.cpp
+  src/devs/replication.cpp
+  src/agent/soa_agent_store.cpp
 )
 target_include_directories(logicpilot_kernel PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_compile_features(logicpilot_kernel PUBLIC cxx_std_20)
-target_link_libraries(logicpilot_kernel PUBLIC nlohmann_json::nlohmann_json ${CMAKE_DL_LIBS})
+target_link_libraries(logicpilot_kernel PUBLIC
+  nlohmann_json::nlohmann_json
+  logicpilot_schemas   # ir_v2_generated.h + flatbuffers runtime (F1 reader)
+  EnTT::EnTT           # neutral ECS agent population store
+  ${CMAKE_DL_LIBS}
+)
 if(LOGICPILOT_WASMTIME_INCLUDE_DIR AND LOGICPILOT_WASMTIME_LIBRARY)
   target_compile_definitions(logicpilot_kernel PRIVATE LOGICPILOT_HAS_WASMTIME=1)
   target_include_directories(logicpilot_kernel SYSTEM PRIVATE ${LOGICPILOT_WASMTIME_INCLUDE_DIR})
@@ -84,14 +97,11 @@ if(LOGICPILOT_BUILD_BENCH)
 endif()
 
 # ---------------------------------------------------------------------------
-# Phase 1b: agent runtime / statemachine / DEVS-lite / M/M/1 (task #4).
-# Appended below; the core section above is owned by Phase 1a.
-# ---------------------------------------------------------------------------
-find_package(EnTT CONFIG REQUIRED)
-find_package(fmt CONFIG REQUIRED)
-
-add_library(logicpilot_phase1b STATIC
-  src/agent/soa_agent_store.cpp
+# DEVS method plugin (ADR-0068 Phase B): the kernel-native DEVS formalism is
+# an ordinary method runtime compiled into its own library. Sources stay
+# under kernel/src for now; only the TARGET boundary moved. Registration is
+# explicit (methods/register.cpp); the core never auto-registers it.
+add_library(logicpilot_method_devs STATIC
   src/devs/executor.cpp
   src/devs/evidence.cpp
   src/devs/evidence_store.cpp
@@ -104,15 +114,11 @@ add_library(logicpilot_phase1b STATIC
   src/devs/checkpoint_journal.cpp
   src/devs/checkpoint_store.cpp
   src/devs/session_checkpoint.cpp
-  src/devs/replication.cpp
   src/devs/mm1.cpp
-  src/devs/ir_loader.cpp
   src/runtime/builtin_methods.cpp
 )
-target_link_libraries(logicpilot_phase1b PUBLIC
+target_link_libraries(logicpilot_method_devs PUBLIC
   logicpilot_kernel
-  logicpilot_schemas   # ir_v2_generated.h + flatbuffers runtime
-  EnTT::EnTT
 )
 
 # lpcli (Phase 1b ships the `run` subcommand; compile lands in Phase 2).
@@ -150,7 +156,7 @@ if(LOGICPILOT_BUILD_TESTS)
     tests/test_perf_baseline.cpp
   )
   target_link_libraries(logicpilot_phase1b_tests PRIVATE
-    logicpilot_phase1b
+    logicpilot_method_devs
     logicpilot_methods
     Catch2::Catch2WithMain
   )
@@ -203,7 +209,7 @@ target_include_directories(lp_server_core PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/apps/lp-server
 )
 target_link_libraries(lp_server_core PUBLIC
-  logicpilot_phase1b
+  logicpilot_method_devs
   logicpilot_methods
   Boost::headers
   fmt::fmt
@@ -248,7 +254,7 @@ if(LOGICPILOT_BUILD_BENCH)
     ${CMAKE_SOURCE_DIR}/bench/mm1_event_bench.cpp
   )
   target_link_libraries(mm1_event_bench PRIVATE
-    logicpilot_phase1b
+    logicpilot_method_devs
     benchmark::benchmark_main
   )
 

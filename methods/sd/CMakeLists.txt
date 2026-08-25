@@ -7,5 +7,5 @@ target_include_directories(logicpilot_method_sd PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(logicpilot_method_sd PUBLIC
-  logicpilot_phase1b
+  logicpilot_kernel
 )

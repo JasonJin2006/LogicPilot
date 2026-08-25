@@ -11,7 +11,7 @@ add_executable(lpcli
   builtin_registry.cpp
 )
 target_link_libraries(lpcli PRIVATE
-  logicpilot_phase1b
+  logicpilot_method_devs
   logicpilot_methods
   fmt::fmt
 )

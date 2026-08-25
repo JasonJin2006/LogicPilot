@@ -5,6 +5,7 @@
 // driver linked against a pruned aggregate simply registers fewer methods;
 // models requesting a disabled method fail with KR1004 at run time.
 #include "register.h"
+#include "logicpilot/devs/builtin_registration.h"
 
 #include "logicpilot/runtime/method_registry.h"
 #if defined(LP_WITH_METHOD_AGENT)

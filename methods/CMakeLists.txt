@@ -18,6 +18,9 @@ endif()
 if(LOGICPILOT_METHOD_STATECHART)
   add_subdirectory(statechart)
 endif()
+# The kernel-native DEVS method is an ordinary plugin target now (ADR-0068
+# Phase B); it gains a LOGICPILOT_METHOD_DEVS toggle together with the
+# minimal-kernel CI tree in Phase C.
 
 # Aggregate method library: links every built-in method plugin and provides
 # the single register_all_methods() entry point used by drivers/tests.
@@ -28,6 +31,7 @@ target_include_directories(logicpilot_methods PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
 )
 target_link_libraries(logicpilot_methods PUBLIC
+  logicpilot_method_devs
 )
 if(LOGICPILOT_METHOD_AGENT)
   target_link_libraries(logicpilot_methods PUBLIC logicpilot_method_agent)
