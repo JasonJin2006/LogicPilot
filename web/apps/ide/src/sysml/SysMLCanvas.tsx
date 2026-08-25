@@ -1146,7 +1146,7 @@ export function SysMLCanvas() {
       )}
       {parseDirty && (
         <div className="sysml-diagnostics sysml-parse-dirty">
-          Source has errors - showing the last valid model.
+          源码存在错误 —— 画布显示最后一次有效模型。
         </div>
       )}
       {contextMenu && (
