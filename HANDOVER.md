@@ -122,6 +122,7 @@ README/docs/index 的陈旧"M/M/c 独占流式"描述已修正为全方法实时
 ## 6. 关键架构知识 / 约定
 
 - 分层方向:**语言扩展依赖 workbench 平台**,反向禁止(workbench 不 import model/sysml 具体目录);provider 注册都是模块副作用式(`import './xxxContributions'`),新 provider 一律带 `*.test.ts`;
+- **插件化(ADR-0068,2026-08-25 起)**:范式模块只允许在 `src/plugins/` 组合根接线;workbench/** 的边界已由 eslint `no-restricted-imports` 强制(违规=0);内核侧 `LOGICPILOT_METHOD_*` CMake 开关可裁剪 agent/process/sd/statechart,DEVS 仍在核心(后续项);layout/ai/project/run 的反向导入仍是已知债务,迁移时同步扩大 lint 范围;
 - 注册表模式三件套已立:`documentTypes.ts`(文件路由)、`diagnostics.ts`(诊断聚合,未知类型诊断为空,**绝不跨语言路由**)、`palette.ts`(元素目录,honesty filter 归贡献方);
 - AI runtime:`assistantRuntime.runAssistantTurn({capabilities, toolScope})`;AIPanel 从 `useUiStore.activeFile` 推导 scope;server 侧 `/api/assistant` 只收 capabilities 字符串(尚未传 scope,如需要再扩协议);
 - 名字身份的坑:`container`、canvasView 键、nodePath、diffModelDocuments 都走名字链——改动任何一处先想 round-trip 与 syncEngine 结构键(JSON.stringify([kind,name,container]));
