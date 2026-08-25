@@ -3,7 +3,18 @@ import { fitBounds, PressGesture, zoomAtPoint } from '@logicpilot/canvas';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
-import { Focus, LayoutTemplate, Maximize2, Minus, Plus, Undo2, Redo2, ExternalLink, Copy, Trash2 } from 'lucide-react';
+import {
+  Focus,
+  LayoutTemplate,
+  Maximize2,
+  Minus,
+  Plus,
+  Undo2,
+  Redo2,
+  ExternalLink,
+  Copy,
+  Trash2,
+} from 'lucide-react';
 import { useSysMLStore, type SysMLViewMode } from '../state/sysmlStore';
 import { CanvasToolbar, useCanvasShortcuts } from '../workbench/canvasShell';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
@@ -372,7 +383,11 @@ export function SysMLCanvas() {
   // pointer handlers via a ref plus one re-render for the cursor class.
   const spaceRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; actions: ContextAction[] } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    actions: ContextAction[];
+  } | null>(null);
 
   useEffect(() => {
     cameraRef.current = camera;
@@ -730,17 +745,21 @@ export function SysMLCanvas() {
         if (parentPos !== undefined && parentSize !== undefined) {
           const nodeW = layout?.sizes?.[drag.id]?.width ?? SYML_NODE_WIDTH;
           const nodeH = layout?.sizes?.[drag.id]?.height ?? SYML_NODE_HEIGHT;
-          nextX = Math.min(Math.max(nextX, parentPos.x + 12), parentPos.x + parentSize.width - nodeW - 12);
-          nextY = Math.min(Math.max(nextY, parentPos.y + 64), parentPos.y + parentSize.height - nodeH - 12);
+          nextX = Math.min(
+            Math.max(nextX, parentPos.x + 12),
+            parentPos.x + parentSize.width - nodeW - 12,
+          );
+          nextY = Math.min(
+            Math.max(nextY, parentPos.y + 64),
+            parentPos.y + parentSize.height - nodeH - 12,
+          );
         }
       }
       // Gesture path: transform only the dragged node in the DOM; the store
       // commits once on release (a 600-element scene cannot re-render per
       // pointermove).
       drag.pending = { x: nextX, y: nextY };
-      const node = documentRef.current?.querySelector(
-        `g[data-id="${CSS.escape(drag.id)}"]`,
-      );
+      const node = documentRef.current?.querySelector(`g[data-id="${CSS.escape(drag.id)}"]`);
       node?.setAttribute('transform', `translate(${nextX} ${nextY})`);
     } else {
       applyCameraNow({
@@ -818,7 +837,12 @@ export function SysMLCanvas() {
               onSelect: () => void autoLayout(),
             },
             { key: 'zoomOut', title: 'Zoom out', icon: Minus, onSelect: () => zoom(1 / 1.25) },
-            { key: 'reset', title: 'Reset view', icon: Focus, onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }) },
+            {
+              key: 'reset',
+              title: 'Reset view',
+              icon: Focus,
+              onSelect: () => setCamera({ scale: 1, x: 0, y: 0 }),
+            },
             { key: 'zoomIn', title: 'Zoom in', icon: Plus, onSelect: () => zoom(1.25) },
             {
               key: 'fit',
@@ -917,194 +941,204 @@ export function SysMLCanvas() {
         viewMode !== 'parametric' &&
         viewMode !== 'usecase' &&
         viewMode !== 'occurrence' && (
-        <>
-      <div className="sysml-overlays">
-        {runError !== null && (
-          <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
-        )}
-        {loweringErrors !== null && (
-          <div className="sysml-trace sysml-run-error">
-            {loweringErrors.map((diagnostic) => (
-              <div key={diagnostic.code + diagnostic.message}>
-                {diagnostic.code}: {diagnostic.message}
-              </div>
-            ))}
-          </div>
-        )}
-        {execution !== null && (
-          <div className="sysml-trace">
-            <div className="sysml-trace-head">
-              trace · {execution.steps.length} step(s)
-              {execution.result !== null && ` · result ${execution.result}`} · rev{' '}
-              {execution.sourceHash}
+          <>
+            <div className="sysml-overlays">
+              {runError !== null && (
+                <div className="sysml-trace sysml-run-error">run failed: {runError}</div>
+              )}
+              {loweringErrors !== null && (
+                <div className="sysml-trace sysml-run-error">
+                  {loweringErrors.map((diagnostic) => (
+                    <div key={diagnostic.code + diagnostic.message}>
+                      {diagnostic.code}: {diagnostic.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {execution !== null && (
+                <div className="sysml-trace">
+                  <div className="sysml-trace-head">
+                    trace · {execution.steps.length} step(s)
+                    {execution.result !== null && ` · result ${execution.result}`} · rev{' '}
+                    {execution.sourceHash}
+                  </div>
+                  {execution.steps.map((step) => (
+                    <div key={step.index} className="sysml-trace-step">
+                      [{step.index + 1}] {step.description}
+                      {step.time !== undefined && ` · t=${step.time}`}
+                      {step.line !== undefined && ` (line ${step.line})`} → {step.value}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {evidence.length > 0 && (
+                <div className="sysml-evidence">
+                  <div className="sysml-trace-head">
+                    evidence · last {Math.min(evidence.length, 5)} of {evidence.length} run(s) ·
+                    bound to model revisions
+                  </div>
+                  {evidence.slice(0, 5).map((record) => (
+                    <div
+                      key={record.id}
+                      className={`sysml-evidence-row${record.ok ? '' : ' failed'}`}
+                    >
+                      <span>{new Date(record.startedAt).toLocaleTimeString()}</span>
+                      <strong>{record.targetQualifiedName}</strong>
+                      <span>
+                        {record.ok
+                          ? record.result !== null && record.result !== undefined
+                            ? `result ${record.result}`
+                            : `${record.steps?.length ?? 0} step(s)`
+                          : `failed: ${record.error ?? 'unknown error'}`}
+                      </span>
+                      <span title={record.revision}>
+                        rev {record.revision.replace(/^fnv1a-/, '').slice(0, 8)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            {execution.steps.map((step) => (
-              <div key={step.index} className="sysml-trace-step">
-                [{step.index + 1}] {step.description}
-                {step.time !== undefined && ` · t=${step.time}`}
-                {step.line !== undefined && ` (line ${step.line})`} → {step.value}
-              </div>
-            ))}
-          </div>
-        )}
-        {evidence.length > 0 && (
-          <div className="sysml-evidence">
-            <div className="sysml-trace-head">
-              evidence · last {Math.min(evidence.length, 5)} of {evidence.length} run(s) · bound to
-              model revisions
-            </div>
-            {evidence.slice(0, 5).map((record) => (
-              <div key={record.id} className={`sysml-evidence-row${record.ok ? '' : ' failed'}`}>
-                <span>{new Date(record.startedAt).toLocaleTimeString()}</span>
-                <strong>{record.targetQualifiedName}</strong>
-                <span>
-                  {record.ok
-                    ? record.result !== null && record.result !== undefined
-                      ? `result ${record.result}`
-                      : `${record.steps?.length ?? 0} step(s)`
-                    : `failed: ${record.error ?? 'unknown error'}`}
-                </span>
-                <span title={record.revision}>
-                  rev {record.revision.replace(/^fnv1a-/, '').slice(0, 8)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <svg
-        ref={documentRef}
-        className="sysml-svg"
-        viewBox={`0 0 ${graphBounds.width} ${graphBounds.height}`}
-        onPointerDown={beginPan}
-        onPointerMove={handleMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onContextMenu={openCanvasMenu}
-        onClick={() => select(null)}
-      >
-        <defs>
-          <marker id="sysml-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-            <path d="M0,0 L8,4 L0,8 Z" fill="#9aa8ba" />
-          </marker>
-        </defs>
-        <g
-          ref={sceneRef}
-          transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}
-        >
-          <rect
-            x={0}
-            y={0}
-            width={graphBounds.width}
-            height={graphBounds.height}
-            className="sysml-canvas-bg"
-          />
-          {visibleRelations.map((relation) => {
-            const from = projection.elements.find((element) => element.id === relation.from);
-            const to = projection.elements.find((element) => element.id === relation.to);
-            if (!from || !to) return null;
-            const style = RELATION_STYLES[relation.kind];
-            if (relation.kind === 'contains') {
-              // Structural nesting guide: straight dashed line (the ELK
-              // pipeline nests containment into frames instead of edges).
-              const a = relationPoint(from, positions, 'from');
-              const b = relationPoint(to, positions, 'to');
-              return (
-                <g key={relation.id} className="sysml-relation">
-                  <line
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                    stroke={style.color}
-                    strokeDasharray={style.dash}
-                    markerEnd="url(#sysml-arrow)"
-                  />
-                </g>
-              );
-            }
-            // Orthogonal Manhattan routing: cross-container edges bend in a
-            // channel instead of cutting through container frames, and the
-            // geometry is recomputed per render so manual drags stay glued.
-            const route = orthogonalRoute(
-              routedRect(from, positions, layout?.sizes),
-              routedRect(to, positions, layout?.sizes),
-            );
-            const label = polylineLabelPoint(route);
-            return (
-              <g key={relation.id} className="sysml-relation">
-                <path
-                  d={routePathData(route)}
-                  fill="none"
-                  stroke={style.color}
-                  strokeDasharray={style.dash}
-                  markerEnd="url(#sysml-arrow)"
-                />
-                <text x={label.x} y={label.y - 6} className="sysml-relation-label">
-                  {relation.label}
-                </text>
-              </g>
-            );
-          })}
-          {visibleElements.map((element) => {
-            const point = positionOf(element, positions);
-            const isSelected = element.id === selectedId;
-            return (
+            <svg
+              ref={documentRef}
+              className="sysml-svg"
+              viewBox={`0 0 ${graphBounds.width} ${graphBounds.height}`}
+              onPointerDown={beginPan}
+              onPointerMove={handleMove}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              onContextMenu={openCanvasMenu}
+              onClick={() => select(null)}
+            >
+              <defs>
+                <marker
+                  id="sysml-arrow"
+                  markerWidth="8"
+                  markerHeight="8"
+                  refX="7"
+                  refY="4"
+                  orient="auto"
+                >
+                  <path d="M0,0 L8,4 L0,8 Z" fill="#9aa8ba" />
+                </marker>
+              </defs>
               <g
-                key={element.id}
-                transform={`translate(${point.x} ${point.y})`}
-                className={`sysml-node${isSelected ? ' selected' : ''}`}
-                data-kind={element.kind}
-                data-id={element.id}
-                onPointerDown={(event) => beginMove(event, element)}
-                onContextMenu={(event) => openNodeMenu(event, element.id)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  select(element.id);
-                }}
+                ref={sceneRef}
+                transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}
               >
-                {/* uniform hit area: the notation shapes leave corners free */}
                 <rect
-                  width={layout?.sizes?.[element.id]?.width ?? SYML_NODE_WIDTH}
-                  height={layout?.sizes?.[element.id]?.height ?? SYML_NODE_HEIGHT}
-                  fill="transparent"
+                  x={0}
+                  y={0}
+                  width={graphBounds.width}
+                  height={graphBounds.height}
+                  className="sysml-canvas-bg"
                 />
-                <NodeBody
-                  kind={element.kind}
-                  width={layout?.sizes?.[element.id]?.width}
-                  height={layout?.sizes?.[element.id]?.height}
-                />
-                <text x={12} y={24} className="sysml-node-kind">
-                  {stereotypeFor(element)}
-                </text>
-                <text x={12} y={44} className="sysml-node-name">
-                  {element.name.length > 20 ? element.name.slice(0, 19) + '…' : element.name}
-                  <title>{element.name}</title>
-                </text>
-                <CornerMark
-                  kind={element.kind}
-                  width={layout?.sizes?.[element.id]?.width}
-                  height={layout?.sizes?.[element.id]?.height}
-                />
+                {visibleRelations.map((relation) => {
+                  const from = projection.elements.find((element) => element.id === relation.from);
+                  const to = projection.elements.find((element) => element.id === relation.to);
+                  if (!from || !to) return null;
+                  const style = RELATION_STYLES[relation.kind];
+                  if (relation.kind === 'contains') {
+                    // Structural nesting guide: straight dashed line (the ELK
+                    // pipeline nests containment into frames instead of edges).
+                    const a = relationPoint(from, positions, 'from');
+                    const b = relationPoint(to, positions, 'to');
+                    return (
+                      <g key={relation.id} className="sysml-relation">
+                        <line
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          stroke={style.color}
+                          strokeDasharray={style.dash}
+                          markerEnd="url(#sysml-arrow)"
+                        />
+                      </g>
+                    );
+                  }
+                  // Orthogonal Manhattan routing: cross-container edges bend in a
+                  // channel instead of cutting through container frames, and the
+                  // geometry is recomputed per render so manual drags stay glued.
+                  const route = orthogonalRoute(
+                    routedRect(from, positions, layout?.sizes),
+                    routedRect(to, positions, layout?.sizes),
+                  );
+                  const label = polylineLabelPoint(route);
+                  return (
+                    <g key={relation.id} className="sysml-relation">
+                      <path
+                        d={routePathData(route)}
+                        fill="none"
+                        stroke={style.color}
+                        strokeDasharray={style.dash}
+                        markerEnd="url(#sysml-arrow)"
+                      />
+                      <text x={label.x} y={label.y - 6} className="sysml-relation-label">
+                        {relation.label}
+                      </text>
+                    </g>
+                  );
+                })}
+                {visibleElements.map((element) => {
+                  const point = positionOf(element, positions);
+                  const isSelected = element.id === selectedId;
+                  return (
+                    <g
+                      key={element.id}
+                      transform={`translate(${point.x} ${point.y})`}
+                      className={`sysml-node${isSelected ? ' selected' : ''}`}
+                      data-kind={element.kind}
+                      data-id={element.id}
+                      onPointerDown={(event) => beginMove(event, element)}
+                      onContextMenu={(event) => openNodeMenu(event, element.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        select(element.id);
+                      }}
+                    >
+                      {/* uniform hit area: the notation shapes leave corners free */}
+                      <rect
+                        width={layout?.sizes?.[element.id]?.width ?? SYML_NODE_WIDTH}
+                        height={layout?.sizes?.[element.id]?.height ?? SYML_NODE_HEIGHT}
+                        fill="transparent"
+                      />
+                      <NodeBody
+                        kind={element.kind}
+                        width={layout?.sizes?.[element.id]?.width}
+                        height={layout?.sizes?.[element.id]?.height}
+                      />
+                      <text x={12} y={24} className="sysml-node-kind">
+                        {stereotypeFor(element)}
+                      </text>
+                      <text x={12} y={44} className="sysml-node-name">
+                        {element.name.length > 20 ? element.name.slice(0, 19) + '…' : element.name}
+                        <title>{element.name}</title>
+                      </text>
+                      <CornerMark
+                        kind={element.kind}
+                        width={layout?.sizes?.[element.id]?.width}
+                        height={layout?.sizes?.[element.id]?.height}
+                      />
+                    </g>
+                  );
+                })}
               </g>
-            );
-          })}
-        </g>
-      </svg>
-      {selected && (
-        <SelectionBadge
-          title={selected.kind}
-          detail={selected.qualifiedName}
-          hint={`line ${selected.span.line} · ${selected.id}`}
-          action={
-            currentPath !== null
-              ? { label: 'Go to source', onSelect: openSourceOf(selected.id) }
-              : undefined
-          }
-        />
-      )}
-        </>
-      )}
+            </svg>
+            {selected && (
+              <SelectionBadge
+                title={selected.kind}
+                detail={selected.qualifiedName}
+                hint={`line ${selected.span.line} · ${selected.id}`}
+                action={
+                  currentPath !== null
+                    ? { label: 'Go to source', onSelect: openSourceOf(selected.id) }
+                    : undefined
+                }
+              />
+            )}
+          </>
+        )}
       {projection.diagnostics.length > 0 && (
         <div className="sysml-diagnostics">
           {projection.diagnostics.length} projection warning(s); source remains authoritative.

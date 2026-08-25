@@ -315,9 +315,7 @@ export function ModelCanvas() {
       removeBlock(selectedId);
     },
     onCopy: () => {
-      const node = useModelStore
-        .getState()
-        .document.nodes.find((entry) => entry.id === selectedId);
+      const node = useModelStore.getState().document.nodes.find((entry) => entry.id === selectedId);
       if (node?.presentation) shapeClipboard = { kind: node.kind, object: node.presentation };
     },
     onPaste: () => pasteShape(),

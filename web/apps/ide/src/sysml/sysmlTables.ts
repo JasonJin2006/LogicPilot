@@ -53,9 +53,7 @@ export interface RequirementRow {
 export function requirementRows(projection: SysMLProjection): RequirementRow[] {
   const byId = new Map(projection.elements.map((element) => [element.id, element]));
   return projection.elements
-    .filter((element) =>
-      ['requirement', 'verification', 'analysis'].includes(element.kind),
-    )
+    .filter((element) => ['requirement', 'verification', 'analysis'].includes(element.kind))
     .map((element) => {
       const owner =
         element.ownerId !== undefined ? byId.get(element.ownerId)?.qualifiedName : undefined;

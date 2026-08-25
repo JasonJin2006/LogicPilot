@@ -48,7 +48,13 @@ function OccurrenceChartSvg({ chart }: { chart: OccurrenceChart }) {
     TIMELINE_X + (index / Math.max(1, chart.markers.length - 1 || 1)) * TIMELINE_W;
   return (
     <svg className="sysml-oc-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <line x1={TIMELINE_X} y1={axisY} x2={TIMELINE_X + TIMELINE_W} y2={axisY} className="sysml-oc-axis" />
+      <line
+        x1={TIMELINE_X}
+        y1={axisY}
+        x2={TIMELINE_X + TIMELINE_W}
+        y2={axisY}
+        className="sysml-oc-axis"
+      />
       {chart.markers.map((marker, index) => {
         const x = position(index);
         return (

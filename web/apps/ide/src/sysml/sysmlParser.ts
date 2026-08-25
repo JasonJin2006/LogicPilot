@@ -367,8 +367,18 @@ export function parseSysMLSource(source: string): SysMLParseResult {
         // item / port / ... declaration IS a usage. Packages (and kinds
         // without the def/usage axis) stay 'unknown'.
         const USAGE_DEFAULT_KINDS = new Set([
-          'part', 'item', 'port', 'attribute', 'action', 'calculation',
-          'calc', 'state', 'constraint', 'occurrence', 'flow', 'interface',
+          'part',
+          'item',
+          'port',
+          'attribute',
+          'action',
+          'calculation',
+          'calc',
+          'state',
+          'constraint',
+          'occurrence',
+          'flow',
+          'interface',
         ]);
         const declarationKind =
           declaration[2] === 'def'
@@ -509,7 +519,10 @@ export function parseSysMLSource(source: string): SysMLParseResult {
               },
             });
           }
-        } else if (/^(?:in|out|inout)\s/.test(indented) || /^(?:redefines|subsets|references|values|succession)\b/.test(indented)) {
+        } else if (
+          /^(?:in|out|inout)\s/.test(indented) ||
+          /^(?:redefines|subsets|references|values|succession)\b/.test(indented)
+        ) {
           // Directed feature declarations (`in t :> ISQ::torque;`) become
           // port usages; pure continuation keywords (redefines/subsets/
           // succession) are tolerated prose of the owning block.
@@ -565,11 +578,21 @@ export function parseSysMLSource(source: string): SysMLParseResult {
             },
           });
           if (owner !== undefined && ownerId !== undefined) {
-            pushPending(pending, 'contains', owner.qualifiedName, fragmentName, 'contains', lineNumber);
+            pushPending(
+              pending,
+              'contains',
+              owner.qualifiedName,
+              fragmentName,
+              'contains',
+              lineNumber,
+            );
           }
           const fragmentDelta = opens - closes;
           if (fragmentDelta > 0) {
-            openScopes.push({ elementIndex: elements.length - 1, closeDepth: depth + fragmentDelta });
+            openScopes.push({
+              elementIndex: elements.length - 1,
+              closeDepth: depth + fragmentDelta,
+            });
           }
         } else if (/^'[^']+';?$/.test(indented)) {
           // Enumeration literal members (`'高';`): prose of the owning enum.
@@ -606,7 +629,10 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           // `attribute :>> 'name' = #.# [g];`): refinements of the previous
           // declaration. Accepted - the containment/projection tree does not
           // depend on them (matrix: recorded verbatim, never interpreted).
-        } else if (/^'[^']+'\s*=/.test(indented) || /^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]/.test(indented)) {
+        } else if (
+          /^'[^']+'\s*=/.test(indented) ||
+          /^[A-Za-z_][A-Za-z0-9_]*\s*=[^=]/.test(indented)
+        ) {
           // Feature value assignments ('制造商' = "自制"; /
           // '类别' = '零件类别'::'飞行器零件';): accepted as prose. The
           // assigned value belongs to the owning attribute's declaration;

@@ -94,9 +94,9 @@ const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
 
 /** The icon renderer a library contribution provides, if any. */
 function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | undefined {
-  const contribution = PALETTE_CONTRIBUTIONS
-    .list()
-    .find((entry) => entry.library.id === item.library);
+  const contribution = PALETTE_CONTRIBUTIONS.list().find(
+    (entry) => entry.library.id === item.library,
+  );
   return contribution?.iconFor?.({
     kind: item.kind,
     library: item.library ?? 'process',
@@ -117,7 +117,12 @@ export function PalettePanel() {
   const barRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef<DragSession | null>(null);
-  const [ghost, setGhost] = useState<{ x: number; y: number; kind: string; library?: string } | null>(null);
+  const [ghost, setGhost] = useState<{
+    x: number;
+    y: number;
+    kind: string;
+    library?: string;
+  } | null>(null);
 
   // The mouse wheel scrolls the library bar horizontally.
   useEffect(() => {
@@ -191,8 +196,7 @@ export function PalettePanel() {
     }
     const activeFile = useUiStore.getState().activeFile;
     const sysmlItem =
-      activeFile !== null &&
-      documentContributionFor(activeFile)?.id === 'sysml'
+      activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml'
         ? splitSysmlItem(drag.kind)
         : null;
     if (sysmlItem !== null) {
@@ -252,116 +256,119 @@ export function PalettePanel() {
           {visible.map((block) => {
             const ContributedIcon = iconForItem(block);
             return (
-            <li
-              key={block.kind}
-              className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
-              title={
-                DRAWABLE_PRESENTATION_KINDS.has(block.kind)
-                  ? `${block.name}: double-click to draw point by point; drag to insert a preset`
-                  : block.hint
-                    ? `${block.kind} - ${block.hint}`
-                    : block.kind
-              }
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                dragRef.current = {
-                  kind: block.kind,
-                  library: block.library ?? 'process',
-                  pointerId: event.pointerId,
-                  startX: event.clientX,
-                  startY: event.clientY,
-                  moved: false,
-                };
-                (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-setGhost({
-                  x: event.clientX,
-                  y: event.clientY,
-                  kind: block.kind,
-                  library: block.library,
-                });
-              }}
-              onPointerMove={(event) => {
-                const drag = dragRef.current;
-                if (!drag || drag.pointerId !== event.pointerId) return;
-                if (
-                  !drag.moved &&
-                  Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4
-                ) {
-                  drag.moved = true;
+              <li
+                key={block.kind}
+                className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
+                title={
+                  DRAWABLE_PRESENTATION_KINDS.has(block.kind)
+                    ? `${block.name}: double-click to draw point by point; drag to insert a preset`
+                    : block.hint
+                      ? `${block.kind} - ${block.hint}`
+                      : block.kind
                 }
-                if (drag.moved) {
-setGhost({
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  dragRef.current = {
+                    kind: block.kind,
+                    library: block.library ?? 'process',
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    moved: false,
+                  };
+                  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+                  setGhost({
                     x: event.clientX,
                     y: event.clientY,
                     kind: block.kind,
                     library: block.library,
                   });
-                }
-              }}
-              onPointerUp={endDrag}
-              onPointerCancel={() => {
-                dragRef.current = null;
-                setGhost(null);
-              }}
-              onDoubleClick={() => {
-                const activeFile = useUiStore.getState().activeFile;
-                const sysmlItem =
-                  activeFile !== null &&
-                  documentContributionFor(activeFile)?.id === 'sysml'
-                    ? splitSysmlItem(block.kind)
-                    : null;
-                if (sysmlItem !== null) {
-                  const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
-                  if (result.ok) recordUse(block.kind);
-                  return;
-                }
-                if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
-                  startDrawing(block.kind as 'line' | 'polyline' | 'curve');
-                  recordUse(block.kind);
-                  return;
-                }
-                insertBlockAt(block.kind, block.library ?? 'process');
-                recordUse(block.kind);
-              }}
-            >
-              <span className="palette-chip">
-                <span className="palette-chip-icon">
-                  {ContributedIcon !== undefined ? (
-                    <ContributedIcon size={26} />
-                  ) : (
-                    <BlockIcon kind={block.kind} />
-                  )}
-                  {(() => {
-                    // Port dots at the glyph's real port anchors (AnyLogic
-                    // green-dot positions), scaled to the 30px chip icon
-                    // (icon centre at (15,15), scale 0.75). Custom-library
-                    // blocks keep the old in/out edge dots via the fallback.
-                    const inPorts = block.inPorts?.length ? block.inPorts : block.in ? ['in'] : [];
-                    const outPorts = block.outPorts?.length
-                      ? block.outPorts
-                      : block.out
-                        ? ['out']
-                        : [];
-                    return [...inPorts, ...outPorts].map((name) => {
-                      const direction = inPorts.includes(name) ? 'in' : 'out';
-                      const [px, py] = portGlyphPoint(block.kind, name, direction);
-                      return (
-                        <span
-                          key={name}
-                          className={`palette-port port-${direction}`}
-                          style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
-                          aria-hidden
-                        />
-                      );
+                }}
+                onPointerMove={(event) => {
+                  const drag = dragRef.current;
+                  if (!drag || drag.pointerId !== event.pointerId) return;
+                  if (
+                    !drag.moved &&
+                    Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4
+                  ) {
+                    drag.moved = true;
+                  }
+                  if (drag.moved) {
+                    setGhost({
+                      x: event.clientX,
+                      y: event.clientY,
+                      kind: block.kind,
+                      library: block.library,
                     });
-                  })()}
-                  {DRAWABLE_PRESENTATION_KINDS.has(block.kind) && (
-                    <PencilLine className="palette-drawable-mark" size={11} aria-hidden />
-                  )}
+                  }
+                }}
+                onPointerUp={endDrag}
+                onPointerCancel={() => {
+                  dragRef.current = null;
+                  setGhost(null);
+                }}
+                onDoubleClick={() => {
+                  const activeFile = useUiStore.getState().activeFile;
+                  const sysmlItem =
+                    activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml'
+                      ? splitSysmlItem(block.kind)
+                      : null;
+                  if (sysmlItem !== null) {
+                    const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
+                    if (result.ok) recordUse(block.kind);
+                    return;
+                  }
+                  if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
+                    startDrawing(block.kind as 'line' | 'polyline' | 'curve');
+                    recordUse(block.kind);
+                    return;
+                  }
+                  insertBlockAt(block.kind, block.library ?? 'process');
+                  recordUse(block.kind);
+                }}
+              >
+                <span className="palette-chip">
+                  <span className="palette-chip-icon">
+                    {ContributedIcon !== undefined ? (
+                      <ContributedIcon size={26} />
+                    ) : (
+                      <BlockIcon kind={block.kind} />
+                    )}
+                    {(() => {
+                      // Port dots at the glyph's real port anchors (AnyLogic
+                      // green-dot positions), scaled to the 30px chip icon
+                      // (icon centre at (15,15), scale 0.75). Custom-library
+                      // blocks keep the old in/out edge dots via the fallback.
+                      const inPorts = block.inPorts?.length
+                        ? block.inPorts
+                        : block.in
+                          ? ['in']
+                          : [];
+                      const outPorts = block.outPorts?.length
+                        ? block.outPorts
+                        : block.out
+                          ? ['out']
+                          : [];
+                      return [...inPorts, ...outPorts].map((name) => {
+                        const direction = inPorts.includes(name) ? 'in' : 'out';
+                        const [px, py] = portGlyphPoint(block.kind, name, direction);
+                        return (
+                          <span
+                            key={name}
+                            className={`palette-port port-${direction}`}
+                            style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
+                            aria-hidden
+                          />
+                        );
+                      });
+                    })()}
+                    {DRAWABLE_PRESENTATION_KINDS.has(block.kind) && (
+                      <PencilLine className="palette-drawable-mark" size={11} aria-hidden />
+                    )}
+                  </span>
                 </span>
-              </span>
-              <span className="palette-name">{block.name}</span>
-            </li>
+                <span className="palette-name">{block.name}</span>
+              </li>
             );
           })}
         </ul>
@@ -374,7 +381,11 @@ setGhost({
               library: ghost.library ?? 'process',
               name: ghost.kind,
             });
-            return GhostIcon !== undefined ? <GhostIcon size={26} /> : <BlockIcon kind={ghost.kind} />;
+            return GhostIcon !== undefined ? (
+              <GhostIcon size={26} />
+            ) : (
+              <BlockIcon kind={ghost.kind} />
+            );
           })()}
         </span>
       )}

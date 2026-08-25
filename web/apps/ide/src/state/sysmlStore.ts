@@ -22,10 +22,7 @@ import {
   type SysMLEvidenceRecord,
 } from '../sysml/sysmlEvidence';
 import { autoLayoutChunkedWithElk, autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
-import {
-  buildLinkedSysMLModel,
-  type SysMLFileUnit,
-} from '../sysml/sysmlLinkedModel';
+import { buildLinkedSysMLModel, type SysMLFileUnit } from '../sysml/sysmlLinkedModel';
 
 export type SysMLViewMode =
   | 'all'
@@ -128,7 +125,8 @@ function persistLayout(path: string, layout: SysMLLayout): void {
   }
 }
 
-interface SysMLState {  path: string | null;
+interface SysMLState {
+  path: string | null;
   source: string;
   projection: SysMLProjection | null;
   layout: SysMLLayout | null;
@@ -316,12 +314,11 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     const state = get();
     const linkedSources = collectSysmlEntries(workspaceSources);
     linkedSources[path] = source;
-    const sameDocument = state.path === path && state.source === source && state.projection !== null;
+    const sameDocument =
+      state.path === path && state.source === source && state.projection !== null;
     const sameSiblings =
       Object.keys(linkedSources).length === Object.keys(state.linkedSources).length &&
-      Object.entries(state.linkedSources).every(
-        ([key, value]) => linkedSources[key] === value,
-      );
+      Object.entries(state.linkedSources).every(([key, value]) => linkedSources[key] === value);
     if (sameDocument && sameSiblings) return;
 
     const previousUnits = new Map(state.units.map((unit) => [unit.path, unit]));

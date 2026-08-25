@@ -10,11 +10,7 @@ import { useSysMLStore } from '../state/sysmlStore';
 import { useUiStore } from '../state/uiStore';
 import { useLayoutStore } from '../state/layoutStore';
 import { useProjectStore } from '../state/projectStore';
-import {
-  addRelation,
-  deleteSelected,
-  renameSelected,
-} from './sysmlEditBridge';
+import { addRelation, deleteSelected, renameSelected } from './sysmlEditBridge';
 import type { RelationVerb } from './sysmlEdits';
 
 const RELATION_VERBS: ReadonlyArray<{ verb: RelationVerb; label: string }> = [
@@ -79,7 +75,9 @@ export function SysMLPropertiesPanel() {
       }
     }
     useLayoutStore.getState().openPanel('center', 'dsl');
-    useUiStore.getState().revealInSource(targetPath, selected.nameSpan.start, selected.nameSpan.end);
+    useUiStore
+      .getState()
+      .revealInSource(targetPath, selected.nameSpan.start, selected.nameSpan.end);
   };
   const position = layout.positions[selected.id] ?? { x: 80, y: 80 };
   const setPosition = (axis: 'x' | 'y', value: string) => {

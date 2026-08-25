@@ -51,9 +51,20 @@ function UseCaseChartSvg({ chart }: { chart: UseCaseChart }) {
         const y = 52 + index * 74;
         return (
           <g key={actor.id} className="sysml-uc-node" onClick={() => select(actor.id)}>
-            <line x1={actorX + 34} y1={y} x2={cx - ELLIPSE_RX + 8} y2={cy} className="sysml-uc-link" />
+            <line
+              x1={actorX + 34}
+              y1={y}
+              x2={cx - ELLIPSE_RX + 8}
+              y2={cy}
+              className="sysml-uc-link"
+            />
             <g transform={`translate(${actorX - 16} ${y - 26})`} className="sysml-uc-node">
-              <circle cx={16} cy={6} r={6} className={`sysml-uc-actor${actor.id === selectedId ? ' selected' : ''}`} />
+              <circle
+                cx={16}
+                cy={6}
+                r={6}
+                className={`sysml-uc-actor${actor.id === selectedId ? ' selected' : ''}`}
+              />
               <path
                 d="M16 12 V26 M6 17 H26 M16 26 L9 38 M16 26 L23 38"
                 className={`sysml-uc-actor${actor.id === selectedId ? ' selected' : ''}`}
@@ -80,7 +91,13 @@ function UseCaseChartSvg({ chart }: { chart: UseCaseChart }) {
         const y = 52 + index * 74;
         return (
           <g key={subject.id} className="sysml-uc-node" onClick={() => select(subject.id)}>
-            <line x1={subjectX - 30} y1={y} x2={cx + ELLIPSE_RX - 8} y2={cy} className="sysml-uc-link" />
+            <line
+              x1={subjectX - 30}
+              y1={y}
+              x2={cx + ELLIPSE_RX - 8}
+              y2={cy}
+              className="sysml-uc-link"
+            />
             <rect
               x={subjectX - 30}
               y={y - 15}
@@ -104,8 +121,8 @@ export function SysMLUseCaseView({ projection }: { projection: SysMLProjection }
   if (charts.length === 0) {
     return (
       <div className="sysml-empty">
-        No populated use cases in this model. Use-case cards render from `usecase` bodies
-        containing `actor ...;` / `subject ...;` declarations.
+        No populated use cases in this model. Use-case cards render from `usecase` bodies containing
+        `actor ...;` / `subject ...;` declarations.
       </div>
     );
   }

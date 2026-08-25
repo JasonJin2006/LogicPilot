@@ -49,11 +49,7 @@ function buildCharts(projection: SysMLProjection): SequenceChart[] {
       }));
     if (participants.length === 0 || messages.length === 0) continue;
     const fragments = projection.elements
-      .filter(
-        (element) =>
-          element.kind === 'fragment' &&
-          element.ownerId === interaction.id,
-      )
+      .filter((element) => element.kind === 'fragment' && element.ownerId === interaction.id)
       .map((fragment) => ({
         id: fragment.id,
         name: fragment.name,
@@ -82,7 +78,11 @@ function SequenceChartSvg({ chart }: { chart: SequenceChart }) {
       {chart.participants.map((participant, index) => {
         const x = centerX(index);
         return (
-          <g key={participant.id} onClick={() => select(participant.id)} className="sysml-seq-participant">
+          <g
+            key={participant.id}
+            onClick={() => select(participant.id)}
+            className="sysml-seq-participant"
+          >
             <rect
               x={x - 64}
               y={TOP_PAD}

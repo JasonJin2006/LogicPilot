@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectSysML } from './sysmlProjection';
-import {
-  addRelationStatement,
-  deleteElement,
-  insertElement,
-  renameElement,
-} from './sysmlEdits';
+import { addRelationStatement, deleteElement, insertElement, renameElement } from './sysmlEdits';
 
 const BASE = `package Vehicle {
   part def Engine;

@@ -13,12 +13,7 @@ import { PALETTE_CONTRIBUTIONS, type PaletteItem } from '../workbench/palette';
 import { SysMLElementIcon } from './sysmlIcons';
 import type { SysMLVisualKind } from './sysmlProjection';
 
-function item(
-  kind: string,
-  name: string,
-  declaration: 'def' | 'usage',
-  hint: string,
-): PaletteItem {
+function item(kind: string, name: string, declaration: 'def' | 'usage', hint: string): PaletteItem {
   return {
     kind: `${kind}${declaration === 'def' ? ':def' : ':usage'}`,
     library: 'sysml',

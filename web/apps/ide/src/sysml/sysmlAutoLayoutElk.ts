@@ -84,8 +84,7 @@ export function buildElkGraph(
       targets: [relation.to],
     }));
 
-  const direction =
-    mode === 'behavior' || mode === 'requirements' ? 'DOWN' : 'RIGHT';
+  const direction = mode === 'behavior' || mode === 'requirements' ? 'DOWN' : 'RIGHT';
 
   return {
     id: 'root',
@@ -220,7 +219,6 @@ export async function autoLayoutWithElk(
   return { version: 1, sourceHash: projection.sourceHash, positions, sizes };
 }
 
-
 /** Chunked compound layout for large models (plan S4 follow-up): one ELK
  *  run per TOP-LEVEL root element instead of a single graph with hundreds
  *  of nodes - each chunk stays inside the worker's comfort zone, results
@@ -243,7 +241,9 @@ export async function autoLayoutChunkedWithElk(
   );
   if (units.length <= 1) {
     units = projection.elements.filter(
-      (element) => element.ownerId !== undefined && byId.has(element.ownerId) &&
+      (element) =>
+        element.ownerId !== undefined &&
+        byId.has(element.ownerId) &&
         (byId.get(element.ownerId)!.ownerId === undefined ||
           !byId.has(byId.get(element.ownerId)!.ownerId!)),
     );

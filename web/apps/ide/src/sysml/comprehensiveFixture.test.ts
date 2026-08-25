@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { projectSysML } from './sysmlProjection';
 
 describe('comprehensive example fixture', () => {
-  const path = fileURLToPath(new URL('../../../../../examples/sysml-demo/comprehensive.sysml', import.meta.url));
+  const path = fileURLToPath(
+    new URL('../../../../../examples/sysml-demo/comprehensive.sysml', import.meta.url),
+  );
 
   it('projects with zero SY0001/SY0002 diagnostics', () => {
     const source = readFileSync(path, 'utf8');
@@ -45,7 +47,16 @@ describe('comprehensive example fixture', () => {
     ]) {
       expect(projection.elements.some((element) => element.kind === kind)).toBe(true);
     }
-    for (const relation of ['typed_by', 'connects', 'transitions', 'allocates', 'messages', 'replies', 'binds', 'contains']) {
+    for (const relation of [
+      'typed_by',
+      'connects',
+      'transitions',
+      'allocates',
+      'messages',
+      'replies',
+      'binds',
+      'contains',
+    ]) {
       expect(projection.relations.some((r) => r.kind === relation)).toBe(true);
     }
   });

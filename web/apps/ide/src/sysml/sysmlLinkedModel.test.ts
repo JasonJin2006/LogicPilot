@@ -249,9 +249,7 @@ describe('amphibious raw clone (local build artifact)', () => {
     expect(codes).not.toContain('SY0001');
     // Cross-file usage: '04 系统架构' parts typed by same-named defs in the
     // closure (self-referencing usage/def pairs must resolve, not warn).
-    const typedBy = model.projection.relations.filter(
-      (relation) => relation.kind === 'typed_by',
-    );
+    const typedBy = model.projection.relations.filter((relation) => relation.kind === 'typed_by');
     expect(typedBy.length).toBeGreaterThan(0);
   });
 });

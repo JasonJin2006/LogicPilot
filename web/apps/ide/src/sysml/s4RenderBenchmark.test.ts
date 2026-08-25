@@ -11,14 +11,14 @@ import { autoLayoutSysML } from './sysmlProjection';
 import { buildElkGraph } from './sysmlAutoLayoutElk';
 
 function syntheticSource(count: number): string {
-  const lines: string[] = ["package Bench {"];
+  const lines: string[] = ['package Bench {'];
   for (let i = 0; i < count; i += 1) {
     lines.push(`  part def Part${i} {`);
     lines.push(`    attribute mass${i} = ${i};`);
     if (i > 0) lines.push(`    :> Part${i - 1};`);
     lines.push(`  }`);
   }
-  lines.push("}");
+  lines.push('}');
   return lines.join('\n') + '\n';
 }
 
@@ -43,7 +43,9 @@ describe('S4 render-pipeline benchmark (500 elements)', () => {
     expect(Object.keys(layout.positions).length).toBe(projection.elements.length);
     expect(elapsed).toBeLessThan(400);
     // eslint-disable-next-line no-console -- benchmark output is the point
-    console.log(`[s4] sync layout ${projection.elements.length} elements: ${elapsed.toFixed(1)} ms`);
+    console.log(
+      `[s4] sync layout ${projection.elements.length} elements: ${elapsed.toFixed(1)} ms`,
+    );
   });
 
   it('ELK graph construction stays linear', () => {

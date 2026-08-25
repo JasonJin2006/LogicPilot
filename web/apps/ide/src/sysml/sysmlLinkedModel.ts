@@ -56,8 +56,7 @@ const SYSML_SUFFIX = /\.sysml$/i;
  *  contributes the qualified prefix `'Pkg'::'Sub'`. Block comments are NOT
  *  tracked here - an import inside a doc comment yields at worst a harmless
  *  extra closure edge. */
-const IMPORT_LINE =
-  /^[ \t]*(?:(?:private|public|protected|abstract)\s+)*import\s+([^;]+);/;
+const IMPORT_LINE = /^[ \t]*(?:(?:private|public|protected|abstract)\s+)*import\s+([^;]+);/;
 
 export function importedPrefixes(source: string): string[] {
   const prefixes: string[] = [];
@@ -261,8 +260,7 @@ export function buildLinkedSysMLModel(
       const from = localResolve(candidate.from) ?? resolveCrossFile(candidate.from, prefixes);
       // Same-named usage/definition pairs (`part 'x' : 'x';`): never let the
       // type resolve to the declaring usage itself.
-      const to =
-        localResolve(candidate.to, from?.id) ?? resolveCrossFile(candidate.to, prefixes);
+      const to = localResolve(candidate.to, from?.id) ?? resolveCrossFile(candidate.to, prefixes);
       if (!from || !to) {
         if (
           candidate.kind !== 'contains' &&

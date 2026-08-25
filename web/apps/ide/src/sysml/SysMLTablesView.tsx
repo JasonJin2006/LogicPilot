@@ -4,11 +4,7 @@
 
 import { useState } from 'react';
 import { useSysMLStore } from '../state/sysmlStore';
-import {
-  allocationRows,
-  partRows,
-  requirementRows,
-} from './sysmlTables';
+import { allocationRows, partRows, requirementRows } from './sysmlTables';
 import { ScrollArea } from '../components/ScrollArea';
 
 type TableTab = 'parts' | 'requirements' | 'allocations';
@@ -103,7 +99,13 @@ export function SysMLTables() {
                   className={row.id === selectedId ? ' selected' : ''}
                   onClick={() => pick(row.id)}
                 >
-                  <td title={row.text}>{row.text ? (row.text.length > 60 ? `${row.text.slice(0, 60)}…` : row.text) : '—'}</td>
+                  <td title={row.text}>
+                    {row.text
+                      ? row.text.length > 60
+                        ? `${row.text.slice(0, 60)}…`
+                        : row.text
+                      : '—'}
+                  </td>
                   <td>{row.owner ?? '—'}</td>
                   <td>{row.relations}</td>
                   <td>{row.line}</td>

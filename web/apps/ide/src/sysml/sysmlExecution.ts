@@ -74,20 +74,17 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
   },
   // --- linked multi-file slice (visualization layer) ---
   {
-    construct:
-      'multi-file projects: import-closure loading and cross-file reference resolution',
+    construct: 'multi-file projects: import-closure loading and cross-file reference resolution',
     level: 'supported',
     note: 'visualization only; execution/lowering stay per-file on the owning unit',
   },
   {
-    construct:
-      'standard-library typed usages (ScalarValues scalars, SI quantities)',
+    construct: 'standard-library typed usages (ScalarValues scalars, SI quantities)',
     level: 'supported',
     note: 'external by design - resolved silently, never SY0002 noise',
   },
   {
-    construct:
-      'use-case diagrams: usecase bodies with actor participants and a subject part',
+    construct: 'use-case diagrams: usecase bodies with actor participants and a subject part',
     level: 'supported',
     note: 'classic ellipse + stick-figure actors + subject box with association lines',
   },

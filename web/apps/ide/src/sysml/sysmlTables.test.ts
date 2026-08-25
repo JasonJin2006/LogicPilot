@@ -43,7 +43,9 @@ describe('sysmlTables row builders', () => {
     // Doc blocks attach to their owner as stated requirement text.
     const fixture = projectSysML(
       readFileSync(
-        fileURLToPath(new URL('../../../../../examples/sysml-demo/comprehensive.sysml', import.meta.url)),
+        fileURLToPath(
+          new URL('../../../../../examples/sysml-demo/comprehensive.sysml', import.meta.url),
+        ),
         'utf8',
       ),
     );

@@ -37,9 +37,11 @@ function activeDocument(): { path: string; source: string } | null {
 function commitEditedSource(path: string, nextSource: string): void {
   const bundle = useProjectStore.getState().bundle;
   if (bundle !== null && bundle.files[path] !== undefined) {
-    useProjectStore.getState().updateFiles((files) =>
-      files[path] === nextSource ? files : { ...files, [path]: nextSource },
-    );
+    useProjectStore
+      .getState()
+      .updateFiles((files) =>
+        files[path] === nextSource ? files : { ...files, [path]: nextSource },
+      );
   }
   const ui = useUiStore.getState();
   if (ui.diskFiles[path] !== undefined) {
@@ -48,7 +50,8 @@ function commitEditedSource(path: string, nextSource: string): void {
   useSysMLStore.getState().refresh(nextSource);
 }
 
-export type EditOutcome = { ok: true; detail: string; elementId?: string } | { ok: false; error: string };
+export type EditOutcome =
+  { ok: true; detail: string; elementId?: string } | { ok: false; error: string };
 
 function runEdit(
   edit: (source: string, projection: ReturnType<typeof projectSysML>) => SysMLEditLike,
@@ -74,8 +77,7 @@ function runEdit(
 }
 
 type SysMLEditLike =
-  | { ok: true; source: string; detail: string; elementId?: string }
-  | { ok: false; error: string };
+  { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string };
 
 const CONTAINER_KINDS = new Set(['package', 'part', 'action', 'state', 'usecase', 'view', 'enum']);
 
@@ -112,9 +114,7 @@ export function insertFromPalette(kind: string, declaration: 'def' | 'usage'): E
       ? store.projection.elements.find((element) => element.id === store.selectedId)
       : undefined;
   const parent =
-    selected !== undefined && CONTAINER_KINDS.has(selected.kind)
-      ? selected
-      : undefined;
+    selected !== undefined && CONTAINER_KINDS.has(selected.kind) ? selected : undefined;
   const baseName = kind.charAt(0).toUpperCase() + kind.slice(1);
   const options: InsertElementOptions = {
     kind,
