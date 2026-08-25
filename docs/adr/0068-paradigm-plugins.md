@@ -50,13 +50,14 @@ packaged without forking the core, and third parties can add methods.
 
 ## Non-goals / honest limitations
 
-- **DEVS stays in the kernel core.** The builtin DEVS runtime
-  (`builtin_methods.cpp`, `src/devs/`) is compiled into
-  `logicpilot_kernel`/`logicpilot_phase1b` and the `SimulationMethod`
-  interface itself is typed against DEVS value types
-  (`DevsCheckpoint`, `ReplicationModel`). Making DEVS removable requires
-  re-hosting those value types in `logicpilot/runtime/` and inverting the
-  every-method-links-phase1b dependency - tracked as follow-up work.
+- **DEVS toggle comes after the drivers decide what a devs-less CLI means.**
+  Since 2026-08-25 the DEVS engine is an ordinary `logicpilot_method_devs`
+  target and the neutral interface no longer names DEVS types
+  (checkpoint seam is capability-based; replication framework and the IR
+  reader are core-owned). The remaining `LOGICPILOT_METHOD_DEVS=OFF` work
+  is a product decision: lpcli's `--model built-in:mm1` registry and the
+  server's default demo path assume DEVS, so pruning it needs explicit
+  driver-level fallbacks first.
 - Platform layers outside `workbench/**` still import paradigm modules
   (`layout/panels.tsx` focus probe, `ai/assistantRuntime.ts`,
   `project/dslOutlineContribution.tsx`, ...). These are migrated
