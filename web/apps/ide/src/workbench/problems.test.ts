@@ -3,16 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { parseDsl } from '@logicpilot/editor';
-// Side-effect import: registers the DES graph diagnostic provider consumed
-// through the seam below (same registration the canvas mounts).
-import '../model/modelValidation';
-import { collectProblems, type SysmlProblemsInput } from './problems';
-import type { SysMLProjectionDiagnostic } from '../sysml/sysmlProjection';
+// Side-effect import: activates the DES plugin registrations consumed
+// through the seam below (document type + graph diagnostic provider).
+import '../plugins/des';
+import { collectProblems, type ParadigmDiagnostic, type SysmlProblemsInput } from './problems';
 
-const sysml = (
-  diagnostics: SysMLProjectionDiagnostic[],
-  parseDirty = false,
-): SysmlProblemsInput => ({ projection: { diagnostics }, parseDirty });
+const sysml = (diagnostics: ParadigmDiagnostic[], parseDirty = false): SysmlProblemsInput => ({
+  projection: { diagnostics },
+  parseDirty,
+});
 
 const emptyModel = () => {
   const parsed = parseDsl('model M {\n}\n');

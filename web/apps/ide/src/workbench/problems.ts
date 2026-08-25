@@ -6,7 +6,17 @@
 import type { ModelDocument } from '@logicpilot/editor';
 import type { WorkbenchDiagnostic } from './diagnostics';
 import { diagnoseDocument } from './diagnostics';
-import type { SysMLProjectionDiagnostic } from '../sysml/sysmlProjection';
+
+/** Structural shape the aggregation reads from any language's diagnostics
+ *  (SysML projection diagnostics and DSL workbench diagnostics both satisfy
+ *  it). Kept local so the platform layer imports no paradigm module. */
+export interface ParadigmDiagnostic {
+  code: string;
+  severity: 'warning' | 'error';
+  message: string;
+  line?: number;
+  path?: string;
+}
 
 export type ProblemOrigin = 'model' | 'sysml';
 
@@ -26,7 +36,7 @@ export interface ProblemEntry {
 }
 
 export interface SysmlProblemsInput {
-  projection: { diagnostics: SysMLProjectionDiagnostic[] } | null;
+  projection: { diagnostics: ParadigmDiagnostic[] } | null;
   parseDirty: boolean;
 }
 

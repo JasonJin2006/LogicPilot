@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DIAGNOSTIC_PROVIDERS, diagnoseDocument } from './diagnostics';
 // Registers the DSL document type's DES graph diagnostic provider.
-import '../model/modelValidation';
+import '../plugins/des';
 
 describe('Workbench diagnostic providers', () => {
   it('aggregates the registered DES graph validator for DSL documents', () => {

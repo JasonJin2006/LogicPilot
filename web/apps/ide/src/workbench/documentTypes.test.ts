@@ -5,9 +5,9 @@ import {
   editorPanelFor,
   newFileContentFor,
 } from './documentTypes';
-// External languages register from their own modules (the composition root
-// imports them in the app); the DSL is the only core-registered type.
-import '../sysml/sysmlDocumentContribution';
+// Every paradigm registers from its own plugin module; the composition root
+// wires them exactly as the app does.
+import '../plugins';
 
 describe('Workbench document contributions', () => {
   it('routes SysML documents to the projection editor with its standard icon', () => {

@@ -3,11 +3,10 @@
 // (activity bar gear); stats charts and results are center-workspace tabs
 // (AnyLogic-style opt-in telemetry views), not pinned side panels.
 
-// Composition root for language contributions: register document types and
-// panels before any other module evaluates, so persisted layouts validate
-// against the complete panel table and file routing sees every extension.
-import './sysml/sysmlDocumentContribution';
-import './sysml/sysmlPanelsContribution';
+// Composition root for paradigm plugins: register document types and panels
+// before any other module evaluates, so persisted layouts validate against
+// the complete panel table and file routing sees every extension (ADR-0068).
+import './plugins';
 
 import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';

@@ -73,18 +73,9 @@ class DocumentContributionRegistry {
 
 export const DOCUMENT_CONTRIBUTIONS = new DocumentContributionRegistry();
 
-// The LogicPilot DSL is the platform-native language and registers here;
-// external languages (SysML, ...) register from their own contribution
-// modules so this core file stays free of per-language entries.
-
-DOCUMENT_CONTRIBUTIONS.register({
-  id: 'dsl',
-  label: 'LogicPilot DSL',
-  extensions: ['.lp'],
-  editorPanel: 'dsl',
-  providesProjection: false,
-  newFileTemplate: (fileName) => `model ${fileName.replace(/\.lp$/i, '')} {\n}\n`,
-});
+// No language registers here: every paradigm (DSL, SysML, ...) contributes
+// its document type from its own plugin module (src/plugins, ADR-0068), so
+// this core file stays free of per-language entries.
 
 export function documentContributionFor(
   path: string | null | undefined,
