@@ -159,7 +159,7 @@ endif()
 # DEVS-flavored test executable: every case exercises the DEVS runtime, so
 # it only exists when the plugin is enabled (LOGICPILOT_METHOD_DEVS).
 if(LOGICPILOT_METHOD_DEVS)
-add_executable(logicpilot_phase1b_tests
+add_executable(logicpilot_kernel_plugin_tests
     tests/test_agent_runtime.cpp
     tests/test_state_machine.cpp
     tests/test_devs.cpp
@@ -176,43 +176,43 @@ add_executable(logicpilot_phase1b_tests
     tests/test_determinism.cpp
     tests/test_perf_baseline.cpp
   )
-  target_link_libraries(logicpilot_phase1b_tests PRIVATE
+  target_link_libraries(logicpilot_kernel_plugin_tests PRIVATE
     logicpilot_method_devs
     logicpilot_test_models
     logicpilot_methods
     Catch2::Catch2WithMain
   )
-  target_compile_definitions(logicpilot_phase1b_tests PRIVATE
+  target_compile_definitions(logicpilot_kernel_plugin_tests PRIVATE
     LOGICPILOT_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
     TEST_CABI_PLUGIN_PATH="$<TARGET_FILE:logicpilot_test_cabi_plugin>"
   )
-  add_dependencies(logicpilot_phase1b_tests logicpilot_test_cabi_plugin)
+  add_dependencies(logicpilot_kernel_plugin_tests logicpilot_test_cabi_plugin)
   if(LOGICPILOT_HAS_WASMTIME)
-    target_sources(logicpilot_phase1b_tests PRIVATE tests/test_wasm_method_plugin.cpp)
-    target_compile_definitions(logicpilot_phase1b_tests PRIVATE
+    target_sources(logicpilot_kernel_plugin_tests PRIVATE tests/test_wasm_method_plugin.cpp)
+    target_compile_definitions(logicpilot_kernel_plugin_tests PRIVATE
       TEST_WASM_PLUGIN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/plugins/test_wasm_method.wat"
     )
     if(WIN32 AND EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll")
-      add_custom_command(TARGET logicpilot_phase1b_tests POST_BUILD
+      add_custom_command(TARGET logicpilot_kernel_plugin_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll"
-          "$<TARGET_FILE_DIR:logicpilot_phase1b_tests>"
+          "$<TARGET_FILE_DIR:logicpilot_kernel_plugin_tests>"
       )
     endif()
   endif()
-  catch_discover_tests(logicpilot_phase1b_tests)
+  catch_discover_tests(logicpilot_kernel_plugin_tests)
 endif()
 endif()
 
 if(LOGICPILOT_BUILD_TESTS AND LOGICPILOT_BUILD_DSL AND LOGICPILOT_METHOD_DEVS)
   # IR atomic execution tests compile examples/pulse_chain.lp in-process, so
   # they need the DSL compiler (mirrors logicpilot_server_tests).
-  target_sources(logicpilot_phase1b_tests PRIVATE
+  target_sources(logicpilot_kernel_plugin_tests PRIVATE
     tests/test_ir_atomic.cpp
     tests/test_ir_agent.cpp
     tests/test_scale_smoke.cpp
   )
-  target_link_libraries(logicpilot_phase1b_tests PRIVATE logicpilot_dsl)
+  target_link_libraries(logicpilot_kernel_plugin_tests PRIVATE logicpilot_dsl)
 endif()
 
 # ---------------------------------------------------------------------------
