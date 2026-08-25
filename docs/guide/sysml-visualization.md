@@ -20,15 +20,23 @@ LogicPilot 当前优先支持“外部 SysML v2 文件 → 可编辑可视化投
 
 ## 当前识别范围
 
-投影器是面向可视化的 best-effort 读取器，当前优先识别：
+投影器是面向可视化的 best-effort 读取器，当前优先识别（0.3 起）：
 
-- package、part、item、port、interface；
-- requirement、action、state、analysis、verification、attribute；
-- containment、typing、specialization、connect、flow、satisfy、verify、trace、
-  transition 关系。
+- 文本记法核心的全部 def/usage 家族：package、part、item、port、interface、
+  connection、allocation、metadata、requirement、concern、analysis、
+  verification、action、calculation、state、constraint、occurrence、enum、
+  view/viewpoint/rendering/meeting、interaction 等；裸关键字按规范默认为
+  usage，requirements 族拼写投影到最近的稳定视觉类型；
+- 声明修饰符（abstract / variation / individual / ref / readonly ...）、
+  多重度 `[n..m]`、方向前缀（in/out/inout）与 `= 缺省值` 尾部均原样记录；
+- 头部子句链：`: Type`、特化 `:> A, B`、重定义 `:>> R`、typed_by 关系；
+- containment、typing、connect（含点链端点 `a.p to b.q` 与
+  `connection c connect A to B;` 拼写）、flow、satisfy、verify、trace、
+  transition 关系；守卫 `when <表达式>` 记录在转移上（执行仍忽略）。
 
 未识别的 SysML 语法保留在源文本中，并以 projection warning 显示，不会被重写或静默
-丢弃。完整 SysML v2 语法、标准模型交换和原生语义编辑属于后续路线。
+丢弃。完整语义执行、标准模型交换和原生语义编辑属于后续路线；逐条构造的支持
+等级见代码内版本化符合度矩阵（`SYSML_CONFORMANCE_MATRIX`，0.3.0）。
 
 ## AI 能力
 

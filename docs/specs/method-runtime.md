@@ -101,6 +101,15 @@ method -> factory + runtimeVersion + supported semanticsVersions
 - DSL 库文件；
 - 运行时种类与入口点。
 
+## 5.0 内置方法的构建期裁剪（ADR-0068）
+
+四个内置方法插件（agent / process / sd / statechart）各自受 CMake 选项
+`LOGICPILOT_METHOD_<NAME>`（默认 ON）控制：选项关闭时，方法库不参与
+编译与链接，聚合注册体中对应的 `register_*_method()` 调用被
+`LP_WITH_METHOD_*` 宏剔除。驱动无需改动；请求已裁剪方法的模型在运行期
+得到既有 KR1004 错误。DEVS 内置运行时仍在内核核心内（见 ADR-0068 的
+"非目标"一节），动态插件路径（`linked`/`c-abi`/`wasm` 清单）不受影响。
+
 运行时种类支持 `linked`、`c-abi` 与 `wasm`。清单解析完成后，宿主装载 artifact、校验方法身份与 ABI，再把持有模块生命周期的 factory 注册到统一 `MethodRegistry`。runtime 可选 `artifactSha256` 用于加载前完整性 pin；它不是数字签名或信任链。清单只描述发现信息，不把 C++ 对象布局冒充稳定 ABI。
 
 ### 5.1 原生 C ABI v1

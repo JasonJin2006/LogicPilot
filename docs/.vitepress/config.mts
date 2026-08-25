@@ -137,7 +137,7 @@ export default defineConfig({
               { text: '0007 保守并行优先', link: '/adr/0007-conservative-parallelism-first' },
               { text: '0008 vendored tree-sitter runtime', link: '/adr/0008-vendored-tree-sitter-runtime' },
               { text: '0009 运行时执行策略（并行+脚本）', link: '/adr/0009-runtime-execution-strategy' },
-              { text: '全量 ADR 索引（0001–0067）', link: '/adr/' },
+              { text: '全量 ADR 索引（0001–0068）', link: '/adr/' },
             ],
           },
         ],

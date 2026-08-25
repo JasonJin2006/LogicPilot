@@ -93,3 +93,7 @@
 - [0065 Cumulative event budget across session slices](0065-cumulative-session-event-budget)
 - [0066 Method family and formalism metadata](0066-method-family-formalism-metadata)
 - [0067 Evidence Presentation as an AI Capability](0067-evidence-presentation-ai-capability)
+
+## 插件化与边界
+
+- [0068 Paradigm Plugins - Removable Method Units with a Neutral Core](0068-paradigm-plugins)
