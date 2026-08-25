@@ -22,6 +22,14 @@ option(LOGICPILOT_BUILD_TESTS "Build kernel unit tests" ON)
 option(LOGICPILOT_BUILD_BENCH "Build benchmarks" OFF)
 option(LOGICPILOT_BUILD_DSL "Build DSL components (compiler, Phase 2)" ON)
 option(LOGICPILOT_BUILD_WEB_NATIVE "Build web-facing native artifacts (reserved)" OFF)
+# Per-method plugin toggles (Method Runtime Layer, ADR-0068). Turning a
+# method OFF removes its runtime from every driver binary and from the
+# aggregate registry; models requesting it then fail at run time with
+# KR1004. The kernel-native DEVS builtin stays in core (not gated here).
+option(LOGICPILOT_METHOD_AGENT "Include the agent method plugin" ON)
+option(LOGICPILOT_METHOD_PROCESS "Include the process (DES flow) method plugin" ON)
+option(LOGICPILOT_METHOD_SD "Include the system-dynamics method plugin" ON)
+option(LOGICPILOT_METHOD_STATECHART "Include the statechart method plugin" ON)
 
 # ---------------------------------------------------------------------------
 # Compiler hygiene
@@ -48,10 +56,12 @@ include(cmake/codegen.cmake)
 
 add_subdirectory(kernel)
 
-# Method Runtime Layer: per-method plugin libraries (process today; agent,
-# system dynamics, statechart, and third-party methods register through the
-# same MethodRegistry). See docs/specs/method-runtime.md.
-add_subdirectory(methods)
+# Method Runtime Layer: per-method plugin libraries registering through the
+# shared MethodRegistry. See docs/specs/method-runtime.md and ADR-0068 for
+# the pluggability contract.
+if(LOGICPILOT_METHOD_AGENT OR LOGICPILOT_METHOD_PROCESS OR LOGICPILOT_METHOD_SD OR LOGICPILOT_METHOD_STATECHART)
+  add_subdirectory(methods)
+endif()
 
 # DSL compiler + vendored tree-sitter runtime (Phase 2, ADR-0005/0008).
 if(LOGICPILOT_BUILD_DSL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/dsl/CMakeLists.txt")

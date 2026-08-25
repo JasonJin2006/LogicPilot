@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-  [ValidateSet('windows-msvc-dev', 'windows-msvc-release')]
+  # Any CMake preset name works (CMakeUserPresets.json is included
+  # automatically by CMake); the two canonical presets cover the normal gate.
   [string]$Preset = 'windows-msvc-dev',
   [switch]$Configure,
   [switch]$Clean,
