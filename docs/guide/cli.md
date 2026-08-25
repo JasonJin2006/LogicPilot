@@ -30,9 +30,12 @@ usage: lpcli compile <input.lp> [-o <output>]
 
 ```powershell
 lpcli compile examples/two_servers.lp -o build/two_servers.ir.bin
-lpcli compile factory.lpproj -o build/factory.lpir
-lpcli compile examples/bad.lp --diagnostics-json diag.json
+# 对任意含编译错误的模型导出结构化诊断（编译失败也会写出 diag.json）
+lpcli compile <含错误的模型>.lp --diagnostics-json diag.json
 ```
+
+工程包（`.lpproj`，由 Web IDE / 桌面端保存）同样可以直接编译：
+`lpcli compile --project demo.lpproj`。
 
 ## run
 

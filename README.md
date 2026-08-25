@@ -128,9 +128,14 @@ pause/step）。
 | `schemas/` | 冻结契约 F1（IR v2）/ F2（wire 遥测），flatc 生成 |
 | `web/` | Web IDE（React + zustand + SVG 可视化）、editor 图文档包、protocol/renderer2d |
 | `desktop/` | Tauri 2 桌面壳（Rust），嵌入同一 Web IDE |
+| `app/` | 本地 AI 网关服务（Node）：助手会话、provider 适配与请求策略 |
+| `extensions/` | logicpilot-vscode：VS Code 扩展（DSL 语法高亮等） |
 | `examples/` | 示例模型（mm1、制造线、call-center 工程等） |
 | `bench/` | 性能门禁基准（scheduler/RNG/MM1/ProcessFlow） |
-| `scripts/` | AI 闭环（ai-build/optimize/explain）、工具（logicpkg/verify-run）与 CI 冒烟测试 |
+| `scripts/` | AI 闭环（ai-build/optimize/explain）、工具（logicpkg/verify-run）、桌面打包与 CI 冒烟测试 |
+| `docs/` | VitePress 手册与开发文档、specs、ADR |
+| `docker/` | 容器化构建/运行环境 |
+| `cmake/` | 共享 CMake 模块（代码生成等） |
 
 ## 文档
 

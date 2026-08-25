@@ -58,7 +58,8 @@ Get-NetTCPConnection -LocalPort 8089 -State Listen | Stop-Process -Id { $_.Ownin
 ## 编译报错与诊断
 
 ```powershell
-lpcli compile examples/bad.lp --diagnostics-json diag.json
+# 对任意含编译错误的模型文件验证诊断输出
+lpcli compile <含错误的模型>.lp --diagnostics-json diag.json
 Get-Content diag.json    # ok / diagnostics[]，含 code、severity、message、span
 ```
 

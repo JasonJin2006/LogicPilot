@@ -1,0 +1,95 @@
+# 架构决策记录（ADR）全量索引
+
+站点侧边栏仅收录奠基性的前 9 个 ADR；本页索引 `docs/adr/` 下的全部
+记录（0001–0067），按主题分组。新 ADR 落盘后请同步在本页补一行。
+
+## 基础设施与运行时策略
+
+- [0001 C++20 on MSVC without C++20 Modules](0001-cpp20-no-modules)
+- [0002 CMake + vcpkg Manifest Mode](0002-cmake-vcpkg-package-management)
+- [0003 Minimal C++ Dependency Set](0003-cpp-dependency-minimal-set)
+- [0004 FlatBuffers as the Unified IR + Wire Serialization](0004-flatbuffers-ir-wire)
+- [0005 Tree-sitter Grammar Checked In](0005-tree-sitter-parser-checked-in)
+- [0006 Defer GPU / Distributed / Time Warp](0006-defer-gpu-distributed-timewarp)
+- [0007 Conservative Parallelism First](0007-conservative-parallelism-first)
+- [0008 Vendored tree-sitter C Runtime](0008-vendored-tree-sitter-runtime)
+- [0009 Runtime Execution Strategy](0009-runtime-execution-strategy)
+
+## DEVS 编译层、证据与会话
+
+- [0010 Compile a DEVS Runtime Plan Before Execution](0010-runtime-plan)
+- [0011 Separate Causal Evidence from Determinism Hashes](0011-devs-evidence-trace)
+- [0012 Explicit State Contracts for DEVS Checkpoints](0012-explicit-devs-checkpoints)
+- [0013 Persistent Shared-Event-Queue Simulation Sessions](0013-persistent-simulation-session)
+
+## 方法级 Checkpoint Bundle
+
+- [0014 Versioned Statechart Checkpoint Bundle](0014-statechart-state-bundle)
+- [0015 Versioned Agent Population Checkpoint Bundle](0015-agent-state-bundle)
+- [0016 Versioned System-Dynamics State Bundle](0016-system-dynamics-state-bundle)
+- [0017 QueueingFlowSim Process Checkpoint Bundle](0017-process-queueing-state-bundle)
+- [0018 Basic ProcessFlowSim Bundle Before Full PML Coverage](0018-process-basic-flow-bundle)
+- [0019 Shared ResourcePool Failure/Repair Bundle](0019-resource-pool-failure-bundle)
+- [0020 Seize waiter checkpoint contract](0020-process-seize-checkpoint)
+- [0021 Multi-port process checkpoint bundles](0021-process-multiport-checkpoints)
+- [0022 Routing and split checkpoint bundles](0022-process-routing-checkpoints)
+- [0023 Assembler checkpoint bundle](0023-process-assembler-checkpoint)
+- [0024 Queue/Wait checkpoint bundle](0024-process-wait-checkpoint)
+- [0025 MoveTo spatial checkpoint bundle](0025-process-moveto-checkpoint)
+
+## DEVS 并行与分区
+
+- [0026 Deterministic PDEVS timestamp-barrier parallelism](0026-devs-event-barrier-parallelism)
+- [0027 Deterministic cross-partition event transport](0027-devs-cross-partition-transport)
+- [0028 Bounded shared-memory partition ring](0028-shared-ring-partition-transport)
+- [0029 Partition peer liveness and recovery epochs](0029-partition-peer-liveness)
+
+## Checkpoint 存储与恢复
+
+- [0030 Epoch-tagged partition replay recovery](0030-partition-replay-recovery)
+- [0031 DEVS checkpoint recovery epoch validation](0031-devs-checkpoint-recovery-epoch)
+- [0032 Portable DEVS checkpoint archive](0032-devs-checkpoint-archive)
+- [0033 Append-only checkpoint journal](0033-checkpoint-durable-journal)
+- [0034 Checkpoint journal compaction](0034-checkpoint-journal-compaction)
+- [0035 Checkpoint transform and blob-store boundaries](0035-checkpoint-transform-storage-boundary)
+- [0036 Deterministic RLE checkpoint transform](0036-rle-checkpoint-transform)
+
+## 混合方法会话与迁移
+
+- [0037 Composite Statechart network checkpoint](0037-statechart-network-checkpoint)
+- [0038 Mixed-method session checkpoint coordination](0038-mixed-method-session-checkpoint)
+- [0039 Mixed-method session checkpoint archive](0039-session-checkpoint-archive)
+- [0040 Shared Variable/Message checkpoint state](0040-shared-state-checkpoint)
+- [0041 Explicit method checkpoint schema evolution](0041-method-checkpoint-schema-evolution)
+- [0042 Multi-hop method checkpoint migration](0042-multi-hop-checkpoint-migration)
+- [0043 Explicit cross-model session migration](0043-explicit-cross-model-migration)
+- [0044 Checkpoint migration audit log](0044-migration-audit-log)
+- [0045 Migration audit archive](0045-migration-audit-archive)
+- [0046 Variable snapshot semantic migration plan](0046-variable-semantic-migration-plan)
+- [0047 Message envelope semantic migration plan](0047-message-semantic-migration-plan)
+- [0048 Migration audit storage adapter](0048-migration-audit-storage)
+
+## 运行时契约与连续方法
+
+- [0049 DEVS runtime port type guard](0049-devs-runtime-port-type-guard)
+- [0050 Runtime message contract validation](0050-message-contract-validation)
+- [0051 Deterministic adaptive continuous integration](0051-adaptive-continuous-rk4)
+- [0052 Portable DEVS evidence archive](0052-devs-evidence-archive)
+- [0053 Deterministic continuous zero-crossing observation](0053-continuous-zero-crossing-observation)
+
+## 会话恢复、预算与证据呈现
+
+- [0054 Transactional multi-method session restore](0054-transactional-session-restore)
+- [0055 Optional plugin artifact hash pinning](0055-plugin-artifact-hash-pinning)
+- [0056 Durable DEVS evidence archive store](0056-durable-evidence-archive-store)
+- [0057 Shared scheduler event budget](0057-shared-scheduler-event-budget)
+- [0058 Evidence-derived causal graph summary](0058-evidence-causal-graph-summary)
+- [0059 Partition replay gap diagnostics](0059-partition-replay-gap-diagnostics)
+- [0060 Bounded partition replay history](0060-bounded-partition-replay-history)
+- [0061 First-divergence evidence diagnostics](0061-evidence-first-divergence-diagnostics)
+- [0062 Streaming gateway shares the scheduler event budget](0062-streaming-runner-event-budget)
+- [0063 Cross-method logical-step trace channel](0063-cross-method-logical-step-trace)
+- [0064 Bounded DebugRecorder capture](0064-bounded-debug-recorder)
+- [0065 Cumulative event budget across session slices](0065-cumulative-session-event-budget)
+- [0066 Method family and formalism metadata](0066-method-family-formalism-metadata)
+- [0067 Evidence Presentation as an AI Capability](0067-evidence-presentation-ai-capability)

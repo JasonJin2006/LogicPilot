@@ -1,6 +1,9 @@
 # DES-first / AI-first development plan
 
-Status: active (2026-08-08)
+> **已归档（2026-08-25）**：本计划已被 `docs/dev-plan.md`（工程化路线计划）与
+> `docs/roadmap.md` 取代，仅作历史记录保留，不再维护。
+
+Status: superseded (原 Status: active, 2026-08-08)
 
 ## Product target
 
