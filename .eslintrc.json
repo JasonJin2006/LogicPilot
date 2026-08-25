@@ -12,6 +12,21 @@
   "extends": ["eslint:recommended"],
   "overrides": [
     {
+      "files": ["web/apps/ide/src/workbench/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": ["error",
+          {
+            "patterns": [
+              {
+                "group": ["../sysml", "../sysml/**", "../model", "../model/**"],
+                "message": "workbench platform must not import paradigm modules (ADR-0068); consume through the registries."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["**/*.ts", "**/*.tsx"],
       "parser": "@typescript-eslint/parser",
       "plugins": ["@typescript-eslint"],
