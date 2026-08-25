@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import net from 'node:net';
-import { dirname, extname, join } from 'node:path';
+import { dirname, extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -113,6 +113,10 @@ async function serveStatic(pathname, method, res) {
   if (method !== 'GET' && method !== 'HEAD') return false;
   const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const candidate = join(DIST, relative);
+  // URL parsing already collapses dot segments, but keep an explicit
+  // containment check so a future parser change cannot turn `join` into an
+  // escape hatch out of DIST.
+  if (!candidate.startsWith(DIST + sep)) return false;
   try {
     const info = await stat(candidate);
     if (!info.isFile()) throw new Error('not a file');
