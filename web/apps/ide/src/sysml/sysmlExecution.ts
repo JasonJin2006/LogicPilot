@@ -21,7 +21,7 @@ import type {
   SysMLVisualKind,
 } from './sysmlProjection';
 
-export const SYSML_EXECUTION_CONFORMANCE_VERSION = '0.2.0';
+export const SYSML_EXECUTION_CONFORMANCE_VERSION = '0.3.0';
 
 export type ConformanceLevel = 'supported' | 'planned' | 'unsupported';
 
@@ -106,10 +106,33 @@ export const SYSML_CONFORMANCE_MATRIX: readonly ConformanceRow[] = [
     level: 'supported',
     note: 'accepted as prose of the owning declaration; values/constraint expressions are not interpreted',
   },
+  // --- spec-alignment slice 0.3 (parser/visualization layer) ---
+  {
+    construct:
+      'specialization / redefinition / subsetting clauses on declarations (:> refs, :>> ref, >:> ref)',
+    level: 'supported',
+    note: 'emitted as specializes/redefines/subsets relations; inheritance semantics not applied by execution',
+  },
+  {
+    construct: 'feature modifiers, multiplicities, directions and value defaults',
+    level: 'supported',
+    note: 'abstract/variation/individual/ref/readonly... recorded on elements; [n..m] and `= expr` tails recorded verbatim, never evaluated',
+  },
+  {
+    construct:
+      'connection/allocation/metadata defs+usages; requirements-family spellings (concern/rendering/meeting/objective)',
+    level: 'supported',
+    note: 'projected onto stable visual kinds (concern->requirement, rendering/meeting->view, objective->constraint)',
+  },
+  {
+    construct: 'dotted feature-chain endpoints on connectors and flows (connect a.p to b.q)',
+    level: 'supported',
+    note: 'endpoint resolves to the owning element when the full chain names no local member; chain preserved in the label',
+  },
   {
     construct: 'guard conditions (when/otherwise)',
     level: 'planned',
-    note: 'targeted for a later execution slice; parser still rejects via SY0001.',
+    note: 'parser records the guard expression on the transition since 0.3; firing still ignores guards - execution slice pending.',
   },
   {
     construct: 'hierarchical (nested) state decomposition',

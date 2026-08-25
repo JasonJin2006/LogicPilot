@@ -38,6 +38,9 @@ export type SysMLVisualKind =
   | 'flow'
   | 'interaction'
   | 'fragment'
+  | 'connection'
+  | 'allocation'
+  | 'metadata'
   | 'unknown';
 
 export type SysMLRelationKind =
@@ -82,6 +85,18 @@ export interface SysMLElement {
   /** Documentation text from the owning `doc` block (whitespace-normalized),
    *  surfaced in requirement tables and the element inspector. */
   doc?: string;
+  /** Declaration modifiers recorded verbatim (`abstract`, `variation`,
+   *  `individual`, `ref`, `readonly`, ...). Spec-conformant spellings are
+   *  preserved even where semantics are not yet interpreted. */
+  modifiers?: string[];
+  /** Feature direction of a directed usage (`in`/`out`/`inout`). */
+  direction?: 'in' | 'out' | 'inout';
+  /** Declared type reference of a usage (`part p : 'P::T'` -> `'P::T'`). */
+  typeRef?: string;
+  /** Raw multiplicity bracket text (`[4]`, `[1..*]`), recorded not evaluated. */
+  multiplicity?: string;
+  /** Default/value expression tail after `=` on the declaration line. */
+  valueText?: string;
 }
 
 export interface SysMLRelation {
@@ -94,6 +109,9 @@ export interface SysMLRelation {
   /** Time trigger carried by a `transition ... after/at <n>` statement
    *  (execution subset 0.2); absent for plain successions. */
   trigger?: RelationTrigger;
+  /** Guard expression of a guarded transition (`when <expr>`), recorded
+   *  verbatim; execution 0.2 ignores guards (conformance matrix). */
+  guard?: string;
 }
 
 export interface SysMLProjectionDiagnostic {
@@ -148,7 +166,16 @@ function resolveReference(
   const candidates = elements.filter(
     (element) => element.name === normalized || element.qualifiedName.endsWith(`::${normalized}`),
   );
-  return candidates.length === 1 ? candidates[0] : undefined;
+  const direct = candidates.length === 1 ? candidates[0] : undefined;
+  if (direct) return direct;
+  // Dotted feature endpoints (`connect engine.shaft to wheel.hub`): resolve
+  // to the owning element of the head feature when the full chain names no
+  // local member. The dotted path stays visible through the relation label.
+  if (normalized.includes('.')) {
+    const head = normalized.split('.', 1)[0]!;
+    return resolveReference(head, elements, byQualified);
+  }
+  return undefined;
 }
 
 /** Names owned by the SysML v2 standard libraries (ScalarValues scalars, SI
@@ -228,6 +255,7 @@ export function resolveParsedSysML(source: string, parsed: SysMLParseResult): Sy
       label: candidate.label,
       line: candidate.line,
       ...(candidate.trigger ? { trigger: candidate.trigger } : {}),
+      ...(candidate.guard ? { guard: candidate.guard } : {}),
     });
   }
 

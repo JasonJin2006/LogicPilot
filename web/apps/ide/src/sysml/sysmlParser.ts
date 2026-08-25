@@ -38,6 +38,16 @@ export interface ParsedElement {
   /** Documentation text of the owning `doc /* ... *\/` block (or the quoted
    *  `doc "..."` form), whitespace-normalized. First block wins. */
   doc?: string;
+  /** Declaration modifiers recorded verbatim (`abstract`, `variation`, ...). */
+  modifiers?: string[];
+  /** Direction of a directed feature usage (`in`/`out`/`inout`). */
+  direction?: 'in' | 'out' | 'inout';
+  /** Declared type reference (`part p : 'P::T'` -> `'P::T'`). */
+  typeRef?: string;
+  /** Raw multiplicity bracket text (`[4]`, `[1..*]`). */
+  multiplicity?: string;
+  /** Value/default expression tail after `=` on the declaration line. */
+  valueText?: string;
 }
 
 /** A time trigger on a transition (`after 5 s` / `at 10`). Execution 0.2
@@ -56,6 +66,8 @@ export interface PendingRelation {
   label: string;
   line: number;
   trigger?: RelationTrigger;
+  /** Guard expression of a guarded transition (`when <expr>`), verbatim. */
+  guard?: string;
 }
 
 export interface SysMLParseResult {
@@ -66,12 +78,13 @@ export interface SysMLParseResult {
 
 // Identifiers may be bare SysML ASCII names or single-quoted strings (the
 // form used throughout the amphibious-robot model). Group layout keeps the
-// kind/def indexes of the old DECLARATION: [1] kind, [2] def, [3] quoted
-// inner name, [4] bare name.
+// kind/def indexes of the old DECLARATION shifted by the modifier capture:
+// [1] modifiers, [2] kind, [3] def, [4] quoted inner name, [5] bare name.
 const IDENT = String.raw`(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_]*))`;
 
-/** Qualified reference: `Name`, `'Chinese Name'`, `Pkg::'Named'::X`. */
-const REFERENCE = String.raw`(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*)(?:::(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*))*`;
+/** Qualified reference: `Name`, `'Chinese Name'`, `Pkg::'Named'::X`, plus
+ *  dotted feature chains for connector endpoints (`engine.shaft`). */
+const REFERENCE = String.raw`(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*)(?:::(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*))*(?:\.(?:'[^']*'|[A-Za-z_][A-Za-z0-9_]*))*`;
 
 /** De-quote a raw identifier token: `'a b'` -> `a b`; bare stays bare. */
 function dequoteName(raw: string): string {
@@ -88,12 +101,17 @@ export function dequoteRef(raw: string): string {
 }
 
 const DECLARATION = new RegExp(
-  '^(?:(?:assert|abstract|individual|variation|ref)\\s+)?(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject|snapshot|timeslice)' +
+  '^((?:(?:abstract|variation|individual|ref|readonly|derived|constant|assert|nonunique|ordered)\\s+)*)' +
+    '(package|part|item|port|interface|requirement|action|calculation|calc|state|analysis|verification|attribute|constraint|usecase|view|viewpoint|enum|occurrence|stakeholder|flow|interaction|actor|subject|snapshot|timeslice|connection|allocation|concern|rendering|meeting|metadata|objective)' +
     '\\s+(?:(def|usage)\\s+)?' +
     IDENT,
 );
 
-/** `calc` is the common shorthand; both project to the 'calculation' kind. */
+/** `calc` is the common shorthand; both project to the 'calculation' kind.
+ *  Requirements-family and view-family spellings without a dedicated visual
+ *  kind project onto their nearest stable carrier (concern -> requirement,
+ *  rendering/meeting -> view, objective -> constraint) so the constructs are
+ *  recorded and visible instead of dropped. */
 function normalizeKind(raw: string): SysMLVisualKind {
   // `actor` renders with the stakeholder stick figure; `interaction` is the
   // sequence-diagram container of the controlled subset.
@@ -101,6 +119,9 @@ function normalizeKind(raw: string): SysMLVisualKind {
   if (raw === 'actor') return 'stakeholder';
   if (raw === 'subject') return 'part';
   if (raw === 'snapshot' || raw === 'timeslice') return 'occurrence';
+  if (raw === 'concern') return 'requirement';
+  if (raw === 'rendering' || raw === 'meeting') return 'view';
+  if (raw === 'objective') return 'constraint';
   return raw as SysMLVisualKind;
 }
 
@@ -158,11 +179,13 @@ const RELATION_LINE_PATTERNS: Array<{
     }),
   },
   {
-    // Anchored to end-of-statement so unsupported trigger forms (guard
-    // clauses, expression durations) fall through to SY0001 instead of
-    // being silently truncated. Numeric literal durations only (0.2).
+    // Anchored to end-of-statement so unsupported trigger forms (expression
+    // durations) fall through to SY0001 instead of being silently truncated.
+    // Numeric literal durations only (0.2); guard expressions (`when ...`)
+    // are recorded verbatim on the relation, never interpreted.
     re: new RegExp(
       `^transition\\s+(?:first\\s+)?(${REFERENCE})\\s+then\\s+(${REFERENCE})` +
+        `(?:\\s+when\\s+([^;{]+?))?` +
         `(?:\\s+(after|at)\\s+([0-9]+(?:\\.[0-9]+)?)\\s*([A-Za-z_][A-Za-z0-9_]*)?)?\\s*;?$`,
     ),
     build: (m) => ({
@@ -170,15 +193,16 @@ const RELATION_LINE_PATTERNS: Array<{
       from: dequoteRef(m[1]!),
       to: dequoteRef(m[2]!),
       label: 'transitions',
-      ...(m[3]
+      ...(m[4]
         ? {
             trigger: {
-              kind: m[3] as 'after' | 'at',
-              amount: Number(m[4]),
-              ...(m[5] ? { unit: m[5] } : {}),
+              kind: m[4] as 'after' | 'at',
+              amount: Number(m[5]),
+              ...(m[6] ? { unit: m[6] } : {}),
             },
           }
         : {}),
+      ...(m[3] ? { guard: m[3]!.trim() } : {}),
     }),
   },
   {
@@ -234,6 +258,7 @@ type LooseTransition =
       from: string;
       to: string;
       trigger?: { kind: 'after' | 'at'; amount: number; unit?: string };
+      guard?: string;
     }
   | { ok: false };
 
@@ -248,7 +273,9 @@ function parseTransitionStatement(text: string): LooseTransition {
   const thenMatch = new RegExp(`then\\s+(${REFERENCE})`).exec(clean);
   const target = thenMatch?.[1];
   if (target === undefined) return { ok: false };
-  const firstMatch = new RegExp(`first\\s+(?:start|(${REFERENCE}))`).exec(clean);
+  // `first` with no state name (`first then B`) is the machine entry marker;
+  // the lookahead keeps the bare keyword from being captured as a state.
+  const firstMatch = new RegExp(`first\\s+(?!then\\b)(?:start\\b|(${REFERENCE}))`).exec(clean);
   let from = firstMatch?.[1];
   if (from === undefined) {
     const firstToken = clean.match(new RegExp(`transition\\s+(${REFERENCE})`));
@@ -257,6 +284,9 @@ function parseTransitionStatement(text: string): LooseTransition {
   const triggerMatch = new RegExp(
     `(after|at)\\s+([0-9]+(?:\\.[0-9]+)?)\\s*([A-Za-z_][A-Za-z0-9_]*)?`,
   ).exec(clean);
+  // Guard expression (`when <expr>`): recorded verbatim between the guard
+  // keyword and the time trigger / end of statement.
+  const guardMatch = new RegExp(`when\\s+(.*?)(?=\\s+(?:after|at)\\s+[0-9]|$)`).exec(clean);
   if (from === 'start' || from === undefined) {
     // Entry marker: accepted, no resolvable edge.
     return { ok: false };
@@ -265,6 +295,7 @@ function parseTransitionStatement(text: string): LooseTransition {
     ok: true,
     from: dequoteRef(from),
     to: dequoteRef(target),
+    ...(guardMatch && guardMatch[1]!.trim() !== '' ? { guard: guardMatch[1]!.trim() } : {}),
     ...(triggerMatch
       ? {
           trigger: {
@@ -362,33 +393,51 @@ export function parseSysMLSource(source: string): SysMLParseResult {
       const ownerId = owner ? elementIdFor(owner.kind, owner.qualifiedName) : undefined;
 
       if (declaration && !/^\s*[{}]/.test(indented)) {
-        const kind = normalizeKind(declaration[1]!);
+        const modifiersRaw = declaration[1] ?? '';
+        const modifiers = modifiersRaw.split(/\s+/).filter(Boolean);
+        const hasModifier = modifiers.length > 0;
+        const kind = normalizeKind(declaration[2]!);
         // SysML semantics: a definition says `def`; a keyword-less part /
-        // item / port / ... declaration IS a usage. Packages (and kinds
-        // without the def/usage axis) stay 'unknown'.
+        // item / port / ... declaration IS a usage. Every def/usage family
+        // of the textual-notation core defaults to usage when bare; only
+        // axis-less kinds (package, usecase, stakeholder, ...) stay
+        // 'unknown'.
         const USAGE_DEFAULT_KINDS = new Set([
           'part',
           'item',
           'port',
           'attribute',
+          'connection',
+          'flow',
+          'interface',
+          'allocation',
+          'requirement',
+          'concern',
+          'analysis',
+          'verification',
           'action',
           'calculation',
           'calc',
           'state',
           'constraint',
           'occurrence',
-          'flow',
-          'interface',
+          'snapshot',
+          'timeslice',
+          'view',
+          'viewpoint',
+          'rendering',
+          'meeting',
+          'interaction',
         ]);
         const declarationKind =
-          declaration[2] === 'def'
+          declaration[3] === 'def'
             ? 'definition'
-            : declaration[2] === 'usage'
+            : declaration[3] === 'usage'
               ? 'usage'
-              : USAGE_DEFAULT_KINDS.has(declaration[1]!)
+              : USAGE_DEFAULT_KINDS.has(declaration[2]!)
                 ? 'usage'
                 : 'unknown';
-        const name = declaration[3] ?? declaration[4]!;
+        const name = declaration[4] ?? declaration[5]!;
         // Feature continuation keywords (attribute redefines mass;) would
         // otherwise become elements literally named after the keyword
         // (SY0003 duplicates) - tolerate them as prose instead.
@@ -439,6 +488,7 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           );
         }
 
+        const tail = parseDeclarationTail(rest);
         elements.push({
           kind,
           name,
@@ -451,15 +501,38 @@ export function parseSysMLSource(source: string): SysMLParseResult {
             end: base + nameStartInLine + name.length,
             line: lineNumber,
           },
+          ...(hasModifier ? { modifiers } : {}),
+          ...(tail.typeRef !== undefined ? { typeRef: tail.typeRef } : {}),
+          ...(tail.multiplicity !== undefined ? { multiplicity: tail.multiplicity } : {}),
+          ...(tail.valueText !== undefined ? { valueText: tail.valueText } : {}),
         });
 
-        const specializes = /:>\s*REF/.exec(indented);
-        if (specializes) {
-          pushPending(pending, 'specializes', qualifiedName, specializes[1]!, ':>', lineNumber);
+        for (const specialized of tail.specializes) {
+          pushPending(pending, 'specializes', qualifiedName, specialized, ':>', lineNumber);
         }
-        const typed = new RegExp(`:\\s*(${REFERENCE})`).exec(indented.replace(/:>/g, ''));
-        if (typed && declarationKind !== 'definition') {
-          pushPending(pending, 'typed_by', qualifiedName, dequoteRef(typed[1]!), ':', lineNumber);
+        // Spec connector spelling inside a connection/allocation usage body
+        // header: `connection c1 connect engine.shaft to wheel.hub;`
+        const connectTail = new RegExp(
+          `^\\s*connect\\s+(${REFERENCE})\\s+to\\s+(${REFERENCE})`,
+        ).exec(rest);
+        if (connectTail) {
+          pushPending(
+            pending,
+            'connects',
+            dequoteRef(connectTail[1]!),
+            dequoteRef(connectTail[2]!),
+            name !== '' ? name : 'connects',
+            lineNumber,
+          );
+        }
+        for (const redefined of tail.redefines) {
+          pushPending(pending, 'redefines', qualifiedName, redefined, ':>>', lineNumber);
+        }
+        for (const subsetted of tail.subsettings) {
+          pushPending(pending, 'subsets', qualifiedName, subsetted, '>:>', lineNumber);
+        }
+        if (tail.typeRef !== undefined && declarationKind !== 'definition') {
+          pushPending(pending, 'typed_by', qualifiedName, tail.typeRef, ':', lineNumber);
         }
 
         const delta = opens - closes;
@@ -480,6 +553,7 @@ export function parseSysMLSource(source: string): SysMLParseResult {
                 to: parsedTransition.to,
                 label: 'transitions',
                 ...(parsedTransition.trigger ? { trigger: parsedTransition.trigger } : {}),
+                ...(parsedTransition.guard ? { guard: parsedTransition.guard } : {}),
                 line: lineNumber,
               });
             } else {
@@ -530,6 +604,12 @@ export function parseSysMLSource(source: string): SysMLParseResult {
           const featureName = featureMatch?.[1]?.trim() ?? '';
           if (featureName !== '' && owner !== undefined && ownerId !== undefined) {
             const fNameStart = indented.indexOf(featureName);
+            const direction = /^(in|out|inout)\s/.exec(indented)?.[1] as
+              'in' | 'out' | 'inout' | undefined;
+            // Typed feature (`out t : Torque;`): record the type reference.
+            const featureTail = parseDeclarationTail(
+              indented.slice(indented.indexOf(featureName) + featureName.length),
+            );
             elements.push({
               kind: 'port',
               name: featureName,
@@ -542,7 +622,19 @@ export function parseSysMLSource(source: string): SysMLParseResult {
                 end: base + fNameStart + featureName.length,
                 line: lineNumber,
               },
+              ...(direction !== undefined ? { direction } : {}),
+              ...(featureTail.typeRef !== undefined ? { typeRef: featureTail.typeRef } : {}),
             });
+            if (featureTail.typeRef !== undefined) {
+              pushPending(
+                pending,
+                'typed_by',
+                owner.qualifiedName + '::' + featureName,
+                featureTail.typeRef,
+                ':',
+                lineNumber,
+              );
+            }
           }
         } else if (/^(?:(?:private|public|protected|abstract)\s+)*import\b/.test(indented)) {
           // Import directives are project-level: accepted as a directive and
@@ -791,6 +883,105 @@ export function parseSysMLSource(source: string): SysMLParseResult {
     if (text !== '') attachDoc(match.index ?? 0, text);
   }
   return { elements, pending, diagnostics };
+}
+
+interface DeclarationTail {
+  typeRef?: string;
+  multiplicity?: string;
+  valueText?: string;
+  specializes: string[];
+  redefines: string[];
+  subsettings: string[];
+}
+
+/** Scan the header remainder of a declaration (text after the name, up to
+ *  `{`/`;`) for the spec's ordered clause chain: typing `: T`, specialization
+ *  `:> A, B`, redefinition `:>> R`, subsetting `>:> S`, multiplicity `[n..m]`
+ *  and the value/default tail `= expr`. Recorded verbatim - evaluation stays
+ *  with the execution layer (conformance matrix). */
+function parseDeclarationTail(rest: string): DeclarationTail {
+  const tail: DeclarationTail = { specializes: [], redefines: [], subsettings: [] };
+  let i = 0;
+  const skipWs = () => {
+    while (i < rest.length && /\s/.test(rest[i]!)) i += 1;
+  };
+  for (;;) {
+    skipWs();
+    if (i >= rest.length) break;
+    const ch = rest[i]!;
+    if (ch === '{' || ch === '}') break;
+    // Redefinition before specialization: ':>>'
+    if (rest.startsWith(':>>', i)) {
+      i += 3;
+      const refs = readReferenceList();
+      tail.redefines.push(...refs);
+      continue;
+    }
+    if (rest.startsWith(':>', i)) {
+      i += 2;
+      tail.specializes.push(...readReferenceList());
+      continue;
+    }
+    if (ch === ':' && !rest.startsWith('::', i)) {
+      i += 1;
+      skipWs();
+      const ref = readSingleReference();
+      if (ref !== undefined && tail.typeRef === undefined) tail.typeRef = ref;
+      continue;
+    }
+    if (ch === '[') {
+      let depth = 0;
+      let j = i;
+      while (j < rest.length) {
+        if (rest[j] === '[') depth += 1;
+        if (rest[j] === ']') {
+          depth -= 1;
+          if (depth === 0) break;
+        }
+        j += 1;
+      }
+      if (j >= rest.length) break;
+      tail.multiplicity = `[${rest.slice(i + 1, j).replace(/\s+/g, '')}]`;
+      i = j + 1;
+      continue;
+    }
+    if (ch === '=' && !rest.startsWith('==', i)) {
+      i += 1;
+      skipWs();
+      if (tail.valueText === undefined) {
+        tail.valueText = rest.slice(i).trim().replace(/;\s*$/, '').trim() || undefined;
+      }
+      break;
+    }
+    i += 1;
+  }
+
+  function readReferenceList(): string[] {
+    const refs: string[] = [];
+    for (;;) {
+      skipWs();
+      const ref = readSingleReference();
+      if (ref === undefined) break;
+      refs.push(ref);
+      skipWs();
+      if (rest[i] === ',') {
+        i += 1;
+        continue;
+      }
+      break;
+    }
+    return refs;
+  }
+
+  function readSingleReference(): string | undefined {
+    skipWs();
+    const match = new RegExp(`^${REFERENCE.replace(/\\\\/g, '\\')}`).exec(rest.slice(i));
+    if (!match) return undefined;
+    i += match[0].length;
+    return dequoteRef(match[0]);
+  }
+
+  return tail;
 }
 
 function matchRelationLine(line: string): Omit<PendingRelation, 'line'> | null {

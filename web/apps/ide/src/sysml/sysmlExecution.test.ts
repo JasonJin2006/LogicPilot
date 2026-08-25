@@ -9,7 +9,7 @@ import { projectSysML } from './sysmlProjection';
 
 describe('sysmlExecution (subset 0.1)', () => {
   it('conformance matrix is versioned and levels are valid', () => {
-    expect(SYSML_EXECUTION_CONFORMANCE_VERSION).toBe('0.2.0');
+    expect(SYSML_EXECUTION_CONFORMANCE_VERSION).toBe('0.3.0');
     const levels = new Set(['supported', 'planned', 'unsupported']);
     for (const row of SYSML_CONFORMANCE_MATRIX) {
       expect(levels.has(row.level)).toBe(true);
