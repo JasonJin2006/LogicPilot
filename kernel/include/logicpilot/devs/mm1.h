@@ -22,7 +22,7 @@
 #include "logicpilot/core/scheduler/i_event_scheduler.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/random/xoshiro256pp.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/devs/flow_engine.h"
 
 namespace logicpilot {

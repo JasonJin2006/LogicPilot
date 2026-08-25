@@ -16,10 +16,10 @@
 
 #include "builtin_registry.h"
 #include "logicpilot/core/random/streams.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/devs/trace_codec.h"
 #include "logicpilot/devs/trace_store.h"
 #include "logicpilot/runtime/simulation_kernel.h"

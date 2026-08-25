@@ -15,7 +15,7 @@
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 using namespace logicpilot;
 using logicpilot::testing::json_number;

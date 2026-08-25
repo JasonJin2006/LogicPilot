@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/dsl/ir_dump.h"
 #include "logicpilot/runtime/method_registry.h"

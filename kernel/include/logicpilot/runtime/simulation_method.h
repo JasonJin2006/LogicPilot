@@ -19,8 +19,7 @@
 #include <string_view>
 
 #include "logicpilot/core/time/sim_time.h"
-#include "logicpilot/devs/checkpoint.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/method_checkpoint.h"
 
 namespace logicpilot {
@@ -73,24 +72,10 @@ public:
   // returned as an apparently successful metric set.
   [[nodiscard]] virtual std::string runtime_error() const { return {}; }
 
-  // Optional method-level state checkpoint. The default is explicit refusal;
-  // a session must never claim to restore a method whose state contract is
-  // unknown.
-  [[nodiscard]] virtual bool save_checkpoint(
-      DevsCheckpoint&, std::string* error = nullptr) const {
-    if (error != nullptr) {
-      *error = "method does not support checkpoint_save";
-    }
-    return false;
-  }
-  virtual bool restore_checkpoint(const DevsCheckpoint&,
-                                  std::string* error = nullptr) {
-    if (error != nullptr) {
-      *error = "method does not support checkpoint_restore";
-    }
-    return false;
-  }
-
+  // Legacy structured state checkpoints are a method-private extension:
+  // DEVS runtimes expose them through logicpilot/devs/checkpoint.h's
+  // CheckpointedDevRuntime discovery interface (ADR-0068 Phase A). The
+  // neutral contract carries only the versioned MethodCheckpoint bundle.
   [[nodiscard]] virtual bool save_method_checkpoint(
       MethodCheckpoint&, std::string* error = nullptr) const {
     if (error != nullptr) {

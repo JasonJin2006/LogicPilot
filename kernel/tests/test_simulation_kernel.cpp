@@ -18,8 +18,9 @@
 #include <flatbuffers/flatbuffers.h>
 
 #include "ir_v2_generated.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/devs/session_checkpoint.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/runtime/simulation_kernel.h"
 #include "logicpilot/runtime/simulation_session.h"
@@ -597,7 +598,7 @@ TEST_CASE("simulation session advances a shared multi-method world in slices",
   REQUIRE(dispatched > 0);
 
   DevsCheckpoint unsupported;
-  REQUIRE_FALSE(session->save_checkpoint(unsupported, &error));
+  REQUIRE_FALSE(devs::save_session_checkpoint(*session, unsupported, &error));
   REQUIRE(error.find("requires one checkpointable DEVS runtime") !=
           std::string::npos);
   error.clear();
@@ -627,13 +628,13 @@ TEST_CASE("simulation session restores a DEVS checkpoint through the method API"
   REQUIRE(session->advance(1_s, nullptr, nullptr, &error));
 
   DevsCheckpoint checkpoint;
-  REQUIRE(session->save_checkpoint(checkpoint, &error));
+  REQUIRE(devs::save_session_checkpoint(*session, checkpoint, &error));
   REQUIRE(error.empty());
   evidence.clear();
   REQUIRE(session->advance(3_s, nullptr, nullptr, &error));
   const std::uint64_t first_hash = evidence.hash();
 
-  REQUIRE(session->restore_checkpoint(checkpoint, &error));
+  REQUIRE(devs::restore_session_checkpoint(*session, checkpoint, &error));
   REQUIRE(error.empty());
   REQUIRE(evidence.event_count() == 0);
   REQUIRE(session->advance(3_s, nullptr, nullptr, &error));

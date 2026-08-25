@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "logicpilot/devs/ir_agent.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/trace_diff.h"
 #include "logicpilot/devs/trace_codec.h"
 #include "logicpilot/devs/trace_store.h"

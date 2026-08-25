@@ -5,7 +5,7 @@
 #include <span>
 #include <string>
 
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 namespace logicpilot {
 

@@ -3,7 +3,7 @@
 
 #include <utility>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 
 namespace logicpilot {
 

@@ -25,7 +25,7 @@
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "wire_frames.h"
 
 namespace logicpilot::server {

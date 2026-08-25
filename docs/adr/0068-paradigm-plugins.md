@@ -77,7 +77,9 @@ packaged without forking the core, and third parties can add methods.
 | `workbench/**` boundary lint rule | done (0 violations) |
 | panels focus probe routed through panel registry | open |
 | ai/run/project/layout de-paradigmatization + wider lint scope | open |
-| DEVS value types re-hosted in runtime core | open |
+| Replication framework + IR reader relocated under `runtime/` (forwarders keep old paths) | done (2026-08-25) |
+| `DevsCheckpoint` removed from SimulationMethod; legacy session checkpoint moved to `devs/session_checkpoint.h` capability helpers | done (2026-08-25) |
+| `builtin_methods.cpp` + `src/devs` engines moved out of core targets into `methods/devs` | open |
 
 ## Consequences
 

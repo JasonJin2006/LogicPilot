@@ -20,7 +20,7 @@
 
 #include "logicpilot/agent/components.h"
 #include "logicpilot/devs/ir_atomic.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 namespace logicpilot {
 namespace ir::v2 {

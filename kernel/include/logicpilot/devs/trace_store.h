@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 namespace logicpilot {
 

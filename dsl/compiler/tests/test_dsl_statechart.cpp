@@ -8,8 +8,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "ir_v2_generated.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/dsl/compile.h"
 #include "register.h"
 #include "statechart_replication.h"

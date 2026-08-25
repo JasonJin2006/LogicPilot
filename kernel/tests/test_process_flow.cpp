@@ -21,7 +21,7 @@
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/state/variable_store.h"
 #include "process_flow.h"

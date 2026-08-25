@@ -28,7 +28,7 @@
 #include <flatbuffers/flatbuffers.h>
 #include <wire_generated.h>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/core/random/distributions.h"
 #include "logicpilot/dsl/compile.h"

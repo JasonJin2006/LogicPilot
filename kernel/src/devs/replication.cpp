@@ -1,5 +1,5 @@
 // Replication summary statistics implementation.
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 #include <atomic>
 #include <cmath>

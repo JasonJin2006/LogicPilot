@@ -13,7 +13,7 @@
 //
 // The streaming driver's flow-parameter extraction stays here because it is
 // a generic IR query (shared by lp-server), not method execution.
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 
 #include <flatbuffers/flatbuffers.h>
 

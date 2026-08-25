@@ -9,7 +9,7 @@
 #include "logicpilot/core/scheduler/handler_registry.h"
 #include "logicpilot/core/scheduler/i_event_scheduler.h"
 #include "logicpilot/core/time/clock.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/state/message_store.h"
 #include "logicpilot/state/variable_store.h"
 

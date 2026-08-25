@@ -16,8 +16,8 @@
 #include "logicpilot/core/random/xoshiro256pp.h"
 #include "logicpilot/devs/executor.h"
 #include "logicpilot/devs/ir_atomic.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"
@@ -67,7 +67,8 @@ private:
   bool ran_{false};
 };
 
-class DevsMethod final : public SimulationMethod {
+class DevsMethod final : public SimulationMethod,
+                   public CheckpointedDevRuntime {
 public:
   [[nodiscard]] std::string_view method_name() const override { return "devs"; }
 

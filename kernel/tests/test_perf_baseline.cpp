@@ -7,7 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 using namespace logicpilot;
 

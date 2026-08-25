@@ -4,7 +4,7 @@
 #include <utility>
 
 #include "logicpilot/core/scheduler/run.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/simulation_session.h"
 
 namespace logicpilot {

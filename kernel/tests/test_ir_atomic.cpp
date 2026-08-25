@@ -16,7 +16,7 @@
 #include "logicpilot/devs/checkpoint_store.h"
 #include "logicpilot/devs/checkpoint_transform.h"
 #include "logicpilot/devs/ir_atomic.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/runtime/simulation_kernel.h"
 

@@ -103,6 +103,7 @@ add_library(logicpilot_phase1b STATIC
   src/devs/continuous.cpp
   src/devs/checkpoint_journal.cpp
   src/devs/checkpoint_store.cpp
+  src/devs/session_checkpoint.cpp
   src/devs/replication.cpp
   src/devs/mm1.cpp
   src/devs/ir_loader.cpp

@@ -16,9 +16,9 @@
 
 #include "logicpilot/core/scheduler/binary_heap_scheduler.h"
 #include "logicpilot/core/time/clock.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/artifact_digest.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/method_plugin_manifest.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_manager.h"

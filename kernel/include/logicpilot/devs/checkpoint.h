@@ -33,4 +33,17 @@ struct DevsCheckpoint {
   std::vector<std::uint64_t> replay_watermarks;
 };
 
+// Narrow capability extension (ADR-0068 Phase A): implemented by DEVS method
+// runtimes that own the legacy structured checkpoint. Discovered from a
+// neutral SimulationMethod* via dynamic_cast by devs-side helpers (see
+// session_checkpoint.h); never part of the neutral interface itself.
+class CheckpointedDevRuntime {
+ public:
+  virtual ~CheckpointedDevRuntime() = default;
+  [[nodiscard]] virtual bool save_checkpoint(DevsCheckpoint& checkpoint,
+                                             std::string* error = nullptr) const = 0;
+  virtual bool restore_checkpoint(const DevsCheckpoint& checkpoint,
+                                  std::string* error = nullptr) = 0;
+};
+
 }  // namespace logicpilot

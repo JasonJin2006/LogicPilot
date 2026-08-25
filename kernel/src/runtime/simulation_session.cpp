@@ -239,67 +239,18 @@ std::vector<ReplicationMetrics> SimulationSession::finish(
   return metrics;
 }
 
-bool SimulationSession::save_checkpoint(
-    DevsCheckpoint& checkpoint, std::string* error,
-    std::vector<RuntimeDiagnostic>* diagnostics) const {
-  if (!active_ || manager_ == nullptr) {
-    return fail("KR1012", "SimulationSession is not active", error,
-                diagnostics);
+const SimulationMethod* SimulationSession::active_method() const {
+  if (!active_ || manager_ == nullptr || manager_->method_count() != 1) {
+    return nullptr;
   }
-  const SimulationMethod* method =
-      manager_->method_count() == 1 ? manager_->method(0) : nullptr;
-  const MethodRegistry::Descriptor* descriptor =
-      method == nullptr
-          ? nullptr
-          : MethodRegistry::instance().descriptor(
-                std::string(method->method_name()));
-  if (method == nullptr || descriptor == nullptr ||
-      descriptor->formalism != MethodFormalism::kDevs ||
-      !method->capabilities().checkpoint_restore) {
-    return fail("KR1013",
-                "session checkpoint currently requires one checkpointable "
-                "DEVS runtime (formalism metadata)",
-                error, diagnostics);
-  }
-  std::string local_error;
-  if (!manager_->method(0)->save_checkpoint(
-          checkpoint, &local_error)) {
-    return fail("KR1014", local_error.empty() ? "method checkpoint failed"
-                                               : local_error,
-                error, diagnostics);
-  }
-  return true;
+  return manager_->method(0);
 }
 
-bool SimulationSession::restore_checkpoint(
-    const DevsCheckpoint& checkpoint, std::string* error,
-    std::vector<RuntimeDiagnostic>* diagnostics) {
-  if (!active_ || manager_ == nullptr) {
-    return fail("KR1012", "SimulationSession is not active", error,
-                diagnostics);
+SimulationMethod* SimulationSession::active_method() {
+  if (!active_ || manager_ == nullptr || manager_->method_count() != 1) {
+    return nullptr;
   }
-  const SimulationMethod* method =
-      manager_->method_count() == 1 ? manager_->method(0) : nullptr;
-  const MethodRegistry::Descriptor* descriptor =
-      method == nullptr
-          ? nullptr
-          : MethodRegistry::instance().descriptor(
-                std::string(method->method_name()));
-  if (method == nullptr || descriptor == nullptr ||
-      descriptor->formalism != MethodFormalism::kDevs ||
-      !method->capabilities().checkpoint_restore) {
-    return fail("KR1013",
-                "session checkpoint currently requires one checkpointable "
-                "DEVS runtime (formalism metadata)",
-                error, diagnostics);
-  }
-  std::string local_error;
-  if (!manager_->method(0)->restore_checkpoint(checkpoint, &local_error)) {
-    return fail("KR1015", local_error.empty() ? "method restore failed"
-                                               : local_error,
-                error, diagnostics);
-  }
-  return true;
+  return manager_->method(0);
 }
 
 bool SimulationSession::save_method_checkpoint(

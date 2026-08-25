@@ -10,7 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "logicpilot/devs/ir_agent.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 
 using namespace logicpilot;

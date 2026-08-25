@@ -13,7 +13,7 @@
 #include <variant>
 #include <vector>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/artifact_digest.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"

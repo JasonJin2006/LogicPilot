@@ -24,7 +24,7 @@
 #include "logicpilot/devs/atomic_model.h"
 #include "logicpilot/devs/coupled_model.h"
 #include "logicpilot/devs/executor.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 namespace logicpilot {
 namespace ir::v2 {

@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "logicpilot/devs/continuous.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/dsl/compile.h"
 #include "logicpilot/runtime/simulation_kernel.h"
 #include "logicpilot/runtime/simulation_session.h"

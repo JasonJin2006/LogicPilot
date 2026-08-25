@@ -26,9 +26,9 @@
 #include <boost/beast/websocket.hpp>
 
 #include "logicpilot/core/random/streams.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/devs/ir_agent.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/flow_engine.h"
 #include "logicpilot/devs/continuous.h"
 #include "logicpilot/devs/ir_atomic.h"

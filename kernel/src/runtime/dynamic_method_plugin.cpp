@@ -16,7 +16,7 @@
 #include <dlfcn.h>
 #endif
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/method_plugin_abi.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/artifact_digest.h"

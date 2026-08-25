@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/simulation_kernel.h"
 #include "logicpilot/runtime/wasm_method_plugin.h"

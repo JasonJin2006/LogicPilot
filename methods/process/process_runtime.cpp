@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/ir_v2_util.h"
 #include "logicpilot/devs/mm1.h"
 #include "logicpilot/runtime/method_registry.h"

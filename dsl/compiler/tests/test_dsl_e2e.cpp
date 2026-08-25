@@ -16,8 +16,8 @@
 #include "expect_json.h"
 #include "ir_v2_generated.h"
 #include "logicpilot/core/random/streams.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/dsl/compile.h"
 #include "process_runtime.h"
 

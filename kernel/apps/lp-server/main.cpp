@@ -19,7 +19,7 @@
 
 #include <fmt/format.h>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "process_runtime.h"
 #include "server.h"
 

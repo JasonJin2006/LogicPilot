@@ -11,8 +11,8 @@
 #include <flatbuffers/flatbuffers.h>
 
 #include "ir_v2_generated.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/runtime/replication.h"
 #include "process_runtime.h"
 
 using namespace logicpilot;

@@ -9,7 +9,7 @@
 #include <vector>
 #include <span>
 
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "statechart_replication.h"
 
 namespace logicpilot {

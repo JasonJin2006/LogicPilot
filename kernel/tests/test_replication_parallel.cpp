@@ -10,7 +10,7 @@
 
 #include "logicpilot/core/random/streams.h"
 #include "logicpilot/devs/mm1.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 
 using namespace logicpilot;
 

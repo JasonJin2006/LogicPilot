@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/devs/ir_v2_util.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"

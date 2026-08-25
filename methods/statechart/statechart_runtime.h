@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/simulation_method.h"
 
 namespace logicpilot {

@@ -9,7 +9,7 @@
 #include "ir_v2_generated.h"
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/devs/continuous.h"
-#include "logicpilot/devs/ir_loader.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "logicpilot/runtime/method_registry.h"
 #include "logicpilot/runtime/runtime_context.h"
 #include "logicpilot/runtime/simulation_method.h"

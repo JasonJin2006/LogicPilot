@@ -17,10 +17,9 @@
 #include "logicpilot/core/scheduler/handler_registry.h"
 #include "logicpilot/core/time/clock.h"
 #include "logicpilot/core/time/sim_time.h"
-#include "logicpilot/devs/checkpoint.h"
 #include "logicpilot/devs/evidence.h"
-#include "logicpilot/devs/ir_loader.h"
-#include "logicpilot/devs/replication.h"
+#include "logicpilot/runtime/ir_loader.h"
+#include "logicpilot/runtime/replication.h"
 #include "logicpilot/runtime/runtime_diagnostics.h"
 #include "logicpilot/runtime/runtime_manager.h"
 #include "logicpilot/runtime/method_checkpoint.h"
@@ -43,6 +42,11 @@ class SimulationSession {
   [[nodiscard]] bool active() const { return active_; }
   [[nodiscard]] SimTime now() const { return clock_.now(); }
   [[nodiscard]] std::size_t method_count() const;
+  // The single attached method while one replication world is active and
+  // exactly one method is hosted; nullptr otherwise. Neutral extension
+  // discovery point for capability interfaces (e.g. CheckpointedDevRuntime).
+  [[nodiscard]] const SimulationMethod* active_method() const;
+  [[nodiscard]] SimulationMethod* active_method();
   [[nodiscard]] bool has_pending_events() const;
   [[nodiscard]] VariableStore& variables() { return manager_->variables(); }
   [[nodiscard]] MessageStore& messages() { return manager_->messages(); }
@@ -67,14 +71,6 @@ class SimulationSession {
       std::string* error = nullptr,
       std::vector<RuntimeDiagnostic>* diagnostics = nullptr);
 
-  // Initial method-level checkpoint slice. The current contract accepts a
-  // single DEVS runtime; mixed-method bundles will be added once each method
-  // supplies its own state schema.
-  bool save_checkpoint(DevsCheckpoint& checkpoint, std::string* error = nullptr,
-                       std::vector<RuntimeDiagnostic>* diagnostics = nullptr) const;
-  bool restore_checkpoint(const DevsCheckpoint& checkpoint,
-                          std::string* error = nullptr,
-                          std::vector<RuntimeDiagnostic>* diagnostics = nullptr);
 
   bool save_method_checkpoint(
       SimulationSessionCheckpoint& checkpoint, std::string* error = nullptr,
