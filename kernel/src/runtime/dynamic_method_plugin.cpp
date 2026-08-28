@@ -4,6 +4,7 @@
 #include <array>
 #include <cctype>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <string>
 #include <utility>
@@ -144,7 +145,24 @@ public:
 
   [[nodiscard]] ReplicationMetrics replication_metrics() const override { return metrics_; }
 
+  // Host-callback failures must not escape through the C ABI boundary, but
+  // they are also too valuable to swallow silently: the first recorded
+  // failure is surfaced through runtime_error(), which SimulationKernel /
+  // SimulationSession already consume after a run (a plugin-side fault can
+  // no longer hide behind an apparently successful metric set).
+  [[nodiscard]] std::string runtime_error() const override { return host_error_; }
+
 private:
+  void record_host_failure(const char* operation, const std::exception* exception) {
+    if (!host_error_.empty())
+      return;  // keep the root-cause failure, not the latest symptom
+    host_error_ = std::string("C ABI host ") + operation + " failed";
+    if (exception != nullptr)
+      host_error_ += std::string(": ") + exception->what();
+    else
+      host_error_ += ": unknown non-standard exception";
+  }
+
   static int64_t host_now_ns(void* opaque) {
     const auto* self = static_cast<CAbiSimulationMethod*>(opaque);
     return self->context_ == nullptr ? 0 : self->context_->clock().now().as_ns();
@@ -163,7 +181,11 @@ private:
         return 0;
       *token = lp_event_token_v1{event.id, event.generation, 0};
       return 1;
+    } catch (const std::exception& error) {
+      self->record_host_failure("schedule", &error);
+      return 0;
     } catch (...) {
+      self->record_host_failure("schedule", nullptr);
       return 0;
     }
   }
@@ -187,7 +209,11 @@ private:
                                       {accessor}});
       }
       return self->context_->variables().set_by(accessor, name, value) ? 1 : 0;
+    } catch (const std::exception& error) {
+      self->record_host_failure("set_f64", &error);
+      return 0;
     } catch (...) {
+      self->record_host_failure("set_f64", nullptr);
       return 0;
     }
   }
@@ -199,7 +225,11 @@ private:
     const VariableValue* stored = nullptr;
     try {
       stored = self->context_->variables().get_by(self->api_->method_name, name);
+    } catch (const std::exception& error) {
+      self->record_host_failure("get_f64", &error);
+      return 0;
     } catch (...) {
+      self->record_host_failure("get_f64", nullptr);
       return 0;
     }
     if (stored == nullptr)
@@ -231,7 +261,11 @@ private:
       if (data_size != 0)
         envelope.data.assign(data, data + data_size);
       return self->context_->messages().publish(std::move(envelope));
+    } catch (const std::exception& error) {
+      self->record_host_failure("publish_message", &error);
+      return 0;
     } catch (...) {
+      self->record_host_failure("publish_message", nullptr);
       return 0;
     }
   }
@@ -250,7 +284,11 @@ private:
                                      encoding == nullptr ? "" : encoding})
                  ? 1
                  : 0;
+    } catch (const std::exception& error) {
+      self->record_host_failure("register_message_type", &error);
+      return 0;
     } catch (...) {
+      self->record_host_failure("register_message_type", nullptr);
       return 0;
     }
   }
@@ -262,6 +300,7 @@ private:
   HandlerId handler_{0};
   lp_method_host_v1 host_{};
   ReplicationMetrics metrics_{};
+  std::string host_error_;
 };
 
 }  // namespace

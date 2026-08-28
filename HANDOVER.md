@@ -96,6 +96,9 @@ node scripts\browser-verify.mjs   # web/apps/ide 下;用系统 Edge(playwright-c
   实际 52 文件/340 用例(§3 中的历史里程碑数字 237→320 系当时的快照,不代表当前值);
   editor 73、renderer2d 5、protocol interop 74。浏览器 E2E 的 AI 段依赖已配置的
   provider(mock 或真实 key)——无 provider 时 `.ai-patch-preview` 不会出现(E2E 已适配为新 UX,见其脚本内说明)。
+- **数字基线再校正**(2026-08-28 审查):README/内核为 **493 ctest**;editor 为 **74**
+  用例(2026-08-28 实跑)。IDE vitest 340 中 1 例 skip 是 `sysmlLinkedModel.test.ts`
+  的 `it.skipIf`(本地 `build/sysml-demo/current-raw` 工件缺失时条件跳过,设计如此)。
 
 ## 5.5 战略上下文(2026-08-23 校准,来源:用户提供的内核深挖对话)
 

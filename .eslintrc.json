@@ -27,6 +27,21 @@
       }
     },
     {
+      "files": ["web/apps/ide/src/{layout,ai,state,project,run}/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": ["warn",
+          {
+            "patterns": [
+              {
+                "group": ["**/model", "**/model/**", "**/sysml", "**/sysml/**"],
+                "message": "paradigm modules may only be wired in the src/plugins composition root (ADR-0068); route through workbench registries. Existing imports are tracked debt - do not add new ones."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["**/*.ts", "**/*.tsx"],
       "parser": "@typescript-eslint/parser",
       "plugins": ["@typescript-eslint"],

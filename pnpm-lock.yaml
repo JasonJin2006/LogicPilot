@@ -30,10 +30,10 @@ importers:
   web/apps/ide:
     dependencies:
       '@logicpilot/canvas':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../packages/canvas
       '@logicpilot/editor':
-        specifier: workspace:^
+        specifier: workspace:*
         version: link:../../packages/editor
       '@logicpilot/protocol':
         specifier: workspace:*
