@@ -572,6 +572,15 @@ class DelayBlock final : public BufferedBlock {
     return static_cast<std::int64_t>(in_service_.size());
   }
 
+  // A finite-capacity Delay is a real capacity-constrained activity and
+  // therefore contributes both busy-unit area and capacity to the model's
+  // aggregate utilization denominator. The old default (0) counted its
+  // busy area but omitted its capacity, allowing aggregate utilization to
+  // exceed 100% in flows combining Seize with Delay/Batch/Unbatch.
+  [[nodiscard]] std::int64_t pool_capacity() const override {
+    return capacity_ > 0 ? capacity_ : 0;
+  }
+
   void accumulate_areas(std::int64_t dt_ns) override {
     BufferedBlock::accumulate_areas(dt_ns);
     area_busy_ += static_cast<double>(dt_ns) *

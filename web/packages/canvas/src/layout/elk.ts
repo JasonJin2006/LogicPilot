@@ -23,7 +23,11 @@ export interface ElkRunOptions<G> {
 export async function runElkLayout<G>(options: ElkRunOptions<G>): Promise<ElkLayoutResult> {
   const run = async (elk: ElkLike): Promise<ElkLayoutResult> =>
     (await elk.layout(options.graph as never)) as ElkLayoutResult;
-  if (options.createWorkerElk !== undefined) {
+  // Node/SSR/test runtimes intentionally have no Web Worker global. Treat
+  // that as an unsupported capability, not a worker failure: constructing
+  // elk-api there throws synchronously and used to flood otherwise-green
+  // test output with an expected fallback stack trace.
+  if (options.createWorkerElk !== undefined && typeof Worker !== 'undefined') {
     try {
       return await run(options.createWorkerElk());
     } catch (workerError) {

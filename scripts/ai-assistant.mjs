@@ -21,10 +21,7 @@ import {
   normalizeAgentCapabilities,
   resolveAgentCapabilities,
 } from './agent-profiles.mjs';
-import {
-  loadAgentSkillInstructions,
-  renderAgentSkillInstructions,
-} from './agent-skills.mjs';
+import { loadAgentSkillInstructions, renderAgentSkillInstructions } from './agent-skills.mjs';
 import { listMcpToolDefinitions } from './mcp-runtime.mjs';
 
 // ---------------------------------------------------------------------------
@@ -152,12 +149,14 @@ export const ASSISTANT_TOOLS = Object.freeze([
   },
   {
     name: 'read_workspace_file',
-    description: 'Read a bounded source file inside the active LogicPilot workspace. Only model, presentation and experiment source paths are allowed.',
+    description:
+      'Read a bounded source file inside the active LogicPilot workspace. Only model, presentation and experiment source paths are allowed.',
     parameters: { path: { type: 'string', required: true } },
   },
   {
     name: 'apply_source_patch',
-    description: 'Apply an exact oldText -> newText patch to a bounded workspace source file after checksum validation. Requires explicit source-editing permission.',
+    description:
+      'Apply an exact oldText -> newText patch to a bounded workspace source file after checksum validation. Requires explicit source-editing permission.',
     parameters: {
       path: { type: 'string', required: true },
       expectedChecksum: { type: 'string', required: true },
@@ -165,6 +164,94 @@ export const ASSISTANT_TOOLS = Object.freeze([
       newText: { type: 'string', required: true },
       summary: { type: 'string', required: true },
     },
+  },
+  {
+    name: 'inspect_sysml_projection',
+    description:
+      'Inspect the active SysML projection, relations, diagnostics and stable element ids.',
+    parameters: {},
+  },
+  {
+    name: 'auto_layout_sysml_projection',
+    description:
+      'Automatically arrange the active SysML projection without changing semantic source.',
+    parameters: {},
+  },
+  {
+    name: 'set_sysml_projection_view',
+    description: 'Focus the SysML projection on one semantic view.',
+    parameters: { mode: { type: 'string', required: true } },
+  },
+  {
+    name: 'focus_sysml_element',
+    description: 'Select and reveal a SysML element by stable id, name or qualified name.',
+    parameters: { query: { type: 'string', required: true } },
+  },
+  {
+    name: 'move_sysml_element',
+    description: 'Move one SysML visual element without changing semantic source.',
+    parameters: {
+      elementId: { type: 'string', required: true },
+      x: { type: 'number', required: true },
+      y: { type: 'number', required: true },
+    },
+  },
+  {
+    name: 'add_sysml_element',
+    description: 'Insert one typed SysML declaration, optionally nested under an existing parent.',
+    parameters: {
+      kind: { type: 'string', required: true },
+      name: { type: 'string', required: true },
+      declaration: { type: 'string' },
+      parent: { type: 'string' },
+    },
+  },
+  {
+    name: 'rename_sysml_element',
+    description: 'Rename one SysML element through a verified source-text transaction.',
+    parameters: {
+      query: { type: 'string', required: true },
+      newName: { type: 'string', required: true },
+    },
+  },
+  {
+    name: 'connect_sysml_elements',
+    description: 'Create a typed SysML relation between two existing elements.',
+    parameters: {
+      verb: { type: 'string', required: true },
+      from: { type: 'string', required: true },
+      to: { type: 'string', required: true },
+    },
+  },
+  {
+    name: 'find_sysml_definition',
+    description: 'Resolve a SysML name or source line to its definition, including linked files.',
+    parameters: { query: { type: 'string' }, line: { type: 'number' } },
+  },
+  {
+    name: 'find_sysml_references',
+    description: 'List extracted relations touching one SysML element.',
+    parameters: { query: { type: 'string', required: true } },
+  },
+  {
+    name: 'query_sysml_evidence',
+    description: 'Query revision-bound execution evidence for the active SysML document.',
+    parameters: {
+      target: { type: 'string' },
+      outcome: { type: 'string' },
+      limit: { type: 'number' },
+    },
+  },
+  {
+    name: 'explain_sysml_run',
+    description: 'Read the full execution trace of one SysML evidence record.',
+    parameters: { evidenceId: { type: 'string', required: true } },
+  },
+  {
+    name: 'lower_sysml_state_machine',
+    description:
+      'Lower a supported SysML state definition to executable LogicPilot statechart DSL.',
+    parameters: { query: { type: 'string', required: true } },
   },
 ]);
 
@@ -314,7 +401,11 @@ function validateToolCall(call, index, allowedToolNames = null, toolCatalog = AS
     if (value !== undefined && schema.type === 'string' && typeof value !== 'string') {
       return `toolCalls[${index}].arguments.${key} must be a string`;
     }
-    if (value !== undefined && schema.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
+    if (
+      value !== undefined &&
+      schema.type === 'number' &&
+      (typeof value !== 'number' || !Number.isFinite(value))
+    ) {
       return `toolCalls[${index}].arguments.${key} must be a finite number`;
     }
     if (value !== undefined && schema.type === 'boolean' && typeof value !== 'boolean') {
@@ -429,7 +520,12 @@ export function validateAssistantResponse(
       throw new Error('assistant "toolCalls" must be an array');
     }
     for (let index = 0; index < value.toolCalls.length; ++index) {
-      const problem = validateToolCall(value.toolCalls[index], index, allowedToolNames, toolCatalog);
+      const problem = validateToolCall(
+        value.toolCalls[index],
+        index,
+        allowedToolNames,
+        toolCatalog,
+      );
       if (problem) {
         throw new Error(problem);
       }
@@ -507,7 +603,9 @@ export function visibleAssistantMessage(input) {
     } catch {
       // Fall through to transcript/fenced-text cleanup.
     }
-    const marker = text.search(/\n\s*(?:```(?:json)?\s*)?\{\s*["'](?:message|plan|toolCalls|done)["']/i);
+    const marker = text.search(
+      /\n\s*(?:```(?:json)?\s*)?\{\s*["'](?:message|plan|toolCalls|done)["']/i,
+    );
     if (marker > 0) text = text.slice(0, marker).trim();
     break;
   }
@@ -588,19 +686,34 @@ export function buildSystemPrompt({
   skills = [],
   skillInstructions,
   extraTools = [],
+  toolNames,
 } = {}) {
   const capabilityIds = normalizeAgentCapabilities(capabilities);
+  const requestedToolNames = Array.isArray(toolNames) ? new Set(toolNames) : null;
   const resolvedSkillInstructions = skillInstructions ?? renderAgentSkillInstructions(skills);
-  const extraToolLines = extraTools.map(
-    (tool) =>
-      `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
-  );
+  const extraToolLines = extraTools
+    .filter((tool) => requestedToolNames === null || requestedToolNames.has(tool.name))
+    .map(
+      (tool) =>
+        `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
+    );
   const modelingMounted =
     hasAgentCapability(capabilityIds, 'logicpilot-modeling') ||
     hasAgentCapability(capabilityIds, 'logicpilot-modeling-readonly');
   const modelingReadOnly =
     hasAgentCapability(capabilityIds, 'logicpilot-modeling-readonly') &&
     !hasAgentCapability(capabilityIds, 'logicpilot-modeling');
+  const capabilityToolNames = new Set(
+    resolveAgentCapabilities(capabilityIds).flatMap((capability) => capability.toolNames ?? []),
+  );
+  const toolMounted = (name) =>
+    capabilityToolNames.has(name) && (requestedToolNames === null || requestedToolNames.has(name));
+  const sourceEditingMounted =
+    hasAgentCapability(capabilityIds, 'logicpilot-source-editing') &&
+    toolMounted('read_workspace_file') &&
+    toolMounted('apply_source_patch');
+  const modelPatchMounted = toolMounted('apply_model_patch');
+  const sysmlMounted = toolMounted('inspect_sysml_projection');
   if (!modelingMounted) {
     return [
       'You are a general-purpose AI agent embedded in an application.',
@@ -615,13 +728,16 @@ export function buildSystemPrompt({
       ...(resolvedSkillInstructions ? ['', resolvedSkillInstructions] : []),
     ].join('\n');
   }
-  const allowedModelingTools = new Set(
-    resolveAgentCapabilities(capabilityIds).flatMap((capability) => capability.toolNames ?? []),
-  );
-  const toolLines = ASSISTANT_TOOLS.filter((tool) => allowedModelingTools.has(tool.name)).map(
+  const toolLines = ASSISTANT_TOOLS.filter(
     (tool) =>
-      `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
-  ).join('\n');
+      capabilityToolNames.has(tool.name) &&
+      (requestedToolNames === null || requestedToolNames.has(tool.name)),
+  )
+    .map(
+      (tool) =>
+        `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
+    )
+    .join('\n');
   const promptText = [
     'You are the LogicPilot AI modeling assistant inside the IDE. LogicPilot',
     'is a multi-paradigm simulation platform. Help the user build, edit, run',
@@ -649,18 +765,46 @@ export function buildSystemPrompt({
     '  model summary (e.g. "刚才那个队列" resolves to the queue named in the',
     '  summary). If a reference is ambiguous or missing, ask the user to',
     '  clarify instead of guessing.',
-    '- For model edits in any supported library use apply_model_patch with structured operations',
-    '  (add_block, update_block, remove_block, connect, disconnect,',
-    '  rename_model). Its result includes preflight/compiler diagnostics: if',
-    '  validation failed, repair the reported problem and retry. Do not modify',
-    '  DSL text directly and do not claim an edit succeeded before the tool',
-    '  result confirms it.',
-    '- If apply_model_patch returns declined=true, the user chose to keep the',
-    '  current model. Do not retry, diagnose, or propose the same change again',
-    '  in that turn; acknowledge the decision and finish without mutation.',
-    '- When building a new DES flow, submit every required block and connection',
-    '  in ONE atomic patch. A partial source-only or queue-only model is invalid',
-    '  during preflight and wastes a reasoning step.',
+    ...(modelPatchMounted
+      ? [
+          '- For canvas-graph edits representable as blocks/ports use apply_model_patch with structured operations',
+          '  (add_block, update_block, remove_block, connect, disconnect,',
+          '  rename_model). Its result includes preflight/compiler diagnostics: if',
+          '  validation failed, repair the reported problem and retry. Do not claim',
+          '  an edit succeeded before the tool result confirms it.',
+        ]
+      : []),
+    ...(sysmlMounted
+      ? [
+          '- The active document is SysML text with a visual projection. Inspect the projection before',
+          '  editing, reference stable element ids or qualified names, and use only mounted SysML tools.',
+          '- SysML semantic edits are verified source transactions. Report parser/lowering diagnostics',
+          '  honestly; never claim unsupported SysML constructs were executed.',
+        ]
+      : []),
+    ...(sourceEditingMounted
+      ? [
+          '- Agent behaviors, Statechart transitions, continuous equations and DEVS atomic',
+          '  transitions are not fully representable by ModelPatch. For those semantics, call',
+          '  read_workspace_file first, then apply_source_patch with the exact returned path,',
+          '  checksum and oldText. Never invent a checksum or overwrite text you did not read.',
+          '- After a source patch, call compile_model and repair real compiler diagnostics before',
+          '  running. Preserve unrelated source and use only documented LogicPilot syntax.',
+        ]
+      : [
+          '- Source editing is not mounted for this turn. If a requested behavior/equation/transition',
+          '  cannot be represented by ModelPatch, explain the limitation instead of fabricating it.',
+        ]),
+    ...(modelPatchMounted
+      ? [
+          '- If apply_model_patch returns declined=true, the user chose to keep the',
+          '  current model. Do not retry, diagnose, or propose the same change again',
+          '  in that turn; acknowledge the decision and finish without mutation.',
+          '- When building a new DES flow, submit every required block and connection',
+          '  in ONE atomic patch. A partial source-only or queue-only model is invalid',
+          '  during preflight and wastes a reasoning step.',
+        ]
+      : []),
     '- For runs use run_simulation. If the user asked for results or an',
     '  explanation, continue after a successful edit, run the model, inspect',
     '  run metrics when needed, and cite only the metric values returned by',
@@ -675,32 +819,49 @@ export function buildSystemPrompt({
     '  confidence conclusions returned by the tool.',
     '- Respond in the same language as the user.',
     '',
-    'ModelPatch version 1 (use only these exact fields):',
-    '- add_block: {"op":"add_block","kind":string,"name":string,',
-    '  "x"?:number,"y"?:number,"params"?:object}.',
-    '- update_block: {"op":"update_block","target":id-or-name,',
-    '  "name"?:string,"x"?:number,"y"?:number,"params"?:object,',
-    '  "removeParams"?:string[]}.',
-    '- remove_block: {"op":"remove_block","target":id-or-name}.',
-    '- connect: {"op":"connect","from":id-or-name,"to":id-or-name,',
-    '  "fromPort"?:string,"toPort"?:string}. Default ports are out -> in.',
-    '- disconnect: {"op":"disconnect","edge"?:edge-id,"from"?:id-or-name,',
-    '  "to"?:id-or-name,"fromPort"?:string,"toPort"?:string}.',
-    '- rename_model: {"op":"rename_model","name":string}.',
-    '- Use exact block kinds, libraries, ports and parameters from the current',
-    '  model summary. Parameter values must be strings, finite numbers or',
-    '  booleans. Do not force an agent/statechart/continuous model into a DES',
-    '  source-queue-service-sink topology.',
-    '',
-    'Canonical DES M/M/1 recipe (an example, NOT a product boundary or run evidence):',
-    '- resource Server params {"capacity":1}',
-    '- source Arrivals params {"arrival":"rate(0.8)"}',
-    '- queue WaitLine params {"capacity":1000000}',
-    '- service Handle params',
-    '  {"resource":"Server","time":"exponential(1.0)"}',
-    '- sink Done params {}, connected Arrivals -> WaitLine -> Handle -> Done.',
-    '- For stability require arrival rate lambda < service rate mu. In this',
-    '  DSL exponential(mu) uses the rate mu, not the mean service time.',
+    ...(modelPatchMounted
+      ? [
+          'ModelPatch version 1 (use only these exact fields):',
+          '- add_block: {"op":"add_block","kind":string,"name":string,',
+          '  "x"?:number,"y"?:number,"params"?:object}.',
+          '- update_block: {"op":"update_block","target":id-or-name,',
+          '  "name"?:string,"x"?:number,"y"?:number,"params"?:object,',
+          '  "removeParams"?:string[]}.',
+          '- remove_block: {"op":"remove_block","target":id-or-name}.',
+          '- connect: {"op":"connect","from":id-or-name,"to":id-or-name,',
+          '  "fromPort"?:string,"toPort"?:string}. Default ports are out -> in.',
+          '- disconnect: {"op":"disconnect","edge"?:edge-id,"from"?:id-or-name,',
+          '  "to"?:id-or-name,"fromPort"?:string,"toPort"?:string}.',
+          '- rename_model: {"op":"rename_model","name":string}.',
+          '- Use exact block kinds, libraries, ports and parameters from the current',
+          '  model summary. Parameter values must be strings, finite numbers or',
+          '  booleans. Do not force an agent/statechart/continuous model into a DES',
+          '  source-queue-service-sink topology.',
+          '',
+          'Canonical DES M/M/1 recipe (an example, NOT a product boundary or run evidence):',
+          '- resource Server params {"capacity":1}',
+          '- source Arrivals params {"arrival":"rate(0.8)"}',
+          '- queue WaitLine params {"capacity":1000000}',
+          '- service Handle params',
+          '  {"resource":"Server","time":"exponential(1.0)"}',
+          '- sink Done params {}, connected Arrivals -> WaitLine -> Handle -> Done.',
+          '- For stability require arrival rate lambda < service rate mu. In this',
+          '  DSL exponential(mu) uses the rate mu, not the mean service time.',
+        ]
+      : []),
+    ...(sourceEditingMounted
+      ? [
+          '',
+          'Source-editing recipes (minimal executable forms; adapt names and values):',
+          '- Agent: model M { agent A { count = 100 state active = true on_tick { flip active; bounce } } }',
+          '- Statechart: model M { statechart C { initial = Idle state Idle { } state Done { }',
+          '  transition go { from = Idle; to = Done; triggeredBy = timeout; timeout = 1.0 } } }',
+          '- Continuous: model M { continuous D { state y = 1.0 param k = 0.5 d y/dt = -k*y } }',
+          '- DEVS: model M { atomic A { time_advance = constant(1.0) on_timeout { emit pulse } }',
+          '  atomic B { state seen = false time_advance = infinite on_input pulse { seen = true } }',
+          '  couple A.pulse -> B.pulse }',
+        ]
+      : []),
     '',
     'Response format (strict JSON, no markdown fences):',
     '{',
@@ -721,7 +882,9 @@ export function buildSystemPrompt({
     .split('\n')
     .filter(
       (line) =>
-        !/apply_model_patch|ModelPatch|add_block|update_block|remove_block|rename_model|source-queue-service-sink|Canonical DES|resource Server|source Arrivals|queue WaitLine|service Handle|sink Done/.test(line),
+        !/apply_model_patch|ModelPatch|add_block|update_block|remove_block|rename_model|source-queue-service-sink|Canonical DES|resource Server|source Arrivals|queue WaitLine|service Handle|sink Done/.test(
+          line,
+        ),
     )
     .join('\n');
 }
@@ -875,6 +1038,7 @@ export async function runAssistant({
   context,
   capabilities,
   skills,
+  toolNames,
   maxResponseBytes = 64 * 1024,
   onChunk,
   signal,
@@ -896,12 +1060,6 @@ export async function runAssistant({
   const skillInstructions = await loadAgentSkillInstructions(skills, {
     workspaceRoot: typeof context?.workspaceRoot === 'string' ? context.workspaceRoot : undefined,
   });
-  const system = buildSystemPrompt({
-    capabilities: capabilityIds,
-    skills,
-    skillInstructions,
-    extraTools: mcpTools,
-  });
   const capabilityDefinitions = resolveAgentCapabilities(capabilityIds);
   const allowedToolNames = new Set(
     capabilityDefinitions.flatMap((capability) => capability.toolNames ?? []),
@@ -909,6 +1067,19 @@ export async function runAssistant({
   if (hasAgentCapability(capabilityIds, 'mcp')) {
     for (const tool of mcpTools) allowedToolNames.add(tool.name);
   }
+  if (Array.isArray(toolNames)) {
+    const requestedToolNames = new Set(toolNames.filter((name) => typeof name === 'string'));
+    for (const name of allowedToolNames) {
+      if (!requestedToolNames.has(name)) allowedToolNames.delete(name);
+    }
+  }
+  const system = buildSystemPrompt({
+    capabilities: capabilityIds,
+    skills,
+    skillInstructions,
+    extraTools: mcpTools,
+    toolNames: [...allowedToolNames],
+  });
   const exposedTools = toolCatalog.filter((tool) => allowedToolNames.has(tool.name));
   const nativeTools =
     config.nativeTools === true && exposedTools.length > 0
@@ -919,13 +1090,16 @@ export async function runAssistant({
       ? `${system}\n\nNative tool calling is enabled for this provider. Use the native tools directly; do not serialize a tool call into the JSON response.`
       : system;
   const contextText = renderContext(context);
-  const userContent = [contextText, renderMessages(normalizedMessages)].filter(Boolean).join('\n\n');
+  const userContent = [contextText, renderMessages(normalizedMessages)]
+    .filter(Boolean)
+    .join('\n\n');
   if (config.protocol === 'codex-app-server') {
     const parsed = await runCodexAssistant({
       systemPrompt: system,
       userContent,
       maxResponseBytes,
       model: config.model || undefined,
+      toolNames: [...allowedToolNames],
     });
     return validateAssistantResponse(
       normalizeAssistantResponseToolCallIds(parsed),
@@ -1001,7 +1175,9 @@ export async function runAssistant({
             ? {}
             : { reasoning: providerResponse.reasoning }),
           ...(providerResponse.usage === undefined ? {} : { usage: providerResponse.usage }),
-          ...(providerResponse.providerItems === undefined ? {} : { providerItems: providerResponse.providerItems }),
+          ...(providerResponse.providerItems === undefined
+            ? {}
+            : { providerItems: providerResponse.providerItems }),
         }),
         allowedToolNames,
         toolCatalog,

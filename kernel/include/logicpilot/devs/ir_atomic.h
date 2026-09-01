@@ -44,6 +44,11 @@ class IrAtomicModelV2 final : public AtomicModel {
   SimTime time_advance() const override;
   void external_transition(SimTime now, PortId port,
                            std::uint64_t payload) override;
+  [[nodiscard]] bool uses_pdevs_semantics() const override { return true; }
+  [[nodiscard]] bool supports_parallel_execution() const override {
+    return true;
+  }
+  void output_function(SimTime now) override;
   void internal_transition(SimTime now) override;
   [[nodiscard]] bool checkpoint_save(
       std::vector<std::uint8_t>& state) const override;
@@ -61,6 +66,9 @@ class IrAtomicModelV2 final : public AtomicModel {
   std::vector<std::pair<std::string, IrValue>> int_effects_;
   bool emit_{false};
   PortId out_port_{0};
+  // Compatibility guard: PDEVS calls lambda() before delta_int, while the
+  // legacy executor expects delta_int to stage the output itself.
+  bool output_staged_for_transition_{false};
 };
 
 // Atomic tree builder for DevsExecutor: a bare devs/atomic Node or a

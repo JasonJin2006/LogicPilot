@@ -194,6 +194,46 @@ std::string value_text(const Value& value) {
       return std::to_string(value.float_value);
     case ValueKind::kBool:
       return value.bool_value ? "true" : "false";
+    case ValueKind::kCall: {
+      std::string rendered = value.call_name + "(";
+      for (std::size_t index = 0; index < value.call_args.size(); ++index) {
+        if (index > 0) rendered += ", ";
+        rendered += value_text(value.call_args[index]);
+      }
+      return rendered + ")";
+    }
+    case ValueKind::kNegate:
+      return value.operands.empty() ? "" : "-" + value_text(value.operands[0]);
+    case ValueKind::kParen:
+      return value.operands.empty() ? "" : "(" + value_text(value.operands[0]) + ")";
+    case ValueKind::kField:
+      return value.operands.size() == 2
+                 ? value_text(value.operands[0]) + "." + value_text(value.operands[1])
+                 : "";
+    case ValueKind::kAdd:
+    case ValueKind::kSub:
+    case ValueKind::kMul:
+    case ValueKind::kDiv:
+    case ValueKind::kLt:
+    case ValueKind::kGt:
+    case ValueKind::kLe:
+    case ValueKind::kGe:
+    case ValueKind::kEq:
+    case ValueKind::kNe: {
+      if (value.operands.size() != 2) return "";
+      const char* op = value.kind == ValueKind::kAdd   ? "+"
+                       : value.kind == ValueKind::kSub ? "-"
+                       : value.kind == ValueKind::kMul ? "*"
+                       : value.kind == ValueKind::kDiv ? "/"
+                       : value.kind == ValueKind::kLt  ? "<"
+                       : value.kind == ValueKind::kGt  ? ">"
+                       : value.kind == ValueKind::kLe  ? "<="
+                       : value.kind == ValueKind::kGe  ? ">="
+                       : value.kind == ValueKind::kEq  ? "=="
+                                                       : "!=";
+      return "(" + value_text(value.operands[0]) + " " + op + " " +
+             value_text(value.operands[1]) + ")";
+    }
     default:
       return "";
   }

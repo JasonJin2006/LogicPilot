@@ -6,6 +6,7 @@ import {
   buildCodexExecArgs,
   buildCodexAppServerArgs,
   CODEX_ASSISTANT_OUTPUT_SCHEMA,
+  createCodexAssistantOutputSchema,
   CodexAppServerClient,
   normalizeCodexAssistantOutput,
   parseCodexAssistantOutput,
@@ -36,6 +37,27 @@ for (const required of [
   assert.ok(args.includes(required), `Codex args must contain ${required}`);
 }
 assert.equal(CODEX_ASSISTANT_OUTPUT_SCHEMA.additionalProperties, false);
+for (const tool of [
+  'run_parameter_study',
+  'explain_results',
+  'optimize_model',
+  'compare_runs',
+  'read_workspace_file',
+  'apply_source_patch',
+  'inspect_sysml_projection',
+  'add_sysml_element',
+  'lower_sysml_state_machine',
+]) {
+  assert.ok(
+    CODEX_ASSISTANT_OUTPUT_SCHEMA.properties.toolCalls.items.properties.name.enum.includes(tool),
+    `Codex output schema must expose ${tool}`,
+  );
+}
+assert.deepEqual(
+  createCodexAssistantOutputSchema(['inspect_sysml_projection']).properties.toolCalls.items
+    .properties.name.enum,
+  ['inspect_sysml_projection'],
+);
 assert.deepEqual(parseCodexAssistantOutput('{"message":"ok","done":true}'), {
   message: 'ok',
   done: true,

@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_LAYOUT, PANELS, type AreaId, type PanelId } from '../layout/panels';
+import { bindPanelCommands } from '../workbench/panelCommands';
 import { getPersistStorage } from './persistStorage';
 
 export interface AreaState {
@@ -172,3 +173,7 @@ export const useLayoutStore = create<LayoutState>()(
     },
   ),
 );
+
+// Keep imperative panel reveals (for example a Problems-row navigation)
+// outside the panels -> component -> layoutStore initialization cycle.
+bindPanelCommands((area, panel) => useLayoutStore.getState().openPanel(area, panel));

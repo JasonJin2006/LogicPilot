@@ -218,6 +218,21 @@ describe('assistant runtime: control flow', () => {
     expect(calls[0]!.body.messages).toEqual([{ role: 'user', content: 'hello' }]);
   });
 
+  it('sends the document-scoped tool names to the provider', async () => {
+    const { calls } = queueAssistant([{ message: 'ok', plan: [], toolCalls: [], done: true }]);
+    await runAssistantTurn({
+      message: 'inspect SysML',
+      context: baseContext(),
+      session: createAssistantSession(),
+      capabilities: ['logicpilot-modeling'],
+      toolScope: { documentType: 'sysml' },
+    });
+    const names = calls[0]!.body.toolNames as string[];
+    expect(names).toContain('inspect_sysml_projection');
+    expect(names).toContain('add_sysml_element');
+    expect(names).not.toContain('apply_model_patch');
+  });
+
   it('uses the desktop API base and sends bounded conversation history', async () => {
     const { calls } = queueAssistant([
       { message: 'continued', plan: [], toolCalls: [], done: true },

@@ -11,11 +11,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ComponentType, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
 import { portGlyphPoint } from '../model/blockDefs';
-// Side-effect imports: register the built-in element libraries (modeling
-// process libraries + the SysML visual subset) into the palette provider
-// registry consumed below (plan §9.3).
-import '../model/paletteContributions';
-import '../sysml/sysmlPaletteContribution';
 import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import type { PaletteItem as CatalogItem } from '../workbench/palette';
 import { documentContributionFor } from '../workbench/documentTypes';

@@ -94,29 +94,8 @@ export default defineConfig({
   server: {
     port: 5173,
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          const normalized = id.replaceAll('\\\\', '/');
-          if (normalized.includes('/node_modules/')) {
-            if (normalized.includes('/pixi.js/')) return 'vendor-pixi';
-            if (normalized.includes('/lucide-react/')) return 'vendor-icons';
-            if (
-              normalized.includes('/react/') ||
-              normalized.includes('/react-dom/') ||
-              normalized.includes('/scheduler/')
-            ) {
-              return 'vendor-react';
-            }
-            if (normalized.includes('/zustand/')) return 'vendor-state';
-            if (normalized.includes('/@logicpilot/')) return 'vendor-logicpilot';
-            return 'vendor';
-          }
-          if (normalized.includes('/src/ai/')) return 'feature-ai';
-          return undefined;
-        },
-      },
-    },
-  },
+  // Keep Rollup's graph-aware chunking. A catch-all node_modules/manual
+  // vendor chunk makes the dynamically imported 1.4 MB ELK fallback eager
+  // and also creates cycles with elk-api; the default splitter keeps it out
+  // of index.html and loads it only when Worker startup fails.
 });

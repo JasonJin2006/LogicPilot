@@ -12,9 +12,6 @@ import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
 import { diagnoseDocument } from '../workbench/diagnostics';
-// Side-effect import: registers the DES graph diagnostic provider consumed
-// through the seam below.
-import '../model/modelValidation';
 
 interface NumberFieldProps {
   label: string;

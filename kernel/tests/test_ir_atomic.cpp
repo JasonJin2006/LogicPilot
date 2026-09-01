@@ -3,6 +3,7 @@
 // DevsReplicationModel adapter (internal-transition budget) and
 // determinism.
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -29,14 +30,18 @@ namespace v2 = logicpilot::ir::v2;
 namespace {
 
 constexpr const char* kPulseChain = LOGICPILOT_EXAMPLES_DIR "/pulse_chain.lp";
+constexpr const char* kParallelFanin =
+    LOGICPILOT_EXAMPLES_DIR "/cases/devs/parallel_fanin.lp";
 
-IrLoadResult load_pulse_chain() {
-  const dsl::CompileResult compiled = dsl::compile_file(kPulseChain);
+IrLoadResult load_example(const char* path) {
+  const dsl::CompileResult compiled = dsl::compile_file(path);
   REQUIRE(compiled.ok);
   IrLoadResult loaded = load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
   REQUIRE(loaded.ok());
   return loaded;
 }
+
+IrLoadResult load_pulse_chain() { return load_example(kPulseChain); }
 
 }  // namespace
 
@@ -88,6 +93,57 @@ TEST_CASE("atomic tree runs on the DEVS executor under an internal budget", "[at
   const auto seen = atom->state("seen");
   REQUIRE(seen.has_value());
   REQUIRE(std::get<bool>(*seen));
+}
+
+TEST_CASE("PDEVS DSL fan-in delivers simultaneous outputs as one input bag",
+          "[atomic][devs][pdevs][case]") {
+  const IrLoadResult loaded = load_example(kParallelFanin);
+  Xoshiro256PlusPlus engine{42};
+  std::unique_ptr<CoupledModel> tree =
+      build_atomic_tree_v2(*loaded.file.v2_root->root(), engine);
+  REQUIRE(tree != nullptr);
+  REQUIRE(tree->children().size() == 3);
+  REQUIRE(tree->couplings().size() == 2);
+
+  BinaryHeapScheduler scheduler{64};
+  SimulationClock clock;
+  DevsEvidenceRecorder evidence;
+  DevsExecutor executor{scheduler, clock};
+  executor.set_evidence_recorder(&evidence);
+  executor.set_internal_budget(2);
+  REQUIRE(executor.load(*tree) == 3);
+  REQUIRE(executor.run(1_s) == 2);
+  REQUIRE(executor.internal_transitions() == 2);
+  REQUIRE(clock.now() == 1_s);
+
+  const CoupledModel::Child* relay = tree->find_child("Relay");
+  REQUIRE(relay != nullptr);
+  const auto* atom = dynamic_cast<const IrAtomicModelV2*>(relay->atomic.get());
+  REQUIRE(atom != nullptr);
+  const auto received = atom->state("received");
+  REQUIRE(received.has_value());
+  REQUIRE(std::get<bool>(*received));
+
+  const auto relay_record =
+      std::find_if(evidence.records().begin(), evidence.records().end(),
+                   [](const DevsEvidenceRecord& record) {
+                     return record.atom_path == "Relay" &&
+                            record.kind == DevsTransitionKind::kExternal;
+                   });
+  REQUIRE(relay_record != evidence.records().end());
+  REQUIRE(relay_record->inputs.size() == 2);
+  REQUIRE(relay_record->input_sources.size() == 2);
+
+  std::string error;
+  std::unique_ptr<ReplicationModel> replication =
+      build_replication_model(loaded.file, &error);
+  REQUIRE(replication != nullptr);
+  ReplicationConfig config;
+  config.seed = 42;
+  config.arrivals = 6;
+  const ReplicationMetrics metrics = replication->run(config, nullptr);
+  REQUIRE(metrics.arrivals == 6);
+  REQUIRE(metrics.horizon_seconds == 3.0);
 }
 
 TEST_CASE("DevsReplicationModel is deterministic under an internal budget",

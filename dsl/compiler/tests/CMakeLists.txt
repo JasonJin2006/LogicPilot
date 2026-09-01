@@ -292,6 +292,14 @@ add_test(NAME ai_model_patch_smoke
 set_tests_properties(ai_model_patch_smoke PROPERTIES
   PASS_REGULAR_EXPRESSION "AI-MODEL-PATCH TEST: PASS")
 
+# Five-paradigm product acceptance matrix: every level compiles, executes on
+# the real kernel and satisfies method-specific scientific invariants.
+add_test(NAME modeling_cases_smoke
+  COMMAND node ${CMAKE_SOURCE_DIR}/scripts/verify-modeling-cases.mjs
+          --lpcli $<TARGET_FILE:lpcli>)
+set_tests_properties(modeling_cases_smoke PROPERTIES
+  PASS_REGULAR_EXPRESSION "MODELING CASES: 16/16 passed")
+
 add_test(NAME ai_query_metrics_smoke
   COMMAND node ${CMAKE_SOURCE_DIR}/scripts/test-ai-query-metrics.mjs)
 set_tests_properties(ai_query_metrics_smoke PROPERTIES

@@ -241,6 +241,16 @@ pnpm benchmark:assistant -- --trials 3
 该基准使用固定工具结果隔离 LLM 编排能力；编译器和仿真内核正确性仍由独立的
 端点与原生测试负责，避免随机仿真噪声污染模型评分。
 
+跨范式能力使用两道独立门禁。`pnpm test:modeling-cases` 编译并运行 Process、Agent、
+Statechart、Continuous、DEVS 和多方法组合的 16 个真实模型，检查守恒、确定性、解析解、
+时间语义和方法组合等范式专属不变量。配置真实 Provider 后，`pnpm benchmark:paradigms`
+分别要求助手建立并运行 Process、Agent、Statechart、Continuous 和 DEVS 模型，报告会把
+传输、工具规划、范式语义、编译、运行和完成性失败分开计分；未配置 Provider 时明确跳过。
+
+助手请求携带当前文档作用域实际挂载的工具名。服务端再与可信 capability 清单求交集后
+生成提示词和原生工具 schema，因此 `.sysml` 文档只暴露 SysML 投影/编辑/证据工具，DSL
+画布只暴露结构化 ModelPatch、编译和仿真工具；客户端仍会对最终调用做第二次校验。
+
 ## Web / 桌面面板
 
 ### Assistant Kernel

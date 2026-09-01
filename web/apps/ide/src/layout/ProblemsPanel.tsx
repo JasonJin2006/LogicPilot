@@ -8,6 +8,7 @@ import { AlertTriangle, AlertOctagon, Info } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import { useSysMLStore } from '../state/sysmlStore';
 import { collectProblems, type ProblemEntry } from '../workbench/problems';
+import { requestOpenPanel } from '../workbench/panelCommands';
 import { ScrollArea } from '../components/ScrollArea';
 function severityIcon(severity: ProblemEntry['severity']) {
   if (severity === 'error') return <AlertOctagon size={13} className="problem-icon-error" />;
@@ -33,14 +34,10 @@ export function ProblemsPanel() {
   const navigate = (entry: ProblemEntry): void => {
     if (entry.origin === 'model' && entry.nodeId) {
       // Bring the modeling canvas forward, then select the node so the
-      // properties panel follows. layoutStore is imported lazily: a static
-      // import would close panels -> ProblemsPanel -> layoutStore ->
-      // panels, and layoutStore evaluates DEFAULT_LAYOUT while `panels` is
-      // still mid-initialisation.
-      void import('../state/layoutStore').then(({ useLayoutStore }) => {
-        useLayoutStore.getState().openPanel('center', 'model');
-        selectNode(entry.nodeId!);
-      });
+      // properties panel follows. The command seam avoids importing the
+      // persisted layout store back through the panel registry cycle.
+      requestOpenPanel('center', 'model');
+      selectNode(entry.nodeId);
     }
     // Text-backed SysML entries carry a line only; the projection canvas
     // already highlights SYxxxx warnings inline, so there is nowhere more

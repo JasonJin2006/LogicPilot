@@ -12,9 +12,6 @@ import { useShapeSelection } from '../presentation/selectionStore';
 import { useMemo, useState } from 'react';
 import type { GraphicNode, ModelNode } from '@logicpilot/editor';
 import { diagnoseDocument } from '../workbench/diagnostics';
-// Side-effect import: registers the DES graph diagnostic provider consumed
-// through the seam below.
-import './modelValidation';
 
 function parseFieldValue(field: BlockPropertyDef, raw: string): string | number | boolean {
   if (field.type === 'int' || field.type === 'float') {

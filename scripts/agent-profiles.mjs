@@ -28,6 +28,19 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'run_simulation',
       'wait_for_run',
       'undo_last_ai_change',
+      'inspect_sysml_projection',
+      'auto_layout_sysml_projection',
+      'set_sysml_projection_view',
+      'focus_sysml_element',
+      'move_sysml_element',
+      'add_sysml_element',
+      'rename_sysml_element',
+      'connect_sysml_elements',
+      'find_sysml_definition',
+      'find_sysml_references',
+      'query_sysml_evidence',
+      'explain_sysml_run',
+      'lower_sysml_state_machine',
     ]),
   }),
   'logicpilot-modeling-readonly': Object.freeze({
@@ -42,12 +55,18 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'explain_results',
       'compare_runs',
       'wait_for_run',
+      'inspect_sysml_projection',
+      'find_sysml_definition',
+      'find_sysml_references',
+      'query_sysml_evidence',
+      'explain_sysml_run',
     ]),
   }),
   'logicpilot-source-editing': Object.freeze({
     id: 'logicpilot-source-editing',
     label: 'LogicPilot source editing',
-    description: 'Read and edit bounded model, presentation and experiment source files in the active workspace.',
+    description:
+      'Read and edit bounded model, presentation and experiment source files in the active workspace.',
     toolNames: Object.freeze(['read_workspace_file', 'apply_source_patch']),
   }),
 });
@@ -80,9 +99,7 @@ export function normalizeAgentCapabilities(value, fallback = ['logicpilot-modeli
 
 export function resolveAgentCapabilities(value, fallback) {
   const ids = normalizeAgentCapabilities(value, fallback);
-  return ids
-    .map((id) => AGENT_CAPABILITIES[id])
-    .filter(Boolean);
+  return ids.map((id) => AGENT_CAPABILITIES[id]).filter(Boolean);
 }
 
 export function hasAgentCapability(value, id) {

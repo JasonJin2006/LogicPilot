@@ -432,6 +432,7 @@ void DevsExecutor::process_pdevs_round(
     incoming.resize(plan_.atom_count());
   }
   std::vector<bool> is_imminent(plan_.atom_count(), false);
+  std::vector<std::uint32_t> transitioned;
 
   std::vector<std::vector<PortEvent>> outputs(plan_.atom_count());
   for (const std::uint32_t atom : imminent) {
@@ -457,6 +458,7 @@ void DevsExecutor::process_pdevs_round(
     if (!is_imminent[atom] && !has_input) {
       continue;
     }
+    transitioned.push_back(atom);
 
     AtomicModel& model = *plan_.atom(atom);
     std::vector<PortEvent> inputs;
@@ -485,9 +487,13 @@ void DevsExecutor::process_pdevs_round(
                         sources, outputs[atom]);
     }
     last_transition_[atom] = now;
-    if (internal_budget_ == 0 || internal_transitions_ < internal_budget_) {
-      reschedule(atom);
-    }
+  }
+  // A PDEVS input bag is one synchronization boundary. Decide whether to
+  // re-arm atoms only after the complete timestamp batch has committed;
+  // doing it per atom leaves an order-dependent extra event when the global
+  // budget is reached midway through a simultaneous-imminent set.
+  if (internal_budget_ == 0 || internal_transitions_ < internal_budget_) {
+    for (const std::uint32_t atom : transitioned) reschedule(atom);
   }
 }
 
@@ -647,8 +653,10 @@ void DevsExecutor::process_pdevs_round_parallel(
     if (kinds[atom] != DevsTransitionKind::kExternal) {
       ++internal_transitions_;
     }
-    if (internal_budget_ == 0 || internal_transitions_ < internal_budget_) {
-      reschedule(atom);
+  }
+  if (internal_budget_ == 0 || internal_transitions_ < internal_budget_) {
+    for (std::uint32_t atom = 0; atom < count; ++atom) {
+      if (active[atom]) reschedule(atom);
     }
   }
 }

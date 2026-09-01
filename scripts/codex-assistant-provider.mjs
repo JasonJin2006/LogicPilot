@@ -13,47 +13,71 @@ const TOOL_NAMES = [
   'inspect_selection',
   'inspect_diagnostics',
   'inspect_run_metrics',
+  'run_parameter_study',
+  'explain_results',
+  'optimize_model',
+  'compare_runs',
   'apply_model_patch',
   'compile_model',
   'run_simulation',
   'wait_for_run',
   'undo_last_ai_change',
+  'read_workspace_file',
+  'apply_source_patch',
+  'inspect_sysml_projection',
+  'auto_layout_sysml_projection',
+  'set_sysml_projection_view',
+  'focus_sysml_element',
+  'move_sysml_element',
+  'add_sysml_element',
+  'rename_sysml_element',
+  'connect_sysml_elements',
+  'find_sysml_definition',
+  'find_sysml_references',
+  'query_sysml_evidence',
+  'explain_sysml_run',
+  'lower_sysml_state_machine',
 ];
 
-export const CODEX_ASSISTANT_OUTPUT_SCHEMA = Object.freeze({
-  type: 'object',
-  properties: {
-    message: { type: 'string' },
-    plan: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { id: { type: 'string' }, label: { type: 'string' } },
-        required: ['id', 'label'],
-        additionalProperties: false,
-      },
-    },
-    toolCalls: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          name: { type: 'string', enum: TOOL_NAMES },
-          // Codex structured outputs require additionalProperties:false for
-          // every object. Encode the variable tool payload as JSON text and
-          // decode it before the shared assistant validator sees it.
-          arguments: { type: 'string' },
+export function createCodexAssistantOutputSchema(toolNames = TOOL_NAMES) {
+  const names = [...new Set(toolNames.filter((name) => typeof name === 'string' && name !== ''))];
+  return {
+    type: 'object',
+    properties: {
+      message: { type: 'string' },
+      plan: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { id: { type: 'string' }, label: { type: 'string' } },
+          required: ['id', 'label'],
+          additionalProperties: false,
         },
-        required: ['id', 'name', 'arguments'],
-        additionalProperties: false,
       },
+      toolCalls: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            name: { type: 'string', enum: names },
+            // Codex structured outputs require additionalProperties:false for
+            // every object. Encode the variable tool payload as JSON text and
+            // decode it before the shared assistant validator sees it.
+            arguments: { type: 'string' },
+          },
+          required: ['id', 'name', 'arguments'],
+          additionalProperties: false,
+        },
+      },
+      done: { type: 'boolean' },
     },
-    done: { type: 'boolean' },
-  },
-  required: ['message', 'plan', 'toolCalls', 'done'],
-  additionalProperties: false,
-});
+    required: ['message', 'plan', 'toolCalls', 'done'],
+    additionalProperties: false,
+  };
+}
+
+export const CODEX_ASSISTANT_OUTPUT_SCHEMA = Object.freeze(createCodexAssistantOutputSchema());
 
 export function buildCodexExecArgs({ directory, schemaPath, outputPath, model }) {
   const args = [
@@ -512,6 +536,7 @@ async function runCodexAssistantExec({
   maxResponseBytes = 64 * 1024,
   executable,
   model = process.env.LOGICPILOT_CODEX_MODEL,
+  toolNames,
   timeoutMs = Number(process.env.LOGICPILOT_CODEX_TIMEOUT_MS ?? 120_000),
 }) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 5_000 || timeoutMs > 10 * 60_000) {
@@ -533,7 +558,11 @@ async function runCodexAssistantExec({
     userContent,
   ].join('\n');
   try {
-    await writeFile(schemaPath, JSON.stringify(CODEX_ASSISTANT_OUTPUT_SCHEMA), 'utf8');
+    await writeFile(
+      schemaPath,
+      JSON.stringify(createCodexAssistantOutputSchema(toolNames)),
+      'utf8',
+    );
     const args = buildCodexExecArgs({ directory, schemaPath, outputPath, model });
     const launch = executable ? await resolveCodexLaunch(executable) : await resolveCodexLaunch();
     const processResult = await runProcess({
@@ -582,11 +611,12 @@ export async function runCodexAssistant(options) {
     options.userContent,
   ].join('\n');
   const client = await getSharedAppServer(options.executable);
+  const outputSchema = createCodexAssistantOutputSchema(options.toolNames);
   try {
     const content = await client.runTurn({
       prompt,
       model: options.model ?? process.env.LOGICPILOT_CODEX_MODEL,
-      outputSchema: CODEX_ASSISTANT_OUTPUT_SCHEMA,
+      outputSchema,
       timeoutMs,
     });
     const maximum = options.maxResponseBytes ?? 64 * 1024;

@@ -19,7 +19,7 @@ import {
   configureAssistantProvider,
 } from './ai-provider-config.mjs';
 
-// Tool registry contract: the nine controlled tools the client executes.
+// Tool registry contract: every built-in tool the client may execute.
 const EXPECTED_TOOLS = [
   'inspect_model',
   'inspect_selection',
@@ -36,6 +36,19 @@ const EXPECTED_TOOLS = [
   'undo_last_ai_change',
   'read_workspace_file',
   'apply_source_patch',
+  'inspect_sysml_projection',
+  'auto_layout_sysml_projection',
+  'set_sysml_projection_view',
+  'focus_sysml_element',
+  'move_sysml_element',
+  'add_sysml_element',
+  'rename_sysml_element',
+  'connect_sysml_elements',
+  'find_sysml_definition',
+  'find_sysml_references',
+  'query_sysml_evidence',
+  'explain_sysml_run',
+  'lower_sysml_state_machine',
 ];
 assert.deepEqual(ASSISTANT_TOOLS.map((tool) => tool.name).sort(), [...EXPECTED_TOOLS].sort());
 for (const tool of ASSISTANT_TOOLS) {
@@ -93,13 +106,44 @@ const generalPrompt = buildSystemPrompt({ capabilities: [] });
 assert.match(generalPrompt, /general-purpose AI agent/);
 assert.doesNotMatch(generalPrompt, /inspect_model/);
 assert.match(
-  buildSystemPrompt({ capabilities: ['logicpilot-modeling'], skills: ['logicpilot-modeling-basics'] }),
+  buildSystemPrompt({
+    capabilities: ['logicpilot-modeling'],
+    skills: ['logicpilot-modeling-basics'],
+  }),
   /Skill: logicpilot-modeling-basics/,
 );
 const readonlyPrompt = buildSystemPrompt({ capabilities: ['logicpilot-modeling-readonly'] });
 assert.match(readonlyPrompt, /read-only/);
 assert.match(readonlyPrompt, /inspect_model/);
 assert.doesNotMatch(readonlyPrompt, /apply_model_patch/);
+const sysmlPrompt = buildSystemPrompt({
+  capabilities: ['logicpilot-modeling'],
+  toolNames: ['inspect_sysml_projection', 'add_sysml_element', 'connect_sysml_elements'],
+});
+assert.match(sysmlPrompt, /active document is SysML text/);
+assert.match(sysmlPrompt, /inspect_sysml_projection/);
+assert.match(sysmlPrompt, /add_sysml_element/);
+assert.doesNotMatch(sysmlPrompt, /apply_model_patch/);
+assert.doesNotMatch(sysmlPrompt, /Canonical DES/);
+const sourceEditingPrompt = buildSystemPrompt({
+  capabilities: ['logicpilot-modeling', 'logicpilot-source-editing'],
+});
+for (const required of [
+  'read_workspace_file first',
+  'exact returned path',
+  'Agent behaviors',
+  'Statechart transitions',
+  'continuous equations',
+  'DEVS atomic',
+  'on_tick { flip active; bounce }',
+  'd y/dt = -k*y',
+  'couple A.pulse -> B.pulse',
+]) {
+  assert.ok(
+    sourceEditingPrompt.includes(required),
+    `source-editing prompt must include ${required}`,
+  );
+}
 const mcpTool = {
   name: 'mcp.fixture.echo',
   description: 'Echo from MCP',
@@ -147,7 +191,12 @@ assert.deepEqual(transcript.toolCalls, [
   { id: 'call-2', name: 'inspect_diagnostics', arguments: {} },
 ]);
 const plainText = parseAssistantResponseContent('The model is ready.');
-assert.deepEqual(plainText, { message: 'The model is ready.', plan: [], toolCalls: [], done: true });
+assert.deepEqual(plainText, {
+  message: 'The model is ready.',
+  plan: [],
+  toolCalls: [],
+  done: true,
+});
 assert.equal(
   visibleAssistantMessage(
     '{"message":"开始构建呼叫中心模型。","plan":[],"toolCalls":[{"id":"c1"}],"done":false}',

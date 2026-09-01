@@ -61,12 +61,8 @@ async function runElk(graph: ElkGraph): Promise<ElkLayoutResult> {
     graph,
     createWorkerElk: () => new ELK({ workerUrl: elkWorkerUrl }),
     createBundledElk: async () => {
-      const bundled = await import('elkjs/lib/elk.bundled.js');
-      const ctor =
-        (bundled as unknown as { default: new () => { layout: (g: never) => Promise<unknown> } })
-          .default ??
-        (bundled as unknown as { ELK: new () => { layout: (g: never) => Promise<unknown> } }).ELK;
-      return new ctor();
+      const fallback = await import('../layout/elkBundledFallback');
+      return fallback.createBundledElk();
     },
   });
 }

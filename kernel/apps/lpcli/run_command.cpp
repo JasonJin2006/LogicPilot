@@ -253,6 +253,7 @@ int write_results(const std::string& dir, const RunOptions& options,
           << ",\"seed\":\"" << replication_seed(options.seed, i) << "\""
           << ",\"arrivals\":" << m.arrivals
           << ",\"departures\":" << m.departures
+          << ",\"horizon_seconds\":" << json_double(m.horizon_seconds)
           << ",\"throughput\":" << json_double(m.throughput)
           << ",\"L\":" << json_double(m.mean_in_system)
           << ",\"Lq\":" << json_double(m.mean_in_queue)
@@ -807,8 +808,9 @@ int run_command(std::span<const std::string> args) {
   // workers each own an isolated model instance (ADR-0009 Phase A); results
   // are bit-identical to a sequential run.
   fmt::print(
-      "{:>4}  {:>20}  {:>10}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}\n", "rep",
-      "seed", "departures", "throughput", "L", "Lq", "W", "Wq");
+      "{:>4}  {:>20}  {:>10}  {:>10}  {:>10}  {:>10}  {:>8}  {:>8}  {:>8}  {:>8}\n",
+      "rep", "seed", "arrivals", "departures", "horizon", "throughput", "L", "Lq", "W",
+      "Wq");
   std::vector<ReplicationMetrics> results;
   const std::uint64_t run_limit =
       options.precision_reps ? options.max_reps : options.reps;
@@ -844,9 +846,10 @@ int run_command(std::span<const std::string> args) {
         return 1;
       }
       fmt::print(
-          "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
-          "{:>8.4f}\n",
-          rep + 1, config.seed, metrics.departures, metrics.throughput,
+          "{:>4}  {:>20}  {:>10}  {:>10}  {:>10.4f}  {:>10.4f}  {:>8.4f}  {:>8.4f}  "
+          "{:>8.4f}  {:>8.4f}\n",
+          rep + 1, config.seed, metrics.arrivals, metrics.departures,
+          metrics.horizon_seconds, metrics.throughput,
           metrics.mean_in_system, metrics.mean_in_queue, metrics.mean_sojourn,
           metrics.mean_wait);
       results.push_back(metrics);
@@ -870,10 +873,11 @@ int run_command(std::span<const std::string> args) {
     for (std::uint64_t rep = 0; rep < run_limit; ++rep) {
       const ReplicationMetrics& metrics = results[rep];
       fmt::print(
-          "{:>4}  {:>20}  {:>10}  {:>10.4f}  {:>8.4f}  {:>8.4f}  {:>8.4f}  "
-          "{:>8.4f}\n",
-          rep + 1, replication_seed(options.seed, rep), metrics.departures,
-          metrics.throughput, metrics.mean_in_system, metrics.mean_in_queue,
+          "{:>4}  {:>20}  {:>10}  {:>10}  {:>10.4f}  {:>10.4f}  {:>8.4f}  {:>8.4f}  "
+          "{:>8.4f}  {:>8.4f}\n",
+          rep + 1, replication_seed(options.seed, rep), metrics.arrivals,
+          metrics.departures, metrics.horizon_seconds, metrics.throughput,
+          metrics.mean_in_system, metrics.mean_in_queue,
           metrics.mean_sojourn, metrics.mean_wait);
     }
   }

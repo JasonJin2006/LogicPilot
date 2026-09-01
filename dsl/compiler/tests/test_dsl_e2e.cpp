@@ -129,6 +129,36 @@ TEST_CASE("E2E: DSL compile -> IR load -> replication stats match "
   REQUIRE(summary.mean_in_system.mean > 1.0);
 }
 
+TEST_CASE("E2E: complex DES utilization remains a bounded capacity ratio",
+          "[dsl][e2e][process][metrics]") {
+  const std::string path = std::string(kExamplesDir) + "/des_shop.lp";
+  const std::string source = read_text_file(path);
+  REQUIRE_FALSE(source.empty());
+  const dsl::CompileResult compiled = dsl::compile_source(source, path);
+  INFO(dsl::format_diagnostics(path, compiled.diagnostics));
+  REQUIRE(compiled.ok);
+
+  const IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  std::string error;
+  std::unique_ptr<ReplicationModel> model =
+      build_replication_model(loaded.file, &error);
+  INFO(error);
+  REQUIRE(model != nullptr);
+
+  ReplicationConfig config;
+  config.seed = replication_seed(42, 0);
+  config.arrivals = 60;
+  config.warmup_arrivals = 0;
+  const ReplicationMetrics metrics = model->run(config, nullptr);
+  REQUIRE(metrics.departures == 60);
+  REQUIRE(metrics.measure_count == 60);
+  REQUIRE(std::abs(metrics.mean_measure - 0.5) <= 1e-12);
+  REQUIRE(metrics.utilization >= 0.0);
+  REQUIRE(metrics.utilization <= 1.0 + 1e-12);
+}
+
 TEST_CASE("compile: oversized source is rejected up front with LP0003",
           "[dsl][compile][robustness]") {
   // The input-size guard fires before parsing: a 16 MiB + 1 byte source must

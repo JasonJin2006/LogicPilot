@@ -165,14 +165,25 @@ void IrAtomicModelV2::external_transition(SimTime, PortId port, std::uint64_t) {
   }
 }
 
+void IrAtomicModelV2::output_function(SimTime) {
+  if (has_int_ && emit_) {
+    emit(out_port_);
+    output_staged_for_transition_ = true;
+  }
+}
+
 void IrAtomicModelV2::internal_transition(SimTime) {
   if (has_int_) {
     for (const auto& [name, value] : int_effects_) {
       state_[name] = value;
     }
-    if (emit_) {
+    // The PDEVS path already staged lambda() output before this transition.
+    // Preserve the legacy DEVS-lite contract when an IR atom is embedded in
+    // a non-PDEVS tree and delta_int is called directly.
+    if (emit_ && !output_staged_for_transition_) {
       emit(out_port_);
     }
+    output_staged_for_transition_ = false;
   }
 }
 

@@ -180,6 +180,10 @@ async function requestStep(
           context,
           capabilities: options.capabilities,
           skills: options.skills,
+          toolNames: [
+            ...resolveAgentTools(options.capabilities, options.toolScope),
+            ...(options.additionalTools ?? []),
+          ].map((tool) => tool.name),
         }),
         signal: options.signal,
       });
@@ -269,6 +273,10 @@ async function requestStepStream(
       context,
       capabilities: options.capabilities,
       skills: options.skills,
+      toolNames: [
+        ...resolveAgentTools(options.capabilities, options.toolScope),
+        ...(options.additionalTools ?? []),
+      ].map((tool) => tool.name),
     }),
     signal: options.signal,
   });

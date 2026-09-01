@@ -172,7 +172,7 @@ const WINDOW_SESSION_ID =
     : `window-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const NOT_CONFIGURED_MESSAGE =
-  '尚未配置 AI 模型：请在 设置 → AI 与模型 中选择服务商并填写 API Key（或使用 Codex 登录）后开始对话。';
+  'No AI model is configured. Choose an AI provider in Settings → AI & Models and set an API Key (or use Codex login) to start a conversation.';
 
 export function AIPanel() {
   const dslRef = useRef<HTMLPreElement>(null);

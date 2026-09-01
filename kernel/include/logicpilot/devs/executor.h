@@ -109,9 +109,10 @@ public:
   [[nodiscard]] const std::vector<std::uint64_t>& replay_watermarks() const {
     return replay_watermarks_;
   }
-  // Internal-transition budget for the next run(): after `budget` internal
-  // firings the executor stops re-arming atoms, so perpetual emitters
-  // terminate deterministically (0 = unlimited, the default).
+  // Internal-transition budget for the next run(): after the complete PDEVS
+  // timestamp batch that reaches `budget`, the executor stops re-arming
+  // atoms, so perpetual emitters terminate deterministically. A simultaneous
+  // batch is never split; it may therefore cross a non-aligned budget.
   void set_internal_budget(std::size_t budget) { internal_budget_ = budget; }
   [[nodiscard]] std::size_t internal_transitions() const { return internal_transitions_; }
   [[nodiscard]] bool has_pending_events() const { return !scheduler_.empty(); }

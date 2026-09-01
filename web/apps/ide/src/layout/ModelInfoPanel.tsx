@@ -9,10 +9,6 @@ import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { documentContributionFor } from '../workbench/documentTypes';
 import { OUTLINE_CONTRIBUTIONS } from '../workbench/outline';
-// Outline contributions (side-effect registration). The SysML outline
-// outranks the generic project tree while a .sysml file is active.
-import '../sysml/sysmlOutlineContribution';
-import '../project/dslOutlineContribution';
 
 export function ModelInfoPanel() {
   const bundle = useProjectStore((state) => state.bundle);

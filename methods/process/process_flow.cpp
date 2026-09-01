@@ -1380,7 +1380,9 @@ class Engine final : public BlockContext {
     double busy_area = 0.0;
     for (const auto& block : blocks_) {
       queue_area += block->area_occupancy();
-      if (block->pool_resource().empty()) {
+      // Unlimited/non-capacity blocks have no meaningful utilization
+      // denominator and must contribute neither side of the aggregate ratio.
+      if (block->pool_resource().empty() && block->pool_capacity() > 0) {
         busy_area += block->area_busy();
       }
     }

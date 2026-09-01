@@ -75,3 +75,32 @@ TEST_CASE("statechart: DSL compiles, lowers and runs in simulation time",
   REQUIRE(metrics.horizon_seconds == 14.0);
   REQUIRE(metrics.final_value == 0.0);  // back in Red (declaration order)
 }
+
+TEST_CASE("statechart: unquoted condition expressions survive DSL lowering",
+          "[dsl][statechart][condition][regression]") {
+  const dsl::CompileResult compiled = dsl::compile_source(
+      "model M { statechart C { initial = Idle state Idle { } state Done { } "
+      "transition wait { from = Idle; to = Done; triggeredBy = condition; "
+      "condition = t >= 2.0 } } }",
+      "condition.lp");
+  INFO(dsl::format_diagnostics("condition.lp", compiled.diagnostics));
+  REQUIRE(compiled.ok);
+  const IrLoadResult loaded =
+      load_model_buffer(compiled.v2_bytes.data(), compiled.v2_bytes.size());
+  REQUIRE(loaded.ok());
+  const v2::Node* chart = loaded.file.v2_root->root()->children()->Get(0);
+  REQUIRE(chart->behavior()->transitions()->Get(0)->condition_text() != nullptr);
+  REQUIRE(chart->behavior()->transitions()->Get(0)->condition_text()->str() ==
+          "(t >= 2.000000)");
+
+  std::string error;
+  StatechartReplicationModel replication{chart, &error};
+  REQUIRE(error.empty());
+  ReplicationConfig config;
+  config.arrivals = 10;
+  const ReplicationMetrics metrics = replication.run(config, nullptr);
+  REQUIRE(metrics.departures == 1);
+  REQUIRE(metrics.horizon_seconds >= 2.0);
+  REQUIRE(metrics.horizon_seconds < 2.05);
+  REQUIRE(metrics.final_value == 1.0);
+}
