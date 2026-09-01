@@ -37,6 +37,8 @@ endif()
 # infrastructure per ADR-0068 Phase B - no DEVS engine objects here.
 add_library(logicpilot_kernel STATIC
   src/binary_heap_scheduler.cpp
+  src/contracts/contracts_generated.cpp
+  src/contracts/contracts.cpp
   src/runtime/method_plugin_manifest.cpp
   src/runtime/artifact_digest.cpp
   src/runtime/dynamic_method_plugin.cpp

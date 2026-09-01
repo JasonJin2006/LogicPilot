@@ -1,0 +1,26 @@
+{
+  "name": "@logicpilot/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LogicPilot Phase 1 frozen platform contracts: JSON Schema single source of truth with generated TypeScript types, ajv validators, version gates and dependency resolution",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

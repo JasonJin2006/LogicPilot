@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/execution-target.schema.json",
+  "title": "LogicPilot execution target contracts",
+  "description": "Execution targets bind a semantic model artifact to a runtime provided by a plugin. Runs are revision-bound and archive structured evidence; native crashes and ABI mismatches must surface as structured diagnostics, never corrupt project state.",
+  "$defs": {
+    "RuntimeKind": {
+      "type": "string",
+      "enum": ["interpreter", "wasm", "native", "external"]
+    },
+    "RuntimeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/RuntimeKind" },
+        "pluginId": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "capability": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+      }
+    },
+    "ExecutionTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "artifactRef", "runtime"],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-target/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "titleKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" },
+        "artifactRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "runtime": { "$ref": "#/$defs/RuntimeRef" },
+        "options": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "ExecutionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSteps": { "type": "integer", "minimum": 1 },
+        "maxWallMs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ExecutionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "requestId", "targetId"],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-request/v1" },
+        "contractVersion": { "const": 1 },
+        "requestId": { "type": "string", "minLength": 1 },
+        "targetId": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "seed": { "type": "integer", "description": "Deterministic replay requires the seed recorded with the run." },
+        "inputs": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "budget": { "$ref": "#/$defs/ExecutionBudget" }
+      }
+    },
+    "RunStatus": {
+      "type": "string",
+      "enum": ["pending", "running", "completed", "failed", "cancelled"]
+    },
+    "ExecutionRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "runId", "requestId", "targetId", "artifactRef", "status"],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-run/v1" },
+        "contractVersion": { "const": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "requestId": { "type": "string", "minLength": 1 },
+        "targetId": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "artifactRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "status": { "$ref": "#/$defs/RunStatus" },
+        "seed": { "type": "integer" },
+        "evidenceRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "startedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
+        "finishedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
+        "error": { "type": "string" }
+      }
+    },
+    "ExecutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "runId", "digest"],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-evidence/v1" },
+        "contractVersion": { "const": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "traceRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    }
+  }
+}

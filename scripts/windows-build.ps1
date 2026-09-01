@@ -79,6 +79,15 @@ function Import-VcVars([string]$visualStudioRoot) {
     throw "vcvars64.bat failed with exit code $LASTEXITCODE"
   }
 
+  # Merge the imported environment case-insensitively. Some host environments
+  # (terminal shims, IDE launchers) hand this process an env block that carries
+  # the same variable under several casings (PATH/Path/path); cmd's `set` then
+  # reports duplicates and naive last-write-wins can leave a stale PATH
+  # without cl.exe. PATH entries are unioned in first-seen order so the MSVC
+  # paths vcvars prepended stay ahead; every other variable is last-wins.
+  $merged = [System.Collections.Generic.Dictionary[string, string]]::new(
+    [System.StringComparer]::OrdinalIgnoreCase)
+  $pathEntries = [System.Collections.Generic.List[string]]::new()
   foreach ($line in $environmentLines) {
     $separator = $line.IndexOf('=')
     if ($separator -le 0) {
@@ -86,7 +95,22 @@ function Import-VcVars([string]$visualStudioRoot) {
     }
     $name = $line.Substring(0, $separator)
     $value = $line.Substring($separator + 1)
-    [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+    if ($name -ieq 'PATH') {
+      foreach ($entry in $value -split ';') {
+        if ($entry -and -not $pathEntries.Contains($entry)) {
+          $pathEntries.Add($entry)
+        }
+      }
+      $merged['PATH'] = ($pathEntries -join ';')
+    } else {
+      $merged[$name] = $value
+    }
+  }
+
+  # Apply through the env: provider so both the current PowerShell session
+  # (Get-Command, $env:) and child processes observe the imported values.
+  foreach ($name in $merged.Keys) {
+    Set-Item -Path ('env:' + $name) -Value $merged[$name]
   }
 }
 

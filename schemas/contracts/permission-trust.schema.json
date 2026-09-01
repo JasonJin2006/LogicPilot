@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/permission-trust.schema.json",
+  "title": "LogicPilot permission and trust contracts",
+  "description": "Permissions are explicit capability grants; trust tiers determine which host sandbox a plugin entrypoint may run in. AI-created drafts can never escalate trust or grant permissions by themselves.",
+  "$defs": {
+    "PermissionId": {
+      "type": "string",
+      "enum": [
+        "knowledge.draft.write",
+        "skill.draft.write",
+        "instruction.draft.write",
+        "view.draft.write",
+        "notation.draft.write",
+        "theme.draft.write",
+        "validator.draft.write",
+        "runtime.wasm.build",
+        "runtime.native.build",
+        "plugin.install",
+        "plugin.upgrade",
+        "plugin.publish"
+      ]
+    },
+    "TrustLevel": {
+      "type": "string",
+      "description": "T0 pure data/knowledge; T1 declarative rules/views/themes; T2 sandboxed WASM; T3 isolated worker/iframe UI; T4 trusted ESM; T5 native dynamic library (explicit approval + restart).",
+      "enum": ["t0", "t1", "t2", "t3", "t4", "t5"]
+    },
+    "SandboxKind": {
+      "type": "string",
+      "enum": ["none", "wasm", "worker", "iframe"]
+    },
+    "TrustRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minLevel"],
+      "properties": {
+        "minLevel": { "$ref": "#/$defs/TrustLevel" },
+        "sandbox": { "$ref": "#/$defs/SandboxKind" },
+        "requireSignature": { "type": "boolean" },
+        "requireReview": { "type": "boolean" }
+      }
+    },
+    "PermissionGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["permissionId", "granted"],
+      "properties": {
+        "permissionId": { "$ref": "#/$defs/PermissionId" },
+        "granted": { "type": "boolean" },
+        "scope": { "type": "string", "description": "Optional scope restriction (document type, artifact kind, ...)." },
+        "grantedBy": { "$ref": "common.schema.json#/$defs/Actor" },
+        "grantedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" }
+      }
+    },
+    "TrustPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "defaultLevel", "grants"],
+      "properties": {
+        "schema": { "const": "logicpilot.trust-policy/v1" },
+        "contractVersion": { "const": 1 },
+        "defaultLevel": { "$ref": "#/$defs/TrustLevel" },
+        "grants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PermissionGrant" }
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Per-plugin trust level overrides (e.g. raising a builtin plugin to t5).",
+          "additionalProperties": { "$ref": "#/$defs/TrustLevel" }
+        }
+      }
+    }
+  }
+}

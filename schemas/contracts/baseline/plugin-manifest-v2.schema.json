@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/plugin-manifest-v2.schema.json",
+  "title": "LogicPilot Plugin Manifest v2",
+  "description": "Unified plugin package contract (.lppkg). One package may contribute knowledge, diagnostics, skills, views, notations, runtimes, themes and UI extensions. Cross-paradigm shell code must never depend on specific paradigm ids; everything is declared here.",
+  "$defs": {
+    "PluginManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "version", "apiVersion", "provides", "requires", "entrypoints", "permissions", "trust"],
+      "properties": {
+        "schema": { "const": "logicpilot.plugin-manifest/v2" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "apiVersion": {
+          "type": "integer",
+          "description": "Platform plugin API version this manifest targets. The host rejects manifests whose apiVersion is outside its supported set.",
+          "minimum": 1
+        },
+        "displayName": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "provides": {
+          "type": "array",
+          "description": "Capability ids contributed by this plugin.",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        },
+        "requires": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginDependency" }
+        },
+        "entrypoints": { "$ref": "#/$defs/PluginEntrypoints" },
+        "permissions": {
+          "type": "array",
+          "description": "Permissions requested by this plugin. Granting happens out of band and is recorded in the lockfile.",
+          "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" }
+        },
+        "trust": { "$ref": "permission-trust.schema.json#/$defs/TrustRequirement" },
+        "config": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
+        "migrations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginMigration" }
+        },
+        "conformance": {
+          "type": "array",
+          "description": "Conformance test ids that must pass before install/upgrade is approved.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "integrity": { "$ref": "#/$defs/PluginIntegrity" }
+      }
+    },
+    "PluginDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "range": { "$ref": "common.schema.json#/$defs/VersionRange" },
+        "optional": {
+          "type": "boolean",
+          "description": "Optional dependencies are activated when present but do not block installation."
+        }
+      }
+    },
+    "PluginEntrypoints": {
+      "type": "object",
+      "description": "Entrypoints per runtime host. The shell activates only the hosts matching the requested trust tier.",
+      "additionalProperties": false,
+      "properties": {
+        "web": { "type": "string", "description": "ESM module path for the IDE web host (T4 trusted ESM)." },
+        "node": { "type": "string", "description": "Node service worker module path." },
+        "wasm": { "type": "string", "description": "WASM module path for sandboxed validators/runtimes (T2)." },
+        "native": { "type": "string", "description": "Dynamic library path for the C ABI host (T5, requires explicit approval and restart)." },
+        "data": { "type": "string", "description": "Data-only asset root for knowledge/diagnostic/notation contributions (T0/T1)." }
+      }
+    },
+    "PluginMigration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromVersion", "toVersion"],
+      "properties": {
+        "fromVersion": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "toVersion": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "script": { "type": "string", "description": "Migration script reference; data-only migrations may be declarative." }
+      }
+    },
+    "PluginIntegrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {
+        "sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "signature": { "type": "string" },
+        "signedBy": { "type": "string" }
+      }
+    },
+    "PluginLockEntry": {
+      "type": "object",
+      "description": "Per-plugin record inside logicpilot.lock; reproduces the exact resolved combination.",
+      "additionalProperties": false,
+      "required": ["id", "version", "apiVersion", "sha256", "trust", "permissions"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "apiVersion": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "source": { "type": "string", "description": "Origin (builtin, marketplace URL, local path, ...)." },
+        "trust": { "$ref": "permission-trust.schema.json#/$defs/TrustLevel" },
+        "permissions": {
+          "type": "array",
+          "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionGrant" }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginDependency" }
+        }
+      }
+    },
+    "PluginLockfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "plugins"],
+      "properties": {
+        "schema": { "const": "logicpilot.plugin-lock/v1" },
+        "contractVersion": { "const": 1 },
+        "plugins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginLockEntry" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/view-notation.schema.json",
+  "title": "LogicPilot canvas, view, notation and palette contracts",
+  "description": "Canvas engines are generic interaction surfaces and never know paradigm ids. Views project semantic artifacts onto a canvas; notation packs map semantic kinds to glyphs and connection rules; palette content is derived from active view + selection + installed contributions + permission grants.",
+  "$defs": {
+    "CanvasEngineId": {
+      "type": "string",
+      "enum": ["graph2d", "scene2d", "scene3d", "timeline", "table", "chart", "text"]
+    },
+    "LayoutPersistence": {
+      "type": "string",
+      "enum": ["none", "sidecar", "artifact"]
+    },
+    "ViewQuery": {
+      "type": "object",
+      "description": "Which artifacts the view projects and which relations it follows.",
+      "additionalProperties": false,
+      "required": ["artifactKinds"],
+      "properties": {
+        "artifactKinds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactKind" }
+        },
+        "relationKinds": {
+          "type": "array",
+          "items": { "$ref": "artifact-graph.schema.json#/$defs/RelationKind" }
+        },
+        "filter": { "$ref": "common.schema.json#/$defs/JsonValue" }
+      }
+    },
+    "ViewDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "owner", "titleKey", "canvas", "query", "interactions", "supportsInverseEdit", "layoutPersistence"],
+      "properties": {
+        "schema": { "const": "logicpilot.view-definition/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "owner": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "titleKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" },
+        "canvas": { "$ref": "#/$defs/CanvasEngineId" },
+        "query": { "$ref": "#/$defs/ViewQuery" },
+        "projection": {
+          "$ref": "common.schema.json#/$defs/JsonValue",
+          "description": "Structured projection rules (semantic shape -> canvas shape)."
+        },
+        "interactions": {
+          "type": "array",
+          "description": "Supported interaction ids (select, create, connect, inline-edit, ...).",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "supportsInverseEdit": {
+          "type": "boolean",
+          "description": "Whether canvas gestures can be lowered back into semantic edits."
+        },
+        "layoutPersistence": { "$ref": "#/$defs/LayoutPersistence" },
+        "requiredContributions": { "$ref": "#/$defs/ViewContributions" }
+      }
+    },
+    "ViewContributions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "notations": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        },
+        "domains": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        }
+      }
+    },
+    "GlyphMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semanticKind", "glyph"],
+      "properties": {
+        "semanticKind": { "type": "string", "minLength": 1 },
+        "glyph": { "type": "string", "minLength": 1 },
+        "compartments": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "EdgeMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relationKind", "edgeStyle"],
+      "properties": {
+        "relationKind": { "type": "string", "minLength": 1 },
+        "edgeStyle": { "type": "string", "minLength": 1 },
+        "directed": { "type": "boolean" }
+      }
+    },
+    "PortRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["portKind", "connectableTo"],
+      "properties": {
+        "portKind": { "type": "string", "minLength": 1 },
+        "connectableTo": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "NotationPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "owner", "glyphs", "edges", "createActions"],
+      "properties": {
+        "schema": { "const": "logicpilot.notation-pack/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "owner": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "glyphs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/GlyphMapping" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EdgeMapping" }
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PortRule" }
+        },
+        "propertyEditor": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "layoutHints": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "createActions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CreateActionRef" }
+        }
+      }
+    },
+    "CreateActionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "order": { "type": "integer" }
+      }
+    },
+    "CreateAction": {
+      "type": "object",
+      "description": "Palette entry. Palette visibility is computed by the canvas host from active view, selection, installed notation/domain contributions and permission grants - never from a global per-paradigm list.",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "owner", "titleKey", "notationId", "targetSemanticKind"],
+      "properties": {
+        "schema": { "const": "logicpilot.create-action/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "owner": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "titleKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" },
+        "icon": { "type": "string" },
+        "notationId": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "targetSemanticKind": { "type": "string", "minLength": 1 },
+        "order": { "type": "integer" }
+      }
+    }
+  }
+}

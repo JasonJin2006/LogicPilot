@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/diagnostic.schema.json",
+  "title": "LogicPilot diagnostic contracts",
+  "description": "Diagnostics are first-class knowledge. Definitions are published by plugins with stable ids; instances are produced at compile/run time and must resolve back to their definition, constraint, explanation knowledge block and fix recipes. Problems panel, AI, docs, fixes and tests all reference the same diagnostic id.",
+  "$defs": {
+    "DiagnosticId": {
+      "type": "string",
+      "description": "Stable diagnostic code, e.g. SY0001, SL0003, LP3103, MP2005.",
+      "pattern": "^[A-Z]{2,6}[0-9]{3,5}$",
+      "minLength": 5,
+      "maxLength": 11
+    },
+    "Severity": {
+      "type": "string",
+      "enum": ["info", "warning", "error", "fatal"]
+    },
+    "DiagnosticDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "pluginId", "titleKey", "defaultSeverity", "fixIds"],
+      "properties": {
+        "schema": { "const": "logicpilot.diagnostic-definition/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/DiagnosticId" },
+        "pluginId": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "constraintId": {
+          "type": "string",
+          "description": "Knowledge block id of the violated constraint, when the diagnostic derives from a declarative constraint."
+        },
+        "titleKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" },
+        "parameterSchema": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
+        "defaultSeverity": { "$ref": "#/$defs/Severity" },
+        "explanationBlockId": {
+          "type": "string",
+          "description": "Knowledge block carrying the structured explanation."
+        },
+        "fixIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FixId" }
+        },
+        "appliesToParadigms": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        },
+        "minPluginVersion": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "conformanceCases": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "FixId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "FixKind": {
+      "type": "string",
+      "enum": ["manual", "assisted", "automated"]
+    },
+    "FixDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "definitionId", "kind", "titleKey"],
+      "properties": {
+        "schema": { "const": "logicpilot.fix-definition/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/FixId" },
+        "definitionId": { "$ref": "#/$defs/DiagnosticId" },
+        "kind": { "$ref": "#/$defs/FixKind" },
+        "titleKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" },
+        "parameters": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
+        "recipe": {
+          "$ref": "common.schema.json#/$defs/JsonValue",
+          "description": "Structured fix recipe (steps, target edits, guards); executed through the unified transaction protocol."
+        }
+      }
+    },
+    "SourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startLine"],
+      "properties": {
+        "startLine": { "type": "integer", "minimum": 1 },
+        "startColumn": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 },
+        "endColumn": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "DiagnosticInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "definitionId", "artifactRef"],
+      "properties": {
+        "schema": { "const": "logicpilot.diagnostic-instance/v1" },
+        "contractVersion": { "const": 1 },
+        "definitionId": { "$ref": "#/$defs/DiagnosticId" },
+        "artifactRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "elementId": { "type": "string" },
+        "sourceSpan": { "$ref": "#/$defs/SourceSpan" },
+        "parameterBindings": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "evidenceRefs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "phase": { "type": "string", "description": "Pipeline phase / call chain node that produced the instance." },
+        "severity": { "$ref": "#/$defs/Severity" },
+        "availableFixIds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FixId" }
+        }
+      }
+    }
+  }
+}

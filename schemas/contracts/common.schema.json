@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/common.schema.json",
+  "title": "LogicPilot platform contracts - shared definitions",
+  "description": "Shared identifier, version and provenance definitions reused by every platform contract. Definitions are globally unique across the schemas/contracts/ directory; the generators resolve cross-file $refs by definition name.",
+  "$defs": {
+    "PluginId": {
+      "type": "string",
+      "description": "Stable namespaced plugin identifier.",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "CapabilityId": {
+      "type": "string",
+      "description": "Stable capability identifier contributed or required by a plugin (dotted, lowercase).",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "SemanticVersion": {
+      "type": "string",
+      "description": "MAJOR.MINOR.PATCH with optional prerelease suffix.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+      "minLength": 5,
+      "maxLength": 64
+    },
+    "VersionRange": {
+      "type": "string",
+      "description": "Version range expression (npm-style) resolved against SemanticVersion.",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Sha256Hex": {
+      "type": "string",
+      "description": "Lowercase or uppercase SHA-256 hex digest for content addressing.",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "Iso8601Timestamp": {
+      "type": "string",
+      "description": "UTC timestamp in ISO 8601 form.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$"
+    },
+    "LocalizedKey": {
+      "type": "string",
+      "description": "Localization message key; natural language text is never the semantic carrier.",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "Actor": {
+      "type": "string",
+      "description": "Who produced a revision or transaction: a human user, the agent, or a plugin id.",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "Provenance": {
+      "type": "object",
+      "description": "Where a piece of content came from and how much it can be trusted.",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "reference": { "type": "string" },
+        "locator": { "type": "string", "description": "Page, figure, equation or section locator inside the source." },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "JsonSchemaFragment": {
+      "type": "object",
+      "description": "Free-form JSON Schema fragment (parameter schemas, config schemas). Treated as opaque structured data by the platform.",
+      "x-freeform-json": true
+    },
+    "JsonValue": {
+      "description": "Any JSON value. Used for type-specific structured payloads the core does not interpret.",
+      "x-freeform-json": true
+    }
+  }
+}

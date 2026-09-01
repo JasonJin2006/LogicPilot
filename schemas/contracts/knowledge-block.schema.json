@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/knowledge-block.schema.json",
+  "title": "LogicPilot structured knowledge contracts",
+  "description": "Knowledge blocks are structured, versioned, provenance-tracked units. Natural language is a display/localization layer only - the structured content is the semantic carrier. AI ingestion can only produce drafts; promotion to trusted knowledge requires review.",
+  "$defs": {
+    "KnowledgeBlockType": {
+      "type": "string",
+      "enum": [
+        "concept",
+        "term",
+        "relation",
+        "constraint",
+        "formula",
+        "diagnostic",
+        "fix",
+        "workflow",
+        "instruction",
+        "example",
+        "counterexample",
+        "evidence",
+        "visual-template",
+        "transformation",
+        "conformance-case"
+      ]
+    },
+    "KnowledgeBlockId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "KnowledgeBlockRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/KnowledgeBlockId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" }
+      }
+    },
+    "KnowledgeScope": {
+      "type": "object",
+      "description": "Where the block applies: paradigm ids (process, sysml, statechart, sd, devs, agent, c4, ...) and domain ids.",
+      "additionalProperties": false,
+      "properties": {
+        "paradigms": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        },
+        "domains": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/CapabilityId" }
+        }
+      }
+    },
+    "VerificationMethod": {
+      "type": "string",
+      "enum": ["none", "unit-test", "conformance-case", "human-review"]
+    },
+    "KnowledgeVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method"],
+      "properties": {
+        "method": { "$ref": "#/$defs/VerificationMethod" },
+        "cases": {
+          "type": "array",
+          "description": "Conformance case ids that exercise this block.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "KnowledgeStatus": {
+      "type": "string",
+      "description": "Draft blocks are AI-authored and unreviewed; trusted blocks passed review and may feed the context compiler.",
+      "enum": ["draft", "reviewed", "trusted", "deprecated"]
+    },
+    "SymbolDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string" },
+        "unit": { "type": "string" },
+        "descriptionKey": { "$ref": "common.schema.json#/$defs/LocalizedKey" }
+      }
+    },
+    "FormulaContent": {
+      "type": "object",
+      "description": "Structured formula payload. LaTeX/MathML rendering is derived display data, never the semantic carrier.",
+      "additionalProperties": false,
+      "required": ["expressionAst"],
+      "properties": {
+        "expressionAst": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "symbolTable": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/SymbolDef" }
+        },
+        "assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "validDomain": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "initialConditions": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "boundaryConditions": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "recommendedSolver": { "type": "string" },
+        "sourceEquation": { "type": "string", "description": "Equation number/label in the source." }
+      }
+    },
+    "KnowledgeBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "version", "owner", "type", "classification", "status", "provenance"],
+      "properties": {
+        "schema": { "const": "logicpilot.knowledge-block/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "#/$defs/KnowledgeBlockId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "owner": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "type": { "$ref": "#/$defs/KnowledgeBlockType" },
+        "classification": {
+          "type": "string",
+          "enum": ["public", "organization", "workspace", "plugin"]
+        },
+        "status": { "$ref": "#/$defs/KnowledgeStatus" },
+        "scope": { "$ref": "#/$defs/KnowledgeScope" },
+        "applicability": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KnowledgeBlockRef" }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KnowledgeBlockRef" }
+        },
+        "supersedes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KnowledgeBlockRef" }
+        },
+        "provenance": { "$ref": "common.schema.json#/$defs/Provenance" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "verification": { "$ref": "#/$defs/KnowledgeVerification" },
+        "localization": {
+          "type": "object",
+          "description": "Language tag -> display text. Display only.",
+          "additionalProperties": { "type": "string" }
+        },
+        "content": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "formula": { "$ref": "#/$defs/FormulaContent" }
+      }
+    },
+    "KnowledgePack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "id", "version", "owner", "blocks", "digest"],
+      "properties": {
+        "schema": { "const": "logicpilot.knowledge-pack/v1" },
+        "contractVersion": { "const": 1 },
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "owner": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/KnowledgeBlock" }
+        },
+        "digest": { "$ref": "common.schema.json#/$defs/Sha256Hex" }
+      }
+    }
+  }
+}
