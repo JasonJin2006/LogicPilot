@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitepress'
+import { defineConfig } from 'vitepress';
 
 // Lightweight TextMate grammar for the LogicPilot DSL (Shiki). The full
 // grammar lives in dsl/tree-sitter-logicpilot; this is a small hand-written
@@ -32,14 +32,13 @@ const logicpilotLanguage = {
     },
     { match: '//.*$', name: 'comment.line.logicpilot' },
   ],
-}
+};
 
 export default defineConfig({
   lang: 'zh-CN',
   title: 'LogicPilot',
   titleTemplate: ':title · LogicPilot',
-  description:
-    'AI 原生、Web 化、高性能的多方法仿真平台（离散事件 / DEVS / Agent / 连续）',
+  description: 'AI 原生、Web 化、高性能的多方法仿真平台（离散事件 / DEVS / Agent / 连续）',
   lastUpdated: true,
   appearance: 'dark',
   head: [
@@ -92,6 +91,10 @@ export default defineConfig({
               { text: '总计划与现状', link: '/roadmap' },
               { text: '工程化路线计划', link: '/dev-plan' },
               { text: 'Workbench 架构计划', link: '/workbench-architecture-plan' },
+              {
+                text: '下一代插件与知识平台',
+                link: '/architecture/next-generation-plugin-platform',
+              },
               { text: 'Workbench 迁移审查', link: '/workbench-migration-review' },
               { text: '画布平台架构', link: '/architecture/canvas-platform' },
               { text: 'AI 面板 UX 评审', link: '/ai-panel-ux-audit' },
@@ -132,11 +135,23 @@ export default defineConfig({
               { text: '0002 CMake + vcpkg', link: '/adr/0002-cmake-vcpkg-package-management' },
               { text: '0003 最小 C++ 依赖集', link: '/adr/0003-cpp-dependency-minimal-set' },
               { text: '0004 FlatBuffers IR/wire', link: '/adr/0004-flatbuffers-ir-wire' },
-              { text: '0005 tree-sitter 生成物入库', link: '/adr/0005-tree-sitter-parser-checked-in' },
-              { text: '0006 推迟 GPU/分布式时间弯曲', link: '/adr/0006-defer-gpu-distributed-timewarp' },
+              {
+                text: '0005 tree-sitter 生成物入库',
+                link: '/adr/0005-tree-sitter-parser-checked-in',
+              },
+              {
+                text: '0006 推迟 GPU/分布式时间弯曲',
+                link: '/adr/0006-defer-gpu-distributed-timewarp',
+              },
               { text: '0007 保守并行优先', link: '/adr/0007-conservative-parallelism-first' },
-              { text: '0008 vendored tree-sitter runtime', link: '/adr/0008-vendored-tree-sitter-runtime' },
-              { text: '0009 运行时执行策略（并行+脚本）', link: '/adr/0009-runtime-execution-strategy' },
+              {
+                text: '0008 vendored tree-sitter runtime',
+                link: '/adr/0008-vendored-tree-sitter-runtime',
+              },
+              {
+                text: '0009 运行时执行策略（并行+脚本）',
+                link: '/adr/0009-runtime-execution-strategy',
+              },
               { text: '全量 ADR 索引（0001–0068）', link: '/adr/' },
             ],
           },
@@ -153,4 +168,4 @@ export default defineConfig({
       message: 'LogicPilot · AI 原生仿真平台',
     },
   },
-})
+});
