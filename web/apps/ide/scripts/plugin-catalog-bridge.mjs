@@ -16,6 +16,7 @@ import {
   PluginDraftPackageBuilder,
   PluginDraftValidationRunner,
   ed25519DraftSigner,
+  PluginSignatureKeyring,
   FileSystemPackageStore,
   NodePluginRuntime,
   pluginRootsFromEnv,
@@ -173,22 +174,39 @@ export async function handlePluginDrafts(req, res) {
         const buildRoot = process.env.LOGICPILOT_PLUGIN_BUILD_ROOT ?? `${packageRoot}/draft-builds`;
         const crypto = await import('node:crypto');
         const privateKey = crypto.createPrivateKey({ key: signingKey, format: 'pem' });
-        const publicKey = crypto.createPublicKey(privateKey);
-        const signer = ed25519DraftSigner(
-          process.env.LOGICPILOT_PLUGIN_SIGNING_KEY_ID ?? 'local-signing-key',
-          privateKey,
-        );
+        const signingKeyId = process.env.LOGICPILOT_PLUGIN_SIGNING_KEY_ID ?? 'local-signing-key';
+        const keyring = new PluginSignatureKeyring();
+        const configuredPublicKeys = process.env.LOGICPILOT_PLUGIN_SIGNING_PUBLIC_KEYS;
+        if (configuredPublicKeys) {
+          let parsedKeys;
+          try {
+            parsedKeys = JSON.parse(configuredPublicKeys);
+          } catch {
+            throw Object.assign(new Error('plugin signing public keyring is not valid JSON'), {
+              status: 503,
+            });
+          }
+          if (parsedKeys === null || typeof parsedKeys !== 'object' || Array.isArray(parsedKeys)) {
+            throw Object.assign(new Error('plugin signing public keyring must be an object'), {
+              status: 503,
+            });
+          }
+          for (const [keyId, pem] of Object.entries(parsedKeys)) {
+            if (typeof pem !== 'string')
+              throw Object.assign(
+                new Error('plugin signing public keyring values must be PEM strings'),
+                { status: 503 },
+              );
+            keyring.add(keyId, crypto.createPublicKey(pem));
+          }
+        }
+        if (!keyring.has(signingKeyId))
+          keyring.add(signingKeyId, crypto.createPublicKey(privateKey));
+        const signer = ed25519DraftSigner(signingKeyId, privateKey);
         const built = new PluginDraftPackageBuilder(buildRoot).build(current, signer);
         const packageStore = new FileSystemPackageStore({ rootDir: packageRoot });
         const manager = new PackageManager(packageStore, new AuditLog(), {
-          verifySignature: (manifest) =>
-            manifest.integrity?.signature !== undefined &&
-            crypto.verify(
-              null,
-              Buffer.from(built.sha256, 'utf8'),
-              publicKey,
-              Buffer.from(manifest.integrity.signature, 'base64'),
-            ),
+          verifySignature: (manifest, digest) => keyring.verify(manifest, digest),
         });
         const lockEntry = await manager.install({
           manifestJson: built.manifest,

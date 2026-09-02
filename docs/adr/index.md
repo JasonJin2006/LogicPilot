@@ -135,3 +135,4 @@
 - [0104 Hermetic Staged Agent SDK Bundle](0104-staged-agent-sdk-bundle)
 - [0105 Serialized Background Artifact Sync](0105-artifact-sync-queue)
 - [0106 Remove Server Static Tool Catalog](0106-remove-server-static-tool-catalog)
+- [0107 Rotatable Plugin Signature Keyring](0107-plugin-signature-keyring)
