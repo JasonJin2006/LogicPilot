@@ -110,6 +110,8 @@ export interface AssistantContext {
   selection: string;
   dsl: string;
   diagnostics: string;
+  /** Bounded structured knowledge selected from trusted plugin blocks. */
+  knowledge?: string;
   runStatus: string;
   runMetrics: string;
 }
