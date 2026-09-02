@@ -68,6 +68,15 @@ export interface ContractTypes {
   TrustRequirement: C.TrustRequirement;
   PermissionGrant: C.PermissionGrant;
   TrustPolicy: C.TrustPolicy;
+  PluginScope: C.PluginScope;
+  PluginCatalogRootId: string;
+  PluginCatalogPath: string;
+  PluginCatalogSeverity: C.PluginCatalogSeverity;
+  PluginCatalogDiagnosticKind: C.PluginCatalogDiagnosticKind;
+  PluginCatalogRoot: C.PluginCatalogRoot;
+  PluginCatalogEntry: C.PluginCatalogEntry;
+  PluginCatalogDiagnostic: C.PluginCatalogDiagnostic;
+  PluginCatalog: C.PluginCatalog;
   PluginManifest: C.PluginManifest;
   PluginDependency: C.PluginDependency;
   PluginEntrypoints: C.PluginEntrypoints;

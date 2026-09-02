@@ -107,16 +107,23 @@ mkdirSync(output, { recursive: true });
 for (const path of requiredFiles) copyFile(join(root, path), join(output, path));
 cpSync(frontend, join(output, 'web', 'apps', 'ide', 'dist'), { recursive: true });
 // Node-side plugin catalog scanner (ADR-0071): the staged app server imports
-// the built package through the same relative path as the source tree.
-const pluginCatalogDist = join(root, 'web', 'packages', 'plugin-catalog', 'dist');
-if (!existsSync(join(pluginCatalogDist, 'index.js'))) {
+// the scanner as a SINGLE self-contained ESM bundle (scanner + frozen
+// contracts + ajv), because the installed desktop tree has no repo
+// node_modules and bare package imports would fail at startup.
+const pluginCatalogBundle = join(
+  root,
+  'web',
+  'packages',
+  'plugin-catalog',
+  'dist',
+  'index.bundle.js',
+);
+if (!existsSync(pluginCatalogBundle)) {
   throw new Error(
-    'plugin-catalog dist is missing; run pnpm --filter @logicpilot/plugin-catalog build',
+    'plugin-catalog bundle is missing; run pnpm --filter @logicpilot/plugin-catalog build',
   );
 }
-cpSync(pluginCatalogDist, join(output, 'web', 'packages', 'plugin-catalog', 'dist'), {
-  recursive: true,
-});
+copyFile(pluginCatalogBundle, join(output, 'web', 'packages', 'plugin-catalog', 'dist', 'index.bundle.js'));
 copyFile(node, join(output, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node'));
 copyFile(lpcli, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lpcli.exe' : 'lpcli'));
 copyFile(lpserver, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lp-server.exe' : 'lp-server'));

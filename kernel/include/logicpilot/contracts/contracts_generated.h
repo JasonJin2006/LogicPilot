@@ -206,6 +206,41 @@ enum class SandboxKind : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, SandboxKind& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(SandboxKind value);
 
+enum class PluginScope : std::uint8_t {
+  kSystem,
+  kUser,
+  kWorkspace,
+};
+
+[[nodiscard]] std::string dump(PluginScope value);
+[[nodiscard]] bool parse(std::string_view text, PluginScope& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(PluginScope value);
+
+enum class PluginCatalogSeverity : std::uint8_t {
+  kError,
+  kWarning,
+};
+
+[[nodiscard]] std::string dump(PluginCatalogSeverity value);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogSeverity& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(PluginCatalogSeverity value);
+
+enum class PluginCatalogDiagnosticKind : std::uint8_t {
+  kJson,
+  kSchema,
+  kFilesystem,
+  kApiVersion,
+  kHashDrift,
+  kDuplicateId,
+  kDependency,
+  kLoadable,
+  kTransport,
+};
+
+[[nodiscard]] std::string dump(PluginCatalogDiagnosticKind value);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogDiagnosticKind& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(PluginCatalogDiagnosticKind value);
+
 enum class CanvasEngineId : std::uint8_t {
   kGraph2d,
   kScene2d,
@@ -245,6 +280,8 @@ using JsonSchemaFragment = JsonValue;
 using DiagnosticId = std::string;
 using FixId = std::string;
 using KnowledgeBlockId = std::string;
+using PluginCatalogRootId = std::string;
+using PluginCatalogPath = std::string;
 
 struct ToolDescriptor;
 struct ToolCall;
@@ -281,6 +318,10 @@ struct KnowledgePack;
 struct TrustRequirement;
 struct PermissionGrant;
 struct TrustPolicy;
+struct PluginCatalogRoot;
+struct PluginCatalogEntry;
+struct PluginCatalogDiagnostic;
+struct PluginCatalog;
 struct PluginManifest;
 struct PluginDependency;
 struct PluginEntrypoints;
@@ -588,6 +629,35 @@ struct PermissionGrant {
 [[nodiscard]] bool parse(std::string_view text, PermissionGrant& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PermissionGrant& value);
 [[nodiscard]] std::string dump(const PermissionGrant& value);
+
+// plugin-catalog.schema.json
+struct PluginCatalogDiagnostic {
+  PluginCatalogSeverity severity;
+  PluginCatalogDiagnosticKind kind;
+  std::string message;
+  std::optional<PluginScope> scope;
+  std::optional<std::string> root_id;
+  std::optional<std::string> path;
+  std::optional<std::string> plugin_id;
+};
+
+[[nodiscard]] bool operator==(const PluginCatalogDiagnostic& lhs, const PluginCatalogDiagnostic& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalogDiagnostic& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogDiagnostic& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogDiagnostic& value);
+[[nodiscard]] std::string dump(const PluginCatalogDiagnostic& value);
+
+// plugin-catalog.schema.json
+struct PluginCatalogRoot {
+  std::string id;
+  PluginScope scope;
+};
+
+[[nodiscard]] bool operator==(const PluginCatalogRoot& lhs, const PluginCatalogRoot& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalogRoot& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogRoot& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogRoot& value);
+[[nodiscard]] std::string dump(const PluginCatalogRoot& value);
 
 // plugin-manifest-v2.schema.json
 struct PluginDependency {
@@ -1118,5 +1188,36 @@ struct ViewDefinition {
 [[nodiscard]] bool parse(std::string_view text, ViewDefinition& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const ViewDefinition& value);
 [[nodiscard]] std::string dump(const ViewDefinition& value);
+
+// plugin-catalog.schema.json
+struct PluginCatalogEntry {
+  std::string id;
+  PluginScope scope;
+  std::string root_id;
+  std::string path;
+  std::string sha256;
+  PluginManifest manifest;
+};
+
+[[nodiscard]] bool operator==(const PluginCatalogEntry& lhs, const PluginCatalogEntry& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalogEntry& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogEntry& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogEntry& value);
+[[nodiscard]] std::string dump(const PluginCatalogEntry& value);
+
+// plugin-catalog.schema.json
+struct PluginCatalog {
+  std::string schema;
+  std::int64_t contract_version;
+  std::vector<PluginCatalogRoot> roots;
+  std::vector<PluginCatalogEntry> entries;
+  std::vector<PluginCatalogDiagnostic> diagnostics;
+};
+
+[[nodiscard]] bool operator==(const PluginCatalog& lhs, const PluginCatalog& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalog& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalog& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalog& value);
+[[nodiscard]] std::string dump(const PluginCatalog& value);
 
 }  // namespace logicpilot::contracts

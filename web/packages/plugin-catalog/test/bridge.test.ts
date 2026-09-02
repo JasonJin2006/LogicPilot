@@ -145,4 +145,12 @@ describe('pluginRootsFromEnv', () => {
       pluginRootsFromEnv({ LOGICPILOT_PLUGIN_ROOTS: JSON.stringify({ system: 'nope' }) }),
     ).toThrow(/array of non-empty/);
   });
+
+  it('fails fast on unknown/mistyped scope keys instead of ignoring them', () => {
+    expect(() =>
+      pluginRootsFromEnv({
+        LOGICPILOT_PLUGIN_ROOTS: JSON.stringify({ workspace: ['x'], userr: ['y'] }),
+      }),
+    ).toThrow(/unknown scope 'userr'/);
+  });
 });

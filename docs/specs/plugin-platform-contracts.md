@@ -18,6 +18,8 @@ schemas/contracts/
   view-notation.schema.json       CanvasEngineId、ViewDefinition、NotationPack、CreateAction
   agent-engine.schema.json        AgentStepRequest/Result、ToolDescriptor、AgentCheckpoint
   execution-target.schema.json    ExecutionTarget/Request/Run/Evidence、RuntimeRef
+  plugin-catalog.schema.json      PluginCatalog 发现信封（Phase 2B-1，ADR-0071：scope、
+                                  rootId、相对 path、sha256、结构化 diagnostics）
   baseline/                       冻结快照（schema compatibility 门禁的对照物）
 ```
 
@@ -27,6 +29,12 @@ JSON Schema（draft 2020-12）是唯一事实来源。TS 与 C++ 类型全部由
 - TS：`web/packages/contracts/src/generated/{contracts,schemas,registry}.ts`
 - C++：`kernel/include/logicpilot/contracts/contracts_generated.h`
   与 `kernel/src/contracts/contracts_generated.cpp`
+
+`logicpilot.plugin-catalog/v1`（Phase 2B-1）是首个非 Phase 1 原始清单的冻结信封：它引用
+`PluginManifest` / `PluginId` / `Sha256Hex`，新增 `PluginScope`（system|user|workspace）等
+枚举；宿主侧跨实体规则（entry.id == manifest.id、rootId 对应同 scope root、path 无 `..`
+段）由 `@logicpilot/plugin-host` 的载荷校验在生成校验之上强制。禁止手写与其重复的
+catalog 类型。
 
 禁止手写与生成类型重复的定义；行为扩展写在
 `kernel/src/contracts/contracts.cpp`、`web/packages/contracts/src/*` 这类
@@ -48,13 +56,13 @@ JSON Schema（draft 2020-12）是唯一事实来源。TS 与 C++ 类型全部由
 
 ## 3. 门禁
 
-| 门禁 | TS | C++ | 脚本 |
-| --- | --- | --- | --- |
-| round-trip | `pnpm --filter @logicpilot/contracts test` | `test_contracts.cpp` | — |
-| 未知字段拒绝 | 同上 | 同上 | check-contract-conform 审计政策 |
-| 版本检查 | 同上 | 同上 | — |
-| 依赖环 | `resolveActivationOrder` | `resolve_activation_order` | — |
-| schema compatibility | — | — | `node scripts/check-contract-conform.mjs` |
+| 门禁                 | TS                                         | C++                        | 脚本                                      |
+| -------------------- | ------------------------------------------ | -------------------------- | ----------------------------------------- |
+| round-trip           | `pnpm --filter @logicpilot/contracts test` | `test_contracts.cpp`       | —                                         |
+| 未知字段拒绝         | 同上                                       | 同上                       | check-contract-conform 审计政策           |
+| 版本检查             | 同上                                       | 同上                       | —                                         |
+| 依赖环               | `resolveActivationOrder`                   | `resolve_activation_order` | —                                         |
+| schema compatibility | —                                          | —                          | `node scripts/check-contract-conform.mjs` |
 
 原生门禁统一走 `./scripts/windows-build.ps1 -Preset windows-msvc-dev [-Test]`。
 

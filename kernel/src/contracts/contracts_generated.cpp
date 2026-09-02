@@ -39,6 +39,9 @@ nlohmann::ordered_json to_json_value(KnowledgeStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PermissionId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(TrustLevel v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(SandboxKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(PluginScope v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(PluginCatalogSeverity v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(PluginCatalogDiagnosticKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CanvasEngineId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(LayoutPersistence v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ToolDescriptor& v) { return to_json(v); }
@@ -76,6 +79,10 @@ nlohmann::ordered_json to_json_value(const KnowledgePack& v) { return to_json(v)
 nlohmann::ordered_json to_json_value(const TrustRequirement& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PermissionGrant& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const TrustPolicy& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginCatalogRoot& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginCatalogEntry& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginCatalogDiagnostic& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginCatalog& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginManifest& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginDependency& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginEntrypoints& v) { return to_json(v); }
@@ -580,6 +587,97 @@ bool parse(std::string_view text, SandboxKind& out, std::string& error) {
 }
 
 nlohmann::ordered_json to_json(SandboxKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(PluginScope value) {
+  switch (value) {
+    case PluginScope::kSystem: return "system";
+    case PluginScope::kUser: return "user";
+    case PluginScope::kWorkspace: return "workspace";
+  }
+  return "<invalid PluginScope>";
+}
+
+bool parse(std::string_view text, PluginScope& out, std::string& error) {
+  static const std::pair<std::string_view, PluginScope> kTable[] = {
+      {"system", PluginScope::kSystem},
+      {"user", PluginScope::kUser},
+      {"workspace", PluginScope::kWorkspace},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid PluginScope value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(PluginScope value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(PluginCatalogSeverity value) {
+  switch (value) {
+    case PluginCatalogSeverity::kError: return "error";
+    case PluginCatalogSeverity::kWarning: return "warning";
+  }
+  return "<invalid PluginCatalogSeverity>";
+}
+
+bool parse(std::string_view text, PluginCatalogSeverity& out, std::string& error) {
+  static const std::pair<std::string_view, PluginCatalogSeverity> kTable[] = {
+      {"error", PluginCatalogSeverity::kError},
+      {"warning", PluginCatalogSeverity::kWarning},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid PluginCatalogSeverity value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(PluginCatalogSeverity value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(PluginCatalogDiagnosticKind value) {
+  switch (value) {
+    case PluginCatalogDiagnosticKind::kJson: return "json";
+    case PluginCatalogDiagnosticKind::kSchema: return "schema";
+    case PluginCatalogDiagnosticKind::kFilesystem: return "filesystem";
+    case PluginCatalogDiagnosticKind::kApiVersion: return "api-version";
+    case PluginCatalogDiagnosticKind::kHashDrift: return "hash-drift";
+    case PluginCatalogDiagnosticKind::kDuplicateId: return "duplicate-id";
+    case PluginCatalogDiagnosticKind::kDependency: return "dependency";
+    case PluginCatalogDiagnosticKind::kLoadable: return "loadable";
+    case PluginCatalogDiagnosticKind::kTransport: return "transport";
+  }
+  return "<invalid PluginCatalogDiagnosticKind>";
+}
+
+bool parse(std::string_view text, PluginCatalogDiagnosticKind& out, std::string& error) {
+  static const std::pair<std::string_view, PluginCatalogDiagnosticKind> kTable[] = {
+      {"json", PluginCatalogDiagnosticKind::kJson},
+      {"schema", PluginCatalogDiagnosticKind::kSchema},
+      {"filesystem", PluginCatalogDiagnosticKind::kFilesystem},
+      {"api-version", PluginCatalogDiagnosticKind::kApiVersion},
+      {"hash-drift", PluginCatalogDiagnosticKind::kHashDrift},
+      {"duplicate-id", PluginCatalogDiagnosticKind::kDuplicateId},
+      {"dependency", PluginCatalogDiagnosticKind::kDependency},
+      {"loadable", PluginCatalogDiagnosticKind::kLoadable},
+      {"transport", PluginCatalogDiagnosticKind::kTransport},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid PluginCatalogDiagnosticKind value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(PluginCatalogDiagnosticKind value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(CanvasEngineId value) {
   switch (value) {
@@ -5156,6 +5254,428 @@ bool operator==(const TrustPolicy& lhs, const TrustPolicy& rhs) {
       && lhs.default_level == rhs.default_level
       && lhs.grants == rhs.grants
       && lhs.overrides == rhs.overrides;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginCatalogRoot& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginCatalogRoot";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "scope",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginCatalogRoot: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginCatalogRoot");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogRoot.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "scope", "PluginCatalogRoot");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.scope, enum_error)) {
+        error = std::string("PluginCatalogRoot.scope") + ": " + enum_error;
+        return false;
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginCatalogRoot& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginCatalogRoot& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["scope"] = to_json(value.scope);
+  return j;
+}
+
+std::string dump(const PluginCatalogRoot& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginCatalogRoot& lhs, const PluginCatalogRoot& rhs) {
+  return lhs.id == rhs.id
+      && lhs.scope == rhs.scope;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginCatalogEntry& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginCatalogEntry";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "scope",
+      "rootId",
+      "path",
+      "sha256",
+      "manifest",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginCatalogEntry: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginCatalogEntry");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogEntry.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "scope", "PluginCatalogEntry");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.scope, enum_error)) {
+        error = std::string("PluginCatalogEntry.scope") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "rootId", "PluginCatalogEntry");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogEntry.rootId") + ": expected string";
+        return false;
+      }
+      out.root_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "path", "PluginCatalogEntry");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogEntry.path") + ": expected string";
+        return false;
+      }
+      out.path = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sha256", "PluginCatalogEntry");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogEntry.sha256") + ": expected string";
+        return false;
+      }
+      out.sha256 = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "manifest", "PluginCatalogEntry");
+      if (!parse_json(value, out.manifest, error)) {
+        error = std::string("PluginCatalogEntry.manifest") + ": " + error;
+        return false;
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginCatalogEntry& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginCatalogEntry& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["scope"] = to_json(value.scope);
+    j["rootId"] = to_json_value(value.root_id);
+    j["path"] = to_json_value(value.path);
+    j["sha256"] = to_json_value(value.sha256);
+    j["manifest"] = to_json(value.manifest);
+  return j;
+}
+
+std::string dump(const PluginCatalogEntry& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginCatalogEntry& lhs, const PluginCatalogEntry& rhs) {
+  return lhs.id == rhs.id
+      && lhs.scope == rhs.scope
+      && lhs.root_id == rhs.root_id
+      && lhs.path == rhs.path
+      && lhs.sha256 == rhs.sha256
+      && lhs.manifest == rhs.manifest;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginCatalogDiagnostic& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginCatalogDiagnostic";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "severity",
+      "kind",
+      "message",
+      "scope",
+      "rootId",
+      "path",
+      "pluginId",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginCatalogDiagnostic: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "severity", "PluginCatalogDiagnostic");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.severity, enum_error)) {
+        error = std::string("PluginCatalogDiagnostic.severity") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "kind", "PluginCatalogDiagnostic");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.kind, enum_error)) {
+        error = std::string("PluginCatalogDiagnostic.kind") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "message", "PluginCatalogDiagnostic");
+      if (!value.is_string()) {
+        error = std::string("PluginCatalogDiagnostic.message") + ": expected string";
+        return false;
+      }
+      out.message = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("scope");
+    if (field_it != j.end()) {
+      PluginScope parsed{};
+      std::string enum_error;
+      if (!parse((*field_it).get<std::string>(), parsed, enum_error)) {
+        error = std::string("PluginCatalogDiagnostic.scope") + ": " + enum_error;
+        return false;
+      }
+      out.scope = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("rootId");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginCatalogDiagnostic.rootId") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.root_id = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("path");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginCatalogDiagnostic.path") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.path = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("pluginId");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginCatalogDiagnostic.pluginId") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.plugin_id = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginCatalogDiagnostic& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginCatalogDiagnostic& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["severity"] = to_json(value.severity);
+    j["kind"] = to_json(value.kind);
+    j["message"] = to_json_value(value.message);
+  if (value.scope.has_value()) {
+    j["scope"] = to_json(*value.scope);
+  }
+  if (value.root_id.has_value()) {
+    j["rootId"] = to_json_value(*value.root_id);
+  }
+  if (value.path.has_value()) {
+    j["path"] = to_json_value(*value.path);
+  }
+  if (value.plugin_id.has_value()) {
+    j["pluginId"] = to_json_value(*value.plugin_id);
+  }
+  return j;
+}
+
+std::string dump(const PluginCatalogDiagnostic& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginCatalogDiagnostic& lhs, const PluginCatalogDiagnostic& rhs) {
+  return lhs.severity == rhs.severity
+      && lhs.kind == rhs.kind
+      && lhs.message == rhs.message
+      && lhs.scope == rhs.scope
+      && lhs.root_id == rhs.root_id
+      && lhs.path == rhs.path
+      && lhs.plugin_id == rhs.plugin_id;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginCatalog& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginCatalog";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "roots",
+      "entries",
+      "diagnostics",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginCatalog: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "PluginCatalog");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.plugin-catalog/v1") {
+        error = std::string("PluginCatalog.schema") + ": expected constant " + "logicpilot.plugin-catalog/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "PluginCatalog");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("PluginCatalog.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "roots", "PluginCatalog");
+      if (!value.is_array()) {
+        error = std::string("PluginCatalog.roots") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.roots.emplace_back(), error)) {
+          error = std::string("PluginCatalog.roots") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "entries", "PluginCatalog");
+      if (!value.is_array()) {
+        error = std::string("PluginCatalog.entries") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.entries.emplace_back(), error)) {
+          error = std::string("PluginCatalog.entries") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "diagnostics", "PluginCatalog");
+      if (!value.is_array()) {
+        error = std::string("PluginCatalog.diagnostics") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.diagnostics.emplace_back(), error)) {
+          error = std::string("PluginCatalog.diagnostics") + ": " + error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginCatalog& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginCatalog& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["roots"] = to_json_value(value.roots);
+    j["entries"] = to_json_value(value.entries);
+    j["diagnostics"] = to_json_value(value.diagnostics);
+  return j;
+}
+
+std::string dump(const PluginCatalog& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginCatalog& lhs, const PluginCatalog& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.roots == rhs.roots
+      && lhs.entries == rhs.entries
+      && lhs.diagnostics == rhs.diagnostics;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::string& error) {

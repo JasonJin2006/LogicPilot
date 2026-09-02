@@ -50,7 +50,10 @@ function catalogFixture(overrides: Partial<PluginCatalog> = {}): PluginCatalog {
   return {
     schema: 'logicpilot.plugin-catalog/v1',
     contractVersion: 1,
-    roots: [{ id: 'workspace:1', scope: 'workspace' }],
+    roots: [
+      { id: 'system:1', scope: 'system' },
+      { id: 'workspace:1', scope: 'workspace' },
+    ],
     entries: [],
     diagnostics: [],
     ...overrides,
@@ -71,14 +74,57 @@ describe('plugin catalog payload validation', () => {
     });
     const parsed = parsePluginCatalogPayload(bad);
     expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.errors.join('; ')).toContain('entries[0].manifest');
+    if (!parsed.ok) expect(parsed.errors.join('; ')).toContain('/entries/0/manifest');
   });
 
-  it('rejects invalid scopes and truncated digests', () => {
-    const payload = catalogFixture({
-      entries: [entry({ scope: 'root' as never, sha256: 'abc' })],
+  it('rejects inconsistent identities across the envelope', () => {
+    const mismatch = catalogFixture({
+      entries: [{ ...entry(), id: 'logicpilot.other' }],
     });
-    expect(parsePluginCatalogPayload(payload).ok).toBe(false);
+    expect(parsePluginCatalogPayload(mismatch).ok).toBe(false);
+
+    const unknownRoot = catalogFixture({
+      entries: [{ ...entry(), rootId: 'workspace:9' }],
+    });
+    expect(parsePluginCatalogPayload(unknownRoot).ok).toBe(false);
+
+    const scopeRootMismatch = catalogFixture({
+      entries: [{ ...entry(), scope: 'system', rootId: 'workspace:1' }],
+    });
+    const parsed = parsePluginCatalogPayload(scopeRootMismatch);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.errors[0] ?? '').toContain('scope');
+
+    const traversal = catalogFixture({
+      entries: [{ ...entry(), path: '../escape' }],
+    });
+    expect(parsePluginCatalogPayload(traversal).ok).toBe(false);
+  });
+
+  it('accepts diagnostics without optional path/rootId fields', () => {
+    const payload = catalogFixture({
+      diagnostics: [
+        {
+          severity: 'error',
+          kind: 'schema',
+          message: 'package x is broken',
+          pluginId: 'logicpilot.broken',
+          scope: 'workspace',
+        },
+      ],
+    });
+    expect(parsePluginCatalogPayload(payload).ok).toBe(true);
+  });
+
+  it('rejects non-hex digests and invalid scopes through the frozen schema', () => {
+    const nonHex = catalogFixture({
+      entries: [{ ...entry(), sha256: 'g'.repeat(64) }],
+    });
+    expect(parsePluginCatalogPayload(nonHex).ok).toBe(false);
+    const badScope = catalogFixture({
+      entries: [{ ...entry(), scope: 'root' as never }],
+    });
+    expect(parsePluginCatalogPayload(badScope).ok).toBe(false);
   });
 });
 
@@ -191,6 +237,47 @@ describe('projection', () => {
     const projection = projectCatalogEntries([app], loadable);
     expect(projection.entries.map((candidate) => candidate.id)).toEqual([app.id]);
   });
+
+  it('converges on long unloadable chains (fixpoint, not a fixed pass limit)', () => {
+    const count = 12;
+    const ids = Array.from({ length: count }, (_, index) => `logicpilot.chain-${index}`);
+    const head = entry({
+      id: ids[0] as string,
+      manifest: manifest({
+        id: ids[0] as string,
+        entrypoints: { web: './activate.ts' },
+      }),
+    });
+    const chain: PluginCatalogEntry[] = [head];
+    for (let index = 1; index < count; index += 1) {
+      chain.push(
+        entry({
+          id: ids[index] as string,
+          manifest: manifest({
+            id: ids[index] as string,
+            requires: [{ id: ids[index - 1] as string }],
+          }),
+        }),
+      );
+    }
+    const independent = entry();
+    const policy = (candidate: PluginCatalogEntry) =>
+      defaultCatalogEntryLoader(candidate) !== undefined;
+    const projection = projectCatalogEntries([...chain, independent], policy);
+    // Every chain member is excluded (the head is unloadable, dependents
+    // cascade); the independent plugin survives. No entry may reference a
+    // dependency that is not in the projected set.
+    expect(projection.entries.map((candidate) => candidate.id)).toEqual([independent.id]);
+    expect(projection.excluded).toHaveLength(count);
+    const projectedIds = new Set(projection.entries.map((candidate) => candidate.id));
+    for (const candidate of projection.entries) {
+      for (const dependency of candidate.manifest.requires) {
+        if (!dependency.optional) {
+          expect(projectedIds.has(dependency.id)).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 describe('RemoteCatalogDiscoverySource', () => {
@@ -221,6 +308,7 @@ describe('RemoteCatalogDiscoverySource', () => {
       manifest: manifest({ id: 'logicpilot.demo.system', entrypoints: {} }),
       id: 'logicpilot.demo.system',
       scope: 'system',
+      rootId: 'system:1',
     });
     const source = new RemoteCatalogDiscoverySource({
       url: 'http://bridge.test/catalog',
@@ -240,7 +328,7 @@ describe('RemoteCatalogDiscoverySource', () => {
 
   it('skips web-entrypoint plugins under the default policy and reports them', async () => {
     const webOnly = entry({
-      manifest: manifest({ entrypoints: { web: './activate.ts' } }),
+      manifest: manifest({ id: 'logicpilot.demo.web', entrypoints: { web: './activate.ts' } }),
       id: 'logicpilot.demo.web',
     });
     const source = new RemoteCatalogDiscoverySource({
@@ -258,7 +346,7 @@ describe('RemoteCatalogDiscoverySource', () => {
 
   it('honors a shell-provided loader for executable entrypoints', async () => {
     const webOnly = entry({
-      manifest: manifest({ entrypoints: { web: './activate.ts' } }),
+      manifest: manifest({ id: 'logicpilot.demo.web', entrypoints: { web: './activate.ts' } }),
       id: 'logicpilot.demo.web',
     });
     let activated = 0;

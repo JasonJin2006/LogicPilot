@@ -460,6 +460,57 @@ export interface TrustPolicy {
   readonly overrides?: { readonly [key: string]: TrustLevel };
 }
 
+// --- PluginScope (plugin-catalog.schema.json) ---
+export type PluginScope = "system" | "user" | "workspace";
+
+// --- PluginCatalogRootId (plugin-catalog.schema.json) ---
+export type PluginCatalogRootId = string;
+
+// --- PluginCatalogPath (plugin-catalog.schema.json) ---
+export type PluginCatalogPath = string;
+
+// --- PluginCatalogSeverity (plugin-catalog.schema.json) ---
+export type PluginCatalogSeverity = "error" | "warning";
+
+// --- PluginCatalogDiagnosticKind (plugin-catalog.schema.json) ---
+export type PluginCatalogDiagnosticKind = "json" | "schema" | "filesystem" | "api-version" | "hash-drift" | "duplicate-id" | "dependency" | "loadable" | "transport";
+
+// --- PluginCatalogRoot (plugin-catalog.schema.json) ---
+export interface PluginCatalogRoot {
+  readonly id: PluginCatalogRootId;
+  readonly scope: PluginScope;
+}
+
+// --- PluginCatalogEntry (plugin-catalog.schema.json) ---
+export interface PluginCatalogEntry {
+  readonly id: PluginId;
+  readonly scope: PluginScope;
+  readonly rootId: PluginCatalogRootId;
+  readonly path: PluginCatalogPath;
+  readonly sha256: Sha256Hex;
+  readonly manifest: PluginManifest;
+}
+
+// --- PluginCatalogDiagnostic (plugin-catalog.schema.json) ---
+export interface PluginCatalogDiagnostic {
+  readonly severity: PluginCatalogSeverity;
+  readonly kind: PluginCatalogDiagnosticKind;
+  readonly message: string;
+  readonly scope?: PluginScope;
+  readonly rootId?: PluginCatalogRootId;
+  readonly path?: PluginCatalogPath;
+  readonly pluginId?: PluginId;
+}
+
+// --- PluginCatalog (plugin-catalog.schema.json) ---
+export interface PluginCatalog {
+  readonly schema: "logicpilot.plugin-catalog/v1";
+  readonly contractVersion: 1;
+  readonly roots: ReadonlyArray<PluginCatalogRoot>;
+  readonly entries: ReadonlyArray<PluginCatalogEntry>;
+  readonly diagnostics: ReadonlyArray<PluginCatalogDiagnostic>;
+}
+
 // --- PluginManifest (plugin-manifest-v2.schema.json) ---
 export interface PluginManifest {
   readonly schema: "logicpilot.plugin-manifest/v2";

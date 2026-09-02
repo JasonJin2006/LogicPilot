@@ -9,7 +9,7 @@
 import {
   createPluginCatalogHandler,
   pluginRootsFromEnv,
-} from '../../../packages/plugin-catalog/dist/index.js';
+} from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {

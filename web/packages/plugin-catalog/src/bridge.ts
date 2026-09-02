@@ -60,6 +60,14 @@ export function pluginRootsFromEnv(
     throw new Error('LOGICPILOT_PLUGIN_ROOTS must be a JSON object');
   }
   const object = parsed as Record<string, unknown>;
+  const knownScopes = new Set(['system', 'user', 'workspace']);
+  for (const key of Object.keys(object)) {
+    if (!knownScopes.has(key)) {
+      // A mistyped scope key silently yields a partially-configured set;
+      // fail fast so the operator notices the configuration error.
+      throw new Error(`LOGICPILOT_PLUGIN_ROOTS contains unknown scope '${key}'`);
+    }
+  }
   const roots: PluginRootConfig[] = [];
   for (const scope of ['system', 'user', 'workspace'] as const) {
     const value = object[scope];

@@ -1,7 +1,13 @@
 // Plugin catalog discovery (Phase 2B-1, ADR-0071): the Node-side scanner
 // produces a catalog envelope over the frozen PluginManifest contract; this
-// module is the browser-safe half - catalog types, payload validation and
-// the RemoteCatalogDiscoverySource that feeds the transactional PluginHost.
+// module is the browser-safe half - catalog payload validation and the
+// RemoteCatalogDiscoverySource that feeds the transactional PluginHost.
+//
+// The envelope itself is a FROZEN contract
+// (schemas/contracts/plugin-catalog.schema.json, ADR-0069 §1): the payload is
+// validated with the generated validator, then checked for cross-entity
+// consistency (entry id == manifest id, rootId references a root of the same
+// scope, safe relative paths) that JSON Schema cannot express.
 //
 // Scope layering stays with the host (ADR-0070 §3): one source per scope,
 // each projection computed per scope (cross-scope dependency resolution is a
@@ -9,63 +15,27 @@
 
 import type { PluginManifest } from '@logicpilot/contracts';
 import { resolveActivationOrder, satisfiesRange, validateContract } from '@logicpilot/contracts';
-import type { DiscoveredPlugin, DiscoverySource, PluginModule, PluginScope } from './host.js';
-import { isJsonObject } from './package-manager.js';
+import type {
+  PluginCatalog,
+  PluginCatalogDiagnostic,
+  PluginCatalogDiagnosticKind,
+  PluginCatalogEntry,
+  PluginScope,
+} from '@logicpilot/contracts';
+import type { DiscoveredPlugin, DiscoverySource, PluginModule } from './host.js';
 
-// ---------------------------------------------------------------------------
-// Catalog envelope (transport shape, NOT a frozen contract)
-// ---------------------------------------------------------------------------
+// The generated contract types are re-exported so the host package stays the
+// single import point for shells (the types are frozen, not host-owned).
+export type {
+  PluginCatalog,
+  PluginCatalogDiagnostic,
+  PluginCatalogDiagnosticKind,
+  PluginCatalogEntry,
+  PluginCatalogRoot,
+  PluginScope,
+} from '@logicpilot/contracts';
 
 export const PLUGIN_CATALOG_BRIDGE = 'logicpilot.plugin-catalog/v1';
-
-export interface PluginCatalogRoot {
-  /** Stable root identity inside the catalog: '<scope>:<index>' (1-based). */
-  readonly id: string;
-  readonly scope: PluginScope;
-}
-
-/** One validated package found by the scanner. */
-export interface PluginCatalogEntry {
-  readonly id: string;
-  /** Effective scope. Set by the containing root - a package cannot claim one. */
-  readonly scope: PluginScope;
-  /** Containing root id (the catalog never exposes filesystem paths). */
-  readonly rootId: string;
-  /** Package directory relative to its root, posix-normalized. */
-  readonly path: string;
-  /** Payload digest (sha256 hex) computed by the scanner. */
-  readonly sha256: string;
-  readonly manifest: PluginManifest;
-}
-
-export type PluginCatalogDiagnosticKind =
-  | 'json'
-  | 'schema'
-  | 'filesystem'
-  | 'api-version'
-  | 'hash-drift'
-  | 'duplicate-id'
-  | 'dependency'
-  | 'loadable'
-  | 'transport';
-
-export interface PluginCatalogDiagnostic {
-  readonly severity: 'error' | 'warning';
-  readonly kind: PluginCatalogDiagnosticKind;
-  readonly message: string;
-  readonly scope?: PluginScope;
-  readonly rootId?: string;
-  readonly path?: string;
-  readonly pluginId?: string;
-}
-
-export interface PluginCatalog {
-  readonly schema: 'logicpilot.plugin-catalog/v1';
-  readonly contractVersion: 1;
-  readonly roots: readonly PluginCatalogRoot[];
-  readonly entries: readonly PluginCatalogEntry[];
-  readonly diagnostics: readonly PluginCatalogDiagnostic[];
-}
 
 export type PluginCatalogPayloadValidation =
   | { readonly ok: true; readonly value: PluginCatalog }
@@ -77,85 +47,65 @@ export function isPluginScope(value: unknown): value is PluginScope {
   return typeof value === 'string' && (PLUGIN_SCOPES as readonly string[]).includes(value);
 }
 
-/** Structural validation of a bridge payload (defense in depth: the bridge
- *  is trusted, but the source never forwards partial/malformed catalogs). */
+/** A safe catalog path: posix, non-absolute, no empty or '..' segments, no
+ *  backslashes. The frozen schema pattern already rejects these; this is the
+ *  code-level guard for consumers that only see parsed values. */
+function isSafeCatalogPath(path: string): boolean {
+  if (path.length === 0 || path.startsWith('/') || path.includes('\\')) return false;
+  return path.split('/').every((segment) => segment !== '' && segment !== '..');
+}
+
+/** Structural validation of a bridge payload (frozen contract) plus the
+ *  cross-entity consistency checks JSON Schema cannot express. Any violation
+ *  rejects the WHOLE catalog (defense in depth: the source never forwards
+ *  partial data, and a malformed bridge is a transport error). */
 export function parsePluginCatalogPayload(value: unknown): PluginCatalogPayloadValidation {
-  if (!isJsonObject(value)) {
-    return { ok: false, errors: ['catalog payload is not an object'] };
+  const validated = validateContract('PluginCatalog', value);
+  if (!validated.ok) {
+    return { ok: false, errors: validated.errors };
   }
+  const catalog = validated.value;
   const errors: string[] = [];
-  if (value.schema !== PLUGIN_CATALOG_BRIDGE) {
-    errors.push(`schema: expected ${PLUGIN_CATALOG_BRIDGE}`);
+  const rootById = new Map(catalog.roots.map((root) => [root.id, root]));
+
+  for (const [index, entry] of catalog.entries.entries()) {
+    if (entry.id !== entry.manifest.id) {
+      errors.push(
+        `entries[${index}].id '${entry.id}' does not match manifest.id '${entry.manifest.id}'`,
+      );
+    }
+    if (!isSafeCatalogPath(entry.path)) {
+      errors.push(`entries[${index}].path '${entry.path}' is not a safe relative path`);
+    }
+    const root = rootById.get(entry.rootId);
+    if (!root) {
+      errors.push(`entries[${index}].rootId '${entry.rootId}' does not reference a known root`);
+    } else if (root.scope !== entry.scope) {
+      errors.push(
+        `entries[${index}].scope '${entry.scope}' does not match root '${entry.rootId}' scope '${root.scope}'`,
+      );
+    }
   }
-  if (value.contractVersion !== 1) {
-    errors.push('contractVersion: expected 1');
-  }
-  if (!Array.isArray(value.roots)) {
-    errors.push('roots: expected an array');
-  } else {
-    for (const [index, root] of value.roots.entries()) {
-      if (!isJsonObject(root)) {
-        errors.push(`roots[${index}]: not an object`);
-        continue;
-      }
-      if (typeof root.id !== 'string' || root.id.length === 0) {
-        errors.push(`roots[${index}].id: expected a non-empty string`);
-      }
-      if (!isPluginScope(root.scope)) {
-        errors.push(`roots[${index}].scope: invalid plugin scope`);
+
+  for (const [index, diagnostic] of catalog.diagnostics.entries()) {
+    if (diagnostic.path !== undefined && !isSafeCatalogPath(diagnostic.path)) {
+      errors.push(`diagnostics[${index}].path is not a safe relative path`);
+    }
+    if (diagnostic.rootId && !rootById.has(diagnostic.rootId)) {
+      errors.push(
+        `diagnostics[${index}].rootId '${diagnostic.rootId}' does not reference a known root`,
+      );
+    }
+    if (diagnostic.scope && diagnostic.rootId) {
+      const root = rootById.get(diagnostic.rootId);
+      if (root && root.scope !== diagnostic.scope) {
+        errors.push(`diagnostics[${index}].scope does not match its root's scope`);
       }
     }
   }
-  if (!Array.isArray(value.entries)) {
-    errors.push('entries: expected an array');
-  } else {
-    for (const [index, entry] of value.entries.entries()) {
-      if (!isJsonObject(entry)) {
-        errors.push(`entries[${index}]: not an object`);
-        continue;
-      }
-      if (typeof entry.id !== 'string' || entry.id.length === 0) {
-        errors.push(`entries[${index}].id: expected a non-empty string`);
-      }
-      if (!isPluginScope(entry.scope)) {
-        errors.push(`entries[${index}].scope: invalid plugin scope`);
-      }
-      if (typeof entry.rootId !== 'string' || entry.rootId.length === 0) {
-        errors.push(`entries[${index}].rootId: expected a non-empty string`);
-      }
-      if (typeof entry.path !== 'string' || entry.path.length === 0) {
-        errors.push(`entries[${index}].path: expected a non-empty string`);
-      }
-      if (typeof entry.sha256 !== 'string' || entry.sha256.length !== 64) {
-        errors.push(`entries[${index}].sha256: expected a sha256 hex string`);
-      }
-      const manifest = validateContract('PluginManifest', entry.manifest);
-      if (!manifest.ok) {
-        errors.push(`entries[${index}].manifest: ${manifest.errors.join('; ')}`);
-      }
-    }
-  }
-  if (!Array.isArray(value.diagnostics)) {
-    errors.push('diagnostics: expected an array');
-  } else {
-    for (const [index, diagnostic] of value.diagnostics.entries()) {
-      if (!isJsonObject(diagnostic)) {
-        errors.push(`diagnostics[${index}]: not an object`);
-        continue;
-      }
-      if (diagnostic.severity !== 'error' && diagnostic.severity !== 'warning') {
-        errors.push(`diagnostics[${index}].severity: invalid`);
-      }
-      if (typeof diagnostic.kind !== 'string' || diagnostic.kind.length === 0) {
-        errors.push(`diagnostics[${index}].kind: expected a non-empty string`);
-      }
-      if (typeof diagnostic.message !== 'string' || diagnostic.message.length === 0) {
-        errors.push(`diagnostics[${index}].message: expected a non-empty string`);
-      }
-    }
-  }
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, value: value as unknown as PluginCatalog };
+  return { ok: true, value: catalog };
 }
 
 // ---------------------------------------------------------------------------
@@ -195,14 +145,14 @@ export interface PluginCatalogProjection {
   readonly diagnostics: readonly PluginCatalogDiagnostic[];
 }
 
-const MAX_PROJECTION_PASSES = 8;
-
 /** Projects a per-scope entry set to the subset that can be handed to the
  *  transactional host: unloadable entries, entries with missing non-optional
  *  dependencies, entries in dependency cycles and entries with unsatisfied
- *  dependency ranges are removed together with their dependents. Keeps the
- *  host transactional (ADR-0070 §4): a bad catalog entry never rolls back the
- *  bundled plugin set. */
+ *  dependency ranges are removed together with their dependents. Iterates to
+ *  a fixpoint (the initial entry count is the natural pass bound); if the set
+ *  cannot be reduced, it FAILS CLOSED instead of leaking an inconsistent
+ *  entry to the host. Keeps the host transactional (ADR-0070 §4): a bad
+ *  catalog entry never rolls back the bundled plugin set. */
 export function projectCatalogEntries(
   entries: readonly PluginCatalogEntry[],
   isLoadable: (entry: PluginCatalogEntry) => boolean,
@@ -254,7 +204,15 @@ export function projectCatalogEntries(
     }
   }
 
-  for (let pass = 0; pass < MAX_PROJECTION_PASSES && set.size > 0; pass++) {
+  // Iterate to a fixpoint; each pass removes at least one entry or stops, so
+  // the initial entry count is a valid upper bound of the pass number.
+  const maxPasses = set.size + 1;
+  let converged = false;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    if (set.size === 0) {
+      converged = true;
+      break;
+    }
     // Closure: no entry may depend (non-optionally) on a missing entry.
     const missingDependents = new Set<string>();
     for (const entry of set.values()) {
@@ -265,8 +223,10 @@ export function projectCatalogEntries(
         break;
       }
     }
-    for (const id of missingDependents) set.delete(id);
-    if (missingDependents.size > 0) continue;
+    if (missingDependents.size > 0) {
+      for (const id of missingDependents) set.delete(id);
+      continue;
+    }
 
     // Version ranges must be satisfied by the remaining set.
     const conflictingDependents = new Set<string>();
@@ -285,24 +245,40 @@ export function projectCatalogEntries(
         }
       }
     }
-    for (const id of conflictingDependents) set.delete(id);
-    if (conflictingDependents.size > 0) continue;
-
-    // Cycles: drop every member of every cycle, then restart the closure.
-    const resolution = resolveActivationOrder([...set.values()].map(toEntryResolution));
-    if (resolution.ok) break;
-    if (resolution.cycles.length > 0) {
-      for (const cycle of resolution.cycles) {
-        for (const id of cycle.split(' -> ')) {
-          const entry = set.get(id);
-          if (!entry) continue;
-          exclude(entry, `dependency cycle: ${cycle}`, 'dependency');
-          set.delete(id);
-        }
-      }
+    if (conflictingDependents.size > 0) {
+      for (const id of conflictingDependents) set.delete(id);
       continue;
     }
-    // Missing deps without cycles cannot survive the closure; bail out safely.
+
+    // Cycles (and, defensively, missing deps the closure missed): drop the
+    // reported members, then restart the closure.
+    const resolution = resolveActivationOrder([...set.values()].map(toEntryResolution));
+    if (resolution.ok) {
+      converged = true;
+      break;
+    }
+    const removed = new Set<string>();
+    for (const cycle of resolution.cycles) {
+      for (const id of cycle.split(' -> ')) {
+        const entry = set.get(id);
+        if (!entry) continue;
+        exclude(entry, `dependency cycle: ${cycle}`, 'dependency');
+        removed.add(id);
+      }
+    }
+    for (const missing of resolution.missing) {
+      const id = missing.split(' -> ')[0] ?? '';
+      const entry = set.get(id);
+      if (!entry) continue;
+      exclude(entry, `missing dependency: ${missing}`, 'dependency');
+      removed.add(id);
+    }
+    if (removed.size === 0) break; // No reduction possible: fail closed below.
+    for (const id of removed) set.delete(id);
+  }
+
+  if (!converged) {
+    // Fail closed: never leak an internally-inconsistent entry to the host.
     for (const entry of [...set.values()]) {
       exclude(entry, 'dependency projection did not converge', 'dependency');
       set.delete(entry.id);

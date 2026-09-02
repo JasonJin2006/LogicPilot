@@ -41,11 +41,11 @@ The next slice (Phase 2B-1) must deliver real discovery with these properties:
 
 ### 2. Root layout and configuration
 
-| Scope | Meaning | Default target path (desktop) | Dev wiring |
-| --- | --- | --- | --- |
-| `system` | shipped with the app | `<app-resources>/plugins` | none (static import map owns builtins) |
-| `user` | machine-wide user plugins | `<config-dir>/LogicPilot/plugins` (Windows: `%LOCALAPPDATA%`) | `LOGICPILOT_PLUGIN_ROOTS` |
-| `workspace` | per-workspace plugins | `<workspace>/.logicpilot/plugins` | `LOGICPILOT_PLUGIN_ROOTS` |
+| Scope       | Meaning                   | Default target path (desktop)                                 | Dev wiring                             |
+| ----------- | ------------------------- | ------------------------------------------------------------- | -------------------------------------- |
+| `system`    | shipped with the app      | `<app-resources>/plugins`                                     | none (static import map owns builtins) |
+| `user`      | machine-wide user plugins | `<config-dir>/LogicPilot/plugins` (Windows: `%LOCALAPPDATA%`) | `LOGICPILOT_PLUGIN_ROOTS`              |
+| `workspace` | per-workspace plugins     | `<workspace>/.logicpilot/plugins`                             | `LOGICPILOT_PLUGIN_ROOTS`              |
 
 Bridge/server configuration is a single environment variable:
 
@@ -76,27 +76,51 @@ A read-only scanner + bridge handler. The scanner:
   `validateContract('PluginManifest', …)`;
 - records `unsupported-api-version` as a `warning` (the host keeps the final gate,
   ADR-0070 §7);
-- computes the package payload digest and compares it with `manifest.integrity.sha256`.
+- computes the package payload digest and compares it with `manifest.integrity.sha256`;
+- bounds every scan with resource limits so a malicious workspace package cannot stall the
+  app-server event loop (defaults below, all overridable through the scan config):
+
+  | Limit                           | Default |
+  | ------------------------------- | ------- |
+  | plugin.json bytes               | 256 KiB |
+  | payload directory depth         | 16      |
+  | payload files per package       | 5000    |
+  | one payload file                | 16 MiB  |
+  | total payload bytes per package | 64 MiB  |
+
+**Public diagnostics never contain filesystem paths or raw system error text** - only
+root ids (`system:1` …) and root-relative package paths (`assets/a.txt`) cross the bridge.
+Raw `realpath`/`read` errors stay server-side.
 
 ### 4. Canonical payload digest
 
-- Cover exactly: all regular files under the package directory **excluding `plugin.json`**
-  (the manifest is self-referential; excluding it removes the fixpoint), sorted by
+The digest BINDS the manifest to the payload (ADR-0069 §1 semantics: a lockfile entry must
+be able to prove the authorized permissions, entrypoints, version and trust of the exact
+bytes that were scanned):
+
+- Hash input, in order: (1) the **canonical manifest** - the validated manifest serialized
+  byte-deterministically (recursively key-sorted JSON) with its `integrity` field removed;
+  (2) every regular file under the package directory **excluding `plugin.json`**, sorted by
   posix-normalized relative path (byte-wise order).
-- Framing per file: `"<len(relPath)>:<relPath><len(content)>:<content>"` concatenated in
-  order; the result is sha256 hex. Length prefixes make the encoding unambiguous.
+- Framing per part: `"<len(bytes)>:<bytes>"`, lengths in bytes; the result is sha256 hex.
+  Length prefixes make the encoding unambiguous.
+- Removing `integrity` avoids the self-reference fixpoint (`integrity` covers itself) while
+  still covering ALL other manifest semantics: changing `permissions`, `entrypoints`,
+  `version`, `trust` or anything else changes the digest.
 - Symlinks, sockets and pipes are excluded from the digest (never followed).
 - `manifest.integrity.sha256`, when present, must equal the computed digest. A mismatch is
   an `error` diagnostic (`hash-drift`) and the package is excluded from the catalog.
-- When absent, the computed digest is published as the entry's `sha256` — the value a
+- When absent, the computed digest is published as the entry's `sha256` - the value a
   lockfile entry (Phase 2B-2) would use.
 
-### 5. Catalog envelope (transport, not a frozen contract)
+### 5. Catalog envelope (FROZEN contract)
 
-The catalog envelope is a Phase 2B-1 host-side transport type in `@logicpilot/plugin-host`
-(`src/catalog.ts`), built from the frozen `PluginManifest` shapes. It is deliberately not
-added to `schemas/contracts/` in this slice; if it needs to cross a process boundary as a
-stable protocol, it can be frozen later following the ADR-0069 change process.
+`schemas/contracts/plugin-catalog.schema.json` is a frozen Phase 1-format contract
+following the ADR-0069 change process: the schema lives in `schemas/contracts/` with a
+baseline snapshot, `scripts/gen-contracts.mjs` generates the TypeScript types and the C++
+strict parser, and `scripts/check-contract-conform.mjs` gates drift. The envelope is NOT
+shaped ad hoc in host code; `@logicpilot/plugin-host` re-exports the generated types so
+shells import one place.
 
 ```text
 PluginCatalog { schema: 'logicpilot.plugin-catalog/v1', contractVersion: 1,
@@ -107,11 +131,16 @@ CatalogDiagnostic { severity: 'error'|'warning', kind, message,
 ```
 
 - `scope` on an entry is the root's scope; a package cannot claim a scope (plan §三.5 /
-  §四.5 authority rule — here enforced by construction).
-- `rootId` is `"<scope>:<index>"` (1-based); roots expose only ids in the catalog — **no
+  §四.5 authority rule - here enforced by construction and re-verified by the bridge
+  consumer).
+- `rootId` is `"<scope>:<index>"` (1-based); roots expose only ids in the catalog - **no
   absolute paths leave the server**.
+- `id` must equal `manifest.id`; `rootId` must reference a declared root whose `scope`
+  equals the entry `scope`; `path` must be posix, non-absolute, with no empty or `..`
+  segments; `sha256` must be hex (frozen `Sha256Hex`). JSON Schema enforces the shapes and
+  patterns; the consumer re-checks these cross-entity rules on every payload.
 - In-scope duplicate ids: the first root (then first path in sort order) wins; later
-  duplicates are excluded with an `error` diagnostic. Cross-scope duplicates are retained —
+  duplicates are excluded with an `error` diagnostic. Cross-scope duplicates are retained -
   the host applies the `system -> user -> workspace` overlay (ADR-0070 §3).
 
 ### 6. Bridge protocol
@@ -123,25 +152,38 @@ the production app server (so the IDE and the Tauri host share one client path).
   `scope` when the parameter is present: entries, roots and diagnostics of that scope).
 - `scope` values are restricted to the three known scopes; anything else is a 400.
 - Non-GET is a 405; scanner/config errors are a 500.
+- `LOGICPILOT_PLUGIN_ROOTS` fail fast on malformed configuration: invalid JSON, non-array
+  scope values and **unknown/mistyped scope keys** are all rejected; a partial or silently
+  ignored config is never scanned.
 - The bridge exposes **no file content and no paths**; it is the only catalog entry point
   the browser uses. Rescan per request keeps the catalog fresh; catalogs are tiny in this
   slice (caching is a Phase 2B-2 concern).
+- **Runtime packaging**: the scanner ships as a SINGLE self-contained Node ESM bundle
+  (`dist/index.bundle.js`, built with esbuild from the scanner + frozen contracts + ajv).
+  `scripts/stage-desktop-runtime.mjs` copies exactly that file - the installed desktop
+  runtime has no repo `node_modules`, so bare package imports would fail at app-server
+  startup. `pnpm desktop:stage` + `pnpm desktop:test-staged` gate the staged runtime.
 
 ### 7. Browser side: `RemoteCatalogDiscoverySource` (in `@logicpilot/plugin-host`)
 
 The IDE constructs one source per scope, pointing at the bridge (`?scope=`). Each source:
 
-- validates the envelope and every entry manifest with the frozen contract validator
-  (defense in depth; a malformed bridge response is a transport error, never partial data);
+- validates the envelope against the frozen catalog contract and every entry manifest with
+  the generated validators + cross-entity checks (id == manifest.id, rootId references a
+  root of the same scope, safe relative paths) - a malformed bridge response is a transport
+  error, never partial data;
 - resolves a module only through an injected loader policy. The default policy: plugins
   with **no** `web`/`node`/`wasm`/`native` entrypoint (data-only, manifest-only) load as a
   no-op module; executable entrypoints are **not loadable yet** and are excluded with a
   `loadable` diagnostic (Phase 2B-3 adds the dynamic loader);
-- **projects the loadable set before the host sees it**: entries that are unloadable,
-  whose non-optional dependencies are missing, whose dependency version ranges are
-  unsatisfied, or that live in dependency cycles are excluded — cascading to their
-  dependents. The host therefore only ever receives an internally-consistent set and keeps
-  its transactional startup (a bad catalog entry can never roll back builtins);
+- **projects the loadable set to a FIXPOINT before the host sees it**: entries that are
+  unloadable, whose non-optional dependencies are missing, whose dependency version ranges
+  are unsatisfied, or that live in dependency cycles are excluded - cascading to their
+  dependents, pass by pass, until the set is internally consistent (the initial entry count
+  is the natural upper bound of passes). If the set cannot be made consistent, the
+  projection FAILS CLOSED (all remaining entries excluded) instead of leaking an
+  internally-inconsistent entry. The host therefore only ever receives a consistent set and
+  keeps its transactional startup (a bad catalog entry can never roll back builtins);
 - injects the scanner-computed `sha256` into `manifest.integrity` so the host's lockfile
   projection is complete without touching the frozen schema;
 - records skipped entries and diagnostics, exposed through `excludedEntries()` /
@@ -165,20 +207,33 @@ future catalog UI. No API keys, tokens or absolute paths are ever written to the
 - The static bundler import map remains the loader for `logicpilot.des` / `logicpilot.sysml`
   (Phase 2B-3 replaces it); manifests remain the source of truth and the host decides
   activation (plan §三.1).
+- The catalog envelope is now a frozen contract: schemas/contracts/plugin-catalog.schema.json
+  - baseline snapshot + generated TS/C++ types, gated by check-contract-conform and the
+    native C++ test gate. Any future change follows the ADR-0069 §4 process.
 - Browser bundle gains only the remote-source code; `@logicpilot/plugin-catalog` is
-  Node-only and never reaches the browser.
+  Node-only (single-file bundle for the desktop runtime) and never reaches the browser.
 - The zero-paradigm gate is unaffected: `VITE_ZERO_PLUGINS=1` skips remote sources
   entirely, and unconfigured roots yield an empty catalog.
-- Phase 2B-2 uses the scanner's digest and diagnostics as the inputs of the persistent
-  PackageStore; no re-scan design change is expected.
+- Phase 2B-2 uses the scanner's manifest-bound digest and diagnostics as the inputs of the
+  persistent PackageStore; no re-scan design change is expected.
 
 ## Gate evidence
 
-- `pnpm --filter @logicpilot/plugin-catalog test` — scanner/bridge: invalid JSON, wrong
-  schema, unsupported apiVersion, hash drift, duplicate ids (same root/cross root), symlink
-  escape, missing roots, dependency diagnostics, digest determinism, bridge 200/400/405/500.
-- `pnpm --filter @logicpilot/plugin-host test` — remote source: scope filtering, loader
-  policy, projection cascade (missing dep, cycle, version conflict), transport failures,
-  manifest digest canonicalization.
+- `node scripts/check-contract-conform.mjs` - 10 schemas, 92 definitions conform to baseline
+  (incl. the frozen plugin-catalog envelope); `node scripts/gen-contracts.mjs` regenerates
+  TS/C++ from the schema.
+- `./scripts/windows-build.ps1 -Preset windows-msvc-dev -Test` - native C++ gate green with
+  the regenerated contracts (catalog parser added to the C++ contract surface).
+- `pnpm --filter @logicpilot/plugin-catalog test` - scanner/bridge: invalid JSON, wrong
+  schema, unsupported apiVersion, hash drift (incl. permission-change digest binding),
+  duplicate ids (same root/cross root), symlink escape, missing roots, dependency
+  diagnostics, deterministic manifest-bound digest, resource limits, path-leak-free
+  diagnostics, bridge 200/400/405/500, env fail-fast.
+- `pnpm --filter @logicpilot/plugin-host test` - remote source: frozen-payload validation
+  (hex digests, entry/manifest id consistency, root/scope consistency, traversal paths),
+  loader policy, fixpoint projection cascade (12-entry chain, missing dep, cycle, version
+  conflict), transport failures, manifest digest canonicalization.
 - `pnpm --filter @logicpilot/ide run typecheck` / `pnpm test` / `pnpm build` / `format:check`
-  / `lint:ci` / `docs:build` — full Web gate, zero-paradigm and browser E2E unchanged.
+  / `lint:ci` / `docs:build` - full Web gate, zero-paradigm and browser E2E unchanged.
+- `pnpm desktop:stage` + `pnpm desktop:test-staged` - the staged desktop runtime boots with
+  the self-contained scanner bundle (no repo node_modules dependency).

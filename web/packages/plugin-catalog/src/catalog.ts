@@ -1,15 +1,19 @@
 // Read-only plugin catalog scanner (Phase 2B-1, ADR-0071). Walks configured
 // plugin roots, strictly validates every plugin.json against the frozen
-// PluginManifest v2 contract, computes the canonical payload digest, and
+// PluginManifest v2 contract, computes the canonical content digest, and
 // isolates corrupt packages as structured diagnostics - one broken package
 // never blocks the others and never reaches the transactional host.
 //
 // The scanner is read-only: no writes, moves or deletes. Symbolic links are
 // never followed and containment is enforced with realpath so a package can
-// never escape its plugin root.
+// never escape its plugin root. Public diagnostics never contain filesystem
+// paths or raw system error text (ADR-0071 §5): only root ids and
+// root-relative package paths cross the bridge. All scan work is bounded
+// (depth/file-count/size limits) so a malicious workspace package cannot
+// stall the app-server event loop.
 
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
   isSupportedPluginApiVersion,
@@ -17,6 +21,7 @@ import {
   toResolutionInput,
   validateContract,
 } from '@logicpilot/contracts';
+import type { PluginManifest } from '@logicpilot/contracts';
 import type {
   PluginCatalog,
   PluginCatalogDiagnostic,
@@ -36,16 +41,46 @@ export interface PluginCatalogScanConfig {
   readonly roots: readonly PluginRootConfig[];
   /** plugin.json size guard (default 256 KiB). */
   readonly maxManifestBytes?: number;
+  /** Maximum directory depth inside one package payload (default 16). */
+  readonly maxPackageDepth?: number;
+  /** Maximum number of regular files inside one package payload (default 5000). */
+  readonly maxPackageFiles?: number;
+  /** Maximum size of one non-manifest payload file (default 16 MiB). */
+  readonly maxFileBytes?: number;
+  /** Maximum total payload bytes of one package (default 64 MiB). */
+  readonly maxPackageBytes?: number;
 }
 
 const DEFAULT_MAX_MANIFEST_BYTES = 256 * 1024;
+const DEFAULT_MAX_PACKAGE_DEPTH = 16;
+const DEFAULT_MAX_PACKAGE_FILES = 5000;
+const DEFAULT_MAX_FILE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
 const SCOPE_ORDER: readonly PluginScope[] = ['system', 'user', 'workspace'];
 
-/** Scans every configured root and returns the contract-shaped catalog.
+interface ScanLimits {
+  readonly maxManifestBytes: number;
+  readonly maxPackageDepth: number;
+  readonly maxPackageFiles: number;
+  readonly maxFileBytes: number;
+  readonly maxPackageBytes: number;
+}
+
+/** Thrown for package payloads that exceed the scan limits; the message is
+ *  built from root-relative paths only and is safe to expose. */
+class ScanLimitError extends Error {}
+
+/** Scans every configured root and returns the frozen catalog envelope.
  *  Never throws for package-level defects; a broken root/package is a
  *  diagnostic. Throws only on programming errors in the config itself. */
 export async function scanPluginCatalog(config: PluginCatalogScanConfig): Promise<PluginCatalog> {
-  const maxManifestBytes = config.maxManifestBytes ?? DEFAULT_MAX_MANIFEST_BYTES;
+  const limits: ScanLimits = {
+    maxManifestBytes: config.maxManifestBytes ?? DEFAULT_MAX_MANIFEST_BYTES,
+    maxPackageDepth: config.maxPackageDepth ?? DEFAULT_MAX_PACKAGE_DEPTH,
+    maxPackageFiles: config.maxPackageFiles ?? DEFAULT_MAX_PACKAGE_FILES,
+    maxFileBytes: config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
+    maxPackageBytes: config.maxPackageBytes ?? DEFAULT_MAX_PACKAGE_BYTES,
+  };
   const roots: PluginCatalogRoot[] = [];
   const diagnostics: PluginCatalogDiagnostic[] = [];
   const entries: PluginCatalogEntry[] = [];
@@ -55,7 +90,7 @@ export async function scanPluginCatalog(config: PluginCatalogScanConfig): Promis
     for (const [index, rootConfig] of scopeRoots.entries()) {
       const rootId = `${scope}:${index + 1}`;
       roots.push({ id: rootId, scope });
-      scanRoot(rootConfig, rootId, maxManifestBytes, entries, diagnostics);
+      scanRoot(rootConfig, rootId, limits, entries, diagnostics);
     }
   }
 
@@ -72,7 +107,7 @@ export async function scanPluginCatalog(config: PluginCatalogScanConfig): Promis
 function scanRoot(
   rootConfig: PluginRootConfig,
   rootId: string,
-  maxManifestBytes: number,
+  limits: ScanLimits,
   entries: PluginCatalogEntry[],
   diagnostics: PluginCatalogDiagnostic[],
 ): void {
@@ -83,18 +118,19 @@ function scanRoot(
       diagnostics.push({
         severity: 'warning',
         kind: 'filesystem',
-        message: `plugin root '${rootId}' does not exist at '${rootAbs}'`,
+        message: `plugin root '${rootId}' does not exist`,
         scope: rootConfig.scope,
         rootId,
       });
       return;
     }
     realRoot = realpathSync(rootAbs);
-  } catch (error) {
+  } catch {
+    // Realpath errors leak filesystem paths; keep them server-side.
     diagnostics.push({
       severity: 'error',
       kind: 'filesystem',
-      message: `cannot resolve plugin root '${rootId}': ${(error as Error).message}`,
+      message: `cannot resolve plugin root '${rootId}'`,
       scope: rootConfig.scope,
       rootId,
     });
@@ -104,11 +140,11 @@ function scanRoot(
   let dirEntries;
   try {
     dirEntries = readdirSync(realRoot, { withFileTypes: true });
-  } catch (error) {
+  } catch {
     diagnostics.push({
       severity: 'error',
       kind: 'filesystem',
-      message: `cannot read plugin root '${rootId}': ${(error as Error).message}`,
+      message: `cannot read plugin root '${rootId}'`,
       scope: rootConfig.scope,
       rootId,
     });
@@ -159,7 +195,7 @@ function scanRoot(
       rootConfig.scope,
       rootId,
       realRoot,
-      maxManifestBytes,
+      limits,
       entries,
       diagnostics,
     );
@@ -172,7 +208,7 @@ function scanPackage(
   scope: PluginScope,
   rootId: string,
   realRoot: string,
-  maxManifestBytes: number,
+  limits: ScanLimits,
   entries: PluginCatalogEntry[],
   diagnostics: PluginCatalogDiagnostic[],
 ): void {
@@ -188,7 +224,7 @@ function scanPackage(
     diagnostics.push({
       severity: 'error',
       kind: 'filesystem',
-      message: `package '${relPath}' escapes plugin root '${rootId}' (target: '${realPackage}') and is excluded`,
+      message: `package '${relPath}' escapes plugin root '${rootId}' and is excluded`,
       scope,
       rootId,
       path: relPath,
@@ -233,11 +269,11 @@ function scanPackage(
     });
     return;
   }
-  if (manifestStat.size > maxManifestBytes) {
+  if (manifestStat.size > limits.maxManifestBytes) {
     diagnostics.push({
       severity: 'error',
       kind: 'schema',
-      message: `package '${relPath}': plugin.json exceeds ${maxManifestBytes} bytes`,
+      message: `package '${relPath}': plugin.json exceeds ${limits.maxManifestBytes} bytes`,
       scope,
       rootId,
       path: relPath,
@@ -248,11 +284,11 @@ function scanPackage(
   let raw: string;
   try {
     raw = readFileSync(manifestPath, 'utf8');
-  } catch (error) {
+  } catch {
     diagnostics.push({
       severity: 'error',
       kind: 'filesystem',
-      message: `package '${relPath}': cannot read plugin.json: ${(error as Error).message}`,
+      message: `package '${relPath}': cannot read plugin.json`,
       scope,
       rootId,
       path: relPath,
@@ -263,6 +299,7 @@ function scanPackage(
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
+    // JSON.parse errors carry no filesystem paths.
     diagnostics.push({
       severity: 'error',
       kind: 'json',
@@ -304,12 +341,15 @@ function scanPackage(
 
   let sha256: string;
   try {
-    sha256 = payloadDigest(realPackage);
+    sha256 = payloadDigest(realPackage, manifest, limits);
   } catch (error) {
     diagnostics.push({
       severity: 'error',
       kind: 'filesystem',
-      message: `package '${relPath}': cannot compute payload digest: ${(error as Error).message}`,
+      message:
+        error instanceof ScanLimitError
+          ? error.message
+          : `package '${relPath}': cannot compute payload digest`,
       scope,
       rootId,
       path: relPath,
@@ -355,16 +395,41 @@ function entriesHasId(
 }
 
 // ---------------------------------------------------------------------------
-// Canonical payload digest (ADR-0071 §4): every regular file under the
-// package except plugin.json, sorted by posix relative path, framed as
-// "<len(path)>:<path><len(content)>:<content>" (lengths in bytes), sha256 hex.
-// Symlinks are never followed and never hashed.
+// Canonical payload digest (ADR-0071 §4): BINDS the manifest to the payload.
+// Input: the canonical (key-sorted) manifest with its `integrity` field
+// removed, then every regular file under the package except plugin.json,
+// sorted by posix relative path. Framing: "<len(bytes)>:<bytes>" per part,
+// lengths in bytes, sha256 hex. Removing integrity avoids the self-reference
+// fixpoint while covering ALL manifest semantics (permissions, entrypoints,
+// version, trust, ...). Symlinks are never followed and never hashed.
 // ---------------------------------------------------------------------------
 
-function payloadDigest(packageDir: string): string {
+function payloadDigest(packageDir: string, manifest: PluginManifest, limits: ScanLimits): string {
   const hash = createHash('sha256');
-  for (const file of walkPackageFiles(packageDir)) {
+  const canonicalManifest = canonicalJson(omitIntegrity(manifest));
+  const manifestBytes = Buffer.from(canonicalManifest, 'utf8');
+  hash.update(String(manifestBytes.length));
+  hash.update(':');
+  hash.update(manifestBytes);
+
+  let count = 0;
+  let totalBytes = 0;
+  for (const file of walkPackageFiles(packageDir, '', 1, limits)) {
     if (file.rel === 'plugin.json') continue;
+    const stat = statSync(file.absolute);
+    if (stat.size > limits.maxFileBytes) {
+      throw new ScanLimitError(
+        `package payload file '${file.rel}' exceeds ${limits.maxFileBytes} bytes`,
+      );
+    }
+    count += 1;
+    totalBytes += stat.size;
+    if (count > limits.maxPackageFiles) {
+      throw new ScanLimitError(`package payload has more than ${limits.maxPackageFiles} files`);
+    }
+    if (totalBytes > limits.maxPackageBytes) {
+      throw new ScanLimitError(`package payload exceeds ${limits.maxPackageBytes} bytes`);
+    }
     const content = readFileSync(file.absolute);
     const relBytes = Buffer.from(file.rel, 'utf8');
     hash.update(String(relBytes.length));
@@ -377,7 +442,36 @@ function payloadDigest(packageDir: string): string {
   return hash.digest('hex');
 }
 
-function walkPackageFiles(directory: string, prefix = ''): { rel: string; absolute: string }[] {
+function omitIntegrity(manifest: PluginManifest): Record<string, unknown> {
+  const copy: Record<string, unknown> = { ...(manifest as unknown as Record<string, unknown>) };
+  delete copy.integrity;
+  return copy;
+}
+
+/** Deterministic byte-order JSON: object keys sorted recursively. */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function walkPackageFiles(
+  directory: string,
+  prefix: string,
+  depth: number,
+  limits: ScanLimits,
+): { rel: string; absolute: string }[] {
+  if (depth > limits.maxPackageDepth) {
+    throw new ScanLimitError(`package payload exceeds directory depth ${limits.maxPackageDepth}`);
+  }
   const files: { rel: string; absolute: string }[] = [];
   const entries = readdirSync(directory, { withFileTypes: true });
   entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
@@ -387,7 +481,7 @@ function walkPackageFiles(directory: string, prefix = ''): { rel: string; absolu
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      files.push(...walkPackageFiles(absolute, rel));
+      files.push(...walkPackageFiles(absolute, rel, depth + 1, limits));
     } else if (stat.isFile()) {
       files.push({ rel, absolute });
     }

@@ -1,8 +1,9 @@
 // Scanner gate tests (Phase 2B-1, ADR-0071): root/package layout, strict
-// manifest validation, canonical payload digest, corrupt-package isolation,
-// in-scope duplicates, symlink/path containment and dependency diagnostics.
+// manifest validation, manifest-bound canonical digest, corrupt-package
+// isolation, in-scope duplicates, symlink/path containment, resource limits
+// and path-leak-free diagnostics.
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -48,9 +49,34 @@ function writeAsset(dir: string, rel: string, content: string | Buffer): void {
   writeFileSync(target, content);
 }
 
-/** Mirrors the canonical framing (ADR-0071 §4) for cross-checking. */
-function expectedDigest(files: readonly { rel: string; content: Buffer }[]): string {
+/** Deterministic byte-order JSON (mirrors the scanner's canonicalization). */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** Mirrors the canonical framing (ADR-0071 §4): manifest (integrity removed)
+ *  first, then payload files sorted by relative path, length-prefixed. */
+function expectedDigest(
+  manifest: Record<string, unknown>,
+  files: readonly { rel: string; content: Buffer }[],
+): string {
   const hash = createHash('sha256');
+  const copy = { ...manifest };
+  delete copy.integrity;
+  const manifestBytes = Buffer.from(canonicalJson(copy), 'utf8');
+  hash.update(String(manifestBytes.length));
+  hash.update(':');
+  hash.update(manifestBytes);
   for (const file of [...files].sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
     const relBytes = Buffer.from(file.rel, 'utf8');
     hash.update(String(relBytes.length));
@@ -71,11 +97,23 @@ function declares(
 }
 
 describe('plugin catalog scanner', () => {
-  it('lists a manifest-only package with the canonical payload digest', async () => {
+  it('lists a manifest-only package with the manifest-bound canonical digest', async () => {
     const root = tempRoot();
     const pkg = join(root, 'knowledge-pack');
     mkdirSync(pkg);
-    writePlugin(pkg, { id: 'logicpilot.knowledge', entrypoints: { data: './assets' } });
+    const manifest: Record<string, unknown> = {
+      schema: 'logicpilot.plugin-manifest/v2',
+      contractVersion: 1,
+      id: 'logicpilot.knowledge',
+      version: '1.0.0',
+      apiVersion: 1,
+      provides: [],
+      requires: [],
+      entrypoints: { data: './assets' },
+      permissions: [],
+      trust: { minLevel: 't0' },
+    };
+    writePlugin(pkg, manifest);
     writeAsset(pkg, 'assets/a.txt', 'hello');
     writeAsset(pkg, 'assets/sub/b.bin', Buffer.from([0, 1, 2, 255]));
     writeAsset(pkg, 'README.md', 'docs');
@@ -88,7 +126,7 @@ describe('plugin catalog scanner', () => {
     expect(entry?.rootId).toBe('system:1');
     expect(entry?.path).toBe('knowledge-pack');
     expect(entry?.sha256).toBe(
-      expectedDigest([
+      expectedDigest(manifest, [
         { rel: 'README.md', content: Buffer.from('docs') },
         { rel: 'assets/a.txt', content: Buffer.from('hello') },
         { rel: 'assets/sub/b.bin', content: Buffer.from([0, 1, 2, 255]) },
@@ -97,18 +135,38 @@ describe('plugin catalog scanner', () => {
     expect(catalog.diagnostics).toEqual([]);
   });
 
-  it('accepts a declared integrity that matches the computed digest', async () => {
+  it('accepts a declared integrity that matches the manifest-bound digest', async () => {
     const root = tempRoot();
     const pkg = join(root, 'signed');
     mkdirSync(pkg);
     writePlugin(pkg, { id: 'logicpilot.signed' });
     writeAsset(pkg, 'asset.txt', 'payload');
-    const digest = expectedDigest([{ rel: 'asset.txt', content: Buffer.from('payload') }]);
+    // Pass 1: discover the digest without a declared integrity.
+    const first = await scanPluginCatalog({ roots: [{ scope: 'user', path: root }] });
+    const digest = first.entries[0]?.sha256;
+    expect(digest).toBeDefined();
+    // Pass 2: the same canonical manifest (integrity removed) with the digest
+    // declared - the scanner must NOT observe a drift.
     writePlugin(pkg, declares({ id: 'logicpilot.signed' }, { integrity: { sha256: digest } }));
+    const second = await scanPluginCatalog({ roots: [{ scope: 'user', path: root }] });
+    expect(second.entries[0]?.sha256).toBe(digest);
+    expect(second.diagnostics).toEqual([]);
+  });
 
-    const catalog = await scanPluginCatalog({ roots: [{ scope: 'user', path: root }] });
-    expect(catalog.entries[0]?.sha256).toBe(digest);
-    expect(catalog.diagnostics).toEqual([]);
+  it('binds manifest semantics to the digest (permission change alters it)', async () => {
+    const root = tempRoot();
+    const pkg = join(root, 'secure');
+    mkdirSync(pkg);
+    writePlugin(pkg, { id: 'logicpilot.secure', permissions: [] });
+    const before = await scanPluginCatalog({ roots: [{ scope: 'workspace', path: root }] });
+    const digestBefore = before.entries[0]?.sha256;
+    expect(digestBefore).toBeDefined();
+    writePlugin(pkg, {
+      id: 'logicpilot.secure',
+      permissions: ['knowledge.draft.write'],
+    });
+    const after = await scanPluginCatalog({ roots: [{ scope: 'workspace', path: root }] });
+    expect(after.entries[0]?.sha256).not.toBe(digestBefore);
   });
 
   it('excludes hash-drift packages but keeps independent ones', async () => {
@@ -259,9 +317,10 @@ describe('plugin catalog scanner', () => {
     const pkg = join(root, 'pkg');
     mkdirSync(pkg);
     writePlugin(pkg, { id: 'logicpilot.present' });
+    const missing = join(tmpdir(), 'logicpilot-does-not-exist-iamafeature');
     const catalog = await scanPluginCatalog({
       roots: [
-        { scope: 'system', path: join(tmpdir(), 'logicpilot-does-not-exist-iamafeature') },
+        { scope: 'system', path: missing },
         { scope: 'system', path: root },
       ],
     });
@@ -270,6 +329,37 @@ describe('plugin catalog scanner', () => {
       (candidate) => candidate.kind === 'filesystem' && candidate.severity === 'warning',
     );
     expect(diagnostic?.rootId).toBe('system:1');
+  });
+
+  it('never leaks filesystem paths into public diagnostics', async () => {
+    const root = tempRoot();
+    const outside = tempRoot();
+    const escape = join(outside, 'escapee');
+    mkdirSync(escape);
+    writePlugin(escape, { id: 'logicpilot.escapee' });
+    const link = join(root, 'link-out');
+    try {
+      symlinkSync(outside, link, 'junction');
+    } catch {
+      // CI without symlink/junction rights: the missing-root diagnostics
+      // below still exercise the path-leak guarantee.
+    }
+    const missing = join(tmpdir(), 'logicpilot-missing-root-xyz');
+    const catalog = await scanPluginCatalog({
+      roots: [
+        { scope: 'system', path: missing },
+        { scope: 'system', path: root },
+      ],
+    });
+    const joined = catalog.diagnostics.map((diagnostic) => diagnostic.message).join('\n');
+    // No absolute path may appear: Windows separators, drive letters, the
+    // temp dir and the fixture roots are all forbidden in public diagnostics.
+    // (Posix relative package paths like 'assets/a.txt' are allowed.)
+    expect(joined).not.toContain('\\');
+    expect(joined).not.toMatch(/[A-Za-z]:[\\/]/);
+    expect(joined).not.toContain(root);
+    expect(joined).not.toContain(outside);
+    expect(joined).not.toContain(tmpdir());
   });
 
   it('excludes package directories that escape their root (symlink/junction)', async () => {
@@ -291,6 +381,7 @@ describe('plugin catalog scanner', () => {
     );
     expect(diagnostic?.path).toBe('link-out');
     expect(diagnostic?.message).toContain('escapes');
+    expect(diagnostic?.message).not.toContain(outside);
   });
 
   it('warns on a symlinked package directory even when it stays inside the root', async () => {
@@ -327,9 +418,14 @@ describe('plugin catalog scanner', () => {
     } catch {
       return; // Windows without developer mode cannot create file symlinks.
     }
-    const digest = expectedDigest([{ rel: 'real.txt', content: Buffer.from('content') }]);
     const catalog = await scanPluginCatalog({ roots: [{ scope: 'workspace', path: root }] });
-    expect(catalog.entries[0]?.sha256).toBe(digest);
+    const manifest = JSON.parse(readFileSync(join(pkg, 'plugin.json'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(catalog.entries[0]?.sha256).toBe(
+      expectedDigest(manifest, [{ rel: 'real.txt', content: Buffer.from('content') }]),
+    );
   });
 
   it('treats entrypoint paths as metadata only at scan time', async () => {
@@ -369,5 +465,36 @@ describe('plugin catalog scanner', () => {
     });
     expect(catalog.entries).toEqual([]);
     expect(catalog.diagnostics[0]?.kind).toBe('schema');
+  });
+
+  it('enforces payload resource limits and isolates the offending package', async () => {
+    const root = tempRoot();
+    const bigFile = join(root, 'big');
+    mkdirSync(bigFile);
+    writePlugin(bigFile, { id: 'logicpilot.big' });
+    writeAsset(bigFile, 'data/blob.bin', Buffer.alloc(4096, 1));
+    const deep = join(root, 'deep');
+    mkdirSync(deep);
+    writePlugin(deep, { id: 'logicpilot.deep' });
+    writeAsset(deep, 'a/b/c/d/e/f/g/h/i/j.txt', 'x');
+    const valid = join(root, 'valid');
+    mkdirSync(valid);
+    writePlugin(valid, { id: 'logicpilot.valid' });
+
+    const catalog = await scanPluginCatalog({
+      roots: [{ scope: 'workspace', path: root }],
+      maxFileBytes: 512,
+      maxPackageDepth: 4,
+    });
+    expect(catalog.entries.map((entry) => entry.id)).toEqual(['logicpilot.valid']);
+    const messages = catalog.diagnostics.map((diagnostic) => diagnostic.message);
+    expect(messages.some((message) => message.includes('exceeds 512 bytes'))).toBe(true);
+    expect(messages.some((message) => message.includes('directory depth 4'))).toBe(true);
+    // Limit diagnostics stay relative-path-only (no OS separators/leaks).
+    for (const diagnostic of catalog.diagnostics) {
+      expect(diagnostic.message).not.toContain('\\');
+      expect(diagnostic.message).not.toMatch(/[A-Za-z]:[\\/]/);
+      expect(diagnostic.message).not.toContain(root);
+    }
   });
 });

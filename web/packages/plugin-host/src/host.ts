@@ -15,6 +15,7 @@ import type {
   PluginLockEntry,
   PermissionGrant,
   TrustLevel,
+  PluginScope,
 } from '@logicpilot/contracts';
 import {
   isSupportedPluginApiVersion,
@@ -187,7 +188,9 @@ class EventBus {
 // Discovery: system / user / workspace layers
 // ---------------------------------------------------------------------------
 
-export type PluginScope = 'system' | 'user' | 'workspace';
+// Scope is a frozen contract value (schemas/contracts/plugin-catalog.schema.json);
+// the host re-exports it so shells import layering from one place.
+export type { PluginScope } from '@logicpilot/contracts';
 
 /** One discovered plugin package: its manifest plus where it came from. */
 export interface DiscoveredPlugin {
