@@ -12,6 +12,7 @@ export interface OpenAiAgentsEngineOptions {
   readonly model?: string | Model;
   readonly name?: string;
   readonly instructions?: string;
+  readonly timeoutMs?: number;
 }
 
 /** Real OpenAI Agents SDK adapter. Tools are approval-gated SDK function
@@ -27,6 +28,8 @@ export class OpenAiAgentsEngine implements AgentEngine {
   private readonly options: Required<
     Pick<OpenAiAgentsEngineOptions, 'model' | 'name' | 'instructions'>
   >;
+  private readonly timeoutMs: number;
+  private readonly activeControllers = new Map<string, AbortController>();
 
   constructor(options: OpenAiAgentsEngineOptions = {}) {
     this.options = {
@@ -36,6 +39,9 @@ export class OpenAiAgentsEngine implements AgentEngine {
         options.instructions ??
         'Return concise, grounded responses. Use only the tools explicitly provided by the host.',
     };
+    this.timeoutMs = options.timeoutMs ?? 120_000;
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1)
+      throw new Error('OpenAI Agents engine timeoutMs must be a positive integer');
   }
 
   async runStep(request: AgentStepRequest): Promise<AgentStepResult> {
@@ -49,7 +55,39 @@ export class OpenAiAgentsEngine implements AgentEngine {
       // it in the outer host loop and never gives the SDK hidden authority.
       toolUseBehavior: 'stop_on_first_tool',
     });
-    const result = await run(agent, JSON.stringify(request.input), { maxTurns: 1 });
+    const controller = new AbortController();
+    this.activeControllers.set(request.turnId, controller);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.timeoutMs);
+    let result;
+    try {
+      result = await run(agent, JSON.stringify(request.input), {
+        maxTurns: 1,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return {
+          schema: 'logicpilot.agent-step-result/v1',
+          contractVersion: 1,
+          turnId: request.turnId,
+          engineId: request.engineId,
+          stepIndex: request.stepIndex,
+          status: timedOut ? 'failed' : 'cancelled',
+          toolCalls: [],
+          toolResults: [],
+          error: timedOut ? 'agent engine step timed out' : 'agent engine step cancelled',
+          plan: [],
+        };
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      this.activeControllers.delete(request.turnId);
+    }
     const interruptions = result.interruptions ?? [];
     const toolCalls = interruptions.map((item, index) => ({
       callId: (item.rawItem as unknown as { callId?: string }).callId ?? `sdk-call-${index + 1}`,
@@ -75,6 +113,10 @@ export class OpenAiAgentsEngine implements AgentEngine {
       plan: [],
       toolResults: [],
     };
+  }
+
+  cancel(turnId: string): void {
+    this.activeControllers.get(turnId)?.abort();
   }
 }
 

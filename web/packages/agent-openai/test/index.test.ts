@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ScriptedModel, functionCall, modelResponse } from '@openai/agents/testing';
 import type { AgentStepRequest } from '@logicpilot/contracts';
 import { OpenAiAgentsEngine, normalizeParameters, parseArguments } from '../src/index.js';
@@ -42,5 +42,58 @@ describe('OpenAI Agents SDK adapter helpers', () => {
     expect(result.status).toBe('continue');
     expect(result.toolCalls[0]).toMatchObject({ callId: 'sdk-call-1', name: 'inspect_model' });
     expect(model.calls).toHaveLength(1);
+  });
+
+  it('cancels an in-flight SDK model request and reports a cancelled step', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const model = {
+      getResponse: async (request: { signal?: AbortSignal }) =>
+        await new Promise<never>((_resolve, reject) => {
+          requestSignal = request.signal;
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        }),
+    } as never;
+    const engine = new OpenAiAgentsEngine({ model, timeoutMs: 5_000 });
+    const request: AgentStepRequest = {
+      schema: 'logicpilot.agent-step-request/v1',
+      contractVersion: 1,
+      turnId: 'sdk-cancel-turn',
+      engineId: 'sdk.openai-agents',
+      stepIndex: 0,
+      input: { prompt: 'wait' },
+      tools: [],
+    };
+    const pending = engine.runStep(request);
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    engine.cancel(request.turnId);
+    await expect(pending).resolves.toMatchObject({
+      status: 'cancelled',
+      error: expect.stringMatching(/cancelled/),
+    });
+  });
+
+  it('returns a failed step when the configured timeout expires', async () => {
+    const model = {
+      getResponse: async (request: { signal?: AbortSignal }) =>
+        await new Promise<never>((_resolve, reject) => {
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted')), {
+            once: true,
+          });
+        }),
+    } as never;
+    const engine = new OpenAiAgentsEngine({ model, timeoutMs: 10 });
+    await expect(
+      engine.runStep({
+        schema: 'logicpilot.agent-step-request/v1',
+        contractVersion: 1,
+        turnId: 'sdk-timeout-turn',
+        engineId: 'sdk.openai-agents',
+        stepIndex: 0,
+        input: { prompt: 'wait' },
+        tools: [],
+      }),
+    ).resolves.toMatchObject({ status: 'failed', error: expect.stringMatching(/timed out/) });
   });
 });

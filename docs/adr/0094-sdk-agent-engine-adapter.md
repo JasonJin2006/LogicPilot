@@ -25,6 +25,11 @@ Its deterministic test uses the SDK's `ScriptedModel` to exercise a real
 Runner path and verify that approval interruptions are surfaced without host
 tool execution.
 
+The concrete adapter owns a per-turn `AbortController`, enforces a finite
+timeout and maps abort/timeout into `cancelled`/`failed` step results. The host
+can therefore cancel or bound an SDK turn without granting it a process-wide
+lifetime.
+
 ## Consequences
 
 OpenAI Agents/Cordis can be benchmarked and enabled by injection rather than a
