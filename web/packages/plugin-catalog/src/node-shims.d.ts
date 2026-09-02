@@ -69,6 +69,10 @@ declare module 'node:crypto' {
   export function createHash(algorithm: 'sha256'): Hash;
 }
 
+declare module 'node:url' {
+  export function pathToFileURL(path: string): { readonly href: string };
+}
+
 declare module 'node:http' {
   export interface IncomingMessage {
     readonly method?: string;

@@ -420,6 +420,33 @@ describe('RemoteCatalogDiscoverySource', () => {
     expect(activated).toBe(1);
   });
 
+  it('honors a lazy async loader without importing during discovery', async () => {
+    const webOnly = entry({
+      manifest: manifest({ id: 'logicpilot.demo.lazy', entrypoints: { node: './activate.mjs' } }),
+      id: 'logicpilot.demo.lazy',
+    });
+    let imported = 0;
+    const source = new RemoteCatalogDiscoverySource({
+      url: 'http://bridge.test/catalog',
+      scope: 'workspace',
+      fetch: stubFetch(() => ({
+        ok: true,
+        status: 200,
+        json: () => catalogFixture({ entries: [webOnly] }),
+      })),
+      resolveAsyncLoader: () => async () => {
+        imported += 1;
+        return { activate() {} };
+      },
+    });
+    const discovered = await source.discover();
+    expect(discovered).toHaveLength(1);
+    expect(imported).toBe(0);
+    const module = await discovered[0]?.load();
+    await module?.activate({} as never);
+    expect(imported).toBe(1);
+  });
+
   it('travels through bridge failures without throwing', async () => {
     let errorHookCalls = 0;
     const source = new RemoteCatalogDiscoverySource({

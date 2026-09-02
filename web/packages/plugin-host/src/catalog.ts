@@ -116,6 +116,19 @@ export function parsePluginCatalogPayload(value: unknown): PluginCatalogPayloadV
 
 const noOpModule: PluginModule = { activate() {} };
 
+function lazyModule(loader: () => Promise<PluginModule>): PluginModule {
+  let loaded: PluginModule | null = null;
+  return {
+    activate: async (ctx) => {
+      loaded = await loader();
+      await loaded.activate(ctx);
+    },
+    deactivate: async () => {
+      await loaded?.deactivate?.();
+    },
+  };
+}
+
 /** Default loader policy: plugins without an executable entrypoint (data-only
  *  or manifest-only) activate as no-op modules; executable entrypoints wait
  *  for the Phase 2B-3 loader. */
@@ -325,6 +338,12 @@ export interface RemoteCatalogDiscoverySourceOptions {
   readonly scope: PluginScope;
   /** Optional per-entry loader. Defaults to the Phase 2B-1 policy. */
   readonly resolveLoader?: (entry: PluginCatalogEntry) => PluginModule | undefined;
+  /** Optional lazy loader for Node-side dynamic modules. The callback is
+   *  invoked only after projection; its returned promise is awaited during
+   *  activation, keeping discovery synchronous and side-effect free. */
+  readonly resolveAsyncLoader?: (
+    entry: PluginCatalogEntry,
+  ) => (() => Promise<PluginModule>) | undefined;
   readonly fetch?: CatalogFetch;
   readonly headers?: Readonly<Record<string, string>>;
   /** Fetch the full envelope instead of a server-side scope slice so
@@ -349,6 +368,8 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
   private readonly knownManifests: readonly PluginManifest[];
   private readonly resolveLoader:
     ((entry: PluginCatalogEntry) => PluginModule | undefined) | undefined;
+  private readonly resolveAsyncLoader:
+    ((entry: PluginCatalogEntry) => (() => Promise<PluginModule>) | undefined) | undefined;
   private readonly onError: ((error: unknown) => void) | undefined;
   private errorValue: unknown = undefined;
   private catalogValue: PluginCatalog | null = null;
@@ -369,6 +390,7 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
     this.includeAllScopes = options.includeAllScopes ?? false;
     this.knownManifests = options.knownManifests ?? [];
     this.resolveLoader = options.resolveLoader;
+    this.resolveAsyncLoader = options.resolveAsyncLoader;
     this.onError = options.onError;
   }
 
@@ -424,6 +446,8 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
       }
       const module = this.resolveLoader?.(entry) ?? defaultCatalogEntryLoader(entry);
       if (module) loaders.set(entry.id, module);
+      const asyncLoader = this.resolveAsyncLoader?.(entry);
+      if (asyncLoader) loaders.set(entry.id, lazyModule(asyncLoader));
     }
     const projection = projectCatalogEntries(candidates, (entry) => loaders.has(entry.id));
     this.excludedValue = projection.excluded;
