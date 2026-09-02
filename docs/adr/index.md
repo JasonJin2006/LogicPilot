@@ -122,3 +122,4 @@
 - [0091 Plugin Draft Static Validation](0091-plugin-draft-static-validation)
 - [0092 Plugin Draft Review API](0092-plugin-draft-review-api)
 - [0093 Signed Plugin Draft Packaging and Installation](0093-plugin-draft-builder-signing-install)
+- [0094 SDK AgentEngine Adapter Boundary](0094-sdk-agent-engine-adapter)
