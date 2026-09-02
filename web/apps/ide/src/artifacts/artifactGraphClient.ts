@@ -1,4 +1,4 @@
-import type { ModelPatch } from '@logicpilot/editor';
+import type { ModelDocument, ModelPatch } from '@logicpilot/editor';
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
 
 const MODEL_ARTIFACT_ID = 'workspace.model';
@@ -231,6 +231,28 @@ export async function persistEvidenceArtifact(
     return await commitArtifactTransaction(pending, 'runtime');
   } catch (error) {
     await rollbackArtifactTransaction(pending, 'evidence-commit-failed').catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Persist a user Save as a semantic-model revision. Individual canvas edits
+ * stay responsive locally; Save is the durable transaction boundary for the
+ * canonical document snapshot. */
+export async function persistModelSnapshot(
+  document: ModelDocument,
+  actor = 'user',
+): Promise<string | undefined> {
+  const pending = await beginArtifactTransaction({
+    artifactId: MODEL_ARTIFACT_ID,
+    artifactKind: 'semantic-model',
+    operationType: 'model-save',
+    payload: { document },
+    actor,
+  });
+  try {
+    return await commitArtifactTransaction(pending, actor);
+  } catch (error) {
+    await rollbackArtifactTransaction(pending, 'model-save-commit-failed').catch(() => undefined);
     throw error;
   }
 }

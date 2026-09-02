@@ -16,6 +16,7 @@ import { useRunStore } from '../state/runStore';
 import { resetVizState, vizState } from '../state/vizState';
 import { logConsoleEvent } from '../state/connectionStore';
 import { saveProject } from '../project/syncEngine';
+import { persistModelSnapshot } from '../artifacts/artifactGraphClient';
 import {
   bundleToJson,
   createProjectBundle,
@@ -364,6 +365,16 @@ export function AppMenu() {
       // Delay the revoke: Firefox can abort a download started from a URL
       // that is torn down before the browser picks it up.
       setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+    try {
+      await persistModelSnapshot(model);
+    } catch (error) {
+      // Disk/download save succeeded, but the durable Artifact Graph revision
+      // did not; keep the save result and surface the sync gap explicitly.
+      logConsoleEvent(
+        'warn',
+        `Artifact Graph sync failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     openBundle(project);
     markClean();
