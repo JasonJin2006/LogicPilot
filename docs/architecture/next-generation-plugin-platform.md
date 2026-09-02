@@ -101,8 +101,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    策略仍未通过门禁；
 2. 将高频手工 layout/evidence 同步从异步补偿提升为严格可重试事务队列；当前已有浏览器
    outbox/FIFO drain、稳定幂等键和有界死信重试，跨进程锁和服务端持久化 outbox 仍待完成；
-3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表已删除，
-   需要继续审计其他兼容层）；
+3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表及 IDE
+   modeling 工具别名 facade 已删除，测试 fixture 中的历史变量名不属于生产路径）；
 4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
    已将经契约校验的 replay history 原子持久化到 PackageStore 旁，签名发布和远端分发仍待完成。
 

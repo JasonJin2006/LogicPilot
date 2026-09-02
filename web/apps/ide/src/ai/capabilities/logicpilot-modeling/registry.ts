@@ -2,6 +2,7 @@
 // generic AssistantTool contract and this mounted registry.
 
 import type { AssistantTool } from '../../toolTypes';
+export type { AssistantTool } from '../../toolTypes';
 import { MODEL_INSPECTION_TOOLS, MODEL_READ_TOOLS } from './readTools';
 import { MODEL_ANALYSIS_TOOLS } from './analysisTools';
 import { MODEL_SIMULATION_TOOLS } from './simulationTools';

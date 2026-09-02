@@ -1,5 +1,5 @@
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
-import type { AssistantTool } from './capabilities/logicpilot-modeling/tools';
+import type { AssistantTool } from './toolTypes';
 
 export interface McpToolDescriptor {
   name: string;

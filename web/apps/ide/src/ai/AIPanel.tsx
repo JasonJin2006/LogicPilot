@@ -59,7 +59,7 @@ import type { AiSession } from './conversationStore';
 import { LOGICPILOT_MODELING_PROFILE } from './agentProfiles';
 import { LOGICPILOT_MODELING_READONLY_CAPABILITY } from './agentCapabilities';
 import { createMcpTools, discoverMcpCapabilities } from './mcpClient';
-import type { AssistantTool } from './capabilities/logicpilot-modeling/tools';
+import type { AssistantTool } from './toolTypes';
 import { createAssistantKernel } from './assistantKernel';
 import { createModelProposal, createPatchProposal, type ModelProposal } from './modelProposal';
 import { buildAssistantContext } from './contextBuilder';

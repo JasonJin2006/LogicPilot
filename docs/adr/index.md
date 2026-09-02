@@ -140,3 +140,4 @@
 - [0109 Idempotent Artifact Sync Transactions](0109-idempotent-artifact-sync)
 - [0110 Persistent Plugin Registry Replay History](0110-persistent-plugin-registry-replay)
 - [0111 IDE SDK Turn Orchestration](0111-ide-sdk-turn-orchestration)
+- [0112 Remove IDE Modeling Tool Compatibility Facade](0112-remove-ide-modeling-tool-facade)
