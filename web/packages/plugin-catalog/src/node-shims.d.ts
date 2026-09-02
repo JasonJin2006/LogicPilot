@@ -14,6 +14,8 @@ declare class Buffer {
 }
 
 declare const process: { readonly pid: number };
+declare function setTimeout(handler: () => void, timeout: number): unknown;
+declare function clearTimeout(handle: unknown): void;
 
 declare const WebAssembly: {
   instantiate(

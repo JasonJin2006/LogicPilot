@@ -10,8 +10,11 @@ import {
   createPluginCatalogHandler,
   createPluginManagementHandler,
   FileSystemPackageStore,
+  NodePluginRuntime,
   pluginRootsFromEnv,
 } from '../../../packages/plugin-catalog/dist/index.bundle.js';
+
+let nodePluginRuntime;
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {
@@ -33,4 +36,32 @@ export function handlePlugins(req, res) {
         }
       : {}),
   })(req, res);
+}
+
+/** Opt-in Node PluginHost wiring for the desktop app server. It is disabled
+ * by default; executable ESM still requires T4 and WASM T2 even when enabled. */
+export async function startNodePluginRuntime() {
+  if (process.env.LOGICPILOT_ENABLE_NODE_PLUGINS !== '1') return null;
+  if (nodePluginRuntime) return nodePluginRuntime;
+  const trust = process.env.LOGICPILOT_NODE_PLUGIN_TRUST ?? 't0';
+  if (!['t0', 't1', 't2', 't3', 't4', 't5'].includes(trust)) {
+    throw new Error(`LOGICPILOT_NODE_PLUGIN_TRUST is invalid: ${trust}`);
+  }
+  nodePluginRuntime = new NodePluginRuntime({
+    roots: pluginRootsFromEnv(process.env),
+    defaultTrustLevel: trust,
+    activationTimeoutMs: 10_000,
+    maxModuleBytes: 16 * 1024 * 1024,
+    maxWasmBytes: 16 * 1024 * 1024,
+    maxWasmMemoryBytes: 64 * 1024 * 1024,
+  });
+  await nodePluginRuntime.start();
+  nodePluginRuntime.watch();
+  return nodePluginRuntime;
+}
+
+export async function stopNodePluginRuntime() {
+  if (!nodePluginRuntime) return;
+  await nodePluginRuntime.stop();
+  nodePluginRuntime = undefined;
 }

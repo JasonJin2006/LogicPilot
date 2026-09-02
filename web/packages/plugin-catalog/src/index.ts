@@ -2,3 +2,5 @@ export * from './catalog.js';
 export * from './bridge.js';
 export * from './package-store.js';
 export * from './dynamic-loader.js';
+export * from './wasm-abi.js';
+export * from './node-runtime.js';

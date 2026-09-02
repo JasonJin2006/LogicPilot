@@ -6,6 +6,7 @@ import {
   computePackageDigest,
   createDynamicEsmLoader,
   createDynamicWasmLoader,
+  buildWasmImports,
 } from '../src/index.js';
 
 const cleanups: string[] = [];
@@ -60,6 +61,7 @@ describe('dynamic ESM loader', () => {
     const loader = createDynamicEsmLoader({
       roots: [{ scope: 'workspace', path: root }],
       scope: 'workspace',
+      defaultTrustLevel: 't4',
     });
     const thunk = loader(entry);
     expect(thunk).toBeDefined();
@@ -85,8 +87,33 @@ describe('dynamic ESM loader', () => {
     expect(denied).toContain('trust');
 
     const drifted = { ...entry, sha256: 'a'.repeat(64) };
-    expect(loader(drifted)).toBeUndefined();
+    const integrityLoader = createDynamicEsmLoader({
+      roots: [{ scope: 'workspace', path: root }],
+      scope: 'workspace',
+      defaultTrustLevel: 't4',
+      onError: (error) => denied.push(error.code),
+    });
+    expect(integrityLoader(drifted)).toBeUndefined();
     expect(denied).toContain('integrity');
+  });
+
+  it('enforces an activation timeout for dynamic ESM modules', async () => {
+    const { root, entry, manifest } = fixture();
+    writeFileSync(
+      join(root, 'pkg', 'activate.mjs'),
+      'export async function activate() { await new Promise((resolve) => setTimeout(resolve, 50)); }',
+    );
+    const refreshed = {
+      ...entry,
+      sha256: computePackageDigest(join(root, 'pkg'), manifest),
+    };
+    const thunk = createDynamicEsmLoader({
+      roots: [{ scope: 'workspace', path: root }],
+      scope: 'workspace',
+      defaultTrustLevel: 't4',
+      activationTimeoutMs: 5,
+    })(refreshed);
+    await expect((await thunk!()).activate({} as never)).rejects.toMatchObject({ code: 'module' });
   });
 
   it('instantiates a capability-free WASM module with lifecycle exports', async () => {
@@ -120,11 +147,20 @@ describe('dynamic ESM loader', () => {
     const thunk = createDynamicWasmLoader({
       roots: [{ scope: 'workspace', path: root }],
       scope: 'workspace',
+      defaultTrustLevel: 't2',
     })(entry);
     expect(thunk).toBeDefined();
     const module = await thunk!();
     await module.activate({} as never);
     await module.deactivate?.();
+  });
+});
+
+describe('WASM capability import table', () => {
+  it('requires explicit capability grants before exposing imports', () => {
+    expect(() => buildWasmImports(new Set(), { random_u32: () => 1 })).toThrow(/not granted/);
+    const imports = buildWasmImports(new Set(['runtime.random']), { random_u32: () => 1 });
+    expect(imports.logicpilot?.random_u32).toBeTypeOf('function');
   });
 });
 

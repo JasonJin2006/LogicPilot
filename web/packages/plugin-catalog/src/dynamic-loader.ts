@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import type { PluginCatalogEntry, PluginModule, PluginScope } from '@logicpilot/plugin-host';
 import type { PluginRootConfig } from './catalog.js';
 import { computePackageDigest } from './catalog.js';
+import { buildWasmImports, type WasmHostImports } from './wasm-abi.js';
 
 export interface DynamicEsmLoaderOptions {
   readonly roots: readonly PluginRootConfig[];
@@ -16,6 +17,8 @@ export interface DynamicEsmLoaderOptions {
   readonly runtime?: 'node';
   readonly defaultTrustLevel?: 't0' | 't1' | 't2' | 't3' | 't4' | 't5';
   readonly trustOverrides?: ReadonlyMap<string, 't0' | 't1' | 't2' | 't3' | 't4' | 't5'>;
+  readonly maxModuleBytes?: number;
+  readonly activationTimeoutMs?: number;
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -48,7 +51,9 @@ export function createDynamicEsmLoader(
   const digestCache = new Map<string, string>();
   return (entry) => {
     if (entry.scope !== options.scope) return undefined;
-    const minimum = entry.manifest.trust.minLevel;
+    // Executable Node ESM always has a T4 floor even if a malformed or overly
+    // permissive manifest declares a lower minimum.
+    const minimum = highestTrust(entry.manifest.trust.minLevel, 't4');
     const effective = options.trustOverrides?.get(entry.id) ?? options.defaultTrustLevel ?? 't0';
     if (TRUST_ORDER.indexOf(effective) < TRUST_ORDER.indexOf(minimum)) {
       report(
@@ -106,6 +111,16 @@ export function createDynamicEsmLoader(
         return undefined;
       }
     }
+    if (
+      options.maxModuleBytes !== undefined &&
+      statSync(modulePath).size > options.maxModuleBytes
+    ) {
+      report(
+        options,
+        new DynamicEsmLoaderError(`plugin '${entry.id}' module exceeds size limit`, 'path'),
+      );
+      return undefined;
+    }
     const url = pathToFileURL(modulePath).href;
     return async () => {
       try {
@@ -116,7 +131,25 @@ export function createDynamicEsmLoader(
         )) as Record<string, unknown>;
         const candidate = namespace.default ?? namespace;
         if (!isPluginModule(candidate)) throw new Error('missing activate export');
-        return candidate;
+        return {
+          ...candidate,
+          activate: (ctx) =>
+            withTimeout(
+              Promise.resolve(candidate.activate(ctx)),
+              options.activationTimeoutMs,
+              entry.id,
+            ),
+          ...(candidate.deactivate
+            ? {
+                deactivate: () =>
+                  withTimeout(
+                    Promise.resolve(candidate.deactivate?.()),
+                    options.activationTimeoutMs,
+                    entry.id,
+                  ),
+              }
+            : {}),
+        } satisfies PluginModule;
       } catch {
         throw new DynamicEsmLoaderError(`plugin '${entry.id}' module failed to load`, 'module');
       }
@@ -130,6 +163,10 @@ export interface DynamicWasmLoaderOptions {
   readonly defaultTrustLevel?: 't0' | 't1' | 't2' | 't3' | 't4' | 't5';
   readonly trustOverrides?: ReadonlyMap<string, 't0' | 't1' | 't2' | 't3' | 't4' | 't5'>;
   readonly maxWasmBytes?: number;
+  readonly maxMemoryBytes?: number;
+  readonly activationTimeoutMs?: number;
+  readonly capabilities?: ReadonlySet<string>;
+  readonly imports?: WasmHostImports;
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -152,7 +189,8 @@ export function createDynamicWasmLoader(
   return (entry) => {
     if (entry.scope !== options.scope) return undefined;
     const effective = options.trustOverrides?.get(entry.id) ?? options.defaultTrustLevel ?? 't0';
-    if (TRUST_ORDER.indexOf(effective) < TRUST_ORDER.indexOf(entry.manifest.trust.minLevel)) {
+    const minimum = highestTrust(entry.manifest.trust.minLevel, 't2');
+    if (TRUST_ORDER.indexOf(effective) < TRUST_ORDER.indexOf(minimum)) {
       report(
         options,
         new DynamicEsmLoaderError(`plugin '${entry.id}' trust requirement denied`, 'trust'),
@@ -201,18 +239,40 @@ export function createDynamicWasmLoader(
     return async () => {
       try {
         const bytes = readFileSync(wasmPath);
-        const instance = await WebAssembly.instantiate(bytes, {});
+        const instance = await withTimeout(
+          WebAssembly.instantiate(bytes, buildWasmImports(options.capabilities, options.imports)),
+          options.activationTimeoutMs,
+          entry.id,
+        );
         const exports = instance.instance.exports as Record<string, unknown>;
         if (typeof exports.logicpilot_activate !== 'function')
           throw new Error('missing activate export');
+        const memoryBytes = (exports.memory as { buffer?: { byteLength?: unknown } } | undefined)
+          ?.buffer?.byteLength;
+        if (
+          options.maxMemoryBytes !== undefined &&
+          typeof memoryBytes === 'number' &&
+          memoryBytes > options.maxMemoryBytes
+        ) {
+          throw new Error('WASM memory exceeds limit');
+        }
         return {
-          activate: () => {
-            (exports.logicpilot_activate as () => void)();
-          },
-          deactivate: () => {
-            if (typeof exports.logicpilot_deactivate === 'function')
-              (exports.logicpilot_deactivate as () => void)();
-          },
+          activate: () =>
+            withTimeout(
+              Promise.resolve((exports.logicpilot_activate as () => void)()),
+              options.activationTimeoutMs,
+              entry.id,
+            ),
+          ...(typeof exports.logicpilot_deactivate === 'function'
+            ? {
+                deactivate: () =>
+                  withTimeout(
+                    Promise.resolve((exports.logicpilot_deactivate as () => void)()),
+                    options.activationTimeoutMs,
+                    entry.id,
+                  ),
+              }
+            : {}),
         } satisfies PluginModule;
       } catch {
         throw new DynamicEsmLoaderError(
@@ -230,6 +290,13 @@ function isPluginModule(value: unknown): value is PluginModule {
     value !== null &&
     typeof (value as { activate?: unknown }).activate === 'function'
   );
+}
+
+function highestTrust(
+  left: (typeof TRUST_ORDER)[number],
+  right: (typeof TRUST_ORDER)[number],
+): (typeof TRUST_ORDER)[number] {
+  return TRUST_ORDER[Math.max(TRUST_ORDER.indexOf(left), TRUST_ORDER.indexOf(right))]!;
 }
 
 function isSafeRelative(value: string): boolean {
@@ -254,4 +321,26 @@ function report(options: DynamicEsmLoaderOptions, error: DynamicEsmLoaderError):
   } catch {
     // Diagnostic observers are not allowed to break discovery.
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number | undefined,
+  pluginId: string,
+): Promise<T> {
+  if (timeoutMs === undefined) return promise;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+    return Promise.reject(
+      new DynamicEsmLoaderError(`plugin '${pluginId}' timeout is invalid`, 'module'),
+    );
+  }
+  let timer: unknown;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(new DynamicEsmLoaderError(`plugin '${pluginId}' activation timed out`, 'module')),
+      timeoutMs,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }

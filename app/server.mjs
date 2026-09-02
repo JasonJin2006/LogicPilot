@@ -35,6 +35,8 @@ import {
 import {
   handlePluginCatalog,
   handlePlugins,
+  startNodePluginRuntime,
+  stopNodePluginRuntime,
 } from '../web/apps/ide/scripts/plugin-catalog-bridge.mjs';
 import { createApiRequestPolicy } from './request-policy.mjs';
 import { extendNativeRuntimePath, findLpServer } from '../scripts/tool-paths.mjs';
@@ -138,6 +140,7 @@ async function main() {
   process.env.LOGICPILOT_SESSION_TOKEN = sessionToken;
   const gateway = await startGateway(sessionToken);
   process.env.LOGICPILOT_WS_URL = `ws://127.0.0.1:${gateway.port}/sim?token=${encodeURIComponent(sessionToken)}`;
+  await startNodePluginRuntime();
   const httpPort = await freePort();
   const allowedOrigin = `http://${LOOPBACK_HOST}:${httpPort}`;
 
@@ -294,6 +297,7 @@ async function main() {
   });
 
   const shutdown = () => {
+    void stopNodePluginRuntime();
     gateway.child.kill();
     server.close();
     process.exit(0);
