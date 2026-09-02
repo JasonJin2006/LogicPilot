@@ -131,8 +131,10 @@ function sendBodyError(res, error) {
 // Gateway discovery: the desktop app server injects the lp-server port via
 // LOGICPILOT_WS_URL; the vite dev server falls back to the default.
 export function handleConfig(req, res) {
+  const configuredEngine = process.env.LOGICPILOT_AGENT_ENGINE;
   send(res, 200, {
     wsUrl: process.env.LOGICPILOT_WS_URL ?? 'ws://127.0.0.1:8089/sim',
+    agentEngine: configuredEngine === 'sdk.openai-agents' ? configuredEngine : 'builtin',
     ...(process.env.LOGICPILOT_SESSION_TOKEN
       ? { sessionToken: process.env.LOGICPILOT_SESSION_TOKEN }
       : {}),
