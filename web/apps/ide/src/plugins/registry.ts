@@ -1,10 +1,15 @@
-import type { PluginContributionSet, PluginRegistry } from '@logicpilot/contracts';
+import type {
+  PluginContributionSet,
+  PluginRegistry,
+  PluginRegistryIntegrity,
+} from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 
 export interface PluginRegistrySnapshot {
   readonly generation: number;
   readonly plugins: readonly string[];
   readonly contributions: readonly PluginContributionSet[];
+  readonly integrity?: PluginRegistryIntegrity;
 }
 
 export interface PluginRegistryFetchOptions {
@@ -76,6 +81,7 @@ export class PluginRegistryStore {
       generation: value.generation,
       plugins: value.plugins,
       contributions: value.contributions,
+      ...(value.integrity === undefined ? {} : { integrity: value.integrity }),
     };
     for (const listener of this.listeners) listener();
     return this.value;

@@ -42,6 +42,19 @@ describe('PluginRegistryStore', () => {
     expect(() => store.apply(envelope(0))).toThrow(/stale/);
   });
 
+  it('retains registry integrity metadata for an external verifier', () => {
+    const store = new PluginRegistryStore();
+    store.apply({
+      ...envelope(1),
+      integrity: { sha256: 'a'.repeat(64), signedBy: 'registry-key', signature: 'sig' },
+    });
+    expect(store.snapshot().integrity).toEqual({
+      sha256: 'a'.repeat(64),
+      signedBy: 'registry-key',
+      signature: 'sig',
+    });
+  });
+
   it('rejects malformed contribution payloads without mutating the active state', () => {
     const store = new PluginRegistryStore();
     store.apply(envelope(1));
