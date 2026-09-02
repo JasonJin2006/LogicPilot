@@ -26,6 +26,7 @@ import {
 import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
+import { PLUGIN_REGISTRY, type PluginRegistryFetchOptions } from './registry';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -80,6 +81,9 @@ export interface IdePluginHostOptions {
    *  in a browser; skip in Node/test contexts); an object forces the bridge
    *  (tests inject a stub fetch). */
   readonly catalog?: IdePluginCatalogOptions | null;
+  /** Optional structured contribution registry bridge. Omitted auto-derives
+   * the same app-server URL/session as catalog discovery. */
+  readonly registry?: IdePluginRegistryOptions | null;
 }
 
 export interface IdePluginCatalogOptions {
@@ -91,6 +95,8 @@ export interface IdePluginCatalogOptions {
   /** Inject a fetch implementation (tests). */
   readonly fetch?: CatalogFetch;
 }
+
+export interface IdePluginRegistryOptions extends PluginRegistryFetchOptions {}
 
 const CATALOG_SCOPES: readonly PluginScope[] = ['system', 'user', 'workspace'];
 
@@ -204,13 +210,38 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
     .start()
     .then((activated) => {
       auditCatalogFindings(candidate, remoteSources ?? []);
-      return activated;
+      return refreshIdePluginRegistry(options.registry)
+        .catch((error) => {
+          candidate.auditLog.append(
+            'error',
+            undefined,
+            `[registry] bridge unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        })
+        .then(() => activated);
     })
     .then(() => candidate)
     .finally(() => {
       startPromise = null;
     });
   return startPromise;
+}
+
+async function refreshIdePluginRegistry(
+  explicit: IdePluginRegistryOptions | null | undefined,
+): Promise<void> {
+  if (explicit === null || import.meta.env.VITE_ZERO_PLUGINS === '1') return;
+  if (explicit) {
+    await PLUGIN_REGISTRY.refresh(explicit);
+    return;
+  }
+  if (typeof window === 'undefined') return;
+  const config = await getAppConfig();
+  if (!config) return;
+  await PLUGIN_REGISTRY.refresh({
+    url: `${config.apiBase}/api/plugin-registry`,
+    headers: sessionHeaders(config),
+  });
 }
 
 /** Test/zero-paradigm gate helper: boots a host with an EMPTY discovery
