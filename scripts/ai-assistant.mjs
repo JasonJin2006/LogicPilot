@@ -423,7 +423,7 @@ export function validateAssistantMessages(messages) {
   return null;
 }
 
-function validateToolCall(call, index, allowedToolNames = null, toolCatalog = ASSISTANT_TOOLS) {
+function validateToolCall(call, index, allowedToolNames = null, toolCatalog = []) {
   if (!isPlainObject(call)) {
     return `toolCalls[${index}] is not an object`;
   }
