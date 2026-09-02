@@ -1,6 +1,7 @@
 import type {
   AgentStepRequest,
   AgentStepResult,
+  AgentCheckpoint,
   JsonValue,
   ToolCall,
   ToolResult,
@@ -32,6 +33,7 @@ export interface SdkRunnerOutput {
     readonly latencyMs?: number;
   };
   readonly error?: string;
+  readonly checkpoint?: AgentCheckpoint;
 }
 
 export interface SdkRunner {
@@ -89,6 +91,7 @@ export class SdkAgentEngineAdapter implements AgentEngine {
       toolResults: [],
       ...(result.usage === undefined ? {} : { usage: result.usage }),
       ...(result.error === undefined ? {} : { error: result.error }),
+      ...(result.checkpoint === undefined ? {} : { checkpoint: result.checkpoint }),
     };
   }
 

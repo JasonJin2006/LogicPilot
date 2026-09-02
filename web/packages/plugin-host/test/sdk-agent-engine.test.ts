@@ -25,6 +25,14 @@ describe('SdkAgentEngineAdapter', () => {
           message: 'checking',
           plan: [{ id: 'p1', label: 'Inspect' }],
           toolCalls: [{ id: 'sdk-call-1', name: 'inspect_model', arguments: {} }],
+          checkpoint: {
+            schema: 'logicpilot.agent-checkpoint/v1',
+            contractVersion: 1,
+            turnId: 'turn-sdk-1',
+            engineId: 'sdk.openai-agents',
+            revision: 1,
+            state: 'serialized-state',
+          },
         };
       },
     });
@@ -34,6 +42,7 @@ describe('SdkAgentEngineAdapter', () => {
     expect(result.status).toBe('continue');
     expect(result.plan?.[0]?.id).toBe('p1');
     expect(result.toolCalls[0]?.callId).toBe('sdk-call-1');
+    expect(result.checkpoint?.state).toBe('serialized-state');
     expect((seen[0] as { compiledContext?: unknown }).compiledContext).toEqual({ generation: 4 });
   });
 
