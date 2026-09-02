@@ -311,7 +311,7 @@ function normalizeToolDescriptors(value) {
   return tools;
 }
 
-function nativeToolDefinitions(tools = ASSISTANT_TOOLS) {
+function nativeToolDefinitions(tools) {
   return tools.map((tool) => {
     const properties = {};
     const required = [];
@@ -539,11 +539,7 @@ export function normalizeAssistantMessageToolCallIds(messages) {
  * or throws with a human-readable message (the UI must never crash on
  * malformed model output).
  */
-export function validateAssistantResponse(
-  value,
-  allowedToolNames = new Set(ASSISTANT_TOOLS.map((tool) => tool.name)),
-  toolCatalog = ASSISTANT_TOOLS,
-) {
+export function validateAssistantResponse(value, allowedToolNames = null, toolCatalog = []) {
   if (!isPlainObject(value)) {
     throw new Error('assistant response must be a JSON object');
   }
@@ -776,7 +772,7 @@ export function buildSystemPrompt({
   const pluginAuthoringMounted = hasAgentCapability(capabilityIds, 'logicpilot-plugin-authoring');
   const modelPatchMounted = toolMounted('apply_model_patch');
   const sysmlMounted = toolMounted('inspect_sysml_projection');
-  const promptTools = toolCatalog ?? ASSISTANT_TOOLS;
+  const promptTools = toolCatalog ?? [];
   if (!modelingMounted && pluginAuthoringMounted) {
     const authoringToolLines = promptTools
       .filter((tool) => capabilityToolNames.has(tool.name) && toolMounted(tool.name))

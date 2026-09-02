@@ -87,7 +87,7 @@ assert.match(
 // The prompt is executable contract. Lock down the exact patch vocabulary
 // and first DES benchmark so the model does not have to guess fields or
 // distribution semantics.
-const systemPrompt = buildSystemPrompt();
+const systemPrompt = buildSystemPrompt({ toolCatalog: ASSISTANT_TOOLS });
 for (const required of [
   'add_block',
   'update_block',
@@ -106,23 +106,28 @@ for (const required of [
 }
 assert.ok(systemPrompt.includes('刚才那个队列'));
 assert.ok(systemPrompt.includes('检查模型'));
-const generalPrompt = buildSystemPrompt({ capabilities: [] });
+const generalPrompt = buildSystemPrompt({ capabilities: [], toolCatalog: ASSISTANT_TOOLS });
 assert.match(generalPrompt, /general-purpose AI agent/);
 assert.doesNotMatch(generalPrompt, /inspect_model/);
 assert.match(
   buildSystemPrompt({
     capabilities: ['logicpilot-modeling'],
     skills: ['logicpilot-modeling-basics'],
+    toolCatalog: ASSISTANT_TOOLS,
   }),
   /Skill: logicpilot-modeling-basics/,
 );
-const readonlyPrompt = buildSystemPrompt({ capabilities: ['logicpilot-modeling-readonly'] });
+const readonlyPrompt = buildSystemPrompt({
+  capabilities: ['logicpilot-modeling-readonly'],
+  toolCatalog: ASSISTANT_TOOLS,
+});
 assert.match(readonlyPrompt, /read-only/);
 assert.match(readonlyPrompt, /inspect_model/);
 assert.doesNotMatch(readonlyPrompt, /apply_model_patch/);
 const sysmlPrompt = buildSystemPrompt({
   capabilities: ['logicpilot-modeling'],
   toolNames: ['inspect_sysml_projection', 'add_sysml_element', 'connect_sysml_elements'],
+  toolCatalog: ASSISTANT_TOOLS,
 });
 assert.match(sysmlPrompt, /active document is SysML text/);
 assert.match(sysmlPrompt, /inspect_sysml_projection/);
@@ -131,9 +136,11 @@ assert.doesNotMatch(sysmlPrompt, /apply_model_patch/);
 assert.doesNotMatch(sysmlPrompt, /Canonical DES/);
 const sourceEditingPrompt = buildSystemPrompt({
   capabilities: ['logicpilot-modeling', 'logicpilot-source-editing'],
+  toolCatalog: ASSISTANT_TOOLS,
 });
 const pluginAuthoringPrompt = buildSystemPrompt({
   capabilities: ['logicpilot-plugin-authoring'],
+  toolCatalog: ASSISTANT_TOOLS,
 });
 assert.match(pluginAuthoringPrompt, /create_plugin_draft/);
 assert.match(pluginAuthoringPrompt, /validate_plugin_draft/);
@@ -180,12 +187,16 @@ assert.throws(
 );
 
 // A valid response round-trips.
-const valid = validateAssistantResponse({
-  message: '检查模型',
-  plan: [{ id: 's1', label: '检查模型' }],
-  toolCalls: [{ id: 'call-1', name: 'inspect_model', arguments: {} }],
-  done: false,
-});
+const valid = validateAssistantResponse(
+  {
+    message: '检查模型',
+    plan: [{ id: 's1', label: '检查模型' }],
+    toolCalls: [{ id: 'call-1', name: 'inspect_model', arguments: {} }],
+    done: false,
+  },
+  new Set(ASSISTANT_TOOLS.map((tool) => tool.name)),
+  ASSISTANT_TOOLS,
+);
 assert.equal(valid.message, '检查模型');
 assert.equal(valid.toolCalls.length, 1);
 assert.equal(valid.toolCalls[0].name, 'inspect_model');
@@ -288,7 +299,15 @@ const cases = [
   ],
 ];
 for (const [input, pattern] of cases) {
-  assert.throws(() => validateAssistantResponse(input), pattern);
+  assert.throws(
+    () =>
+      validateAssistantResponse(
+        input,
+        new Set(ASSISTANT_TOOLS.map((tool) => tool.name)),
+        ASSISTANT_TOOLS,
+      ),
+    pattern,
+  );
 }
 
 // Provider compatibility: structured output is requested explicitly, while
