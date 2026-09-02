@@ -1,8 +1,10 @@
 // Phase 2 gate coverage: builtin manifests validate against the frozen
 // contract, the host activates them deterministically, and a ZERO-paradigm
-// host boots cleanly (the shell must work with no plugins at all).
+// host boots cleanly (the shell must work with no plugins at all). Phase
+// 2B-1 (ADR-0071): remote catalog discovery through the local bridge.
 
 import { afterEach, describe, expect, it } from 'vitest';
+import type { CatalogFetch, PluginCatalog } from '@logicpilot/plugin-host';
 import { parseBuiltinManifest, startIdePluginHost, stopIdePluginHost } from './host';
 import desManifestJson from './builtin/des/plugin.json';
 import sysmlManifestJson from './builtin/sysml/plugin.json';
@@ -67,5 +69,157 @@ describe('IDE plugin host', () => {
       'logicpilot.des',
       'logicpilot.sysml',
     ]);
+  });
+});
+
+describe('remote catalog discovery (Phase 2B-1)', () => {
+  const SHA = 'a'.repeat(64);
+
+  function catalogManifest(
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      schema: 'logicpilot.plugin-manifest/v2',
+      contractVersion: 1,
+      id,
+      version: '1.0.0',
+      apiVersion: 1,
+      provides: [],
+      requires: [],
+      entrypoints: {},
+      permissions: [],
+      trust: { minLevel: 't0' },
+      ...overrides,
+    };
+  }
+
+  function catalogFixture(): PluginCatalog {
+    return {
+      schema: 'logicpilot.plugin-catalog/v1',
+      contractVersion: 1,
+      roots: [
+        { id: 'system:1', scope: 'system' },
+        { id: 'workspace:1', scope: 'workspace' },
+      ],
+      entries: [
+        {
+          id: 'logicpilot.demo.data',
+          scope: 'workspace',
+          rootId: 'workspace:1',
+          path: 'demo-data',
+          sha256: SHA,
+          manifest: catalogManifest('logicpilot.demo.data', {
+            entrypoints: { data: './assets' },
+          }) as never,
+        },
+        {
+          id: 'logicpilot.demo.web',
+          scope: 'workspace',
+          rootId: 'workspace:1',
+          path: 'demo-web',
+          sha256: SHA,
+          manifest: catalogManifest('logicpilot.demo.web', {
+            entrypoints: { web: './activate.ts' },
+          }) as never,
+        },
+        {
+          id: 'logicpilot.demo.orphan',
+          scope: 'workspace',
+          rootId: 'workspace:1',
+          path: 'demo-orphan',
+          sha256: SHA,
+          manifest: catalogManifest('logicpilot.demo.orphan', {
+            requires: [{ id: 'logicpilot.missing' }],
+          }) as never,
+        },
+        {
+          id: 'logicpilot.demo.system',
+          scope: 'system',
+          rootId: 'system:1',
+          path: 'demo-system',
+          sha256: SHA,
+          manifest: catalogManifest('logicpilot.demo.system') as never,
+        },
+      ],
+      diagnostics: [
+        {
+          severity: 'error',
+          kind: 'schema',
+          message: 'package demo-broken: plugin.json is not a valid manifest',
+          pluginId: 'logicpilot.demo.broken',
+          scope: 'workspace',
+        },
+      ],
+    };
+  }
+
+  function stubCatalogFetch(): CatalogFetch {
+    const catalog = catalogFixture();
+    return async (url) => {
+      const scope = new URL(url, 'http://catalog.test').searchParams.get('scope') ?? undefined;
+      const filtered =
+        scope === undefined
+          ? catalog
+          : {
+              ...catalog,
+              roots: catalog.roots.filter((root) => root.scope === scope),
+              entries: catalog.entries.filter((entry) => entry.scope === scope),
+              diagnostics: catalog.diagnostics.filter(
+                (diagnostic) => diagnostic.scope === undefined || diagnostic.scope === scope,
+              ),
+            };
+      return { ok: true, status: 200, json: async () => filtered };
+    };
+  }
+
+  it('activates loadable catalog plugins per scope and excludes the rest', async () => {
+    await stopIdePluginHost();
+    const host = await startIdePluginHost({ catalog: { fetch: stubCatalogFetch() } });
+    const ids = [...host.ids()].sort();
+    // Builtins + the loadable data-only workspace plugin; the system plugin
+    // is data-only too, so it also activates. Executable entrypoints and
+    // broken dependencies stay out of the host.
+    expect(ids).toContain('logicpilot.demo.data');
+    expect(ids).toContain('logicpilot.demo.system');
+    expect(ids).not.toContain('logicpilot.demo.web');
+    expect(ids).not.toContain('logicpilot.demo.orphan');
+    expect(host.phaseValue).toBe('active');
+  });
+
+  it('audits catalog denials and errors without breaking the host', async () => {
+    await stopIdePluginHost();
+    const host = await startIdePluginHost({ catalog: { fetch: stubCatalogFetch() } });
+    const audit = host.auditLog.list();
+    expect(
+      audit.some((entry) => entry.action === 'error' && entry.detail?.includes('schema')),
+    ).toBe(true);
+    expect(
+      audit.some(
+        (entry) =>
+          entry.action === 'deny' &&
+          entry.pluginId === 'logicpilot.demo.web' &&
+          (entry.detail ?? '').includes('not loadable'),
+      ),
+    ).toBe(true);
+    expect(
+      audit.some(
+        (entry) =>
+          entry.action === 'deny' &&
+          entry.pluginId === 'logicpilot.demo.orphan' &&
+          (entry.detail ?? '').includes('missing'),
+      ),
+    ).toBe(true);
+  });
+
+  it('degrades to the bundled set when the bridge is unreachable', async () => {
+    await stopIdePluginHost();
+    const host = await startIdePluginHost({
+      catalog: { fetch: async () => ({ ok: false, status: 503, json: async () => null }) },
+    });
+    expect([...host.ids()].sort()).toEqual(['logicpilot.des', 'logicpilot.sysml']);
+    expect(host.auditLog.list().some((entry) => entry.detail?.includes('bridge unavailable'))).toBe(
+      true,
+    );
   });
 });

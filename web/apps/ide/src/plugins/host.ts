@@ -4,13 +4,20 @@
 // and activate through @logicpilot/plugin-host with dependency-resolved,
 // deterministic ordering, trust gating and an append-only audit trail.
 //
-// The browser shell has no filesystem; discovery is a static in-memory
-// source over the bundled manifests (system scope). A zero-paradigm build
-// (empty discovery table) must still boot, render the shell and edit plain
-// text files - that is the Phase 2 gate.
+// Discovery is layered (ADR-0070 §3, ADR-0071):
+//   - system: the bundled import map (static map, manifests are the source of
+//     truth); a zero-paradigm build (empty table) must still boot, render the
+//     shell and edit plain text files - that is the Phase 2 gate;
+//   - user/workspace: the Node-side catalog scanner behind the local bridge
+//     (GET /api/plugin-catalog). The browser never scans the filesystem; it
+//     consumes the validated catalog through RemoteCatalogDiscoverySource.
+//     Data-only/manifest-only packages activate as no-op modules; executable
+//     entrypoints wait for the Phase 2B-3 loader (ADR-0071 §7).
 
 import {
   PluginHost,
+  RemoteCatalogDiscoverySource,
+  type CatalogFetch,
   type DiscoveredPlugin,
   type DiscoverySource,
   type PluginModule,
@@ -18,6 +25,7 @@ import {
 } from '@logicpilot/plugin-host';
 import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
+import { getAppConfig, sessionHeaders } from '../state/appConfig';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -68,6 +76,88 @@ function builtinSourceFor(builtins: readonly BuiltinPlugin[], scope: PluginScope
 export interface IdePluginHostOptions {
   /** Empty table = zero-paradigm shell (the Phase 2 gate exercises this). */
   readonly builtins?: readonly BuiltinPlugin[];
+  /** Catalog bridge config. null/omitted = auto (derive from the app server
+   *  in a browser; skip in Node/test contexts); an object forces the bridge
+   *  (tests inject a stub fetch). */
+  readonly catalog?: IdePluginCatalogOptions | null;
+}
+
+export interface IdePluginCatalogOptions {
+  /** Bridge URL. Default: same-origin '/api/plugin-catalog' (or the desktop
+   *  app-server base + path when derived from getAppConfig). */
+  readonly url?: string;
+  /** Session headers for the production app server (browser only). */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Inject a fetch implementation (tests). */
+  readonly fetch?: CatalogFetch;
+}
+
+const CATALOG_SCOPES: readonly PluginScope[] = ['system', 'user', 'workspace'];
+
+/** Builds one remote source per scope layer. Returns null when the catalog
+ *  is disabled (zero-paradigm gate, Node contexts, no app config). */
+async function remoteCatalogSources(
+  explicit: IdePluginCatalogOptions | null | undefined,
+): Promise<RemoteCatalogDiscoverySource[] | null> {
+  if (import.meta.env.VITE_ZERO_PLUGINS === '1' || import.meta.env.VITE_PLUGINS === '0') {
+    return null;
+  }
+  let url: string;
+  let headers: Readonly<Record<string, string>> | undefined;
+  let fetchImpl: CatalogFetch | undefined;
+  if (explicit === null) {
+    return null;
+  }
+  if (explicit !== undefined) {
+    url = explicit.url ?? '/api/plugin-catalog';
+    headers = explicit.headers;
+    fetchImpl = explicit.fetch;
+  } else {
+    // Browser-only derivation: the Tauri shell and the dev/app server expose
+    // the bridge through getAppConfig (apiBase + session token). Node test
+    // contexts get null and stay on the bundled sources.
+    if (typeof window === 'undefined') return null;
+    const config = await getAppConfig();
+    if (!config) return null;
+    url = `${config.apiBase}/api/plugin-catalog`;
+    headers = sessionHeaders(config);
+  }
+  return CATALOG_SCOPES.map(
+    (scope) =>
+      new RemoteCatalogDiscoverySource({
+        url,
+        scope,
+        ...(headers !== undefined ? { headers } : {}),
+        ...(fetchImpl !== undefined ? { fetch: fetchImpl } : {}),
+      }),
+  );
+}
+
+/** Surfaces catalog findings in the append-only audit trail. Errors are
+ *  'error' entries; entries the projection excluded before activation are
+ *  'deny' entries. Bridge failures also land as 'error' - the shell boots on
+ *  the bundled set instead of blanking (ADR-0071 §7). */
+function auditCatalogFindings(
+  host: PluginHost,
+  sources: readonly RemoteCatalogDiscoverySource[],
+): void {
+  for (const source of sources) {
+    const error = source.lastError();
+    if (error !== undefined) {
+      host.auditLog.append('error', undefined, `[catalog] bridge unavailable: ${String(error)}`);
+    }
+    for (const diagnostic of source.diagnostics()) {
+      if (diagnostic.severity !== 'error') continue;
+      host.auditLog.append(
+        'error',
+        diagnostic.pluginId,
+        `[catalog] ${diagnostic.kind}: ${diagnostic.message}`,
+      );
+    }
+    for (const excluded of source.excludedEntries()) {
+      host.auditLog.append('deny', excluded.entry.id, `[catalog] ${excluded.reason}`);
+    }
+  }
 }
 
 let host: PluginHost | null = null;
@@ -88,8 +178,12 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
     (import.meta.env.VITE_ZERO_PLUGINS === '1' || import.meta.env.VITE_PLUGINS === '0'
       ? []
       : BUILTIN_PLUGINS);
+  const sources: DiscoverySource[] = [builtinSourceFor(builtins, 'system')];
+  const remoteSources = await remoteCatalogSources(options.catalog);
+  if (remoteSources) sources.push(...remoteSources);
+
   const candidate = new PluginHost({
-    sources: [builtinSourceFor(builtins, 'system')],
+    sources,
     onAudit: (entry) => {
       // Expose a neutral event until the shell grows a persistent audit
       // surface. Dev tools and future audit panels can subscribe without the
@@ -102,6 +196,10 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
   host = candidate;
   startPromise = candidate
     .start()
+    .then((activated) => {
+      auditCatalogFindings(candidate, remoteSources ?? []);
+      return activated;
+    })
     .then(() => candidate)
     .finally(() => {
       startPromise = null;

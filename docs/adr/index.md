@@ -1,7 +1,7 @@
 # 架构决策记录（ADR）全量索引
 
 站点侧边栏仅收录奠基性的前 9 个 ADR；本页索引 `docs/adr/` 下的全部
-记录（0001–0069），按主题分组。新 ADR 落盘后请同步在本页补一行。
+记录（0001–0071），按主题分组。新 ADR 落盘后请同步在本页补一行。
 
 ## 基础设施与运行时策略
 
@@ -99,3 +99,4 @@
 - [0068 Paradigm Plugins - Removable Method Units with a Neutral Core](0068-paradigm-plugins)
 - [0069 Phase 1 Contract Freeze - JSON Schemas as the Single Source of Truth](0069-platform-contracts-freeze)
 - [0070 Transactional Plugin Host with Cordis-Compatible Lifecycle](0070-plugin-host-and-cordis)
+- [0071 Phase 2B-1 Plugin Catalog Discovery](0071-plugin-catalog-discovery)

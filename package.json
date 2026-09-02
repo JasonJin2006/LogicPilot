@@ -19,7 +19,7 @@
     "test:browser": "node scripts/test-browser-e2e.mjs",
     "test:modeling-cases": "node scripts/verify-modeling-cases.mjs",
     "test:zero-paradigm": "pnpm --filter @logicpilot/ide run verify:zero-paradigm",
-    "desktop:stage": "pnpm --filter @logicpilot/ide build && node scripts/stage-desktop-runtime.mjs",
+    "desktop:stage": "pnpm --filter @logicpilot/plugin-catalog build && pnpm --filter @logicpilot/ide build && node scripts/stage-desktop-runtime.mjs",
     "desktop:test-staged": "node scripts/test-staged-desktop-runtime.mjs --stage build/desktop-runtime",
     "desktop:bundle": "pnpm desktop:stage && pnpm desktop:test-staged && pnpm exec tauri build --ci --config desktop/src-tauri/tauri.conf.json",
     "dev": "pnpm --filter @logicpilot/ide run dev",

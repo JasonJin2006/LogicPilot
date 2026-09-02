@@ -1,0 +1,27 @@
+{
+  "name": "@logicpilot/plugin-catalog",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LogicPilot Phase 2B-1 plugin catalog: read-only Node-side scanner over the frozen PluginManifest v2 contract (strict validation, content sha256, corrupt-package isolation, symlink/path safety) plus the local HTTP bridge handler",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@logicpilot/contracts": "workspace:*",
+    "@logicpilot/plugin-host": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

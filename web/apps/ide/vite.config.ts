@@ -4,10 +4,13 @@
 // (default ws://127.0.0.1:8089/sim), so no HTTP proxy is required here.
 // The AI panel's one-shot actions POST to /api/ai-build etc., which run
 // inside the dev server process; the assistant runtime uses /api/assistant
-// and /api/assistant/stream through the same middleware.
+// and /api/assistant/stream through the same middleware. The plugin catalog
+// bridge (Phase 2B-1, ADR-0071) serves the validated discovery catalog at
+// GET /api/plugin-catalog.
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { createApiRequestPolicy } from '../../../app/request-policy.mjs';
+import { handlePluginCatalog } from './scripts/plugin-catalog-bridge.mjs';
 
 import {
   handleAiAssistant,
@@ -85,6 +88,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/config', (req, res) => {
       void runWithApiPolicy(req, res, () => handleConfig(req, res));
+    });
+    server.middlewares.use('/api/plugin-catalog', (req, res) => {
+      void runWithApiPolicy(req, res, () => handlePluginCatalog(req, res));
     });
   },
 });

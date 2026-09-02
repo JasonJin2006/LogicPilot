@@ -93,6 +93,7 @@ const requiredFiles = [
   'scripts/tool-paths.mjs',
   'scripts/verify-run.mjs',
   'web/apps/ide/scripts/ai-endpoint.mjs',
+  'web/apps/ide/scripts/plugin-catalog-bridge.mjs',
   'LICENSE',
 ];
 for (const path of requiredFiles) requireFile(join(root, path), path);
@@ -105,6 +106,17 @@ rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 for (const path of requiredFiles) copyFile(join(root, path), join(output, path));
 cpSync(frontend, join(output, 'web', 'apps', 'ide', 'dist'), { recursive: true });
+// Node-side plugin catalog scanner (ADR-0071): the staged app server imports
+// the built package through the same relative path as the source tree.
+const pluginCatalogDist = join(root, 'web', 'packages', 'plugin-catalog', 'dist');
+if (!existsSync(join(pluginCatalogDist, 'index.js'))) {
+  throw new Error(
+    'plugin-catalog dist is missing; run pnpm --filter @logicpilot/plugin-catalog build',
+  );
+}
+cpSync(pluginCatalogDist, join(output, 'web', 'packages', 'plugin-catalog', 'dist'), {
+  recursive: true,
+});
 copyFile(node, join(output, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node'));
 copyFile(lpcli, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lpcli.exe' : 'lpcli'));
 copyFile(lpserver, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lp-server.exe' : 'lp-server'));
