@@ -151,7 +151,11 @@ export function handleConfig(req, res) {
 
 function readRegistrySigningKeys() {
   const raw = process.env.LOGICPILOT_PLUGIN_REGISTRY_SIGNING_PUBLIC_KEYS;
-  if (!raw) return undefined;
+  if (!raw) {
+    if (process.env.LOGICPILOT_PLUGIN_REGISTRY_SIGNING_PRIVATE_KEY)
+      throw new Error('registry signer requires a public keyring');
+    return undefined;
+  }
   try {
     const parsed = JSON.parse(raw);
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))

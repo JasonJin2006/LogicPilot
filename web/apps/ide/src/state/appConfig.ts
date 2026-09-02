@@ -44,11 +44,10 @@ export async function getAppConfig(): Promise<AppConfig | null> {
           headers: sessionHeaders(cached),
           cache: 'no-store',
         });
-        if (remote.ok) {
-          const remoteConfig = (await remote.json()) as { registrySigningKeys?: unknown };
-          const keys = parseRegistrySigningKeys(remoteConfig.registrySigningKeys);
-          if (keys !== undefined) cached = { ...cached, registrySigningKeys: keys };
-        }
+        if (!remote.ok) throw new Error(`HTTP ${remote.status}`);
+        const remoteConfig = (await remote.json()) as { registrySigningKeys?: unknown };
+        const keys = parseRegistrySigningKeys(remoteConfig.registrySigningKeys);
+        if (keys !== undefined) cached = { ...cached, registrySigningKeys: keys };
       } catch {
         // Registry signatures are optional in local development; the base
         // Tauri endpoint remains usable when the config probe is unavailable.
