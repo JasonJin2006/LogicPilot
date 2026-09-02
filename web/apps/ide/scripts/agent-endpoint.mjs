@@ -1,5 +1,22 @@
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
 const MAX_AGENT_BODY_BYTES = 4 * 1024 * 1024;
 let engineModule;
+
+/** Optional append-only metadata trace for deployments that explicitly opt
+ * in. No prompt, tool arguments or model output are included by the engine's
+ * trace seam. Disabled unless a dedicated directory is configured. */
+function agentTraceSinkFromEnv() {
+  const root = process.env.LOGICPILOT_AGENT_TRACE_ROOT;
+  if (!root) return undefined;
+  const directory = resolve(root);
+  mkdirSync(directory, { recursive: true });
+  const path = join(directory, 'agent-engine.jsonl');
+  return (event) => {
+    appendFileSync(path, `${JSON.stringify(event)}\n`, 'utf8');
+  };
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -64,6 +81,7 @@ export async function handleAgentStep(req, res) {
     }
     const engine = new engineModule.OpenAiAgentsEngine({
       model: process.env.OPENAI_MODEL,
+      traceSink: agentTraceSinkFromEnv(),
     });
     const result = await engine.runStep(request.value);
     const checked = validateContract('AgentStepResult', result);
