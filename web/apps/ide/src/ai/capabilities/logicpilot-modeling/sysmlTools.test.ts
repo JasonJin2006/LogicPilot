@@ -3,7 +3,7 @@ import { SYSML_TOOLS } from './sysmlTools';
 import { useSysMLStore } from '../../../state/sysmlStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useUiStore } from '../../../state/uiStore';
-import { projectSysML } from '../../../plugins/builtin/sysml/semantics';
+import { projectSysML } from '../../../plugins/registries/sysmlSemantics';
 import { createProject } from '../../../project/project';
 
 const tool = (name: string) => SYSML_TOOLS.find((entry) => entry.name === name)!;

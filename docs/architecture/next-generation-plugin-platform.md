@@ -107,7 +107,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
 4. Phase 8 capability 迁移：Process/DSL 与 SysML 已拆成独立 Agent capability 和只读变体，
    PalettePanel 已改为完全调用 contribution 的 insert/icon/port hook，完整插件贡献包、
    model semantic registry 已供 ModelStore/Outline/Mutation 使用，Statechart/Agent/
-   Continuous/DEVS/C4 迁移和默认 provider 的最终插件化仍待完成；
+   Continuous/DEVS/C4 迁移和默认 provider 的最终插件化仍待完成；SysML semantic 与 panel
+   component seams 已集中到 `plugins/registries`，lint 直接范式 import 已清零；
 5. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
    已将经契约校验的 replay history 原子持久化到 PackageStore 旁，并支持可选的 canonical
    snapshot 签名/轮换 keyring，并通过 authenticated `/api/config` 在 IDE 使用 WebCrypto
