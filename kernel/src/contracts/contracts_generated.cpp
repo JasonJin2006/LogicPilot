@@ -43,6 +43,7 @@ nlohmann::ordered_json to_json_value(SandboxKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginScope v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogSeverity v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogDiagnosticKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(PluginContributionKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CanvasEngineId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(LayoutPersistence v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(WasmAbiValueType v) { return to_json(v); }
@@ -87,6 +88,12 @@ nlohmann::ordered_json to_json_value(const PluginCatalogRoot& v) { return to_jso
 nlohmann::ordered_json to_json_value(const PluginCatalogEntry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginCatalogDiagnostic& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginCatalog& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginSkillStep& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginSkillContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginInstructionContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginPaletteContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginToolContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginContributionSet& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginManifest& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginDependency& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginEntrypoints& v) { return to_json(v); }
@@ -736,6 +743,41 @@ bool parse(std::string_view text, PluginCatalogDiagnosticKind& out, std::string&
 }
 
 nlohmann::ordered_json to_json(PluginCatalogDiagnosticKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(PluginContributionKind value) {
+  switch (value) {
+    case PluginContributionKind::kKnowledge: return "knowledge";
+    case PluginContributionKind::kSkill: return "skill";
+    case PluginContributionKind::kInstruction: return "instruction";
+    case PluginContributionKind::kDiagnostic: return "diagnostic";
+    case PluginContributionKind::kView: return "view";
+    case PluginContributionKind::kPalette: return "palette";
+    case PluginContributionKind::kTool: return "tool";
+  }
+  return "<invalid PluginContributionKind>";
+}
+
+bool parse(std::string_view text, PluginContributionKind& out, std::string& error) {
+  static const std::pair<std::string_view, PluginContributionKind> kTable[] = {
+      {"knowledge", PluginContributionKind::kKnowledge},
+      {"skill", PluginContributionKind::kSkill},
+      {"instruction", PluginContributionKind::kInstruction},
+      {"diagnostic", PluginContributionKind::kDiagnostic},
+      {"view", PluginContributionKind::kView},
+      {"palette", PluginContributionKind::kPalette},
+      {"tool", PluginContributionKind::kTool},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid PluginContributionKind value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(PluginContributionKind value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(CanvasEngineId value) {
   switch (value) {
@@ -6047,6 +6089,744 @@ bool operator==(const PluginCatalog& lhs, const PluginCatalog& rhs) {
       && lhs.roots == rhs.roots
       && lhs.entries == rhs.entries
       && lhs.diagnostics == rhs.diagnostics;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginSkillStep& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginSkillStep";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "action",
+      "arguments",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginSkillStep: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginSkillStep");
+      if (!value.is_string()) {
+        error = std::string("PluginSkillStep.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "action", "PluginSkillStep");
+      if (!value.is_string()) {
+        error = std::string("PluginSkillStep.action") + ": expected string";
+        return false;
+      }
+      out.action = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("arguments");
+    if (field_it != j.end()) {
+      nlohmann::ordered_json parsed{};
+      parsed = (*field_it);
+      out.arguments = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginSkillStep& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginSkillStep& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["action"] = to_json_value(value.action);
+  if (value.arguments.has_value()) {
+    j["arguments"] = to_json_value(*value.arguments);
+  }
+  return j;
+}
+
+std::string dump(const PluginSkillStep& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginSkillStep& lhs, const PluginSkillStep& rhs) {
+  return lhs.id == rhs.id
+      && lhs.action == rhs.action
+      && (lhs.arguments.has_value() == rhs.arguments.has_value()
+      && (!lhs.arguments.has_value() || lhs.arguments->dump() == rhs.arguments->dump()));
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginSkillContribution& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginSkillContribution";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "name",
+      "trigger",
+      "inputs",
+      "steps",
+      "permissions",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginSkillContribution: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginSkillContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginSkillContribution.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "name", "PluginSkillContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginSkillContribution.name") + ": expected string";
+        return false;
+      }
+      out.name = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "trigger", "PluginSkillContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginSkillContribution.trigger") + ": expected string";
+        return false;
+      }
+      out.trigger = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "inputs", "PluginSkillContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginSkillContribution.inputs") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!item.is_string()) {
+          error = std::string("PluginSkillContribution.inputs") + ": expected string item";
+          return false;
+        }
+        out.inputs.emplace_back() = item.get<std::string>();
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "steps", "PluginSkillContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginSkillContribution.steps") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.steps.emplace_back(), error)) {
+          error = std::string("PluginSkillContribution.steps") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "permissions", "PluginSkillContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginSkillContribution.permissions") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        std::string enum_error;
+        if (!parse(item.get<std::string>(), out.permissions.emplace_back(), enum_error)) {
+          error = std::string("PluginSkillContribution.permissions") + ": " + enum_error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginSkillContribution& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginSkillContribution& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["name"] = to_json_value(value.name);
+    j["trigger"] = to_json_value(value.trigger);
+    j["inputs"] = to_json_value(value.inputs);
+    j["steps"] = to_json_value(value.steps);
+    j["permissions"] = to_json_value(value.permissions);
+  return j;
+}
+
+std::string dump(const PluginSkillContribution& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginSkillContribution& lhs, const PluginSkillContribution& rhs) {
+  return lhs.id == rhs.id
+      && lhs.name == rhs.name
+      && lhs.trigger == rhs.trigger
+      && lhs.inputs == rhs.inputs
+      && lhs.steps == rhs.steps
+      && lhs.permissions == rhs.permissions;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginInstructionContribution& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginInstructionContribution";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "scope",
+      "priority",
+      "rules",
+      "forbidden",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginInstructionContribution: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginInstructionContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginInstructionContribution.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "scope", "PluginInstructionContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginInstructionContribution.scope") + ": expected string";
+        return false;
+      }
+      out.scope = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "priority", "PluginInstructionContribution");
+      if (!value.is_number_integer()) {
+        error = std::string("PluginInstructionContribution.priority") + ": expected integer";
+        return false;
+      }
+      out.priority = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "rules", "PluginInstructionContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginInstructionContribution.rules") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!item.is_string()) {
+          error = std::string("PluginInstructionContribution.rules") + ": expected string item";
+          return false;
+        }
+        out.rules.emplace_back() = item.get<std::string>();
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "forbidden", "PluginInstructionContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginInstructionContribution.forbidden") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!item.is_string()) {
+          error = std::string("PluginInstructionContribution.forbidden") + ": expected string item";
+          return false;
+        }
+        out.forbidden.emplace_back() = item.get<std::string>();
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginInstructionContribution& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginInstructionContribution& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["scope"] = to_json_value(value.scope);
+    j["priority"] = to_json_value(value.priority);
+    j["rules"] = to_json_value(value.rules);
+    j["forbidden"] = to_json_value(value.forbidden);
+  return j;
+}
+
+std::string dump(const PluginInstructionContribution& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginInstructionContribution& lhs, const PluginInstructionContribution& rhs) {
+  return lhs.id == rhs.id
+      && lhs.scope == rhs.scope
+      && lhs.priority == rhs.priority
+      && lhs.rules == rhs.rules
+      && lhs.forbidden == rhs.forbidden;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginPaletteContribution& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginPaletteContribution";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "canvas",
+      "itemKind",
+      "label",
+      "icon",
+      "semanticType",
+      "defaults",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginPaletteContribution: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginPaletteContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginPaletteContribution.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "canvas", "PluginPaletteContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginPaletteContribution.canvas") + ": expected string";
+        return false;
+      }
+      out.canvas = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "itemKind", "PluginPaletteContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginPaletteContribution.itemKind") + ": expected string";
+        return false;
+      }
+      out.item_kind = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "label", "PluginPaletteContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginPaletteContribution.label") + ": expected string";
+        return false;
+      }
+      out.label = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("icon");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginPaletteContribution.icon") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.icon = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "semanticType", "PluginPaletteContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginPaletteContribution.semanticType") + ": expected string";
+        return false;
+      }
+      out.semantic_type = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("defaults");
+    if (field_it != j.end()) {
+      JsonSchemaFragment parsed{};
+      parsed = (*field_it);
+      out.defaults = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginPaletteContribution& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginPaletteContribution& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["canvas"] = to_json_value(value.canvas);
+    j["itemKind"] = to_json_value(value.item_kind);
+    j["label"] = to_json_value(value.label);
+  if (value.icon.has_value()) {
+    j["icon"] = to_json_value(*value.icon);
+  }
+    j["semanticType"] = to_json_value(value.semantic_type);
+  if (value.defaults.has_value()) {
+    j["defaults"] = to_json_value(*value.defaults);
+  }
+  return j;
+}
+
+std::string dump(const PluginPaletteContribution& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginPaletteContribution& lhs, const PluginPaletteContribution& rhs) {
+  return lhs.id == rhs.id
+      && lhs.canvas == rhs.canvas
+      && lhs.item_kind == rhs.item_kind
+      && lhs.label == rhs.label
+      && lhs.icon == rhs.icon
+      && lhs.semantic_type == rhs.semantic_type
+      && (lhs.defaults.has_value() == rhs.defaults.has_value()
+      && (!lhs.defaults.has_value() || lhs.defaults->dump() == rhs.defaults->dump()));
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginToolContribution& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginToolContribution";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "name",
+      "capability",
+      "inputSchema",
+      "outputSchema",
+      "permissions",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginToolContribution: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginToolContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginToolContribution.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "name", "PluginToolContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginToolContribution.name") + ": expected string";
+        return false;
+      }
+      out.name = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "capability", "PluginToolContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginToolContribution.capability") + ": expected string";
+        return false;
+      }
+      out.capability = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "inputSchema", "PluginToolContribution");
+      out.input_schema = value;
+  }
+  {
+    const auto& value = field_or_fail(error, j, "outputSchema", "PluginToolContribution");
+      out.output_schema = value;
+  }
+  {
+    const auto& value = field_or_fail(error, j, "permissions", "PluginToolContribution");
+      if (!value.is_array()) {
+        error = std::string("PluginToolContribution.permissions") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        std::string enum_error;
+        if (!parse(item.get<std::string>(), out.permissions.emplace_back(), enum_error)) {
+          error = std::string("PluginToolContribution.permissions") + ": " + enum_error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginToolContribution& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginToolContribution& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["name"] = to_json_value(value.name);
+    j["capability"] = to_json_value(value.capability);
+    j["inputSchema"] = to_json_value(value.input_schema);
+    j["outputSchema"] = to_json_value(value.output_schema);
+    j["permissions"] = to_json_value(value.permissions);
+  return j;
+}
+
+std::string dump(const PluginToolContribution& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginToolContribution& lhs, const PluginToolContribution& rhs) {
+  return lhs.id == rhs.id
+      && lhs.name == rhs.name
+      && lhs.capability == rhs.capability
+      && lhs.input_schema.dump() == rhs.input_schema.dump()
+      && lhs.output_schema.dump() == rhs.output_schema.dump()
+      && lhs.permissions == rhs.permissions;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginContributionSet";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "pluginId",
+      "version",
+      "knowledge",
+      "skills",
+      "instructions",
+      "diagnostics",
+      "views",
+      "palettes",
+      "tools",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginContributionSet: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "PluginContributionSet");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.plugin-contributions/v1") {
+        error = std::string("PluginContributionSet.schema") + ": expected constant " + "logicpilot.plugin-contributions/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "PluginContributionSet");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("PluginContributionSet.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "pluginId", "PluginContributionSet");
+      if (!value.is_string()) {
+        error = std::string("PluginContributionSet.pluginId") + ": expected string";
+        return false;
+      }
+      out.plugin_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "version", "PluginContributionSet");
+      if (!value.is_string()) {
+        error = std::string("PluginContributionSet.version") + ": expected string";
+        return false;
+      }
+      out.version = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "knowledge", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.knowledge") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.knowledge.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.knowledge") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "skills", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.skills") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.skills.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.skills") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "instructions", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.instructions") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.instructions.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.instructions") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "diagnostics", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.diagnostics") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.diagnostics.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.diagnostics") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "views", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.views") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.views.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.views") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "palettes", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.palettes") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.palettes.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.palettes") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "tools", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.tools") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.tools.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.tools") + ": " + error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginContributionSet& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginContributionSet& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["pluginId"] = to_json_value(value.plugin_id);
+    j["version"] = to_json_value(value.version);
+    j["knowledge"] = to_json_value(value.knowledge);
+    j["skills"] = to_json_value(value.skills);
+    j["instructions"] = to_json_value(value.instructions);
+    j["diagnostics"] = to_json_value(value.diagnostics);
+    j["views"] = to_json_value(value.views);
+    j["palettes"] = to_json_value(value.palettes);
+    j["tools"] = to_json_value(value.tools);
+  return j;
+}
+
+std::string dump(const PluginContributionSet& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.plugin_id == rhs.plugin_id
+      && lhs.version == rhs.version
+      && lhs.knowledge == rhs.knowledge
+      && lhs.skills == rhs.skills
+      && lhs.instructions == rhs.instructions
+      && lhs.diagnostics == rhs.diagnostics
+      && lhs.views == rhs.views
+      && lhs.palettes == rhs.palettes
+      && lhs.tools == rhs.tools;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::string& error) {

@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/plugin-contributions.schema.json",
+  "title": "LogicPilot structured plugin contributions",
+  "description": "One strict envelope for plugin-provided knowledge, skills, instructions, diagnostics, views, palettes and tools. Domain definitions are reused from their existing contract schemas.",
+  "$defs": {
+    "PluginContributionKind": {
+      "type": "string",
+      "enum": ["knowledge", "skill", "instruction", "diagnostic", "view", "palette", "tool"]
+    },
+    "PluginSkillStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "action"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "action": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "arguments": { "x-freeform-json": true }
+      }
+    },
+    "PluginSkillContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "trigger", "inputs", "steps", "permissions"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "trigger": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "inputs": { "type": "array", "items": { "type": "string", "maxLength": 128 } },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/PluginSkillStep" } },
+        "permissions": {
+          "type": "array",
+          "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" }
+        }
+      }
+    },
+    "PluginInstructionContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "priority", "rules", "forbidden"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+        },
+        "forbidden": { "type": "array", "items": { "type": "string", "maxLength": 2048 } }
+      }
+    },
+    "PluginPaletteContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canvas", "itemKind", "label", "semanticType"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "canvas": { "type": "string", "enum": ["2d", "3d", "flow"] },
+        "itemKind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "icon": { "type": "string", "maxLength": 256 },
+        "semanticType": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "defaults": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" }
+      }
+    },
+    "PluginToolContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "capability", "inputSchema", "outputSchema", "permissions"],
+      "properties": {
+        "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "capability": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "inputSchema": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
+        "outputSchema": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
+        "permissions": {
+          "type": "array",
+          "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" }
+        }
+      }
+    },
+    "PluginContributionSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "pluginId",
+        "version",
+        "knowledge",
+        "skills",
+        "instructions",
+        "diagnostics",
+        "views",
+        "palettes",
+        "tools"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.plugin-contributions/v1" },
+        "contractVersion": { "const": 1 },
+        "pluginId": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
+        "knowledge": {
+          "type": "array",
+          "items": { "$ref": "knowledge-block.schema.json#/$defs/KnowledgeBlock" }
+        },
+        "skills": { "type": "array", "items": { "$ref": "#/$defs/PluginSkillContribution" } },
+        "instructions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginInstructionContribution" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "diagnostic.schema.json#/$defs/DiagnosticDefinition" }
+        },
+        "views": {
+          "type": "array",
+          "items": { "$ref": "view-notation.schema.json#/$defs/ViewDefinition" }
+        },
+        "palettes": { "type": "array", "items": { "$ref": "#/$defs/PluginPaletteContribution" } },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/PluginToolContribution" } }
+      }
+    }
+  }
+}

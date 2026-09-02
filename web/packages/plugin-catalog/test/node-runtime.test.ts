@@ -33,6 +33,22 @@ describe('NodePluginRuntime', () => {
       'export function activate(ctx) { ctx.provide("ok", true); }',
     );
     writeFileSync(join(pkg, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(
+      join(pkg, 'contributions.json'),
+      JSON.stringify({
+        schema: 'logicpilot.plugin-contributions/v1',
+        contractVersion: 1,
+        pluginId: manifest.id,
+        version: manifest.version,
+        knowledge: [],
+        skills: [],
+        instructions: [],
+        diagnostics: [],
+        views: [],
+        palettes: [],
+        tools: [],
+      }),
+    );
     // The scanner computes this digest and the dynamic loader verifies the
     // same manifest-bound value end to end.
     const digest = computePackageDigest(pkg, manifest);
@@ -44,6 +60,7 @@ describe('NodePluginRuntime', () => {
     expect(host.phaseValue).toBe('active');
     expect(host.isActive('logicpilot.runtime-plugin')).toBe(true);
     expect(runtime.snapshot()?.generation).toBe(1);
+    expect(runtime.contributionRegistry().snapshot().sets[0]?.pluginId).toBe(manifest.id);
     expect(host.manifestOf('logicpilot.runtime-plugin')?.id).toBe(manifest.id);
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
     let changes = 0;

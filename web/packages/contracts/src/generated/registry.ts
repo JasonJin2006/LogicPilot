@@ -80,6 +80,13 @@ export interface ContractTypes {
   PluginCatalogEntry: C.PluginCatalogEntry;
   PluginCatalogDiagnostic: C.PluginCatalogDiagnostic;
   PluginCatalog: C.PluginCatalog;
+  PluginContributionKind: C.PluginContributionKind;
+  PluginSkillStep: C.PluginSkillStep;
+  PluginSkillContribution: C.PluginSkillContribution;
+  PluginInstructionContribution: C.PluginInstructionContribution;
+  PluginPaletteContribution: C.PluginPaletteContribution;
+  PluginToolContribution: C.PluginToolContribution;
+  PluginContributionSet: C.PluginContributionSet;
   PluginManifest: C.PluginManifest;
   PluginDependency: C.PluginDependency;
   PluginEntrypoints: C.PluginEntrypoints;

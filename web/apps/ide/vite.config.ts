@@ -10,7 +10,11 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { createApiRequestPolicy } from '../../../app/request-policy.mjs';
-import { handlePluginCatalog, handlePlugins } from './scripts/plugin-catalog-bridge.mjs';
+import {
+  handlePluginCatalog,
+  handlePluginRegistry,
+  handlePlugins,
+} from './scripts/plugin-catalog-bridge.mjs';
 
 import {
   handleAiAssistant,
@@ -94,6 +98,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/plugins', (req, res) => {
       void runWithApiPolicy(req, res, () => handlePlugins(req, res));
+    });
+    server.middlewares.use('/api/plugin-registry', (req, res) => {
+      void runWithApiPolicy(req, res, () => handlePluginRegistry(req, res));
     });
   },
 });

@@ -34,6 +34,7 @@ import {
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
 import {
   handlePluginCatalog,
+  handlePluginRegistry,
   handlePlugins,
   startNodePluginRuntime,
   stopNodePluginRuntime,
@@ -267,6 +268,11 @@ async function main() {
     if (pathname === '/api/plugins') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handlePlugins(req, res));
+      return;
+    }
+    if (pathname === '/api/plugin-registry') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handlePluginRegistry(req, res));
       return;
     }
     if (isApi) {

@@ -116,6 +116,11 @@ try {
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
   assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim\?token=/);
+  const registryResponse = await apiFetch(`${baseUrl}/api/plugin-registry`);
+  assert.equal(registryResponse.status, 200);
+  const registry = await registryResponse.json();
+  assert.equal(registry.schema, 'logicpilot.plugin-registry/v1');
+  assert.equal(registry.generation, 0);
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {

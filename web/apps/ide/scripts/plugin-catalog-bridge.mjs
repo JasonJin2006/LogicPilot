@@ -38,6 +38,44 @@ export function handlePlugins(req, res) {
   })(req, res);
 }
 
+/** GET /api/plugin-registry: active generation plus structured contributions. */
+export function handlePluginRegistry(req, res) {
+  if (req.method !== 'GET') {
+    res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+  const snapshot = nodePluginRuntime?.snapshot();
+  const registry = nodePluginRuntime?.contributionRegistry().snapshot();
+  res.writeHead(200, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(
+    JSON.stringify({
+      schema: 'logicpilot.plugin-registry/v1',
+      contractVersion: 1,
+      generation: snapshot?.generation ?? registry?.generation ?? 0,
+      plugins: snapshot?.host.ids() ?? [],
+      contributions: (registry?.sets ?? []).map(sanitizeContributionSet),
+    }),
+  );
+}
+
+function sanitizeContributionSet(set) {
+  const copy = structuredClone(set);
+  for (const block of copy.knowledge ?? []) {
+    for (const source of block.provenance ?? []) source.source = sanitizePath(source.source);
+    for (const media of block.media ?? []) media.uri = sanitizePath(media.uri);
+  }
+  return copy;
+}
+
+function sanitizePath(value) {
+  return /^[A-Za-z]:[\\/]|^\\\\|^\//.test(value) ? '[local-path]' : value;
+}
+
 /** Opt-in Node PluginHost wiring for the desktop app server. It is disabled
  * by default; executable ESM still requires T4 and WASM T2 even when enabled. */
 export async function startNodePluginRuntime() {

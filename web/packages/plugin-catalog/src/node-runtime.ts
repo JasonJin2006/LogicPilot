@@ -16,6 +16,8 @@ import {
   PluginHost,
   projectCatalogEntries,
   CapabilityBroker,
+  ContributionRegistry,
+  type PreparedContributionGeneration,
   type AuditEntry,
   type DiscoverySource,
   type PluginModule,
@@ -25,6 +27,7 @@ import { scanPluginCatalog } from './catalog.js';
 import type { PluginCatalogScanConfig, PluginRootConfig } from './catalog.js';
 import type { WasmHostImports } from './wasm-abi.js';
 import { WASM_CAPABILITY_IMPORTS } from './wasm-abi.js';
+import { loadContributionSets } from './contribution-loader.js';
 
 export interface NodePluginRuntimeOptions {
   readonly roots: readonly PluginRootConfig[];
@@ -43,6 +46,7 @@ export interface NodePluginRuntimeOptions {
   readonly wasmCapabilities?: ReadonlySet<string>;
   readonly wasmImports?: WasmHostImports;
   readonly capabilityBroker?: CapabilityBroker;
+  readonly contributionRegistry?: ContributionRegistry;
   readonly onAudit?: (entry: AuditEntry) => void;
   readonly scan?: Omit<PluginCatalogScanConfig, 'roots'>;
 }
@@ -73,10 +77,13 @@ export class NodePluginRuntime {
   private readonly sessions = new Map<string, PluginRuntimeSession>();
   private capabilityRequestSequence = 0;
   private activeSnapshot: NodePluginRuntimeSnapshot | null = null;
+  private readonly contributions: ContributionRegistry;
+  private pendingContributions: PreparedContributionGeneration | null = null;
 
   constructor(private readonly options: NodePluginRuntimeOptions) {
     this.lockfileValue = options.lockfile;
     this.broker = options.capabilityBroker ?? new CapabilityBroker();
+    this.contributions = options.contributionRegistry ?? new ContributionRegistry();
     if (!options.capabilityBroker) {
       this.broker.register('runtime.log', () => undefined);
       this.broker.register('runtime.random', () => Math.floor(Math.random() * 0x100000000));
@@ -91,12 +98,17 @@ export class NodePluginRuntime {
     return this.broker;
   }
 
+  contributionRegistry(): ContributionRegistry {
+    return this.contributions;
+  }
+
   async start(): Promise<PluginHost> {
     if (this.host?.phaseValue === 'active') return this.host;
     if (this.starting) return this.starting;
     this.starting = this.startFresh();
     try {
       this.host = await this.starting;
+      this.commitPendingContributions();
       this.revisionValue += 1;
       this.broker.activateGeneration(this.revisionValue);
       this.activeSnapshot = {
@@ -117,6 +129,8 @@ export class NodePluginRuntime {
     this.broker.revokeGeneration(this.revisionValue);
     for (const session of this.sessions.values()) this.broker.revokeSession(session.sessionId);
     this.sessions.clear();
+    const cleared = this.contributions.prepare([]);
+    this.contributions.commit(cleared);
     this.host = null;
     this.activeSnapshot = null;
   }
@@ -197,6 +211,7 @@ export class NodePluginRuntime {
     } catch (error) {
       this.catalogValue = previousCatalog;
       this.revokeSessions(this.revisionValue + 1);
+      this.pendingContributions = null;
       throw error;
     }
     if (previous?.phaseValue === 'active') {
@@ -205,9 +220,11 @@ export class NodePluginRuntime {
       } catch (error) {
         await next.stopAll().catch(() => undefined);
         this.catalogValue = previousCatalog;
+        this.pendingContributions = null;
         throw error;
       }
     }
+    this.commitPendingContributions();
     const previousGeneration = this.revisionValue;
     this.host = next;
     this.revisionValue += 1;
@@ -251,6 +268,8 @@ export class NodePluginRuntime {
     const catalog = await scanPluginCatalog({ roots: this.options.roots, ...this.options.scan });
     const approved = this.approvedEntries(catalog.entries, this.lockfileValue);
     this.catalogValue = { ...catalog, entries: approved };
+    const loadedContributions = loadContributionSets(approved, this.options.roots);
+    this.pendingContributions = this.contributions.prepare(loadedContributions.sets);
     const loaders = new Map<string, () => Promise<PluginModule>>();
     const loaderErrors: string[] = [];
     const errors = (error: unknown): void => {
@@ -325,6 +344,8 @@ export class NodePluginRuntime {
       onAudit: this.options.onAudit,
     });
     for (const detail of loaderErrors) host.auditLog.append('error', undefined, detail);
+    for (const detail of loadedContributions.errors)
+      host.auditLog.append('error', undefined, detail);
     return host;
   }
 
@@ -432,6 +453,12 @@ export class NodePluginRuntime {
         this.sessions.delete(session.pluginId);
       }
     }
+  }
+
+  private commitPendingContributions(): void {
+    if (!this.pendingContributions) return;
+    this.contributions.commit(this.pendingContributions);
+    this.pendingContributions = null;
   }
 }
 

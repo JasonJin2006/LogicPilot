@@ -540,6 +540,71 @@ export interface PluginCatalog {
   readonly diagnostics: ReadonlyArray<PluginCatalogDiagnostic>;
 }
 
+// --- PluginContributionKind (plugin-contributions.schema.json) ---
+export type PluginContributionKind = "knowledge" | "skill" | "instruction" | "diagnostic" | "view" | "palette" | "tool";
+
+// --- PluginSkillStep (plugin-contributions.schema.json) ---
+export interface PluginSkillStep {
+  readonly id: CapabilityId;
+  readonly action: string;
+  readonly arguments?: JsonValue;
+}
+
+// --- PluginSkillContribution (plugin-contributions.schema.json) ---
+export interface PluginSkillContribution {
+  readonly id: CapabilityId;
+  readonly name: string;
+  readonly trigger: string;
+  readonly inputs: ReadonlyArray<string>;
+  readonly steps: ReadonlyArray<PluginSkillStep>;
+  readonly permissions: ReadonlyArray<PermissionId>;
+}
+
+// --- PluginInstructionContribution (plugin-contributions.schema.json) ---
+export interface PluginInstructionContribution {
+  readonly id: CapabilityId;
+  readonly scope: string;
+  readonly priority: number;
+  readonly rules: ReadonlyArray<string>;
+  readonly forbidden: ReadonlyArray<string>;
+}
+
+// --- PluginPaletteContribution (plugin-contributions.schema.json) ---
+export interface PluginPaletteContribution {
+  readonly id: CapabilityId;
+  readonly canvas: "2d" | "3d" | "flow";
+  readonly itemKind: string;
+  readonly label: string;
+  readonly icon?: string;
+  readonly semanticType: string;
+  readonly defaults?: JsonSchemaFragment;
+}
+
+// --- PluginToolContribution (plugin-contributions.schema.json) ---
+export interface PluginToolContribution {
+  readonly id: CapabilityId;
+  readonly name: string;
+  readonly capability: CapabilityId;
+  readonly inputSchema: JsonSchemaFragment;
+  readonly outputSchema: JsonSchemaFragment;
+  readonly permissions: ReadonlyArray<PermissionId>;
+}
+
+// --- PluginContributionSet (plugin-contributions.schema.json) ---
+export interface PluginContributionSet {
+  readonly schema: "logicpilot.plugin-contributions/v1";
+  readonly contractVersion: 1;
+  readonly pluginId: PluginId;
+  readonly version: SemanticVersion;
+  readonly knowledge: ReadonlyArray<KnowledgeBlock>;
+  readonly skills: ReadonlyArray<PluginSkillContribution>;
+  readonly instructions: ReadonlyArray<PluginInstructionContribution>;
+  readonly diagnostics: ReadonlyArray<DiagnosticDefinition>;
+  readonly views: ReadonlyArray<ViewDefinition>;
+  readonly palettes: ReadonlyArray<PluginPaletteContribution>;
+  readonly tools: ReadonlyArray<PluginToolContribution>;
+}
+
 // --- PluginManifest (plugin-manifest-v2.schema.json) ---
 export interface PluginManifest {
   readonly schema: "logicpilot.plugin-manifest/v2";

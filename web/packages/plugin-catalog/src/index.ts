@@ -5,3 +5,4 @@ export * from './dynamic-loader.js';
 export * from './wasm-abi.js';
 export * from './wasm-bindings.js';
 export * from './node-runtime.js';
+export * from './contribution-loader.js';

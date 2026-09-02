@@ -263,6 +263,20 @@ enum class PluginCatalogDiagnosticKind : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, PluginCatalogDiagnosticKind& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(PluginCatalogDiagnosticKind value);
 
+enum class PluginContributionKind : std::uint8_t {
+  kKnowledge,
+  kSkill,
+  kInstruction,
+  kDiagnostic,
+  kView,
+  kPalette,
+  kTool,
+};
+
+[[nodiscard]] std::string dump(PluginContributionKind value);
+[[nodiscard]] bool parse(std::string_view text, PluginContributionKind& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(PluginContributionKind value);
+
 enum class CanvasEngineId : std::uint8_t {
   kGraph2d,
   kScene2d,
@@ -360,6 +374,12 @@ struct PluginCatalogRoot;
 struct PluginCatalogEntry;
 struct PluginCatalogDiagnostic;
 struct PluginCatalog;
+struct PluginSkillStep;
+struct PluginSkillContribution;
+struct PluginInstructionContribution;
+struct PluginPaletteContribution;
+struct PluginToolContribution;
+struct PluginContributionSet;
 struct PluginManifest;
 struct PluginDependency;
 struct PluginEntrypoints;
@@ -766,6 +786,21 @@ struct PluginEntrypoints {
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginEntrypoints& value);
 [[nodiscard]] std::string dump(const PluginEntrypoints& value);
 
+// plugin-contributions.schema.json
+struct PluginInstructionContribution {
+  std::string id;
+  std::string scope;
+  std::int64_t priority;
+  std::vector<std::string> rules;
+  std::vector<std::string> forbidden;
+};
+
+[[nodiscard]] bool operator==(const PluginInstructionContribution& lhs, const PluginInstructionContribution& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginInstructionContribution& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginInstructionContribution& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginInstructionContribution& value);
+[[nodiscard]] std::string dump(const PluginInstructionContribution& value);
+
 // plugin-manifest-v2.schema.json
 struct PluginIntegrity {
   std::string sha256;
@@ -823,6 +858,23 @@ struct PluginMigration {
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginMigration& value);
 [[nodiscard]] std::string dump(const PluginMigration& value);
 
+// plugin-contributions.schema.json
+struct PluginPaletteContribution {
+  std::string id;
+  std::string canvas;
+  std::string item_kind;
+  std::string label;
+  std::optional<std::string> icon;
+  std::string semantic_type;
+  std::optional<JsonSchemaFragment> defaults;
+};
+
+[[nodiscard]] bool operator==(const PluginPaletteContribution& lhs, const PluginPaletteContribution& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginPaletteContribution& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginPaletteContribution& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginPaletteContribution& value);
+[[nodiscard]] std::string dump(const PluginPaletteContribution& value);
+
 // plugin-runtime-session.schema.json
 struct PluginRuntimeSession {
   std::string schema;
@@ -841,6 +893,35 @@ struct PluginRuntimeSession {
 [[nodiscard]] bool parse(std::string_view text, PluginRuntimeSession& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginRuntimeSession& value);
 [[nodiscard]] std::string dump(const PluginRuntimeSession& value);
+
+// plugin-contributions.schema.json
+struct PluginSkillStep {
+  std::string id;
+  std::string action;
+  std::optional<nlohmann::ordered_json> arguments;
+};
+
+[[nodiscard]] bool operator==(const PluginSkillStep& lhs, const PluginSkillStep& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginSkillStep& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginSkillStep& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginSkillStep& value);
+[[nodiscard]] std::string dump(const PluginSkillStep& value);
+
+// plugin-contributions.schema.json
+struct PluginToolContribution {
+  std::string id;
+  std::string name;
+  std::string capability;
+  JsonSchemaFragment input_schema;
+  JsonSchemaFragment output_schema;
+  std::vector<PermissionId> permissions;
+};
+
+[[nodiscard]] bool operator==(const PluginToolContribution& lhs, const PluginToolContribution& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginToolContribution& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginToolContribution& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginToolContribution& value);
+[[nodiscard]] std::string dump(const PluginToolContribution& value);
 
 // view-notation.schema.json
 struct PortRule {
@@ -1240,6 +1321,22 @@ struct PluginManifest {
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginManifest& value);
 [[nodiscard]] std::string dump(const PluginManifest& value);
 
+// plugin-contributions.schema.json
+struct PluginSkillContribution {
+  std::string id;
+  std::string name;
+  std::string trigger;
+  std::vector<std::string> inputs;
+  std::vector<PluginSkillStep> steps;
+  std::vector<PermissionId> permissions;
+};
+
+[[nodiscard]] bool operator==(const PluginSkillContribution& lhs, const PluginSkillContribution& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginSkillContribution& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginSkillContribution& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginSkillContribution& value);
+[[nodiscard]] std::string dump(const PluginSkillContribution& value);
+
 // artifact-graph.schema.json
 struct Revision {
   std::string schema;
@@ -1334,6 +1431,27 @@ struct PluginCatalogEntry {
 [[nodiscard]] bool parse(std::string_view text, PluginCatalogEntry& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogEntry& value);
 [[nodiscard]] std::string dump(const PluginCatalogEntry& value);
+
+// plugin-contributions.schema.json
+struct PluginContributionSet {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string plugin_id;
+  std::string version;
+  std::vector<KnowledgeBlock> knowledge;
+  std::vector<PluginSkillContribution> skills;
+  std::vector<PluginInstructionContribution> instructions;
+  std::vector<DiagnosticDefinition> diagnostics;
+  std::vector<ViewDefinition> views;
+  std::vector<PluginPaletteContribution> palettes;
+  std::vector<PluginToolContribution> tools;
+};
+
+[[nodiscard]] bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginContributionSet& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginContributionSet& value);
+[[nodiscard]] std::string dump(const PluginContributionSet& value);
 
 // plugin-catalog.schema.json
 struct PluginCatalog {
