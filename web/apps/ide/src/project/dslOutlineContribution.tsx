@@ -36,7 +36,7 @@ import { MODEL_SCENE_DIR } from './project';
 import { refreshCanvasDocument } from '../state/projectSync';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
-import { CANVAS_CONTAINER_KINDS } from '../model/blockDefs';
+import { CANVAS_CONTAINER_KINDS } from '../plugins/registries/modelSemantics';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { ContextMenu } from '../layout/ContextMenu';

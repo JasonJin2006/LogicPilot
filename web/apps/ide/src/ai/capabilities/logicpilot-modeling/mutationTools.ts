@@ -12,7 +12,11 @@ import type { AssistantTool } from '../../toolTypes';
 import type { AssistantSessionState } from '../../assistantTypes';
 import { summarizeModel } from '../../contextBuilder';
 import { saveProject } from '../../../project/syncEngine';
-import { BLOCK_DEFS, blockPorts, isExecutableProcessKind } from '../../../model/blockDefs';
+import {
+  BLOCK_DEFS,
+  modelBlockPorts as blockPorts,
+  modelIsExecutableProcessKind as isExecutableProcessKind,
+} from '../../../plugins/registries/modelSemantics';
 import { useModelStore } from '../../../state/modelStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useWorkspaceStore } from '../../../state/workspaceStore';

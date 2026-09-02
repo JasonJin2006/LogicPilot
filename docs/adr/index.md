@@ -148,3 +148,4 @@
 - [0117 Process/SysML Agent Capability Split](0117-process-sysml-capability-split)
 - [0118 Palette Host Contribution Actions](0118-palette-host-contribution-actions)
 - [0119 Remove Built-in Forwarding Seams](0119-remove-builtin-forwarding-seams)
+- [0120 Runtime Model Semantic Registry](0120-model-semantic-registry)
