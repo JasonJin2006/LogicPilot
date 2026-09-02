@@ -130,3 +130,4 @@
 - [0099 Bounded Draft Resource Files](0099-draft-resource-files)
 - [0100 AgentEngine Contract Parity Harness](0100-agent-engine-parity-harness)
 - [0101 Configurable AgentEngine Runtime Endpoint](0101-configurable-agent-engine-endpoint)
+- [0102 Remove Legacy Assistant Tools Facade](0102-remove-assistant-tools-facade)

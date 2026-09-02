@@ -10,7 +10,7 @@ import { createProject } from '../project/project';
 import { runAssistantTurn } from './assistantRuntime';
 import { createAssistantKernel } from './assistantKernel';
 import { createAssistantSession, type AssistantContext } from './assistantTypes';
-import { findAssistantTool } from './assistantTools';
+import { findAssistantTool } from './capabilities/logicpilot-modeling/tools';
 import { undoAssistantChange } from './capabilities/logicpilot-modeling/runtime';
 import { buildAssistantContext } from './contextBuilder';
 import { useModelStore } from '../state/modelStore';
