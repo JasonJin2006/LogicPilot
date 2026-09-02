@@ -189,8 +189,9 @@ function createEsmWorkerController(
     const { parentPort, workerData } = require('node:worker_threads');
     let moduleValue;
     let activationContext;
+    let effects = [];
     function rpcContext() {
-      const effects = [];
+      effects = [];
       return {
         pluginId: workerData.pluginId,
         manifest: workerData.manifest,
@@ -198,7 +199,7 @@ function createEsmWorkerController(
         service: (name) => ({ call: (...args) => Promise.reject(new Error('service RPC not enabled in ABI v1: ' + name + ':' + args.length)) }),
         emit: (event, payload) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.emit', payload: { event, payload } }),
         on: (event) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.subscribe', payload: { event } }),
-        effect: () => effects.push(true),
+        effect: (cleanup) => { if (typeof cleanup === 'function') effects.push(cleanup); },
         provide: (name, service) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.service.provide', payload: { name, methods: Object.keys(service || {}) } }),
       };
     }
@@ -220,6 +221,9 @@ function createEsmWorkerController(
           await moduleValue.activate(activationContext);
         } else if (message.kind === 'deactivate' && typeof moduleValue.deactivate === 'function') {
           await moduleValue.deactivate();
+        }
+        if (message.kind === 'deactivate') {
+          for (const cleanup of effects.reverse()) { try { cleanup(); } catch (_) {} }
         }
         parentPort.postMessage({ ok: true, request: message.request });
       } catch (error) {
