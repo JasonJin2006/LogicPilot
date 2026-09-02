@@ -28,7 +28,7 @@ import {
   type ModelPatchResult,
   type ModelNode,
 } from '@logicpilot/editor';
-import { blockPorts } from '../model/blockDefs';
+import { blockPorts } from '../plugins/builtin/modeling';
 import { routeOrthogonal } from '@logicpilot/canvas';
 import { updatePresentationLayer } from '../presentation/layers';
 

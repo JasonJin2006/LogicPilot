@@ -10,8 +10,7 @@
 import type { ComponentType } from 'react';
 import { Boxes, Files, Palette, Puzzle } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
-import { DslEditor } from '../model/DslEditor';
-import { ModelWorkspace } from '../model/ModelWorkspace';
+import { DslEditor, ModelWorkspace } from '../plugins/builtin/panels';
 import { ConsolePanel } from './ConsolePanel';
 import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';

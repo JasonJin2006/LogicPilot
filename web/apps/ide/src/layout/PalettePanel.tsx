@@ -10,16 +10,14 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChangeEvent, ComponentType, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
-import { portGlyphPoint } from '../model/blockDefs';
+import { portGlyphPoint } from '../plugins/builtin/modeling';
 import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import type { PaletteItem as CatalogItem } from '../workbench/palette';
 import { documentContributionFor } from '../workbench/documentTypes';
-import { insertBlockAt } from '../model/canvasInsert';
-import { BlockIcon } from '../model/BlockIcon';
+import { insertBlockAt, BlockIcon, insertFromPalette } from '../plugins/builtin/palette';
 import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
 import { useUiStore } from '../state/uiStore';
-import { insertFromPalette } from '../sysml/sysmlEditBridge';
 import { ScrollArea } from '../components/ScrollArea';
 import {
   pluginRegistryGeneration,
