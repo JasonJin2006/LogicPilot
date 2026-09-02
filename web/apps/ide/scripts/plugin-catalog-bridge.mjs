@@ -556,4 +556,5 @@ export async function stopNodePluginRuntime() {
     }
   }
   registryClients.clear();
+  registryHistory.length = 0;
 }
