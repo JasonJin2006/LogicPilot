@@ -15,9 +15,11 @@ usage and errors.
 Before returning to the host, every SDK tool call is checked against the exact
 compiled tool-name set. A call outside that set fails closed; the SDK cannot
 widen capabilities or bypass LogicPilot approvals, transactions or evidence.
-The current `BuiltinAgentEngine` remains the default. The external package is
-an optional runtime dependency and is not imported by the browser or core
-plugin host.
+The current `BuiltinAgentEngine` remains the default. The optional
+`@logicpilot/agent-openai` package now implements the boundary with
+`@openai/agents@0.17.0`; it is not imported by the browser or core plugin host.
+The package is built and tested independently; selecting it in a deployment
+still requires explicit host configuration and parity approval.
 
 ## Consequences
 
