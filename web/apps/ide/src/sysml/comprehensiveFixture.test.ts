@@ -3,10 +3,7 @@
 // parser rule (or an explicit matrix row) before it lands in this file.
 
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error - node builtins are available in the vitest runtime; the
-// app tsconfig intentionally stays DOM-only.
 import { readFileSync } from 'node:fs';
-// @ts-expect-error - see above.
 import { fileURLToPath } from 'node:url';
 import { projectSysML } from './sysmlProjection';
 

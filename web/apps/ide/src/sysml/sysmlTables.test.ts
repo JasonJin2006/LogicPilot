@@ -2,9 +2,7 @@
 // Allocation tables): pure projections over the model, pinned here.
 
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error - node builtins are available in the vitest runtime.
 import { readFileSync } from 'node:fs';
-// @ts-expect-error - see above.
 import { fileURLToPath } from 'node:url';
 import { projectSysML } from './sysmlProjection';
 import { allocationRows, partRows, requirementRows } from './sysmlTables';

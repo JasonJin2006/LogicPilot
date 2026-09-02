@@ -33,7 +33,7 @@ export function TopBar() {
   useEffect(() => {
     if (!isTauri) return;
     let disposed = false;
-    let timer: number | undefined;
+    let timer: ReturnType<typeof setInterval> | undefined;
     void (async () => {
       try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');

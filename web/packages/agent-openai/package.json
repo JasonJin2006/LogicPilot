@@ -1,0 +1,30 @@
+{
+  "name": "@logicpilot/agent-openai",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Optional OpenAI Agents SDK adapter for the LogicPilot AgentEngine contract",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@logicpilot/contracts": "workspace:*",
+    "@logicpilot/plugin-host": "workspace:*",
+    "@openai/agents": "0.17.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

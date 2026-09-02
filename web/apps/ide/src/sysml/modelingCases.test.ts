@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error - node builtins are available in the vitest runtime; the
-// application tsconfig intentionally stays DOM-only.
 import { readFileSync } from 'node:fs';
-// @ts-expect-error - see above.
 import { fileURLToPath } from 'node:url';
 import { parseDsl } from '@logicpilot/editor';
 import { extractExecutionTargets } from './sysmlExecution';

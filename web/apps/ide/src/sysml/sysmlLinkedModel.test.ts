@@ -4,10 +4,7 @@
 // artifact, absent on machines without it) as a real-model regression.
 
 import { describe, expect, it } from 'vitest';
-// @ts-expect-error - node builtins are available in the vitest runtime; the
-// app tsconfig intentionally stays DOM-only.
 import { existsSync, readFileSync } from 'node:fs';
-// @ts-expect-error - see above.
 import { fileURLToPath } from 'node:url';
 import { buildLinkedSysMLModel, sysmlImportClosure } from './sysmlLinkedModel';
 import { extractExecutionTargets } from './sysmlExecution';
