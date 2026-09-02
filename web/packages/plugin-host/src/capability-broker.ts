@@ -60,6 +60,9 @@ export class CapabilityBroker {
     readonly grants: readonly PermissionGrant[];
     readonly ttlMs: number;
   }): PluginRuntimeSession {
+    if (!Number.isSafeInteger(input.ttlMs) || input.ttlMs < 1) {
+      throw new Error('session ttlMs must be a positive integer');
+    }
     const session: PluginRuntimeSession = {
       schema: 'logicpilot.plugin-runtime-session/v1',
       contractVersion: 1,
