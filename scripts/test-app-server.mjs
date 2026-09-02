@@ -91,6 +91,12 @@ const serverEnv = {
   LOGICPILOT_PLUGIN_STORE_ROOT: temporaryRoot('logicpilot-app-plugins-'),
   LOGICPILOT_PLUGIN_SIGNING_KEY_ID: 'app-test-key',
 };
+const expectedAgentEngine = argument('--agent-engine') ?? 'builtin';
+assert.ok(
+  expectedAgentEngine === 'builtin' || expectedAgentEngine === 'sdk.openai-agents',
+  `unsupported test agent engine: ${expectedAgentEngine}`,
+);
+serverEnv.LOGICPILOT_AGENT_ENGINE = expectedAgentEngine;
 const signingKeys = generateKeyPairSync('ed25519');
 serverEnv.LOGICPILOT_PLUGIN_SIGNING_PRIVATE_KEY = signingKeys.privateKey
   .export({ type: 'pkcs8', format: 'pem' })
@@ -132,13 +138,13 @@ try {
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
   assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim\?token=/);
-  assert.equal(config.agentEngine, 'builtin');
-  const disabledSdk = await apiFetch(`${baseUrl}/api/agent-step`, {
+  assert.equal(config.agentEngine, expectedAgentEngine);
+  const sdkProbe = await apiFetch(`${baseUrl}/api/agent-step`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
-  assert.equal(disabledSdk.status, 503);
+  assert.equal(sdkProbe.status, expectedAgentEngine === 'builtin' ? 503 : 400);
   const registryResponse = await apiFetch(`${baseUrl}/api/plugin-registry`);
   assert.equal(registryResponse.status, 200);
   const registry = await registryResponse.json();
