@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PluginRegistryStore } from './registry';
 
 function envelope(generation: number) {
@@ -47,5 +47,26 @@ describe('PluginRegistryStore', () => {
     malformed.contributions[0]!.pluginId = 'wrong';
     expect(() => store.apply(malformed)).toThrow(/invalid plugin contribution/);
     expect(store.snapshot().generation).toBe(1);
+  });
+
+  it('applies an SSE snapshot and can stop the reconnect loop', async () => {
+    const store = new PluginRegistryStore();
+    const payload = envelope(1);
+    const responseBody = () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(`event: registry\ndata: ${JSON.stringify(payload)}\n\n`),
+          );
+          controller.close();
+        },
+      });
+      return stream;
+    };
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, body: responseBody() }));
+    const stop = store.startLive({ fetch: fetchImpl, retryBaseMs: 1, retryMaxMs: 4 });
+    await vi.waitFor(() => expect(store.snapshot().generation).toBe(1));
+    stop();
+    expect(store.snapshot().plugins).toEqual(['logicpilot.registry-test']);
   });
 });

@@ -26,7 +26,11 @@ import {
 import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
-import { PLUGIN_REGISTRY, type PluginRegistryFetchOptions } from './registry';
+import {
+  PLUGIN_REGISTRY,
+  type PluginRegistryFetchOptions,
+  stopPluginRegistryLive,
+} from './registry';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -218,7 +222,34 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
             `[registry] bridge unavailable: ${error instanceof Error ? error.message : String(error)}`,
           );
         })
-        .then(() => activated);
+        .then(() => {
+          if (typeof window !== 'undefined' && options.registry !== null) {
+            const configPromise = options.registry
+              ? Promise.resolve(
+                  options.registry.fetch
+                    ? null
+                    : {
+                        url: (options.registry.url ?? '/api/plugin-registry').replace(
+                          /\/?$/,
+                          '/stream',
+                        ),
+                        headers: options.registry.headers,
+                      },
+                )
+              : getAppConfig().then((config) =>
+                  config
+                    ? {
+                        url: `${config.apiBase}/api/plugin-registry/stream`,
+                        headers: sessionHeaders(config),
+                      }
+                    : null,
+                );
+            void configPromise.then((stream) => {
+              if (stream && host === candidate) PLUGIN_REGISTRY.startLive(stream);
+            });
+          }
+          return activated;
+        });
     })
     .then(() => candidate)
     .finally(() => {
@@ -253,6 +284,7 @@ export async function startZeroPluginHost(): Promise<PluginHost> {
 /** Stops the active host (tests, HMR teardown). */
 export async function stopIdePluginHost(): Promise<void> {
   if (!host) return;
+  stopPluginRegistryLive();
   const current = host;
   host = null;
   if (startPromise) {
