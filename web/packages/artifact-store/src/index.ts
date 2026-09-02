@@ -7,7 +7,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Artifact, Revision, Transaction } from '@logicpilot/contracts';
+import type {
+  Artifact,
+  ArtifactKind,
+  ArtifactRef,
+  Revision,
+  Transaction,
+  TypedOperation,
+} from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 
 export interface ArtifactGraphState {
@@ -19,7 +26,7 @@ export interface ArtifactGraphState {
 export class ArtifactStoreError extends Error {
   constructor(
     message: string,
-    readonly code: 'io' | 'invalid' | 'conflict' | 'not-found',
+    readonly code: 'io' | 'invalid' | 'conflict' | 'not-found' | 'validation',
   ) {
     super(message);
     this.name = 'ArtifactStoreError';
@@ -33,15 +40,21 @@ export class FileSystemArtifactStore {
   private readonly rootDir: string;
   private readonly statePath: string;
   private readonly snapshotPath: string;
+  private readonly now: () => string;
+  private readonly validateOperation?: (operation: TypedOperation) => readonly string[];
 
   constructor(options: {
     readonly rootDir: string;
     readonly stateName?: string;
     readonly snapshotName?: string;
+    readonly now?: () => string;
+    readonly validateOperation?: (operation: TypedOperation) => readonly string[];
   }) {
     this.rootDir = resolve(options.rootDir);
     this.statePath = join(this.rootDir, options.stateName ?? 'artifact-graph.json');
     this.snapshotPath = join(this.rootDir, options.snapshotName ?? 'artifact-graph.snapshot.json');
+    this.now = options.now ?? (() => new Date().toISOString());
+    this.validateOperation = options.validateOperation;
   }
 
   read(): ArtifactGraphState {
@@ -90,6 +103,189 @@ export class FileSystemArtifactStore {
     const state = validateState(parsed);
     this.write(state);
     return state;
+  }
+
+  createArtifact(input: {
+    readonly id: string;
+    readonly kind: ArtifactKind;
+    readonly projectId?: string;
+    readonly createdBy: string;
+    readonly metadata?: Readonly<Record<string, string>>;
+  }): Artifact {
+    const state = this.read();
+    if (state.artifacts.some((artifact) => artifact.id === input.id)) {
+      throw new ArtifactStoreError(`artifact '${input.id}' already exists`, 'conflict');
+    }
+    const artifact: Artifact = {
+      schema: 'logicpilot.artifact/v1',
+      contractVersion: 1,
+      id: input.id,
+      kind: input.kind,
+      createdAt: this.now(),
+      createdBy: input.createdBy,
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+    };
+    const checked = validateContract('Artifact', artifact);
+    if (!checked.ok) throw new ArtifactStoreError(checked.errors.join('; '), 'invalid');
+    this.write({ ...state, artifacts: [...state.artifacts, checked.value] });
+    return checked.value;
+  }
+
+  artifact(id: string): Artifact {
+    const artifact = this.read().artifacts.find((candidate) => candidate.id === id);
+    if (!artifact) throw new ArtifactStoreError(`artifact '${id}' was not found`, 'not-found');
+    return artifact;
+  }
+
+  head(artifactId: string): Revision | undefined {
+    this.artifact(artifactId);
+    return this.read()
+      .revisions.filter((revision) => revision.artifactId === artifactId)
+      .at(-1);
+  }
+
+  propose(input: {
+    readonly id: string;
+    readonly proposedBy: string;
+    readonly artifactRefs: readonly ArtifactRef[];
+    readonly operations: readonly TypedOperation[];
+  }): Transaction {
+    const state = this.read();
+    if (input.artifactRefs.length === 0) {
+      throw new ArtifactStoreError('transaction needs an artifact reference', 'invalid');
+    }
+    for (const ref of input.artifactRefs) {
+      if (!state.artifacts.some((artifact) => artifact.id === ref.artifactId)) {
+        throw new ArtifactStoreError(`artifact '${ref.artifactId}' was not found`, 'not-found');
+      }
+    }
+    if (state.transactions.some((transaction) => transaction.id === input.id)) {
+      throw new ArtifactStoreError(`transaction '${input.id}' already exists`, 'conflict');
+    }
+    const transaction: Transaction = {
+      schema: 'logicpilot.transaction/v1',
+      contractVersion: 1,
+      id: input.id,
+      status: 'proposed',
+      proposedBy: input.proposedBy,
+      artifactRefs: input.artifactRefs,
+      operations: input.operations,
+      createdAt: this.now(),
+    };
+    const checked = validateContract('Transaction', transaction);
+    if (!checked.ok) throw new ArtifactStoreError(checked.errors.join('; '), 'invalid');
+    this.write({ ...state, transactions: [...state.transactions, checked.value] });
+    return checked.value;
+  }
+
+  transaction(id: string): Transaction {
+    const transaction = this.read().transactions.find((candidate) => candidate.id === id);
+    if (!transaction)
+      throw new ArtifactStoreError(`transaction '${id}' was not found`, 'not-found');
+    return transaction;
+  }
+
+  validate(transactionId: string): Transaction {
+    const state = this.read();
+    const transaction = state.transactions.find((candidate) => candidate.id === transactionId);
+    if (!transaction)
+      throw new ArtifactStoreError(`transaction '${transactionId}' was not found`, 'not-found');
+    const errors = transaction.operations.flatMap(
+      (operation) => this.validateOperation?.(operation) ?? [],
+    );
+    const next: Transaction = {
+      ...transaction,
+      status: errors.length === 0 ? 'validated' : 'rejected',
+    };
+    this.write({
+      ...state,
+      transactions: state.transactions.map((candidate) =>
+        candidate.id === transactionId ? next : candidate,
+      ),
+    });
+    if (errors.length > 0) throw new ArtifactStoreError(errors.join('; '), 'validation');
+    return next;
+  }
+
+  approve(transactionId: string, approvedBy: string): Transaction {
+    const state = this.read();
+    const transaction = state.transactions.find((candidate) => candidate.id === transactionId);
+    if (!transaction)
+      throw new ArtifactStoreError(`transaction '${transactionId}' was not found`, 'not-found');
+    if (transaction.status !== 'validated' && transaction.status !== 'awaiting-approval') {
+      throw new ArtifactStoreError(`transaction '${transactionId}' is not validated`, 'validation');
+    }
+    const next: Transaction = { ...transaction, status: 'awaiting-approval', approvedBy };
+    this.write({
+      ...state,
+      transactions: state.transactions.map((candidate) =>
+        candidate.id === transactionId ? next : candidate,
+      ),
+    });
+    return next;
+  }
+
+  commit(input: {
+    readonly transactionId: string;
+    readonly revisionId: string;
+    readonly artifactId: string;
+    readonly createdBy: string;
+    readonly digest: string;
+  }): Revision {
+    const state = this.read();
+    const transaction = state.transactions.find(
+      (candidate) => candidate.id === input.transactionId,
+    );
+    if (!transaction)
+      throw new ArtifactStoreError(
+        `transaction '${input.transactionId}' was not found`,
+        'not-found',
+      );
+    if (transaction.status !== 'awaiting-approval') {
+      throw new ArtifactStoreError('transaction is not approved', 'validation');
+    }
+    const artifact = state.artifacts.find((candidate) => candidate.id === input.artifactId);
+    if (!artifact)
+      throw new ArtifactStoreError(`artifact '${input.artifactId}' was not found`, 'not-found');
+    const current = state.revisions
+      .filter((revision) => revision.artifactId === artifact.id)
+      .at(-1);
+    const expected = transaction.artifactRefs.find(
+      (ref) => ref.artifactId === artifact.id,
+    )?.revisionId;
+    if ((current?.id ?? undefined) !== expected) {
+      throw new ArtifactStoreError('artifact head changed since proposal', 'conflict');
+    }
+    if (state.revisions.some((revision) => revision.id === input.revisionId)) {
+      throw new ArtifactStoreError(`revision '${input.revisionId}' already exists`, 'conflict');
+    }
+    const revision: Revision = {
+      schema: 'logicpilot.revision/v1',
+      contractVersion: 1,
+      id: input.revisionId,
+      artifactId: artifact.id,
+      ...(current === undefined ? {} : { parentRevisionId: current.id }),
+      createdAt: this.now(),
+      createdBy: input.createdBy,
+      operations: transaction.operations,
+      digest: input.digest,
+    };
+    const checked = validateContract('Revision', revision);
+    if (!checked.ok) throw new ArtifactStoreError(checked.errors.join('; '), 'invalid');
+    const committed: Transaction = {
+      ...transaction,
+      status: 'committed',
+      committedRevisionId: revision.id,
+    };
+    this.write({
+      artifacts: state.artifacts,
+      revisions: [...state.revisions, checked.value],
+      transactions: state.transactions.map((candidate) =>
+        candidate.id === transaction.id ? committed : candidate,
+      ),
+    });
+    return checked.value;
   }
 
   compareAndSwap(input: {

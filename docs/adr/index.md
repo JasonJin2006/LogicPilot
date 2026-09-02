@@ -101,3 +101,5 @@
 - [0070 Transactional Plugin Host with Cordis-Compatible Lifecycle](0070-plugin-host-and-cordis)
 - [0071 Phase 2B-1 Plugin Catalog Discovery](0071-plugin-catalog-discovery)
 - [0072 File-System Package Store with Lockfile CAS and Durable Audit](0072-filesystem-package-store)
+- [0084 Persistent Artifact Graph Store](0084-filesystem-artifact-store)
+- [0086 Persistent Artifact Transaction API](0086-persistent-artifact-transaction-api)

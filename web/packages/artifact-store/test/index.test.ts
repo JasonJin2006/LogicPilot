@@ -74,4 +74,58 @@ describe('FileSystemArtifactStore', () => {
       }),
     ).toThrow(ArtifactStoreError);
   });
+
+  it('persists the propose, validate, approve and commit lifecycle', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-lifecycle-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({
+      rootDir: root,
+      now: () => '2026-09-02T00:00:00Z',
+    });
+    const artifact = store.createArtifact({
+      id: 'model.main',
+      kind: 'semantic-model',
+      createdBy: 'user',
+    });
+    const operation = { opId: 'op-1', opType: 'model-patch', payload: {} } as const;
+    const proposed = store.propose({
+      id: 'tx-1',
+      proposedBy: 'agent',
+      artifactRefs: [{ artifactId: artifact.id }],
+      operations: [operation],
+    });
+    expect(proposed.status).toBe('proposed');
+    expect(store.validate('tx-1').status).toBe('validated');
+    expect(store.approve('tx-1', 'user').status).toBe('awaiting-approval');
+    const revision = store.commit({
+      transactionId: 'tx-1',
+      revisionId: 'rev-1',
+      artifactId: artifact.id,
+      createdBy: 'agent',
+      digest: 'b'.repeat(64),
+    });
+    expect(revision.parentRevisionId).toBeUndefined();
+    expect(store.head(artifact.id)?.id).toBe('rev-1');
+    expect(store.transaction('tx-1').status).toBe('committed');
+    expect(store.read().revisions).toHaveLength(1);
+  });
+
+  it('rejects invalid operations without committing them', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-validation-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({
+      rootDir: root,
+      validateOperation: () => ['operation is not allowed'],
+    });
+    store.write(stateFixture());
+    store.propose({
+      id: 'tx-invalid',
+      proposedBy: 'agent',
+      artifactRefs: [{ artifactId: 'model.main' }],
+      operations: [{ opId: 'op-1', opType: 'model-patch', payload: {} }],
+    });
+    expect(() => store.validate('tx-invalid')).toThrow(/not allowed/);
+    expect(store.transaction('tx-invalid').status).toBe('rejected');
+    expect(store.read().revisions).toHaveLength(0);
+  });
 });

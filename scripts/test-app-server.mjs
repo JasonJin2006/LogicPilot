@@ -5,8 +5,9 @@
 //   node scripts/test-app-server.mjs [--lpserver <path>] [--lpcli <path>]
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 import { findLpcli, findLpServer, logicPilotRoot } from './tool-paths.mjs';
 
@@ -78,6 +79,7 @@ const serverEnv = {
   ...process.env,
   LP_SERVER: selectedLpServer(),
   LPCLI: lpcli,
+  LOGICPILOT_ARTIFACT_STORE_ROOT: mkdtempSync(join(tmpdir(), 'logicpilot-app-artifact-')),
 };
 // Force the offline provider so the AI loop cannot depend on the network.
 delete serverEnv.OPENAI_API_KEY;
@@ -133,7 +135,55 @@ try {
   assert.equal(artifactResponse.status, 200);
   const artifactView = await artifactResponse.json();
   assert.equal(artifactView.schema, 'logicpilot.artifact-graph-view/v1');
-  assert.equal(artifactView.configured, false);
+  assert.equal(artifactView.configured, true);
+  const artifactAction = (body) =>
+    apiFetch(`${baseUrl}/api/artifact-graph`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const createdArtifact = await artifactAction({
+    action: 'create-artifact',
+    input: { id: 'app.model', kind: 'semantic-model', createdBy: 'user' },
+  });
+  assert.equal(createdArtifact.status, 200);
+  const proposed = await artifactAction({
+    action: 'propose',
+    input: {
+      id: 'app.tx-1',
+      proposedBy: 'agent',
+      artifactRefs: [{ artifactId: 'app.model' }],
+      operations: [{ opId: 'app.op-1', opType: 'model-patch', payload: {} }],
+    },
+  });
+  assert.equal(proposed.status, 200);
+  assert.equal(
+    (await (await artifactAction({ action: 'validate', transactionId: 'app.tx-1' })).json()).result
+      .status,
+    'validated',
+  );
+  assert.equal(
+    (
+      await (
+        await artifactAction({ action: 'approve', transactionId: 'app.tx-1', approvedBy: 'user' })
+      ).json()
+    ).result.status,
+    'awaiting-approval',
+  );
+  const committed = await artifactAction({
+    action: 'commit',
+    input: {
+      transactionId: 'app.tx-1',
+      revisionId: 'app.rev-1',
+      artifactId: 'app.model',
+      createdBy: 'agent',
+      digest: 'c'.repeat(64),
+    },
+  });
+  assert.equal(committed.status, 200);
+  assert.equal((await committed.json()).result.id, 'app.rev-1');
+  const graphAfterCommit = await (await apiFetch(`${baseUrl}/api/artifact-graph`)).json();
+  assert.equal(graphAfterCommit.revisions.length, 1);
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {
@@ -337,4 +387,5 @@ try {
   throw error;
 } finally {
   child.kill();
+  rmSync(serverEnv.LOGICPILOT_ARTIFACT_STORE_ROOT, { recursive: true, force: true });
 }

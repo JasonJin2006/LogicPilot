@@ -9,6 +9,7 @@
 import {
   createPluginCatalogHandler,
   createPluginManagementHandler,
+  FileSystemArtifactStore,
   FileSystemPackageStore,
   NodePluginRuntime,
   pluginRootsFromEnv,
@@ -55,17 +56,75 @@ export function handlePluginRegistry(req, res) {
   res.end(JSON.stringify(registryPayload()));
 }
 
-/** GET /api/artifact-graph: the persistent revision graph owned by the Node
- * app-server. The browser receives validated entities only; filesystem errors
- * remain server-side. */
-export function handleArtifactGraph(req, res) {
-  if (req.method !== 'GET') {
+function readArtifactBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let size = 0;
+    let settled = false;
+    req.on('data', (chunk) => {
+      size += Buffer.byteLength(chunk);
+      if (size > 1024 * 1024 && !settled) {
+        settled = true;
+        req.removeAllListeners('data');
+        req.resume();
+        reject(Object.assign(new Error('artifact graph request is too large'), { status: 413 }));
+        return;
+      }
+      if (!settled) body += chunk;
+    });
+    req.on('end', () => {
+      if (!settled) resolve(body);
+    });
+    req.on('error', (error) => {
+      if (!settled) reject(error);
+    });
+  });
+}
+
+function artifactStoreFromEnv() {
+  const root = process.env.LOGICPILOT_ARTIFACT_STORE_ROOT;
+  return root ? new FileSystemArtifactStore({ rootDir: root }) : undefined;
+}
+
+function sendArtifactError(res, error) {
+  const status =
+    error?.status ??
+    (error?.code === 'not-found'
+      ? 404
+      : error?.code === 'conflict'
+        ? 409
+        : error?.code === 'validation' || error?.code === 'invalid'
+          ? 400
+          : 500);
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  // Store errors are intentionally reduced to stable messages. Never expose
+  // paths or raw filesystem exceptions through the browser API.
+  res.end(
+    JSON.stringify({ ok: false, error: String(error?.message ?? 'artifact graph unavailable') }),
+  );
+}
+
+/** GET/POST /api/artifact-graph: persistent graph view and the unified
+ * propose -> validate -> approve -> commit transaction boundary. The browser
+ * receives validated entities only; filesystem errors remain server-side. */
+export async function handleArtifactGraph(req, res) {
+  if (!['GET', 'POST'].includes(req.method)) {
     res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
     return;
   }
   const root = process.env.LOGICPILOT_ARTIFACT_STORE_ROOT;
   if (!root) {
+    if (req.method === 'POST') {
+      sendArtifactError(
+        res,
+        Object.assign(new Error('artifact graph is not configured'), { status: 503 }),
+      );
+      return;
+    }
     res.writeHead(200, {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -83,7 +142,56 @@ export function handleArtifactGraph(req, res) {
     return;
   }
   try {
-    const state = new FileSystemArtifactStore({ rootDir: root }).read();
+    const store = artifactStoreFromEnv();
+    if (!store) throw Object.assign(new Error('artifact graph is not configured'), { status: 503 });
+    if (req.method === 'POST') {
+      const raw = await readArtifactBody(req);
+      let input;
+      try {
+        input = JSON.parse(raw || '{}');
+      } catch {
+        throw Object.assign(new Error('request body is not valid JSON'), { status: 400 });
+      }
+      if (typeof input !== 'object' || input === null || typeof input.action !== 'string') {
+        throw Object.assign(new Error('artifact graph action is required'), { status: 400 });
+      }
+      let result;
+      switch (input.action) {
+        case 'create-artifact':
+          result = store.createArtifact(input.input ?? {});
+          break;
+        case 'propose':
+          result = store.propose(input.input ?? {});
+          break;
+        case 'validate':
+          result = store.validate(String(input.transactionId ?? ''));
+          break;
+        case 'approve':
+          result = store.approve(String(input.transactionId ?? ''), String(input.approvedBy ?? ''));
+          break;
+        case 'commit':
+          result = store.commit(input.input ?? {});
+          break;
+        default:
+          throw Object.assign(new Error(`unsupported artifact graph action '${input.action}'`), {
+            status: 400,
+          });
+      }
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      });
+      res.end(
+        JSON.stringify({
+          schema: 'logicpilot.artifact-graph-operation/v1',
+          action: input.action,
+          result,
+        }),
+      );
+      return;
+    }
+    const state = store.read();
     res.writeHead(200, {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
@@ -97,12 +205,8 @@ export function handleArtifactGraph(req, res) {
         ...state,
       }),
     );
-  } catch {
-    res.writeHead(500, {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-    });
-    res.end(JSON.stringify({ ok: false, error: 'artifact graph unavailable' }));
+  } catch (error) {
+    sendArtifactError(res, error);
   }
 }
 
