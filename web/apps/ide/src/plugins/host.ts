@@ -98,6 +98,7 @@ const CATALOG_SCOPES: readonly PluginScope[] = ['system', 'user', 'workspace'];
  *  is disabled (zero-paradigm gate, Node contexts, no app config). */
 async function remoteCatalogSources(
   explicit: IdePluginCatalogOptions | null | undefined,
+  knownManifests: readonly PluginManifest[],
 ): Promise<RemoteCatalogDiscoverySource[] | null> {
   if (import.meta.env.VITE_ZERO_PLUGINS === '1' || import.meta.env.VITE_PLUGINS === '0') {
     return null;
@@ -129,6 +130,8 @@ async function remoteCatalogSources(
         scope,
         ...(headers !== undefined ? { headers } : {}),
         ...(fetchImpl !== undefined ? { fetch: fetchImpl } : {}),
+        includeAllScopes: true,
+        knownManifests,
       }),
   );
 }
@@ -179,7 +182,10 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
       ? []
       : BUILTIN_PLUGINS);
   const sources: DiscoverySource[] = [builtinSourceFor(builtins, 'system')];
-  const remoteSources = await remoteCatalogSources(options.catalog);
+  const remoteSources = await remoteCatalogSources(
+    options.catalog,
+    builtins.map((builtin) => parseBuiltinManifest(builtin.manifestJson)),
+  );
   if (remoteSources) sources.push(...remoteSources);
 
   const candidate = new PluginHost({

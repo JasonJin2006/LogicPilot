@@ -338,6 +338,44 @@ describe('RemoteCatalogDiscoverySource', () => {
     expect(source.lastError()).toBeUndefined();
   });
 
+  it('keeps a workspace plugin whose dependency is in the system scope', async () => {
+    const system = entry({
+      id: 'logicpilot.system-lib',
+      scope: 'system',
+      rootId: 'system:1',
+      manifest: manifest({ id: 'logicpilot.system-lib' }),
+    });
+    const workspace = entry({
+      id: 'logicpilot.workspace-app',
+      scope: 'workspace',
+      rootId: 'workspace:1',
+      manifest: manifest({
+        id: 'logicpilot.workspace-app',
+        requires: [{ id: 'logicpilot.system-lib' }],
+      }),
+    });
+    const source = new RemoteCatalogDiscoverySource({
+      url: 'http://bridge.test/catalog',
+      scope: 'workspace',
+      includeAllScopes: true,
+      fetch: stubFetch(() => ({
+        ok: true,
+        status: 200,
+        json: () =>
+          catalogFixture({
+            roots: [
+              { id: 'system:1', scope: 'system' },
+              { id: 'workspace:1', scope: 'workspace' },
+            ],
+            entries: [system, workspace],
+          }),
+      })),
+    });
+    const discovered = await source.discover();
+    expect(discovered.map((plugin) => plugin.manifest.id)).toEqual(['logicpilot.workspace-app']);
+    expect(source.excludedEntries()).toEqual([]);
+  });
+
   it('skips web-entrypoint plugins under the default policy and reports them', async () => {
     const webOnly = entry({
       manifest: manifest({ id: 'logicpilot.demo.web', entrypoints: { web: './activate.ts' } }),

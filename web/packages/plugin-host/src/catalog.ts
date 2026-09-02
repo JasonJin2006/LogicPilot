@@ -327,6 +327,12 @@ export interface RemoteCatalogDiscoverySourceOptions {
   readonly resolveLoader?: (entry: PluginCatalogEntry) => PluginModule | undefined;
   readonly fetch?: CatalogFetch;
   readonly headers?: Readonly<Record<string, string>>;
+  /** Fetch the full envelope instead of a server-side scope slice so
+   *  dependencies can be projected across discovery layers. */
+  readonly includeAllScopes?: boolean;
+  /** Already trusted entries (for example statically bundled builtins) that
+   *  remote entries may depend on during projection. */
+  readonly knownManifests?: readonly PluginManifest[];
   /** Transport failures must never break the host; this observer gets them. */
   readonly onError?: (error: unknown) => void;
 }
@@ -339,6 +345,8 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
   private readonly url: string;
   private readonly fetchImpl: CatalogFetch;
   private readonly headers: Readonly<Record<string, string>> | undefined;
+  private readonly includeAllScopes: boolean;
+  private readonly knownManifests: readonly PluginManifest[];
   private readonly resolveLoader:
     ((entry: PluginCatalogEntry) => PluginModule | undefined) | undefined;
   private readonly onError: ((error: unknown) => void) | undefined;
@@ -358,6 +366,8 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
         throw new Error('no fetch implementation available for remote catalog discovery');
       });
     this.headers = options.headers;
+    this.includeAllScopes = options.includeAllScopes ?? false;
+    this.knownManifests = options.knownManifests ?? [];
     this.resolveLoader = options.resolveLoader;
     this.onError = options.onError;
   }
@@ -397,15 +407,39 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
       (diagnostic) => diagnostic.scope === undefined || diagnostic.scope === this.scope,
     );
     const scopeEntries = catalog.entries.filter((entry) => entry.scope === this.scope);
+    const knownEntries = this.knownManifests.map((manifest): PluginCatalogEntry => ({
+      id: manifest.id,
+      scope: 'system',
+      rootId: 'system:1',
+      path: 'builtin',
+      sha256: manifest.integrity?.sha256 ?? '0'.repeat(64),
+      manifest,
+    }));
+    const candidates = this.includeAllScopes ? [...knownEntries, ...catalog.entries] : scopeEntries;
     const loaders = new Map<string, PluginModule>();
-    for (const entry of scopeEntries) {
+    for (const entry of candidates) {
+      if (knownEntries.some((known) => known.id === entry.id && known.scope === entry.scope)) {
+        loaders.set(entry.id, noOpModule);
+        continue;
+      }
       const module = this.resolveLoader?.(entry) ?? defaultCatalogEntryLoader(entry);
       if (module) loaders.set(entry.id, module);
     }
-    const projection = projectCatalogEntries(scopeEntries, (entry) => loaders.has(entry.id));
+    const projection = projectCatalogEntries(candidates, (entry) => loaders.has(entry.id));
     this.excludedValue = projection.excluded;
     this.diagnosticsValue = [...this.diagnosticsValue, ...projection.diagnostics];
-    return projection.entries.map((entry) => ({
+    const projectedEntries = projection.entries.filter(
+      (entry) =>
+        entry.scope === this.scope &&
+        catalog.entries.some(
+          (candidate) =>
+            candidate.id === entry.id &&
+            candidate.scope === entry.scope &&
+            candidate.rootId === entry.rootId &&
+            candidate.path === entry.path,
+        ),
+    );
+    return projectedEntries.map((entry) => ({
       manifest: withCatalogDigest(entry),
       scope: entry.scope,
       load: () => {
@@ -440,6 +474,7 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
   }
 
   private bridgeUrl(): string {
+    if (this.includeAllScopes) return this.url;
     const separator = this.url.includes('?') ? '&' : '?';
     return `${this.url}${separator}scope=${encodeURIComponent(this.scope)}`;
   }
