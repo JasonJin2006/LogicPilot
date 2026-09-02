@@ -62,4 +62,32 @@ describe('AgentEngineRegistry', () => {
     await expect(registry.runStep('builtin-test', request('other'))).rejects.toThrow(/mismatch/);
     expect(registry.list()).toHaveLength(1);
   });
+
+  it('preserves prototype methods when registering class-based engines', async () => {
+    class TestEngine {
+      readonly descriptor = {
+        schema: 'logicpilot.agent-engine-descriptor/v1' as const,
+        contractVersion: 1 as const,
+        id: 'class-engine',
+        implementation: 'builtin' as const,
+      };
+
+      async runStep(step: ReturnType<typeof request>) {
+        return {
+          schema: 'logicpilot.agent-step-result/v1' as const,
+          contractVersion: 1 as const,
+          turnId: step.turnId,
+          engineId: step.engineId,
+          stepIndex: step.stepIndex,
+          status: 'done' as const,
+          toolCalls: [],
+          toolResults: [],
+        };
+      }
+    }
+    const registry = new AgentEngineRegistry();
+    registry.register(new TestEngine());
+    const result = await registry.runStep('class-engine', request('class-engine'));
+    expect(result.status).toBe('done');
+  });
 });

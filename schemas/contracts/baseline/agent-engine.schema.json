@@ -18,7 +18,10 @@
         "description": { "type": "string" },
         "parameters": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
         "requiredPermission": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" },
-        "scope": { "type": "string", "description": "Tool scope (document type, artifact kind, ...)." }
+        "scope": {
+          "type": "string",
+          "description": "Tool scope (document type, artifact kind, ...)."
+        }
       }
     },
     "ToolCall": {
@@ -45,7 +48,15 @@
     "AgentStepRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "contractVersion", "turnId", "engineId", "stepIndex", "input", "tools"],
+      "required": [
+        "schema",
+        "contractVersion",
+        "turnId",
+        "engineId",
+        "stepIndex",
+        "input",
+        "tools"
+      ],
       "properties": {
         "schema": { "const": "logicpilot.agent-step-request/v1" },
         "contractVersion": { "const": 1 },
@@ -89,10 +100,28 @@
         "createdAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" }
       }
     },
+    "AgentPlanStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 }
+      }
+    },
     "AgentStepResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "contractVersion", "turnId", "engineId", "stepIndex", "status", "toolCalls", "toolResults"],
+      "required": [
+        "schema",
+        "contractVersion",
+        "turnId",
+        "engineId",
+        "stepIndex",
+        "status",
+        "toolCalls",
+        "toolResults"
+      ],
       "properties": {
         "schema": { "const": "logicpilot.agent-step-result/v1" },
         "contractVersion": { "const": 1 },
@@ -101,6 +130,10 @@
         "stepIndex": { "type": "integer", "minimum": 0 },
         "status": { "$ref": "#/$defs/StepStatus" },
         "message": { "$ref": "common.schema.json#/$defs/JsonValue" },
+        "plan": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AgentPlanStep" }
+        },
         "toolCalls": {
           "type": "array",
           "items": { "$ref": "#/$defs/ToolCall" }

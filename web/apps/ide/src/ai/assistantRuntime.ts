@@ -27,6 +27,12 @@ import {
 } from './assistantKernel';
 import { resolveAgentTools } from './agentCapabilities';
 import type { AgentToolScope } from './agentContracts';
+import { AgentEngineRegistry } from '@logicpilot/plugin-host';
+import {
+  BuiltinAgentEngine,
+  decodeBuiltinAgentResult,
+  toolDescriptors,
+} from './builtinAgentEngine';
 import { findAssistantTool, type AssistantTool } from './capabilities/logicpilot-modeling/tools';
 import { useModelStore } from '../state/modelStore';
 import type { ModelPatch } from '@logicpilot/editor';
@@ -120,6 +126,7 @@ export interface RunAssistantOptions {
 }
 
 let undoSequence = 0;
+let agentStepSequence = 0;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException
@@ -156,7 +163,7 @@ async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void
   });
 }
 
-async function requestStep(
+async function requestStepTransport(
   messages: AssistantTurnMessage[],
   context: AssistantContext,
   options: RunAssistantOptions,
@@ -336,6 +343,32 @@ async function requestStepStream(
     throw new Error('assistant returned malformed JSON (schema validation failed)');
   }
   return parsedResponse;
+}
+
+async function requestStep(
+  messages: AssistantTurnMessage[],
+  context: AssistantContext,
+  options: RunAssistantOptions,
+): Promise<AssistantStepResponse> {
+  const tools = [
+    ...resolveAgentTools(options.capabilities, options.toolScope),
+    ...(options.additionalTools ?? []),
+  ];
+  const engine = new BuiltinAgentEngine(({ messages: inputMessages, context: inputContext }) =>
+    requestStepTransport(inputMessages.slice(), inputContext as AssistantContext, options),
+  );
+  const registry = new AgentEngineRegistry();
+  registry.register(engine);
+  const result = await registry.runStep('builtin', {
+    schema: 'logicpilot.agent-step-request/v1',
+    contractVersion: 1,
+    turnId: `ide-turn-${Date.now()}-${++agentStepSequence}`,
+    engineId: 'builtin',
+    stepIndex: 0,
+    input: { messages, context },
+    tools: toolDescriptors(tools),
+  });
+  return decodeBuiltinAgentResult(result);
 }
 
 const TOOL_LABELS: Record<string, string> = {

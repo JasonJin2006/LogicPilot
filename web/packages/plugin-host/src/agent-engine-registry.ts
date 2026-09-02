@@ -22,7 +22,13 @@ export class AgentEngineRegistry {
     if (!descriptor.ok) throw new Error(`invalid agent engine: ${descriptor.errors.join('; ')}`);
     if (this.engines.has(descriptor.value.id))
       throw new Error(`agent engine '${descriptor.value.id}' already registered`);
-    const stored = { ...engine, descriptor: descriptor.value };
+    // Do not object-spread a class instance: runStep/cancel commonly live on
+    // its prototype and would disappear from the registered engine.
+    const stored: AgentEngine = {
+      descriptor: descriptor.value,
+      runStep: engine.runStep.bind(engine),
+      ...(engine.cancel === undefined ? {} : { cancel: engine.cancel.bind(engine) }),
+    };
     this.engines.set(descriptor.value.id, stored);
     return () => {
       if (this.engines.get(descriptor.value.id) === stored)

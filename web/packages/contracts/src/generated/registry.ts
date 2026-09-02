@@ -11,6 +11,7 @@ export interface ContractTypes {
   StepStatus: C.StepStatus;
   AgentUsage: C.AgentUsage;
   AgentCheckpoint: C.AgentCheckpoint;
+  AgentPlanStep: C.AgentPlanStep;
   AgentStepResult: C.AgentStepResult;
   AgentEngineDescriptor: C.AgentEngineDescriptor;
   ArtifactKind: C.ArtifactKind;

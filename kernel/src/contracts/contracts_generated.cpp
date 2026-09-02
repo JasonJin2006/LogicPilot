@@ -53,6 +53,7 @@ nlohmann::ordered_json to_json_value(const ToolResult& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const AgentStepRequest& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const AgentUsage& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const AgentCheckpoint& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const AgentPlanStep& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const AgentStepResult& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const AgentEngineDescriptor& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ArtifactRef& v) { return to_json(v); }
@@ -1506,6 +1507,69 @@ bool operator==(const AgentCheckpoint& lhs, const AgentCheckpoint& rhs) {
       && lhs.created_at == rhs.created_at;
 }
 
+bool parse_json(const nlohmann::ordered_json& j, AgentPlanStep& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for AgentPlanStep";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "label",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "AgentPlanStep: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "AgentPlanStep");
+      if (!value.is_string()) {
+        error = std::string("AgentPlanStep.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "label", "AgentPlanStep");
+      if (!value.is_string()) {
+        error = std::string("AgentPlanStep.label") + ": expected string";
+        return false;
+      }
+      out.label = value.get<std::string>();
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, AgentPlanStep& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const AgentPlanStep& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["label"] = to_json_value(value.label);
+  return j;
+}
+
+std::string dump(const AgentPlanStep& value) { return to_json(value).dump(2); }
+
+bool operator==(const AgentPlanStep& lhs, const AgentPlanStep& rhs) {
+  return lhs.id == rhs.id
+      && lhs.label == rhs.label;
+}
+
 bool parse_json(const nlohmann::ordered_json& j, AgentStepResult& out, std::string& error) {
   if (!j.is_object()) {
     error = "expected object for AgentStepResult";
@@ -1519,6 +1583,7 @@ bool parse_json(const nlohmann::ordered_json& j, AgentStepResult& out, std::stri
       "stepIndex",
       "status",
       "message",
+      "plan",
       "toolCalls",
       "toolResults",
       "usage",
@@ -1589,6 +1654,23 @@ bool parse_json(const nlohmann::ordered_json& j, AgentStepResult& out, std::stri
       JsonValue parsed{};
       parsed = (*field_it);
       out.message = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("plan");
+    if (field_it != j.end()) {
+      std::vector<AgentPlanStep> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("AgentStepResult.plan") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("AgentStepResult.plan") + ": " + error;
+          return false;
+        }
+      }
+      out.plan = std::move(parsed);
     }
   }
   {
@@ -1676,6 +1758,9 @@ nlohmann::ordered_json to_json(const AgentStepResult& value) {
   if (value.message.has_value()) {
     j["message"] = to_json_value(*value.message);
   }
+  if (value.plan.has_value()) {
+    j["plan"] = to_json_value(*value.plan);
+  }
     j["toolCalls"] = to_json_value(value.tool_calls);
     j["toolResults"] = to_json_value(value.tool_results);
   if (value.usage.has_value()) {
@@ -1701,6 +1786,7 @@ bool operator==(const AgentStepResult& lhs, const AgentStepResult& rhs) {
       && lhs.status == rhs.status
       && (lhs.message.has_value() == rhs.message.has_value()
       && (!lhs.message.has_value() || lhs.message->dump() == rhs.message->dump()))
+      && lhs.plan == rhs.plan
       && lhs.tool_calls == rhs.tool_calls
       && lhs.tool_results == rhs.tool_results
       && lhs.usage == rhs.usage

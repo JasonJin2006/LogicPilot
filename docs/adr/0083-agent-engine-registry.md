@@ -11,6 +11,11 @@ Implements: AgentEngine abstraction/spike
 loop and future OpenAI Agents/Cordis adapters implement the same
 `runStep`/`cancel` surface.
 
+The IDE now mounts the current transport through `BuiltinAgentEngine`. The
+adapter translates exactly one assistant response, including its plan, tool
+calls and usage, into `AgentStepResult`; the surrounding runtime still owns
+the multi-step loop, approvals, tool execution and Artifact transactions.
+
 An engine receives only the compiled context and exact tool descriptors for
 one step. Tool execution, CapabilityBroker grants, Artifact transactions and
 simulation evidence remain outside the engine. An SDK adapter therefore cannot

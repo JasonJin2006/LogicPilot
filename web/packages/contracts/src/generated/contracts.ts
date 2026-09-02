@@ -70,6 +70,12 @@ export interface AgentCheckpoint {
   readonly createdAt?: Iso8601Timestamp;
 }
 
+// --- AgentPlanStep (agent-engine.schema.json) ---
+export interface AgentPlanStep {
+  readonly id: string;
+  readonly label: string;
+}
+
 // --- AgentStepResult (agent-engine.schema.json) ---
 export interface AgentStepResult {
   readonly schema: "logicpilot.agent-step-result/v1";
@@ -79,6 +85,7 @@ export interface AgentStepResult {
   readonly stepIndex: number;
   readonly status: StepStatus;
   readonly message?: JsonValue;
+  readonly plan?: ReadonlyArray<AgentPlanStep>;
   readonly toolCalls: ReadonlyArray<ToolCall>;
   readonly toolResults: ReadonlyArray<ToolResult>;
   readonly usage?: AgentUsage;

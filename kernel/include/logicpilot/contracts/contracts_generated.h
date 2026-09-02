@@ -339,6 +339,7 @@ struct ToolResult;
 struct AgentStepRequest;
 struct AgentUsage;
 struct AgentCheckpoint;
+struct AgentPlanStep;
 struct AgentStepResult;
 struct AgentEngineDescriptor;
 struct ArtifactRef;
@@ -432,6 +433,18 @@ struct AgentEngineDescriptor {
 [[nodiscard]] bool parse(std::string_view text, AgentEngineDescriptor& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const AgentEngineDescriptor& value);
 [[nodiscard]] std::string dump(const AgentEngineDescriptor& value);
+
+// agent-engine.schema.json
+struct AgentPlanStep {
+  std::string id;
+  std::string label;
+};
+
+[[nodiscard]] bool operator==(const AgentPlanStep& lhs, const AgentPlanStep& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, AgentPlanStep& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, AgentPlanStep& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const AgentPlanStep& value);
+[[nodiscard]] std::string dump(const AgentPlanStep& value);
 
 // agent-engine.schema.json
 struct AgentUsage {
@@ -1161,6 +1174,7 @@ struct AgentStepResult {
   std::int64_t step_index;
   StepStatus status;
   std::optional<JsonValue> message;
+  std::optional<std::vector<AgentPlanStep>> plan;
   std::vector<ToolCall> tool_calls;
   std::vector<ToolResult> tool_results;
   std::optional<AgentUsage> usage;
