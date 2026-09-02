@@ -277,6 +277,18 @@ enum class PluginContributionKind : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, PluginContributionKind& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(PluginContributionKind value);
 
+enum class PluginDraftStatus : std::uint8_t {
+  kDraft,
+  kValidated,
+  kApproved,
+  kRejected,
+  kPublished,
+};
+
+[[nodiscard]] std::string dump(PluginDraftStatus value);
+[[nodiscard]] bool parse(std::string_view text, PluginDraftStatus& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(PluginDraftStatus value);
+
 enum class CanvasEngineId : std::uint8_t {
   kGraph2d,
   kScene2d,
@@ -381,6 +393,8 @@ struct PluginInstructionContribution;
 struct PluginPaletteContribution;
 struct PluginToolContribution;
 struct PluginContributionSet;
+struct PermissionDiff;
+struct PluginDraft;
 struct PluginManifest;
 struct PluginDependency;
 struct PluginEntrypoints;
@@ -727,6 +741,19 @@ struct KnowledgeVerification {
 [[nodiscard]] bool parse(std::string_view text, KnowledgeVerification& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const KnowledgeVerification& value);
 [[nodiscard]] std::string dump(const KnowledgeVerification& value);
+
+// plugin-draft.schema.json
+struct PermissionDiff {
+  std::vector<PermissionId> added;
+  std::vector<PermissionId> removed;
+  std::optional<bool> trust_escalation;
+};
+
+[[nodiscard]] bool operator==(const PermissionDiff& lhs, const PermissionDiff& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PermissionDiff& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PermissionDiff& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PermissionDiff& value);
+[[nodiscard]] std::string dump(const PermissionDiff& value);
 
 // permission-trust.schema.json
 struct PermissionGrant {
@@ -1469,6 +1496,30 @@ struct PluginContributionSet {
 [[nodiscard]] bool parse(std::string_view text, PluginContributionSet& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginContributionSet& value);
 [[nodiscard]] std::string dump(const PluginContributionSet& value);
+
+// plugin-draft.schema.json
+struct PluginDraft {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string id;
+  std::string base_plugin_id;
+  PluginManifest manifest;
+  PluginContributionSet contributions;
+  PluginDraftStatus status;
+  std::string created_by;
+  std::string created_at;
+  std::optional<std::string> validated_at;
+  std::optional<std::string> approved_by;
+  std::optional<std::string> approved_at;
+  PermissionDiff permission_diff;
+  std::optional<std::vector<std::string>> diagnostics;
+};
+
+[[nodiscard]] bool operator==(const PluginDraft& lhs, const PluginDraft& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginDraft& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginDraft& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginDraft& value);
+[[nodiscard]] std::string dump(const PluginDraft& value);
 
 // plugin-registry.schema.json
 struct PluginRegistry {

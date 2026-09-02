@@ -88,6 +88,9 @@ export interface ContractTypes {
   PluginPaletteContribution: C.PluginPaletteContribution;
   PluginToolContribution: C.PluginToolContribution;
   PluginContributionSet: C.PluginContributionSet;
+  PluginDraftStatus: C.PluginDraftStatus;
+  PermissionDiff: C.PermissionDiff;
+  PluginDraft: C.PluginDraft;
   PluginManifest: C.PluginManifest;
   PluginDependency: C.PluginDependency;
   PluginEntrypoints: C.PluginEntrypoints;

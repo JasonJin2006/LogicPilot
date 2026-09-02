@@ -5,3 +5,4 @@ export * from './capability-broker.js';
 export * from './contribution-registry.js';
 export * from './knowledge-registry.js';
 export * from './agent-engine-registry.js';
+export * from './plugin-draft-registry.js';

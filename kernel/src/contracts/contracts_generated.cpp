@@ -44,6 +44,7 @@ nlohmann::ordered_json to_json_value(PluginScope v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogSeverity v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogDiagnosticKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginContributionKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(PluginDraftStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CanvasEngineId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(LayoutPersistence v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(WasmAbiValueType v) { return to_json(v); }
@@ -95,6 +96,8 @@ nlohmann::ordered_json to_json_value(const PluginInstructionContribution& v) { r
 nlohmann::ordered_json to_json_value(const PluginPaletteContribution& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginToolContribution& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginContributionSet& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PermissionDiff& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginDraft& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginManifest& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginDependency& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginEntrypoints& v) { return to_json(v); }
@@ -780,6 +783,37 @@ bool parse(std::string_view text, PluginContributionKind& out, std::string& erro
 }
 
 nlohmann::ordered_json to_json(PluginContributionKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(PluginDraftStatus value) {
+  switch (value) {
+    case PluginDraftStatus::kDraft: return "draft";
+    case PluginDraftStatus::kValidated: return "validated";
+    case PluginDraftStatus::kApproved: return "approved";
+    case PluginDraftStatus::kRejected: return "rejected";
+    case PluginDraftStatus::kPublished: return "published";
+  }
+  return "<invalid PluginDraftStatus>";
+}
+
+bool parse(std::string_view text, PluginDraftStatus& out, std::string& error) {
+  static const std::pair<std::string_view, PluginDraftStatus> kTable[] = {
+      {"draft", PluginDraftStatus::kDraft},
+      {"validated", PluginDraftStatus::kValidated},
+      {"approved", PluginDraftStatus::kApproved},
+      {"rejected", PluginDraftStatus::kRejected},
+      {"published", PluginDraftStatus::kPublished},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid PluginDraftStatus value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(PluginDraftStatus value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(CanvasEngineId value) {
   switch (value) {
@@ -6946,6 +6980,320 @@ bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& r
       && lhs.create_actions == rhs.create_actions
       && lhs.palettes == rhs.palettes
       && lhs.tools == rhs.tools;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PermissionDiff& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PermissionDiff";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "added",
+      "removed",
+      "trustEscalation",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PermissionDiff: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "added", "PermissionDiff");
+      if (!value.is_array()) {
+        error = std::string("PermissionDiff.added") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        std::string enum_error;
+        if (!parse(item.get<std::string>(), out.added.emplace_back(), enum_error)) {
+          error = std::string("PermissionDiff.added") + ": " + enum_error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "removed", "PermissionDiff");
+      if (!value.is_array()) {
+        error = std::string("PermissionDiff.removed") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        std::string enum_error;
+        if (!parse(item.get<std::string>(), out.removed.emplace_back(), enum_error)) {
+          error = std::string("PermissionDiff.removed") + ": " + enum_error;
+          return false;
+        }
+      }
+  }
+  {
+    auto field_it = j.find("trustEscalation");
+    if (field_it != j.end()) {
+      bool parsed{};
+      if (!(*field_it).is_boolean()) {
+        error = std::string("PermissionDiff.trustEscalation") + ": expected boolean";
+        return false;
+      }
+      parsed = (*field_it).get<bool>();
+      out.trust_escalation = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PermissionDiff& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PermissionDiff& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["added"] = to_json_value(value.added);
+    j["removed"] = to_json_value(value.removed);
+  if (value.trust_escalation.has_value()) {
+    j["trustEscalation"] = to_json_value(*value.trust_escalation);
+  }
+  return j;
+}
+
+std::string dump(const PermissionDiff& value) { return to_json(value).dump(2); }
+
+bool operator==(const PermissionDiff& lhs, const PermissionDiff& rhs) {
+  return lhs.added == rhs.added
+      && lhs.removed == rhs.removed
+      && lhs.trust_escalation == rhs.trust_escalation;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginDraft& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginDraft";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "id",
+      "basePluginId",
+      "manifest",
+      "contributions",
+      "status",
+      "createdBy",
+      "createdAt",
+      "validatedAt",
+      "approvedBy",
+      "approvedAt",
+      "permissionDiff",
+      "diagnostics",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginDraft: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "PluginDraft");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.plugin-draft/v1") {
+        error = std::string("PluginDraft.schema") + ": expected constant " + "logicpilot.plugin-draft/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "PluginDraft");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("PluginDraft.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginDraft");
+      if (!value.is_string()) {
+        error = std::string("PluginDraft.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "basePluginId", "PluginDraft");
+      if (!value.is_string()) {
+        error = std::string("PluginDraft.basePluginId") + ": expected string";
+        return false;
+      }
+      out.base_plugin_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "manifest", "PluginDraft");
+      if (!parse_json(value, out.manifest, error)) {
+        error = std::string("PluginDraft.manifest") + ": " + error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contributions", "PluginDraft");
+      if (!parse_json(value, out.contributions, error)) {
+        error = std::string("PluginDraft.contributions") + ": " + error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "status", "PluginDraft");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.status, enum_error)) {
+        error = std::string("PluginDraft.status") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "createdBy", "PluginDraft");
+      if (!value.is_string()) {
+        error = std::string("PluginDraft.createdBy") + ": expected string";
+        return false;
+      }
+      out.created_by = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "createdAt", "PluginDraft");
+      if (!value.is_string()) {
+        error = std::string("PluginDraft.createdAt") + ": expected string";
+        return false;
+      }
+      out.created_at = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("validatedAt");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginDraft.validatedAt") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.validated_at = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("approvedBy");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginDraft.approvedBy") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.approved_by = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("approvedAt");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginDraft.approvedAt") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.approved_at = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "permissionDiff", "PluginDraft");
+      if (!parse_json(value, out.permission_diff, error)) {
+        error = std::string("PluginDraft.permissionDiff") + ": " + error;
+        return false;
+      }
+  }
+  {
+    auto field_it = j.find("diagnostics");
+    if (field_it != j.end()) {
+      std::vector<std::string> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("PluginDraft.diagnostics") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!item.is_string()) {
+          error = std::string("PluginDraft.diagnostics") + ": expected string item";
+          return false;
+        }
+        parsed.emplace_back() = item.get<std::string>();
+      }
+      out.diagnostics = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginDraft& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginDraft& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["id"] = to_json_value(value.id);
+    j["basePluginId"] = to_json_value(value.base_plugin_id);
+    j["manifest"] = to_json(value.manifest);
+    j["contributions"] = to_json(value.contributions);
+    j["status"] = to_json(value.status);
+    j["createdBy"] = to_json_value(value.created_by);
+    j["createdAt"] = to_json_value(value.created_at);
+  if (value.validated_at.has_value()) {
+    j["validatedAt"] = to_json_value(*value.validated_at);
+  }
+  if (value.approved_by.has_value()) {
+    j["approvedBy"] = to_json_value(*value.approved_by);
+  }
+  if (value.approved_at.has_value()) {
+    j["approvedAt"] = to_json_value(*value.approved_at);
+  }
+    j["permissionDiff"] = to_json(value.permission_diff);
+  if (value.diagnostics.has_value()) {
+    j["diagnostics"] = to_json_value(*value.diagnostics);
+  }
+  return j;
+}
+
+std::string dump(const PluginDraft& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginDraft& lhs, const PluginDraft& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.id == rhs.id
+      && lhs.base_plugin_id == rhs.base_plugin_id
+      && lhs.manifest == rhs.manifest
+      && lhs.contributions == rhs.contributions
+      && lhs.status == rhs.status
+      && lhs.created_by == rhs.created_by
+      && lhs.created_at == rhs.created_at
+      && lhs.validated_at == rhs.validated_at
+      && lhs.approved_by == rhs.approved_by
+      && lhs.approved_at == rhs.approved_at
+      && lhs.permission_diff == rhs.permission_diff
+      && lhs.diagnostics == rhs.diagnostics;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::string& error) {

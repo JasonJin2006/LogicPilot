@@ -614,6 +614,34 @@ export interface PluginContributionSet {
   readonly tools: ReadonlyArray<PluginToolContribution>;
 }
 
+// --- PluginDraftStatus (plugin-draft.schema.json) ---
+export type PluginDraftStatus = "draft" | "validated" | "approved" | "rejected" | "published";
+
+// --- PermissionDiff (plugin-draft.schema.json) ---
+export interface PermissionDiff {
+  readonly added: ReadonlyArray<PermissionId>;
+  readonly removed: ReadonlyArray<PermissionId>;
+  readonly trustEscalation?: boolean;
+}
+
+// --- PluginDraft (plugin-draft.schema.json) ---
+export interface PluginDraft {
+  readonly schema: "logicpilot.plugin-draft/v1";
+  readonly contractVersion: 1;
+  readonly id: string;
+  readonly basePluginId: PluginId;
+  readonly manifest: PluginManifest;
+  readonly contributions: PluginContributionSet;
+  readonly status: PluginDraftStatus;
+  readonly createdBy: Actor;
+  readonly createdAt: Iso8601Timestamp;
+  readonly validatedAt?: Iso8601Timestamp;
+  readonly approvedBy?: Actor;
+  readonly approvedAt?: Iso8601Timestamp;
+  readonly permissionDiff: PermissionDiff;
+  readonly diagnostics?: ReadonlyArray<string>;
+}
+
 // --- PluginManifest (plugin-manifest-v2.schema.json) ---
 export interface PluginManifest {
   readonly schema: "logicpilot.plugin-manifest/v2";
