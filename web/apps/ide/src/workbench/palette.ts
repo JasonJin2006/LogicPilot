@@ -36,6 +36,14 @@ export interface PaletteContribution {
    *  notation (SysML stick figures, lollipop interfaces, ...) instead of
    *  the generic block fallback. Return undefined for the default icon. */
   iconFor?: (item: PaletteItem) => ComponentType<{ size?: number }> | undefined;
+  /** Creates the represented semantic item on the active canvas/document. */
+  insert?: (item: PaletteItem, position?: { x: number; y: number }) => void;
+  /** Optional notation-specific port anchor in the 40x40 glyph coordinate space. */
+  portGlyphFor?: (
+    item: PaletteItem,
+    port: string,
+    direction: 'in' | 'out',
+  ) => readonly [number, number] | undefined;
 }
 
 class PaletteRegistry {

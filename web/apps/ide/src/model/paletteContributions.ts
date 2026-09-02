@@ -5,6 +5,9 @@
 
 import { PALETTE_CONTRIBUTIONS, type PaletteItem } from '../workbench/palette';
 import { BLOCK_DEFS, LIBRARIES, type BlockDef } from './blockDefs';
+import { BlockIcon } from './BlockIcon';
+import { insertBlockAt } from './canvasInsert';
+import { portGlyphPoint } from './blockDefs';
 
 function paletteItem(def: BlockDef): PaletteItem {
   return {
@@ -37,6 +40,15 @@ export function registerModelPaletteContributions(): () => void {
             (block) =>
               library.id === block.library && !(library.id === 'process' && !block.executable),
           ).map(paletteItem),
+          iconFor: (item) => {
+            return function PaletteBlockIcon() {
+              return BlockIcon({ kind: item.kind });
+            };
+          },
+          insert: (item, position) => {
+            insertBlockAt(item.kind, library.id, position);
+          },
+          portGlyphFor: (item, port, direction) => portGlyphPoint(item.kind, port, direction),
         }),
       );
     }

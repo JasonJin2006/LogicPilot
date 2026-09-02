@@ -10,11 +10,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChangeEvent, ComponentType, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
-import { portGlyphPoint } from '../plugins/builtin/modeling';
 import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import type { PaletteItem as CatalogItem } from '../workbench/palette';
 import { documentContributionFor } from '../workbench/documentTypes';
-import { insertBlockAt, BlockIcon, insertFromPalette } from '../plugins/builtin/palette';
 import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
 import { useUiStore } from '../state/uiStore';
@@ -77,17 +75,6 @@ interface DragSession {
   moved: boolean;
 }
 
-/** A SysML palette item carries its declaration form in the kind
- *  (`part:def`); model-library kinds never contain a colon. */
-function splitSysmlItem(kind: string): { baseKind: string; declaration: 'def' | 'usage' } | null {
-  const colon = kind.indexOf(':');
-  if (colon === -1) return null;
-  return {
-    baseKind: kind.slice(0, colon),
-    declaration: kind.slice(colon + 1) === 'def' ? 'def' : 'usage',
-  };
-}
-
 const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
 
 /** The icon renderer a library contribution provides, if any. */
@@ -100,6 +87,34 @@ function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | und
     library: item.library ?? 'process',
     name: item.name,
   });
+}
+
+function contributionForItem(item: PaletteBlock) {
+  return PALETTE_CONTRIBUTIONS.list().find((entry) => entry.library.id === item.library);
+}
+
+function paletteItemFor(item: PaletteBlock): CatalogItem {
+  return {
+    kind: item.kind,
+    library: item.library ?? 'custom',
+    name: item.name,
+    ...(item.hint === undefined ? {} : { hint: item.hint }),
+    ...(item.in === undefined ? {} : { in: item.in }),
+    ...(item.out === undefined ? {} : { out: item.out }),
+    ...(item.inPorts === undefined ? {} : { inPorts: item.inPorts }),
+    ...(item.outPorts === undefined ? {} : { outPorts: item.outPorts }),
+  };
+}
+
+function GenericPaletteIcon() {
+  return (
+    <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+      <rect x="7" y="7" width="26" height="26" rx="6" />
+      <circle cx="20" cy="13" r="2" />
+      <circle cx="14" cy="24" r="2" />
+      <circle cx="26" cy="24" r="2" />
+    </svg>
+  );
 }
 
 export function PalettePanel() {
@@ -202,35 +217,36 @@ export function PalettePanel() {
       return;
     }
     const activeFile = useUiStore.getState().activeFile;
-    const sysmlItem =
-      activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml'
-        ? splitSysmlItem(drag.kind)
-        : null;
-    if (sysmlItem !== null) {
-      const overCanvas = document
-        .elementFromPoint(event.clientX, event.clientY)
-        ?.closest('.sysml-canvas');
-      if (overCanvas) {
-        const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
-        if (result.ok) recordUse(drag.kind);
-      }
-      return;
-    }
-    const canvas = document
+    const isSysml = activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml';
+    const contribution = contributionForItem({
+      kind: drag.kind,
+      library: drag.library,
+      name: drag.kind,
+    });
+    const overCanvas = document
       .elementFromPoint(event.clientX, event.clientY)
-      ?.closest('.model-canvas');
-    if (!canvas) {
+      ?.closest(isSysml ? '.sysml-canvas' : '.model-canvas');
+    if (!overCanvas || contribution?.insert === undefined) return;
+    if (isSysml) {
+      contribution.insert(
+        paletteItemFor({ kind: drag.kind, library: drag.library, name: drag.kind }),
+      );
+      recordUse(drag.kind);
       return;
     }
+    const canvas = overCanvas;
     const rect = canvas.getBoundingClientRect();
     const viewport = useCanvasView.getState().viewport;
     const scale = viewport?.scale ?? 1;
     const panX = viewport?.panX ?? 48;
     const panY = viewport?.panY ?? 48;
-    insertBlockAt(drag.kind, drag.library ?? 'process', {
-      x: (event.clientX - rect.left - panX) / scale,
-      y: (event.clientY - rect.top - panY) / scale,
-    });
+    contribution.insert(
+      paletteItemFor({ kind: drag.kind, library: drag.library, name: drag.kind }),
+      {
+        x: (event.clientX - rect.left - panX) / scale,
+        y: (event.clientY - rect.top - panY) / scale,
+      },
+    );
     recordUse(drag.kind);
   };
 
@@ -315,23 +331,13 @@ export function PalettePanel() {
                   setGhost(null);
                 }}
                 onDoubleClick={() => {
-                  const activeFile = useUiStore.getState().activeFile;
-                  const sysmlItem =
-                    activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml'
-                      ? splitSysmlItem(block.kind)
-                      : null;
-                  if (sysmlItem !== null) {
-                    const result = insertFromPalette(sysmlItem.baseKind, sysmlItem.declaration);
-                    if (result.ok) recordUse(block.kind);
-                    return;
-                  }
                   if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
                     startDrawing(block.kind as 'line' | 'polyline' | 'curve');
                     recordUse(block.kind);
                     return;
                   }
-                  insertBlockAt(block.kind, block.library ?? 'process');
-                  recordUse(block.kind);
+                  contributionForItem(block)?.insert?.(paletteItemFor(block));
+                  if (contributionForItem(block)?.insert !== undefined) recordUse(block.kind);
                 }}
               >
                 <span className="palette-chip">
@@ -339,7 +345,7 @@ export function PalettePanel() {
                     {ContributedIcon !== undefined ? (
                       <ContributedIcon size={26} />
                     ) : (
-                      <BlockIcon kind={block.kind} />
+                      <GenericPaletteIcon />
                     )}
                     {(() => {
                       // Port dots at the glyph's real port anchors (AnyLogic
@@ -358,7 +364,12 @@ export function PalettePanel() {
                           : [];
                       return [...inPorts, ...outPorts].map((name) => {
                         const direction = inPorts.includes(name) ? 'in' : 'out';
-                        const [px, py] = portGlyphPoint(block.kind, name, direction);
+                        const [px, py] =
+                          contributionForItem(block)?.portGlyphFor?.(
+                            paletteItemFor(block),
+                            name,
+                            direction,
+                          ) ?? (direction === 'in' ? [0, 20] : [40, 20]);
                         return (
                           <span
                             key={name}
@@ -388,11 +399,7 @@ export function PalettePanel() {
               library: ghost.library ?? 'process',
               name: ghost.kind,
             });
-            return GhostIcon !== undefined ? (
-              <GhostIcon size={26} />
-            ) : (
-              <BlockIcon kind={ghost.kind} />
-            );
+            return GhostIcon !== undefined ? <GhostIcon size={26} /> : <GenericPaletteIcon />;
           })()}
         </span>
       )}

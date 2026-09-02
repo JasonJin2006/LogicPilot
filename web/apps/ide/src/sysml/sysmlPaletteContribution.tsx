@@ -11,6 +11,7 @@
 import type { ComponentType } from 'react';
 import { PALETTE_CONTRIBUTIONS, type PaletteItem } from '../workbench/palette';
 import { SysMLElementIcon } from './sysmlIcons';
+import { insertFromPalette } from './sysmlEditBridge';
 import type { SysMLVisualKind } from './sysmlProjection';
 
 function item(kind: string, name: string, declaration: 'def' | 'usage', hint: string): PaletteItem {
@@ -33,6 +34,11 @@ export function registerSysmlPaletteContribution(): () => void {
     id: 'sysml.visual-subset',
     library: { id: 'sysml', name: 'SysML' },
     iconFor: sysmlIcon,
+    insert: (entry) => {
+      const [baseKind, declarationKind] = entry.kind.split(':');
+      const declaration = declarationKind === 'def' ? 'def' : 'usage';
+      insertFromPalette(baseKind!, declaration);
+    },
     items: [
       item('package', 'Package', 'def', 'namespace container'),
       item('part', 'Part Definition', 'def', 'reusable component type'),

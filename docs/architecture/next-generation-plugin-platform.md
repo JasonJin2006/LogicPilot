@@ -105,7 +105,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
 3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表及 IDE
    modeling 工具别名 facade 已删除，测试 fixture 中的历史变量名不属于生产路径）；
 4. Phase 8 capability 迁移：Process/DSL 与 SysML 已拆成独立 Agent capability 和只读变体，
-   完整插件贡献包、Statechart/Agent/Continuous/DEVS/C4 迁移仍待完成；
+   PalettePanel 已改为完全调用 contribution 的 insert/icon/port hook，完整插件贡献包、
+   Statechart/Agent/Continuous/DEVS/C4 迁移仍待完成；
 5. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
    已将经契约校验的 replay history 原子持久化到 PackageStore 旁，并支持可选的 canonical
    snapshot 签名/轮换 keyring，并通过 authenticated `/api/config` 在 IDE 使用 WebCrypto
