@@ -40,6 +40,7 @@ export class CapabilityBroker {
   private readonly maxPayloadBytes: number;
   private readonly now: () => number;
   private sequence = 0;
+  private activeGeneration: number | null = null;
 
   constructor(private readonly options: CapabilityBrokerOptions = {}) {
     this.maxInFlight = options.maxInFlightPerSession ?? 32;
@@ -82,6 +83,20 @@ export class CapabilityBroker {
     this.inFlight.delete(sessionId);
   }
 
+  activateGeneration(generation: number): void {
+    if (!Number.isSafeInteger(generation) || generation < 1) {
+      throw new Error('generation must be a positive integer');
+    }
+    this.activeGeneration = generation;
+  }
+
+  revokeGeneration(generation: number): void {
+    if (this.activeGeneration === generation) this.activeGeneration = null;
+    for (const [sessionId, session] of this.sessions) {
+      if (session.generation === generation) this.revokeSession(sessionId);
+    }
+  }
+
   register(capability: string, handler: CapabilityHandler): () => void {
     if (this.handlers.has(capability))
       throw new Error(`capability '${capability}' is already registered`);
@@ -102,6 +117,9 @@ export class CapabilityBroker {
       session.generation !== envelope.generation
     ) {
       return this.failureResponse(envelope, 'denied', 'session-mismatch');
+    }
+    if (this.activeGeneration !== null && envelope.generation !== this.activeGeneration) {
+      return this.failureResponse(envelope, 'denied', 'generation-retired');
     }
     if (Date.parse(session.expiresAt) <= this.now()) {
       this.revokeSession(session.sessionId);

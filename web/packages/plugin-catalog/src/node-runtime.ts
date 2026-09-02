@@ -6,6 +6,7 @@ import type {
   PermissionGrant,
   PluginCatalogEntry,
   PluginLockfile,
+  PluginRuntimeSession,
   PluginManifest,
   PluginScope,
   TrustLevel,
@@ -14,6 +15,7 @@ import {
   defaultCatalogEntryLoader,
   PluginHost,
   projectCatalogEntries,
+  CapabilityBroker,
   type AuditEntry,
   type DiscoverySource,
   type PluginModule,
@@ -22,6 +24,7 @@ import { createDynamicEsmLoader, createDynamicWasmLoader } from './dynamic-loade
 import { scanPluginCatalog } from './catalog.js';
 import type { PluginCatalogScanConfig, PluginRootConfig } from './catalog.js';
 import type { WasmHostImports } from './wasm-abi.js';
+import { WASM_CAPABILITY_IMPORTS } from './wasm-abi.js';
 
 export interface NodePluginRuntimeOptions {
   readonly roots: readonly PluginRootConfig[];
@@ -39,6 +42,7 @@ export interface NodePluginRuntimeOptions {
   readonly activationTimeoutMs?: number;
   readonly wasmCapabilities?: ReadonlySet<string>;
   readonly wasmImports?: WasmHostImports;
+  readonly capabilityBroker?: CapabilityBroker;
   readonly onAudit?: (entry: AuditEntry) => void;
   readonly scan?: Omit<PluginCatalogScanConfig, 'roots'>;
 }
@@ -59,9 +63,21 @@ export class NodePluginRuntime {
   private readonly listeners = new Set<(change: NodePluginRuntimeChange) => void>();
   private watchStop: (() => void) | null = null;
   private lockfileValue: PluginLockfile | null | undefined;
+  private readonly broker: CapabilityBroker;
+  private readonly sessions = new Map<string, PluginRuntimeSession>();
+  private capabilityRequestSequence = 0;
 
   constructor(private readonly options: NodePluginRuntimeOptions) {
     this.lockfileValue = options.lockfile;
+    this.broker = options.capabilityBroker ?? new CapabilityBroker();
+    if (!options.capabilityBroker) {
+      this.broker.register('runtime.log', () => undefined);
+      this.broker.register('runtime.random', () => Math.floor(Math.random() * 0x100000000));
+    }
+  }
+
+  capabilityBroker(): CapabilityBroker {
+    return this.broker;
   }
 
   async start(): Promise<PluginHost> {
@@ -70,6 +86,8 @@ export class NodePluginRuntime {
     this.starting = this.startFresh();
     try {
       this.host = await this.starting;
+      this.revisionValue += 1;
+      this.broker.activateGeneration(this.revisionValue);
       return this.host;
     } finally {
       this.starting = null;
@@ -80,6 +98,9 @@ export class NodePluginRuntime {
     this.watchStop?.();
     this.watchStop = null;
     if (this.host && this.host.phaseValue === 'active') await this.host.stopAll();
+    this.broker.revokeGeneration(this.revisionValue);
+    for (const session of this.sessions.values()) this.broker.revokeSession(session.sessionId);
+    this.sessions.clear();
     this.host = null;
   }
 
@@ -154,6 +175,7 @@ export class NodePluginRuntime {
       await next.start();
     } catch (error) {
       this.catalogValue = previousCatalog;
+      this.revokeSessions(this.revisionValue + 1);
       throw error;
     }
     if (previous?.phaseValue === 'active') {
@@ -165,8 +187,11 @@ export class NodePluginRuntime {
         throw error;
       }
     }
+    const previousGeneration = this.revisionValue;
     this.host = next;
     this.revisionValue += 1;
+    this.broker.activateGeneration(this.revisionValue);
+    this.broker.revokeGeneration(previousGeneration);
     const change = { revision: this.revisionValue, host: next, catalog: this.catalogValue! };
     for (const listener of this.listeners) {
       try {
@@ -183,9 +208,15 @@ export class NodePluginRuntime {
   }
 
   private async startFresh(): Promise<PluginHost> {
+    const generation = this.revisionValue + 1;
     const next = await this.createHost();
-    await next.start();
-    return next;
+    try {
+      await next.start();
+      return next;
+    } catch (error) {
+      this.revokeSessions(generation);
+      throw error;
+    }
   }
 
   private async createHost(): Promise<PluginHost> {
@@ -205,7 +236,17 @@ export class NodePluginRuntime {
     const lockTrust = new Map(lockPlugins.map((entry) => [entry.id, entry.trust]));
     const grants = this.options.grants ?? lockGrants;
     const trustOverrides = this.options.trustOverrides ?? lockTrust;
+    const generation = this.revisionValue + 1;
     for (const entry of approved) {
+      const session = this.broker.registerSession({
+        pluginId: entry.id,
+        generation,
+        sha256: entry.sha256,
+        trust: trustOverrides.get(entry.id) ?? this.options.defaultTrustLevel ?? 't0',
+        grants: grants.get(entry.id) ?? [],
+        ttlMs: 10 * 60 * 1000,
+      });
+      this.sessions.set(entry.id, session);
       const esm = createDynamicEsmLoader({
         roots: this.options.roots,
         scope: entry.scope,
@@ -226,6 +267,21 @@ export class NodePluginRuntime {
         capabilities: this.wasmCapabilitiesFor(entry, grants),
         imports: this.options.wasmImports,
         isolate: true,
+        onCapability: (capability, payload) => {
+          const current = session;
+          void this.broker.invoke({
+            schema: 'logicpilot.capability-rpc/v1',
+            contractVersion: 1,
+            generation: current.generation,
+            sessionId: current.sessionId,
+            pluginId: current.pluginId,
+            requestId: `lp-request-${++this.capabilityRequestSequence}`,
+            deadlineMs: Date.now() + (this.options.activationTimeoutMs ?? 10_000),
+            capability,
+            operation: 'invoke',
+            payload,
+          });
+        },
         onError: errors,
       })(entry);
       const thunk = esm ?? wasm;
@@ -284,10 +340,25 @@ export class NodePluginRuntime {
     entry: PluginCatalogEntry,
     grants: ReadonlyMap<string, readonly PermissionGrant[]>,
   ): ReadonlySet<string> {
-    const allowed = grants
-      .get(entry.id)
-      ?.some((grant) => grant.permissionId === 'runtime.wasm.build' && grant.granted);
-    return allowed ? new Set(['runtime.log', 'runtime.random']) : new Set();
+    const granted = new Set(
+      (grants.get(entry.id) ?? [])
+        .filter((grant) => grant.granted)
+        .map((grant) => grant.permissionId),
+    );
+    const capabilities = new Set<string>();
+    for (const descriptor of Object.values(WASM_CAPABILITY_IMPORTS)) {
+      if (granted.has(descriptor.permissionId)) capabilities.add(descriptor.capability);
+    }
+    return capabilities;
+  }
+
+  private revokeSessions(generation: number): void {
+    for (const session of [...this.sessions.values()]) {
+      if (session.generation === generation) {
+        this.broker.revokeSession(session.sessionId);
+        this.sessions.delete(session.pluginId);
+      }
+    }
   }
 }
 

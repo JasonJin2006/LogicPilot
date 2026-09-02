@@ -86,6 +86,7 @@ declare module 'node:worker_threads' {
   export class Worker {
     constructor(code: string, options: { readonly eval: boolean; readonly workerData?: unknown });
     once(event: 'message' | 'error', listener: (value: unknown) => void): this;
+    on(event: 'message' | 'error', listener: (value: unknown) => void): this;
     postMessage(value: unknown): void;
     terminate(): Promise<number>;
   }

@@ -1,0 +1,21 @@
+package logicpilot:plugin@1.0.0;
+
+/// Capability imports are granted by PermissionId and mediated by the host
+/// CapabilityBroker. The initial implementation uses the core-WASM adapter;
+/// Component Model bindings must remain wire-compatible with this source.
+interface host-log {
+  log: func(level: u32, value: u32);
+}
+
+interface host-random {
+  random-u32: func() -> u32;
+}
+
+world plugin {
+  import host-log;
+  import host-random;
+
+  export logicpilot-abi-version: func() -> u32;
+  export activate: func() -> result<_, string>;
+  export deactivate: func() -> result<_, string>;
+}

@@ -9,14 +9,14 @@ const ABI_IMPORTS = [
   {
     name: 'log',
     capability: 'runtime.log',
-    permissionId: 'runtime.wasm.build',
+    permissionId: 'runtime.log.write',
     params: ['i32', 'i32'],
     result: 'void',
   },
   {
     name: 'random_u32',
     capability: 'runtime.random',
-    permissionId: 'runtime.wasm.build',
+    permissionId: 'runtime.random.read',
     params: [],
     result: 'i32',
   },

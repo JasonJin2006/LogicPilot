@@ -170,6 +170,7 @@ export interface DynamicWasmLoaderOptions {
   readonly imports?: WasmHostImports;
   /** Run the WASM instance in a disposable Worker with hard termination. */
   readonly isolate?: boolean;
+  readonly onCapability?: (capability: string, payload: unknown) => void;
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -246,6 +247,7 @@ export function createDynamicWasmLoader(
             maxMemoryBytes: options.maxMemoryBytes,
             timeoutMs: options.activationTimeoutMs,
             capabilities: options.capabilities,
+            onCapability: options.onCapability,
           });
           return {
             activate: () => controller.activate(),
@@ -375,6 +377,7 @@ function createWasmWorkerController(
     readonly maxMemoryBytes?: number;
     readonly timeoutMs?: number;
     readonly capabilities?: ReadonlySet<string>;
+    readonly onCapability?: (capability: string, payload: unknown) => void;
   },
 ): WasmWorkerController {
   const workerSource = `
@@ -383,7 +386,7 @@ function createWasmWorkerController(
     let instance;
     function importsFor(capabilities) {
       const logicpilot = {};
-      if (capabilities.includes('runtime.log')) logicpilot.log = () => {};
+      if (capabilities.includes('runtime.log')) logicpilot.log = (level, value) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.log', payload: { level, value } });
       if (capabilities.includes('runtime.random')) logicpilot.random_u32 = () => Math.floor(Math.random() * 0x100000000);
       return { logicpilot };
     }
@@ -421,6 +424,15 @@ function createWasmWorkerController(
       maxMemoryBytes: options.maxMemoryBytes,
       capabilities: [...(options.capabilities ?? [])],
     },
+  });
+  worker.on('message', (value: unknown) => {
+    const message = value as {
+      readonly kind?: string;
+      readonly capability?: string;
+      readonly payload?: unknown;
+    };
+    if (message.kind === 'capability' && message.capability)
+      options.onCapability?.(message.capability, message.payload);
   });
   let request = 0;
   const ready = new Promise<void>((resolveReady, rejectReady) => {
