@@ -52,7 +52,9 @@ export class PluginSignatureKeyring {
 /** Canonical bytes deliberately omit integrity to prevent self-referential
  * signatures. Key ordering is stable across Node versions and runtimes. */
 export function canonicalPluginRegistry(registry: PluginRegistry): string {
-  const { integrity: _integrity, ...unsigned } = registry;
+  const unsigned = Object.fromEntries(
+    Object.entries(registry).filter(([key]) => key !== 'integrity'),
+  );
   return stableJson(unsigned);
 }
 
