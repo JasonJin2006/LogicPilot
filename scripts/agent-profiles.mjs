@@ -69,6 +69,16 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'Read and edit bounded model, presentation and experiment source files in the active workspace.',
     toolNames: Object.freeze(['read_workspace_file', 'apply_source_patch']),
   }),
+  'logicpilot-plugin-authoring': Object.freeze({
+    id: 'logicpilot-plugin-authoring',
+    label: 'LogicPilot plugin authoring',
+    description: 'Create and review permission-gated structured plugin drafts.',
+    toolNames: Object.freeze([
+      'list_plugin_drafts',
+      'create_plugin_draft',
+      'validate_plugin_draft',
+    ]),
+  }),
 });
 
 export const GENERAL_AGENT_PROFILE = Object.freeze({

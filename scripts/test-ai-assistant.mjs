@@ -49,6 +49,9 @@ const EXPECTED_TOOLS = [
   'query_sysml_evidence',
   'explain_sysml_run',
   'lower_sysml_state_machine',
+  'list_plugin_drafts',
+  'create_plugin_draft',
+  'validate_plugin_draft',
 ];
 assert.deepEqual(ASSISTANT_TOOLS.map((tool) => tool.name).sort(), [...EXPECTED_TOOLS].sort());
 for (const tool of ASSISTANT_TOOLS) {
@@ -128,6 +131,12 @@ assert.doesNotMatch(sysmlPrompt, /Canonical DES/);
 const sourceEditingPrompt = buildSystemPrompt({
   capabilities: ['logicpilot-modeling', 'logicpilot-source-editing'],
 });
+const pluginAuthoringPrompt = buildSystemPrompt({
+  capabilities: ['logicpilot-plugin-authoring'],
+});
+assert.match(pluginAuthoringPrompt, /create_plugin_draft/);
+assert.match(pluginAuthoringPrompt, /validate_plugin_draft/);
+assert.doesNotMatch(pluginAuthoringPrompt, /apply_model_patch/);
 for (const required of [
   'read_workspace_file first',
   'exact returned path',

@@ -253,6 +253,25 @@ export const ASSISTANT_TOOLS = Object.freeze([
       'Lower a supported SysML state definition to executable LogicPilot statechart DSL.',
     parameters: { query: { type: 'string', required: true } },
   },
+  {
+    name: 'list_plugin_drafts',
+    description: 'List persisted structured plugin drafts and static validation reports.',
+    parameters: {},
+  },
+  {
+    name: 'create_plugin_draft',
+    description:
+      'Create a permission-gated structured plugin draft for review; never install or overwrite a trusted plugin.',
+    parameters: {
+      draft: { type: 'object', required: true },
+      summary: { type: 'string', required: true },
+    },
+  },
+  {
+    name: 'validate_plugin_draft',
+    description: 'Run schema, permission, trust and diagnostic-reference checks on a plugin draft.',
+    parameters: { id: { type: 'string', required: true } },
+  },
 ]);
 
 function nativeToolDefinitions(tools = ASSISTANT_TOOLS) {
@@ -716,8 +735,28 @@ export function buildSystemPrompt({
     hasAgentCapability(capabilityIds, 'logicpilot-source-editing') &&
     toolMounted('read_workspace_file') &&
     toolMounted('apply_source_patch');
+  const pluginAuthoringMounted = hasAgentCapability(capabilityIds, 'logicpilot-plugin-authoring');
   const modelPatchMounted = toolMounted('apply_model_patch');
   const sysmlMounted = toolMounted('inspect_sysml_projection');
+  if (!modelingMounted && pluginAuthoringMounted) {
+    const authoringToolLines = ASSISTANT_TOOLS.filter(
+      (tool) => capabilityToolNames.has(tool.name) && toolMounted(tool.name),
+    ).map(
+      (tool) =>
+        `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
+    );
+    return [
+      'You are the LogicPilot plugin-authoring assistant.',
+      'Create only structured PluginDraft data. Never claim a draft is installed,',
+      'and never bypass validation, user approval, trust or permission checks.',
+      '',
+      `Mounted tools:\n${authoringToolLines.join('\n')}`,
+      '',
+      'Response format (strict JSON, no markdown fences):',
+      '{"message":"short reply","plan":[],"toolCalls":[],"done":true}',
+      ...(resolvedSkillInstructions ? ['', resolvedSkillInstructions] : []),
+    ].join('\n');
+  }
   if (!modelingMounted) {
     return [
       'You are a general-purpose AI agent embedded in an application.',

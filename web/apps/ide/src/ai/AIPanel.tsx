@@ -925,6 +925,7 @@ export function AIPanel() {
           ? ['logicpilot-source-editing']
           : []),
         ...(additionalTools.length > 0 ? ['mcp'] : []),
+        ...(permissionMode === 'Full access' ? ['logicpilot-plugin-authoring'] : []),
       ],
       skills: [...(LOGICPILOT_MODELING_PROFILE.skillIds ?? []), '__workspace__'],
       additionalTools,
