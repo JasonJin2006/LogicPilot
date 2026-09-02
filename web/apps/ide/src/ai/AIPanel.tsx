@@ -83,6 +83,11 @@ import { useCanvasView } from '../state/canvasView';
 import { getAppConfig } from '../state/appConfig';
 import { getAiProviderState, listAiProviderModels, saveAiProvider } from './providerConfig';
 import { isAssistantNotConfiguredError } from './assistantErrors';
+import {
+  beginModelPatchTransaction,
+  commitModelPatchTransaction,
+  rollbackModelPatchTransaction,
+} from '../artifacts/artifactGraphClient';
 
 function sameExperiment(left: ExperimentSettings | undefined, right: ExperimentSettings): boolean {
   return (
@@ -355,9 +360,43 @@ export function AIPanel() {
       return;
     }
     setError('');
+    let pendingArtifactTransaction;
+    try {
+      pendingArtifactTransaction = await beginModelPatchTransaction(proposal.patch);
+    } catch (error) {
+      setError(
+        `Artifact Graph transaction could not be prepared: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
     const applied = useModelStore.getState().applyPatch(proposal.patch);
     if (!applied.ok) {
+      await rollbackModelPatchTransaction(pendingArtifactTransaction, 'local-apply-failed').catch(
+        () => undefined,
+      );
       setError(applied.diagnostics.map((entry) => entry.message).join('; '));
+      return;
+    }
+    try {
+      await commitModelPatchTransaction(pendingArtifactTransaction);
+    } catch (error) {
+      // Never undo a user's concurrent edit while the approval request was in
+      // flight. The identity check makes the failure explicit instead of
+      // silently destroying a newer local document.
+      if (useModelStore.getState().document === applied.document) {
+        useModelStore.getState().undo();
+      }
+      await rollbackModelPatchTransaction(
+        pendingArtifactTransaction,
+        'artifact-commit-failed',
+      ).catch(() => undefined);
+      setError(
+        `Artifact Graph transaction could not be committed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
       return;
     }
     useProjectStore.getState().markDirty();
