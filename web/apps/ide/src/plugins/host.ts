@@ -27,6 +27,7 @@ import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
 import {
+  createPluginRegistryVerifier,
   PLUGIN_REGISTRY,
   type PluginRegistryFetchOptions,
   stopPluginRegistryLive,
@@ -243,6 +244,9 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
                     ? {
                         url: `${config.apiBase}/api/plugin-registry/stream`,
                         headers: sessionHeaders(config),
+                        ...(config.registrySigningKeys === undefined
+                          ? {}
+                          : { verify: createPluginRegistryVerifier(config.registrySigningKeys) }),
                       }
                     : null,
                 );
@@ -274,6 +278,9 @@ async function refreshIdePluginRegistry(
   await PLUGIN_REGISTRY.refresh({
     url: `${config.apiBase}/api/plugin-registry`,
     headers: sessionHeaders(config),
+    ...(config.registrySigningKeys === undefined
+      ? {}
+      : { verify: createPluginRegistryVerifier(config.registrySigningKeys) }),
   });
 }
 
