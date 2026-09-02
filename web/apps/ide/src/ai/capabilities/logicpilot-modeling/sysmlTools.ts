@@ -22,6 +22,7 @@ import {
   referencesOf,
 } from '../../../plugins/builtin/semantics';
 import {
+  ARTIFACT_SYNC_QUEUE,
   beginArtifactTransaction,
   commitArtifactTransaction,
   rollbackArtifactTransaction,
@@ -73,7 +74,7 @@ function persistLayoutEdit(
 ): Record<string, unknown> | Promise<Record<string, unknown>> {
   const success = { ok: true, persisted: true };
   if (typeof window === 'undefined') return success;
-  return (async () => {
+  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
     let pending;
     try {
       pending = await beginArtifactTransaction({
@@ -98,7 +99,7 @@ function persistLayoutEdit(
         }`,
       };
     }
-  })();
+  });
 }
 
 /** Persist edited source to whichever store owns the open document. The

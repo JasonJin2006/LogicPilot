@@ -21,6 +21,8 @@ configured app-server deployments must propose/validate/approve/commit through
 the Node store. A failed commit never silently claims durability; mutation
 surfaces either restore the exact version they changed or report a structured
 sync gap without overwriting a concurrent edit.
+Background layout/evidence/run writes are serialized through
+`ArtifactSyncQueue` so rapid events cannot race the same artifact head.
 
 ## Consequences
 

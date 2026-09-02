@@ -31,6 +31,29 @@ export interface ArtifactTransactionInput {
   readonly actor?: string;
 }
 
+/** Serializes background Artifact Graph writes (layout/evidence/run) so two
+ * rapid UI events never propose against the same stale head. Foreground model
+ * edits keep using direct transactions so conflicts remain visible to the
+ * caller. */
+export class ArtifactSyncQueue {
+  private tail: Promise<void> = Promise.resolve();
+
+  enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(task, task);
+    this.tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  flush(): Promise<void> {
+    return this.tail;
+  }
+}
+
+export const ARTIFACT_SYNC_QUEUE = new ArtifactSyncQueue();
+
 function requestUrl(apiBase: string): string {
   return `${apiBase.replace(/\/$/, '')}/api/artifact-graph`;
 }
@@ -216,23 +239,25 @@ export async function persistEvidenceArtifact(
   path: string,
   record: unknown,
 ): Promise<string | undefined> {
-  const pending = await beginArtifactTransaction({
-    artifactId: `evidence:${path}:${
-      typeof record === 'object' && record !== null && 'id' in record
-        ? String((record as { id: unknown }).id)
-        : 'unknown'
-    }`,
-    artifactKind: 'evidence',
-    operationType: 'execution-evidence',
-    payload: record,
-    actor: 'runtime',
+  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
+    const pending = await beginArtifactTransaction({
+      artifactId: `evidence:${path}:${
+        typeof record === 'object' && record !== null && 'id' in record
+          ? String((record as { id: unknown }).id)
+          : 'unknown'
+      }`,
+      artifactKind: 'evidence',
+      operationType: 'execution-evidence',
+      payload: record,
+      actor: 'runtime',
+    });
+    try {
+      return await commitArtifactTransaction(pending, 'runtime');
+    } catch (error) {
+      await rollbackArtifactTransaction(pending, 'evidence-commit-failed').catch(() => undefined);
+      throw error;
+    }
   });
-  try {
-    return await commitArtifactTransaction(pending, 'runtime');
-  } catch (error) {
-    await rollbackArtifactTransaction(pending, 'evidence-commit-failed').catch(() => undefined);
-    throw error;
-  }
 }
 
 /** Persist a user Save as a semantic-model revision. Individual canvas edits
@@ -264,24 +289,26 @@ export async function persistRunArtifact(input: {
   readonly modelRevisionId?: string;
   readonly result: unknown;
 }): Promise<string | undefined> {
-  const pending = await beginArtifactTransaction({
-    artifactId: `run:${randomId('execution')}`,
-    artifactKind: 'run',
-    operationType: 'simulation-run',
-    payload: {
-      modelRevisionId: input.modelRevisionId ?? null,
-      result: input.result,
-    },
-    actor: 'runtime',
+  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
+    const pending = await beginArtifactTransaction({
+      artifactId: `run:${randomId('execution')}`,
+      artifactKind: 'run',
+      operationType: 'simulation-run',
+      payload: {
+        modelRevisionId: input.modelRevisionId ?? null,
+        result: input.result,
+      },
+      actor: 'runtime',
+    });
+    try {
+      return await commitArtifactTransaction(pending, 'runtime');
+    } catch (error) {
+      await rollbackArtifactTransaction(pending, 'simulation-run-commit-failed').catch(
+        () => undefined,
+      );
+      throw error;
+    }
   });
-  try {
-    return await commitArtifactTransaction(pending, 'runtime');
-  } catch (error) {
-    await rollbackArtifactTransaction(pending, 'simulation-run-commit-failed').catch(
-      () => undefined,
-    );
-    throw error;
-  }
 }
 
 export { MODEL_ARTIFACT_ID, canonicalize, sha256Hex };
