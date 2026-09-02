@@ -297,6 +297,11 @@ enum class CanvasEngineId : std::uint8_t {
   kTable,
   kChart,
   kText,
+  kFlow,
+  kStatechart,
+  kSequence,
+  kStockFlow,
+  kCausalLoop,
 };
 
 [[nodiscard]] std::string dump(CanvasEngineId value);

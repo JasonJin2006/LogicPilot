@@ -123,3 +123,4 @@
 - [0092 Plugin Draft Review API](0092-plugin-draft-review-api)
 - [0093 Signed Plugin Draft Packaging and Installation](0093-plugin-draft-builder-signing-install)
 - [0094 SDK AgentEngine Adapter Boundary](0094-sdk-agent-engine-adapter)
+- [0095 View Planner and Extended Canvas Contract](0095-view-planner-canvas-contract)

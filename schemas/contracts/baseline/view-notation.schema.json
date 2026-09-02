@@ -6,7 +6,20 @@
   "$defs": {
     "CanvasEngineId": {
       "type": "string",
-      "enum": ["graph2d", "scene2d", "scene3d", "timeline", "table", "chart", "text"]
+      "enum": [
+        "graph2d",
+        "scene2d",
+        "scene3d",
+        "timeline",
+        "table",
+        "chart",
+        "text",
+        "flow",
+        "statechart",
+        "sequence",
+        "stock-flow",
+        "causal-loop"
+      ]
     },
     "LayoutPersistence": {
       "type": "string",
@@ -33,7 +46,18 @@
     "ViewDefinition": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "contractVersion", "id", "owner", "titleKey", "canvas", "query", "interactions", "supportsInverseEdit", "layoutPersistence"],
+      "required": [
+        "schema",
+        "contractVersion",
+        "id",
+        "owner",
+        "titleKey",
+        "canvas",
+        "query",
+        "interactions",
+        "supportsInverseEdit",
+        "layoutPersistence"
+      ],
       "properties": {
         "schema": { "const": "logicpilot.view-definition/v1" },
         "contractVersion": { "const": 1 },
@@ -150,7 +174,15 @@
       "type": "object",
       "description": "Palette entry. Palette visibility is computed by the canvas host from active view, selection, installed notation/domain contributions and permission grants - never from a global per-paradigm list.",
       "additionalProperties": false,
-      "required": ["schema", "contractVersion", "id", "owner", "titleKey", "notationId", "targetSemanticKind"],
+      "required": [
+        "schema",
+        "contractVersion",
+        "id",
+        "owner",
+        "titleKey",
+        "notationId",
+        "targetSemanticKind"
+      ],
       "properties": {
         "schema": { "const": "logicpilot.create-action/v1" },
         "contractVersion": { "const": 1 },

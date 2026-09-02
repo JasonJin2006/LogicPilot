@@ -734,7 +734,7 @@ export interface PluginRuntimeSession {
 }
 
 // --- CanvasEngineId (view-notation.schema.json) ---
-export type CanvasEngineId = "graph2d" | "scene2d" | "scene3d" | "timeline" | "table" | "chart" | "text";
+export type CanvasEngineId = "graph2d" | "scene2d" | "scene3d" | "timeline" | "table" | "chart" | "text" | "flow" | "statechart" | "sequence" | "stock-flow" | "causal-loop";
 
 // --- LayoutPersistence (view-notation.schema.json) ---
 export type LayoutPersistence = "none" | "sidecar" | "artifact";

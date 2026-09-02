@@ -824,6 +824,11 @@ std::string dump(CanvasEngineId value) {
     case CanvasEngineId::kTable: return "table";
     case CanvasEngineId::kChart: return "chart";
     case CanvasEngineId::kText: return "text";
+    case CanvasEngineId::kFlow: return "flow";
+    case CanvasEngineId::kStatechart: return "statechart";
+    case CanvasEngineId::kSequence: return "sequence";
+    case CanvasEngineId::kStockFlow: return "stock-flow";
+    case CanvasEngineId::kCausalLoop: return "causal-loop";
   }
   return "<invalid CanvasEngineId>";
 }
@@ -837,6 +842,11 @@ bool parse(std::string_view text, CanvasEngineId& out, std::string& error) {
       {"table", CanvasEngineId::kTable},
       {"chart", CanvasEngineId::kChart},
       {"text", CanvasEngineId::kText},
+      {"flow", CanvasEngineId::kFlow},
+      {"statechart", CanvasEngineId::kStatechart},
+      {"sequence", CanvasEngineId::kSequence},
+      {"stock-flow", CanvasEngineId::kStockFlow},
+      {"causal-loop", CanvasEngineId::kCausalLoop},
   };
   for (const auto& [label, parsed] : kTable) {
     if (text == label) {
