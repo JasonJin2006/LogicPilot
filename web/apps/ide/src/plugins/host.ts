@@ -96,7 +96,7 @@ export interface IdePluginCatalogOptions {
   readonly fetch?: CatalogFetch;
 }
 
-export interface IdePluginRegistryOptions extends PluginRegistryFetchOptions {}
+export type IdePluginRegistryOptions = PluginRegistryFetchOptions;
 
 const CATALOG_SCOPES: readonly PluginScope[] = ['system', 'user', 'workspace'];
 
