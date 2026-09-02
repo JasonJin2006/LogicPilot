@@ -161,9 +161,6 @@ export class FileSystemArtifactStore {
         throw new ArtifactStoreError(`artifact '${ref.artifactId}' was not found`, 'not-found');
       }
     }
-    if (state.transactions.some((transaction) => transaction.id === input.id)) {
-      throw new ArtifactStoreError(`transaction '${input.id}' already exists`, 'conflict');
-    }
     if (input.idempotencyKey !== undefined) {
       const existing = state.transactions.find(
         (transaction) => transaction.idempotencyKey === input.idempotencyKey,
@@ -180,6 +177,9 @@ export class FileSystemArtifactStore {
           );
         return existing;
       }
+    }
+    if (state.transactions.some((transaction) => transaction.id === input.id)) {
+      throw new ArtifactStoreError(`transaction '${input.id}' already exists`, 'conflict');
     }
     const transaction: Transaction = {
       schema: 'logicpilot.transaction/v1',
