@@ -21,6 +21,10 @@ The current `BuiltinAgentEngine` remains the default. The optional
 The package is built and tested independently; selecting it in a deployment
 still requires explicit host configuration and parity approval.
 
+Its deterministic test uses the SDK's `ScriptedModel` to exercise a real
+Runner path and verify that approval interruptions are surfaced without host
+tool execution.
+
 ## Consequences
 
 OpenAI Agents/Cordis can be benchmarked and enabled by injection rather than a

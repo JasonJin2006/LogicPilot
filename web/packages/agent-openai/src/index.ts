@@ -1,4 +1,5 @@
 import { Agent, run } from '@openai/agents';
+import type { Model } from '@openai/agents';
 import type {
   AgentStepRequest,
   AgentStepResult,
@@ -8,7 +9,7 @@ import type {
 import type { AgentEngine } from '@logicpilot/plugin-host';
 
 export interface OpenAiAgentsEngineOptions {
-  readonly model?: string;
+  readonly model?: string | Model;
   readonly name?: string;
   readonly instructions?: string;
 }
@@ -67,7 +68,9 @@ export class OpenAiAgentsEngine implements AgentEngine {
       engineId: request.engineId,
       stepIndex: request.stepIndex,
       status: toolCalls.length > 0 ? 'continue' : 'done',
-      ...(typeof result.finalOutput === 'string' ? { message: result.finalOutput } : {}),
+      ...(interruptions.length === 0 && typeof result.finalOutput === 'string'
+        ? { message: result.finalOutput }
+        : {}),
       toolCalls,
       plan: [],
       toolResults: [],
