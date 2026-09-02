@@ -320,7 +320,11 @@ process.env.OPENAI_API_KEY = 'test-only';
 process.env.OPENAI_BASE_URL = 'https://api.deepseek.com';
 process.env.OPENAI_MODEL = 'deepseek-v4-flash';
 delete process.env.OPENAI_MAX_TOKENS;
-await runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} });
+await runAssistant({
+  messages: [{ role: 'user', content: 'test' }],
+  context: {},
+  toolDescriptors: ASSISTANT_TOOLS,
+});
 assert.deepEqual(requestBody.response_format, { type: 'json_object' });
 assert.deepEqual(requestBody.thinking, { type: 'disabled' });
 assert.equal(requestBody.max_tokens, 4096);
@@ -328,6 +332,7 @@ await runAssistant({
   messages: [{ role: 'user', content: '你好' }],
   context: {},
   capabilities: [],
+  toolDescriptors: ASSISTANT_TOOLS,
 });
 assert.equal(requestBody.tools, undefined);
 assert.match(requestBody.messages[0].content, /general-purpose AI agent/);
@@ -349,11 +354,17 @@ await runAssistant({
     },
   ],
   context: {},
+  toolDescriptors: ASSISTANT_TOOLS,
 });
 assert.ok(requestBody.messages[1].content.includes('error: user declined'));
 process.env.DEEPSEEK_THINKING = 'sometimes';
 await assert.rejects(
-  () => runAssistant({ messages: [{ role: 'user', content: 'test' }], context: {} }),
+  () =>
+    runAssistant({
+      messages: [{ role: 'user', content: 'test' }],
+      context: {},
+      toolDescriptors: ASSISTANT_TOOLS,
+    }),
   /must be enabled or disabled/,
 );
 let schemaAttempts = 0;
@@ -377,6 +388,7 @@ delete process.env.DEEPSEEK_THINKING;
 const recovered = await runAssistant({
   messages: [{ role: 'user', content: 'schema retry' }],
   context: {},
+  toolDescriptors: ASSISTANT_TOOLS,
 });
 assert.equal(recovered.message, 'recovered');
 assert.equal(schemaAttempts, 2);
@@ -403,6 +415,7 @@ globalThis.fetch = async () => ({
 const nativeResponse = await runAssistant({
   messages: [{ role: 'user', content: 'inspect' }],
   context: {},
+  toolDescriptors: ASSISTANT_TOOLS,
 });
 assert.equal(nativeResponse.done, false);
 assert.deepEqual(nativeResponse.toolCalls, [

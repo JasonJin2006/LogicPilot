@@ -1141,7 +1141,10 @@ export async function runAssistant({
     ? await listMcpToolDefinitions({ signal })
     : [];
   const providedTools = normalizeToolDescriptors(toolDescriptors);
-  const toolCatalog = [...(providedTools ?? ASSISTANT_TOOLS), ...mcpTools];
+  if (providedTools === null) {
+    throw new Error('runtime tool descriptors are required for assistant steps');
+  }
+  const toolCatalog = [...providedTools, ...mcpTools];
   const skillInstructions = await loadAgentSkillInstructions(skills, {
     workspaceRoot: typeof context?.workspaceRoot === 'string' ? context.workspaceRoot : undefined,
   });
