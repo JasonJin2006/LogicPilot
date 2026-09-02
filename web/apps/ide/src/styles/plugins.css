@@ -1,0 +1,92 @@
+.plugin-drafts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  overflow: auto;
+  padding: 12px;
+  color: var(--text-primary, #e8edf5);
+}
+
+.plugin-drafts-toolbar,
+.plugin-draft-heading,
+.plugin-draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plugin-drafts-toolbar {
+  justify-content: space-between;
+}
+
+.plugin-drafts-toolbar h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.plugin-drafts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.plugin-draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--border, #2b3442);
+  border-radius: 6px;
+  padding: 9px;
+  background: var(--panel-bg, #151b24);
+  font-size: 11px;
+}
+
+.plugin-draft-heading {
+  justify-content: space-between;
+}
+
+.plugin-draft-status {
+  border-radius: 10px;
+  padding: 2px 6px;
+  background: #344054;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+.status-approved,
+.status-published {
+  background: #1d6448;
+}
+
+.status-rejected {
+  background: #713b45;
+}
+
+.plugin-draft-meta,
+.plugin-drafts-empty {
+  color: var(--text-secondary, #9aa7b8);
+}
+
+.plugin-draft-permissions,
+.plugin-draft-trust {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid #765f2c;
+  padding: 6px;
+}
+
+.plugin-draft-permissions legend {
+  color: #f3c969;
+}
+
+.plugin-draft-diagnostics {
+  margin: 0;
+  padding-left: 18px;
+  color: #f39a9a;
+}
+
+.plugin-drafts-error {
+  color: #f39a9a;
+}

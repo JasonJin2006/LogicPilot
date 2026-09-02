@@ -8,7 +8,7 @@
 // registerPanel() from their own contribution modules.
 
 import type { ComponentType } from 'react';
-import { Boxes, Files, Palette } from 'lucide-react';
+import { Boxes, Files, Palette, Puzzle } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
 import { DslEditor } from '../model/DslEditor';
 import { ModelWorkspace } from '../model/ModelWorkspace';
@@ -20,6 +20,7 @@ import { ProblemsPanel } from './ProblemsPanel';
 import { PropertiesHost } from './PropertiesHost';
 import { WelcomePanel } from './WelcomePanel';
 import { useModelStore } from '../state/modelStore';
+import { PluginDraftsPanel } from './PluginDraftsPanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
@@ -76,6 +77,7 @@ const registry: Record<PanelId, PanelDef> = {
   explorer: { title: 'Explorer', area: 'left', component: ExplorerPanel },
   modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
+  pluginDrafts: { title: 'Plugin Drafts', area: 'left', component: PluginDraftsPanel },
 };
 
 /** Register a panel at runtime (language contributions). Duplicate ids are
@@ -120,6 +122,7 @@ export const ACTIVITY_VIEWS: Array<{
   { id: 'explorer', label: 'Explorer', icon: Files, panel: 'explorer' },
   { id: 'model', label: 'Project', icon: Boxes, panel: 'modelInfo' },
   { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
+  { id: 'plugin-drafts', label: 'Plugin Drafts', icon: Puzzle, panel: 'pluginDrafts' },
 ];
 
 /** Default per-area layout: which panels live where, and the active tab. */

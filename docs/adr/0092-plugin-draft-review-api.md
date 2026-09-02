@@ -20,7 +20,7 @@ separate operations.
 
 ## Consequences
 
-The IDE or a future review panel can safely inspect and approve AI-generated
+The IDE `Plugin Drafts` panel can safely inspect and approve AI-generated
 knowledge, skill, instruction, diagnostic, view and notation changes across
 process restarts. Runtime activation remains unchanged until an explicit
 package publication pipeline is implemented.

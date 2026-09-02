@@ -8,7 +8,6 @@ import { Settings } from 'lucide-react';
 
 export function ActivityBar() {
   const left = useLayoutStore((s) => s.areas.left);
-  const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
   const openSettings = useUiStore((s) => s.openSettings);
   return (
@@ -29,7 +28,9 @@ export function ActivityBar() {
                 if (left.collapsed) {
                   toggleCollapse('left');
                 }
-                setActive('left', view.panel);
+                // openPanel also restores a panel removed from the persisted
+                // layout (including optional plugin-management panels).
+                useLayoutStore.getState().openPanel('left', view.panel);
               }
             }}
           >
