@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { ACTIVITY_VIEWS, DEFAULT_LAYOUT, PANELS, focusedPanelId, registerPanel } from './panels';
+import {
+  ACTIVITY_VIEWS,
+  DEFAULT_LAYOUT,
+  PANELS,
+  focusedPanelId,
+  registerPanel,
+  replacePanel,
+} from './panels';
 
 describe('panel registry', () => {
   it('defines every panel with a unique id and a default area', () => {
@@ -27,6 +34,19 @@ describe('panel registry', () => {
 });
 
 describe('open panel registration', () => {
+  it('restores a fallback panel after a plugin replacement is disposed', () => {
+    const previous = PANELS.model!.component;
+    const replacement = () => null;
+    const dispose = replacePanel('model', {
+      title: 'Model replacement',
+      area: 'center',
+      component: replacement,
+    });
+    expect(PANELS.model?.component).toBe(replacement);
+    dispose();
+    expect(PANELS.model?.component).toBe(previous);
+  });
+
   it('registers a panel and rejects duplicate ids', () => {
     const component = () => null;
     const dispose = registerPanel('test.extra', { title: 'Extra', area: 'right', component });

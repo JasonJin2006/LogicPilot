@@ -13,6 +13,8 @@ import { DOCUMENT_CONTRIBUTIONS } from '../../../workbench/documentTypes';
 import { registerModelPaletteContributions } from '../../../model/paletteContributions';
 import { registerDesModelValidation } from '../../../model/modelValidation';
 import { registerDslOutlineContribution } from '../../../project/dslOutlineContribution';
+import { replacePanel } from '../../../layout/panels';
+import { DslEditor, ModelWorkspace } from '../../registries/panelComponents';
 import {
   PROCESS_MODEL_SEMANTIC_PROVIDER,
   registerModelSemanticProvider,
@@ -35,6 +37,10 @@ export function activateDesPlugin(): PluginModule {
       ctx.effect(registerDesModelValidation());
       ctx.effect(registerDslOutlineContribution());
       ctx.effect(registerModelSemanticProvider(PROCESS_MODEL_SEMANTIC_PROVIDER));
+      ctx.effect(
+        replacePanel('model', { title: 'Model', area: 'center', component: ModelWorkspace }),
+      );
+      ctx.effect(replacePanel('dsl', { title: 'DSL', area: 'center', component: DslEditor }));
     },
   };
 }

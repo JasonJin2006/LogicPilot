@@ -91,6 +91,19 @@ export function registerPanel(id: PanelId, definition: PanelDef): () => void {
   };
 }
 
+/** Rebinds a fallback panel to a plugin-owned implementation for the active
+ * lifecycle. The previous definition is restored when the plugin stops. */
+export function replacePanel(id: PanelId, definition: PanelDef): () => void {
+  const previous = registry[id];
+  registry[id] = definition;
+  return () => {
+    if (registry[id] === definition) {
+      if (previous === undefined) delete registry[id];
+      else registry[id] = previous;
+    }
+  };
+}
+
 /** The visible panel table (built-ins + registered contributions). */
 export const PANELS = registry as Readonly<Record<PanelId, PanelDef>>;
 
