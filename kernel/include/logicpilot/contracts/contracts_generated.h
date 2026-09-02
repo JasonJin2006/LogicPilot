@@ -1443,6 +1443,8 @@ struct PluginContributionSet {
   std::vector<PluginInstructionContribution> instructions;
   std::vector<DiagnosticDefinition> diagnostics;
   std::vector<ViewDefinition> views;
+  std::vector<NotationPack> notations;
+  std::vector<CreateAction> create_actions;
   std::vector<PluginPaletteContribution> palettes;
   std::vector<PluginToolContribution> tools;
 };

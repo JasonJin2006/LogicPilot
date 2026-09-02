@@ -12,6 +12,8 @@ function emptySet(pluginId: string) {
     instructions: [],
     diagnostics: [],
     views: [],
+    notations: [],
+    createActions: [],
     palettes: [],
     tools: [],
   };

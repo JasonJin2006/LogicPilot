@@ -92,6 +92,8 @@
         "instructions",
         "diagnostics",
         "views",
+        "notations",
+        "createActions",
         "palettes",
         "tools"
       ],
@@ -116,6 +118,14 @@
         "views": {
           "type": "array",
           "items": { "$ref": "view-notation.schema.json#/$defs/ViewDefinition" }
+        },
+        "notations": {
+          "type": "array",
+          "items": { "$ref": "view-notation.schema.json#/$defs/NotationPack" }
+        },
+        "createActions": {
+          "type": "array",
+          "items": { "$ref": "view-notation.schema.json#/$defs/CreateAction" }
         },
         "palettes": { "type": "array", "items": { "$ref": "#/$defs/PluginPaletteContribution" } },
         "tools": { "type": "array", "items": { "$ref": "#/$defs/PluginToolContribution" } }

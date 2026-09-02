@@ -18,6 +18,8 @@ function envelope(generation: number) {
         instructions: [],
         diagnostics: [],
         views: [],
+        notations: [],
+        createActions: [],
         palettes: [],
         tools: [],
       },

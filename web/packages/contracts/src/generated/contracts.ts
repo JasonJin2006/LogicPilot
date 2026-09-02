@@ -601,6 +601,8 @@ export interface PluginContributionSet {
   readonly instructions: ReadonlyArray<PluginInstructionContribution>;
   readonly diagnostics: ReadonlyArray<DiagnosticDefinition>;
   readonly views: ReadonlyArray<ViewDefinition>;
+  readonly notations: ReadonlyArray<NotationPack>;
+  readonly createActions: ReadonlyArray<CreateAction>;
   readonly palettes: ReadonlyArray<PluginPaletteContribution>;
   readonly tools: ReadonlyArray<PluginToolContribution>;
 }

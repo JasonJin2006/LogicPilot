@@ -45,6 +45,8 @@ describe('NodePluginRuntime', () => {
         instructions: [],
         diagnostics: [],
         views: [],
+        notations: [],
+        createActions: [],
         palettes: [],
         tools: [],
       }),

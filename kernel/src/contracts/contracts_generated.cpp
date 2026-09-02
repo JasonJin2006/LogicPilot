@@ -6647,6 +6647,8 @@ bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std
       "instructions",
       "diagnostics",
       "views",
+      "notations",
+      "createActions",
       "palettes",
       "tools",
   };
@@ -6758,6 +6760,32 @@ bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std
       }
   }
   {
+    const auto& value = field_or_fail(error, j, "notations", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.notations") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.notations.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.notations") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "createActions", "PluginContributionSet");
+      if (!value.is_array()) {
+        error = std::string("PluginContributionSet.createActions") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.create_actions.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.createActions") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
     const auto& value = field_or_fail(error, j, "palettes", "PluginContributionSet");
       if (!value.is_array()) {
         error = std::string("PluginContributionSet.palettes") + ": expected array";
@@ -6808,6 +6836,8 @@ nlohmann::ordered_json to_json(const PluginContributionSet& value) {
     j["instructions"] = to_json_value(value.instructions);
     j["diagnostics"] = to_json_value(value.diagnostics);
     j["views"] = to_json_value(value.views);
+    j["notations"] = to_json_value(value.notations);
+    j["createActions"] = to_json_value(value.create_actions);
     j["palettes"] = to_json_value(value.palettes);
     j["tools"] = to_json_value(value.tools);
   return j;
@@ -6825,6 +6855,8 @@ bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& r
       && lhs.instructions == rhs.instructions
       && lhs.diagnostics == rhs.diagnostics
       && lhs.views == rhs.views
+      && lhs.notations == rhs.notations
+      && lhs.create_actions == rhs.create_actions
       && lhs.palettes == rhs.palettes
       && lhs.tools == rhs.tools;
 }
