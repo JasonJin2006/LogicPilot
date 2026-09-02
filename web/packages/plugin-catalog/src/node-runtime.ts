@@ -73,6 +73,9 @@ export class NodePluginRuntime {
     if (!options.capabilityBroker) {
       this.broker.register('runtime.log', () => undefined);
       this.broker.register('runtime.random', () => Math.floor(Math.random() * 0x100000000));
+      this.broker.register('runtime.event.emit', () => undefined);
+      this.broker.register('runtime.event.subscribe', () => undefined);
+      this.broker.register('runtime.service.provide', () => undefined);
     }
   }
 
@@ -254,6 +257,10 @@ export class NodePluginRuntime {
         trustOverrides,
         maxModuleBytes: this.options.maxModuleBytes,
         activationTimeoutMs: this.options.activationTimeoutMs,
+        isolate: true,
+        grants: grants.get(entry.id) ?? [],
+        onCapability: (capability, payload) =>
+          this.dispatchCapability(entry.id, capability, payload, session),
         onError: errors,
       })(entry);
       const wasm = createDynamicWasmLoader({
@@ -268,19 +275,7 @@ export class NodePluginRuntime {
         imports: this.options.wasmImports,
         isolate: true,
         onCapability: (capability, payload) => {
-          const current = session;
-          void this.broker.invoke({
-            schema: 'logicpilot.capability-rpc/v1',
-            contractVersion: 1,
-            generation: current.generation,
-            sessionId: current.sessionId,
-            pluginId: current.pluginId,
-            requestId: `lp-request-${++this.capabilityRequestSequence}`,
-            deadlineMs: Date.now() + (this.options.activationTimeoutMs ?? 10_000),
-            capability,
-            operation: 'invoke',
-            payload,
-          });
+          this.dispatchCapability(entry.id, capability, payload, session);
         },
         onError: errors,
       })(entry);
@@ -332,7 +327,14 @@ export class NodePluginRuntime {
     return entries.filter((entry) => {
       const locked = approved.get(entry.id);
       if (!locked || locked.sha256.toLowerCase() !== entry.sha256.toLowerCase()) return false;
-      return locked.source === undefined || locked.source === entry.scope;
+      // `source` may be a registry URL or local provenance string. Only the
+      // canonical scope markers carry layering authority; other provenance
+      // values must not accidentally exclude an approved package.
+      return (
+        locked.source === undefined ||
+        !['system', 'user', 'workspace'].includes(locked.source) ||
+        locked.source === entry.scope
+      );
     });
   }
 
@@ -350,6 +352,27 @@ export class NodePluginRuntime {
       if (granted.has(descriptor.permissionId)) capabilities.add(descriptor.capability);
     }
     return capabilities;
+  }
+
+  private dispatchCapability(
+    pluginId: string,
+    capability: string,
+    payload: unknown,
+    session = this.sessions.get(pluginId),
+  ): void {
+    if (!session) return;
+    void this.broker.invoke({
+      schema: 'logicpilot.capability-rpc/v1',
+      contractVersion: 1,
+      generation: session.generation,
+      sessionId: session.sessionId,
+      pluginId: session.pluginId,
+      requestId: `lp-request-${++this.capabilityRequestSequence}`,
+      deadlineMs: Date.now() + (this.options.activationTimeoutMs ?? 10_000),
+      capability,
+      operation: 'invoke',
+      payload,
+    });
   }
 
   private revokeSessions(generation: number): void {

@@ -83,5 +83,30 @@ describe('NodePluginRuntime', () => {
     const deniedHost = await lockedOut.start();
     expect(deniedHost.isActive(manifest.id)).toBe(false);
     await lockedOut.stop();
+
+    const currentDigest = computePackageDigest(join(root, 'runtime-plugin'), manifest);
+    const approvedRuntime = new NodePluginRuntime({
+      roots: [{ scope: 'workspace', path: root }],
+      defaultTrustLevel: 't4',
+      requireLockfile: true,
+      lockfile: {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: [
+          {
+            id: manifest.id,
+            version: manifest.version,
+            apiVersion: manifest.apiVersion,
+            sha256: currentDigest,
+            source: 'local-upload',
+            trust: 't4',
+            permissions: [],
+          },
+        ],
+      },
+    });
+    const approvedHost = await approvedRuntime.start();
+    expect(approvedHost.isActive(manifest.id)).toBe(true);
+    await approvedRuntime.stop();
   });
 });

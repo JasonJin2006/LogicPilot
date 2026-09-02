@@ -116,6 +116,24 @@ describe('dynamic ESM loader', () => {
     await expect((await thunk!()).activate({} as never)).rejects.toMatchObject({ code: 'module' });
   });
 
+  it('runs ESM activation in a Worker and forwards capability messages', async () => {
+    const { root, entry } = fixture();
+    let emitted = 0;
+    const thunk = createDynamicEsmLoader({
+      roots: [{ scope: 'workspace', path: root }],
+      scope: 'workspace',
+      defaultTrustLevel: 't4',
+      isolate: true,
+      onCapability: (capability) => {
+        if (capability === 'runtime.event.emit') emitted += 1;
+      },
+    })(entry);
+    const module = await thunk!();
+    await module.activate({} as never);
+    expect(emitted).toBe(1);
+    await module.deactivate?.();
+  });
+
   it('instantiates a capability-free WASM module with lifecycle exports', async () => {
     const root = mkdtempSync(join(process.cwd(), '.dynamic-wasm-'));
     cleanups.push(root);

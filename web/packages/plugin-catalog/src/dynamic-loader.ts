@@ -6,6 +6,7 @@ import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { PermissionGrant } from '@logicpilot/contracts';
 import type { PluginCatalogEntry, PluginModule, PluginScope } from '@logicpilot/plugin-host';
 import type { PluginRootConfig } from './catalog.js';
 import { computePackageDigest } from './catalog.js';
@@ -20,6 +21,9 @@ export interface DynamicEsmLoaderOptions {
   readonly trustOverrides?: ReadonlyMap<string, 't0' | 't1' | 't2' | 't3' | 't4' | 't5'>;
   readonly maxModuleBytes?: number;
   readonly activationTimeoutMs?: number;
+  readonly isolate?: boolean;
+  readonly onCapability?: (capability: string, payload: unknown) => void;
+  readonly grants?: readonly PermissionGrant[];
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -125,6 +129,17 @@ export function createDynamicEsmLoader(
     const url = pathToFileURL(modulePath).href;
     return async () => {
       try {
+        if (options.isolate) {
+          const controller = createEsmWorkerController(modulePath, entry, {
+            timeoutMs: options.activationTimeoutMs,
+            onCapability: options.onCapability,
+            grants: options.grants,
+          });
+          return {
+            activate: (ctx) => controller.activate(ctx),
+            deactivate: () => controller.deactivate(),
+          } satisfies PluginModule;
+        }
         // A URL fragment busts Node's ESM module cache on upgrade without
         // making Vite treat the absolute Windows path as a query resource.
         const namespace = (await import(
@@ -155,6 +170,126 @@ export function createDynamicEsmLoader(
         throw new DynamicEsmLoaderError(`plugin '${entry.id}' module failed to load`, 'module');
       }
     };
+  };
+}
+
+function createEsmWorkerController(
+  modulePath: string,
+  entry: PluginCatalogEntry,
+  options: {
+    readonly timeoutMs?: number;
+    readonly onCapability?: (capability: string, payload: unknown) => void;
+    readonly grants?: readonly PermissionGrant[];
+  },
+): {
+  activate(ctx: unknown): Promise<void>;
+  deactivate(): Promise<void>;
+} {
+  const workerSource = `
+    const { parentPort, workerData } = require('node:worker_threads');
+    let moduleValue;
+    let activationContext;
+    function rpcContext() {
+      const effects = [];
+      return {
+        pluginId: workerData.pluginId,
+        manifest: workerData.manifest,
+        grants: workerData.grants,
+        service: (name) => ({ call: (...args) => Promise.reject(new Error('service RPC not enabled in ABI v1: ' + name + ':' + args.length)) }),
+        emit: (event, payload) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.emit', payload: { event, payload } }),
+        on: (event) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.subscribe', payload: { event } }),
+        effect: () => effects.push(true),
+        provide: (name, service) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.service.provide', payload: { name, methods: Object.keys(service || {}) } }),
+      };
+    }
+    (async () => {
+      try {
+        const namespace = await import(workerData.url);
+        moduleValue = namespace.default || namespace;
+        if (!moduleValue || typeof moduleValue.activate !== 'function') throw new Error('missing-activate');
+        parentPort.postMessage({ ok: true });
+      } catch (error) {
+        parentPort.postMessage({ ok: false });
+      }
+    })();
+    parentPort.on('message', async (message) => {
+      try {
+        if (!moduleValue) throw new Error('not-ready');
+        if (message.kind === 'activate') {
+          activationContext = rpcContext();
+          await moduleValue.activate(activationContext);
+        } else if (message.kind === 'deactivate' && typeof moduleValue.deactivate === 'function') {
+          await moduleValue.deactivate();
+        }
+        parentPort.postMessage({ ok: true, request: message.request });
+      } catch (error) {
+        parentPort.postMessage({ ok: false, request: message.request });
+      }
+    });
+  `;
+  const worker = new Worker(workerSource, {
+    eval: true,
+    workerData: {
+      url: `${pathToFileURL(modulePath).href}#lp=${encodeURIComponent(entry.sha256)}`,
+      pluginId: entry.id,
+      manifest: entry.manifest,
+      grants: options.grants ?? [],
+    },
+  });
+  worker.on('message', (value: unknown) => {
+    const message = value as {
+      readonly kind?: string;
+      readonly capability?: string;
+      readonly payload?: unknown;
+    };
+    if (message.kind === 'capability' && message.capability)
+      options.onCapability?.(message.capability, message.payload);
+  });
+  let readyResolve: (() => void) | null = null;
+  let readyReject: (() => void) | null = null;
+  const ready = new Promise<void>((resolveReady, rejectReady) => {
+    readyResolve = resolveReady;
+    readyReject = rejectReady;
+  });
+  worker.once('message', (value: unknown) => {
+    if ((value as { readonly ok?: boolean }).ok) readyResolve?.();
+    else readyReject?.();
+  });
+  let request = 0;
+  const call = (kind: 'activate' | 'deactivate'): Promise<void> => {
+    const id = ++request;
+    const result = new Promise<void>((resolveResult, rejectResult) => {
+      const onMessage = (value: unknown) => {
+        const message = value as { readonly ok?: boolean; readonly request?: number };
+        if (message.request !== id) return;
+        worker.off('message', onMessage);
+        if (message.ok) resolveResult();
+        else rejectResult(new DynamicEsmLoaderError('isolated ESM execution failed', 'module'));
+      };
+      worker.on('message', onMessage);
+      worker.postMessage({ kind, request: id });
+    });
+    return withTimeout(result, options.timeoutMs, entry.id);
+  };
+  return {
+    activate: async (ctx) => {
+      void ctx;
+      try {
+        await ready;
+        await call('activate');
+      } catch (error) {
+        await worker.terminate();
+        throw error;
+      }
+    },
+    deactivate: async () => {
+      try {
+        await ready;
+        await call('deactivate');
+      } finally {
+        await worker.terminate();
+      }
+    },
   };
 }
 
@@ -458,10 +593,11 @@ function createWasmWorkerController(
           readonly error?: string;
         };
         if (message.request !== undefined && message.request !== id) return;
+        worker.off('message', onMessage);
         if (message.ok) resolveOperation();
         else rejectOperation(new DynamicEsmLoaderError('isolated WASM execution failed', 'module'));
       };
-      worker.once('message', onMessage);
+      worker.on('message', onMessage);
       worker.once('error', () =>
         rejectOperation(new DynamicEsmLoaderError('isolated WASM worker failed', 'module')),
       );
