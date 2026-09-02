@@ -151,3 +151,4 @@
 - [0120 Runtime Model Semantic Registry](0120-model-semantic-registry)
 - [0121 SysML and Panel Registry Seams](0121-sysml-and-panel-registry-seams)
 - [0122 Model Provider Lifecycle](0122-model-provider-lifecycle)
+- [0123 SysML Semantic Provider Lifecycle](0123-sysml-semantic-provider-lifecycle)

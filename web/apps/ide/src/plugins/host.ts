@@ -34,6 +34,7 @@ import {
 } from './registry';
 import { ARTIFACT_SYNC_QUEUE } from '../artifacts/artifactGraphClient';
 import { setModelSemanticFallbackEnabled } from './registries/modelSemantics';
+import { setSysMLSemanticFallbackEnabled } from './registries/sysmlSemantics';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -195,6 +196,7 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
       ? []
       : BUILTIN_PLUGINS);
   setModelSemanticFallbackEnabled(builtins.length > 0);
+  setSysMLSemanticFallbackEnabled(builtins.length > 0);
   const sources: DiscoverySource[] = [builtinSourceFor(builtins, 'system')];
   const remoteSources = await remoteCatalogSources(
     options.catalog,

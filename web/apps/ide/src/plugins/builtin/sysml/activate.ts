@@ -17,6 +17,10 @@ import { registerSysmlDocumentContribution } from '../../../sysml/sysmlDocumentC
 import { registerSysmlPanelContribution } from '../../../sysml/sysmlPanelsContribution';
 import { registerSysmlPaletteContribution } from '../../../sysml/sysmlPaletteContribution';
 import { registerSysmlOutlineContribution } from '../../../sysml/sysmlOutlineContribution';
+import {
+  BUILTIN_SYSML_SEMANTIC_PROVIDER,
+  registerSysMLSemanticProvider,
+} from '../../registries/sysmlSemantics';
 
 const LazySysmlProperties = lazy(() =>
   import('../../../sysml/SysMLPropertiesPanel').then((module) => ({
@@ -31,6 +35,7 @@ export function activateSysmlPlugin(): PluginModule {
       ctx.effect(registerSysmlPanelContribution());
       ctx.effect(registerSysmlPaletteContribution());
       ctx.effect(registerSysmlOutlineContribution());
+      ctx.effect(registerSysMLSemanticProvider(BUILTIN_SYSML_SEMANTIC_PROVIDER));
       // Properties host: the SysML element inspector swaps in while a
       // .sysml document is active (previously a hardcoded core branch).
       const disposeProperties = registerPropertiesEditor('sysml', () => LazySysmlProperties);
