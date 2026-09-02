@@ -79,6 +79,12 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'validate_plugin_draft',
     ]),
   }),
+  'logicpilot-view-planning': Object.freeze({
+    id: 'logicpilot-view-planning',
+    label: 'LogicPilot view planning',
+    description: 'Resolve structured modeling intent to installed canvas views.',
+    toolNames: Object.freeze(['plan_view']),
+  }),
 });
 
 export const GENERAL_AGENT_PROFILE = Object.freeze({

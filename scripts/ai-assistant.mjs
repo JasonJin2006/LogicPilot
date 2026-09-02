@@ -272,6 +272,16 @@ export const ASSISTANT_TOOLS = Object.freeze([
     description: 'Run schema, permission, trust and diagnostic-reference checks on a plugin draft.',
     parameters: { id: { type: 'string', required: true } },
   },
+  {
+    name: 'plan_view',
+    description: 'Suggest installed canvas views for a structured modeling intent.',
+    parameters: {
+      purpose: { type: 'string', required: true },
+      artifactKinds: { type: 'array' },
+      preferredCanvas: { type: 'string' },
+      selectedViewId: { type: 'string' },
+    },
+  },
 ]);
 
 function nativeToolDefinitions(tools = ASSISTANT_TOOLS) {

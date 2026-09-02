@@ -52,6 +52,7 @@ const EXPECTED_TOOLS = [
   'list_plugin_drafts',
   'create_plugin_draft',
   'validate_plugin_draft',
+  'plan_view',
 ];
 assert.deepEqual(ASSISTANT_TOOLS.map((tool) => tool.name).sort(), [...EXPECTED_TOOLS].sort());
 for (const tool of ASSISTANT_TOOLS) {

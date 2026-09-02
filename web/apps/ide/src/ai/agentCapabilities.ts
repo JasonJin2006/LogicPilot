@@ -14,6 +14,7 @@ import {
 } from './capabilities/logicpilot-modeling';
 import { logicpilotSourceEditingCapability } from './capabilities/source-editing';
 import { pluginAuthoringCapability } from './capabilities/plugin-authoring';
+import { viewPlanningCapability } from './capabilities/view-planning';
 
 const READONLY_TOOL_NAMES = new Set([
   'inspect_model',
@@ -45,6 +46,7 @@ AGENT_CAPABILITY_REGISTRY.register(LOGICPILOT_MODELING_CAPABILITY);
 AGENT_CAPABILITY_REGISTRY.register(LOGICPILOT_MODELING_READONLY_CAPABILITY);
 AGENT_CAPABILITY_REGISTRY.register(logicpilotSourceEditingCapability);
 AGENT_CAPABILITY_REGISTRY.register(pluginAuthoringCapability);
+AGENT_CAPABILITY_REGISTRY.register(viewPlanningCapability);
 
 export const AGENT_CAPABILITIES: readonly AgentCapability[] = Object.freeze(
   AGENT_CAPABILITY_REGISTRY.list(),
