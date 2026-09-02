@@ -78,6 +78,29 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
 
 这套实现是合理的过渡层，但不是最终“一切皆插件”。
 
+## 3.1 当前实现检查点（2026-09-03）
+
+以下能力已经在主线实现并有对应 ADR/测试门禁：
+
+- Phase 2B：分层 Plugin Host、PackageStore、lockfile CAS、动态 ESM/WASM、Worker/RPC
+  隔离、细粒度 capability broker、结构化 contribution registry 和 registry SSE replay；
+- Phase 3：FileSystem Artifact Graph、propose/validate/approve/commit/rollback，AI
+  ModelPatch、source patch、SysML typed edit/layout、Save、simulation run/evidence 的
+  revision 绑定；
+- Phase 5/6：Canvas/ViewDefinition 扩展、View Planner、结构化 Knowledge/Skill/Instruction/
+  Diagnostic Context Compiler、Builtin AgentEngine 和可选 OpenAI Agents SDK adapter；
+- Phase 7：PluginDraft schema、权限/trust diff、持久化草稿、静态校验、Review UI、Ed25519
+  签名、内容寻址 builder、PackageManager 安装和回滚门禁；
+- builtin DES/SysML/Canvas wiring 已集中到 `plugins/builtin` seams，lint 门禁为 0 warning。
+
+这些实现不等于所有生态能力都已完成。当前仍明确保留的工作项是：
+
+1. 将 SDK adapter 的真实 provider 多轮/拒绝审批/生产 tracing 纳入 parity benchmark，并
+   决定是否切换默认 AgentEngine；
+2. 将高频手工 layout/evidence 同步从异步补偿提升为严格可重试事务队列；
+3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade；
+4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布。
+
 ## 4. 目标架构
 
 ```text
