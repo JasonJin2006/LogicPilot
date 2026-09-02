@@ -31,12 +31,61 @@ export interface ArtifactTransactionInput {
   readonly actor?: string;
 }
 
+export interface ArtifactOutboxStorage {
+  read(): readonly ArtifactTransactionInput[];
+  write(items: readonly ArtifactTransactionInput[]): void;
+}
+
+class BrowserArtifactOutboxStorage implements ArtifactOutboxStorage {
+  private readonly key = 'logicpilot.artifact.outbox.v1';
+
+  read(): readonly ArtifactTransactionInput[] {
+    if (typeof window === 'undefined') return [];
+    try {
+      const raw = window.localStorage.getItem(this.key);
+      if (!raw) return [];
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (item): item is ArtifactTransactionInput =>
+              typeof item === 'object' &&
+              item !== null &&
+              typeof (item as { artifactId?: unknown }).artifactId === 'string' &&
+              typeof (item as { operationType?: unknown }).operationType === 'string',
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  write(items: readonly ArtifactTransactionInput[]): void {
+    if (typeof window === 'undefined') return;
+    try {
+      const encoded = JSON.stringify(items);
+      if (encoded.length > 1024 * 1024) throw new Error('artifact outbox exceeds 1 MiB');
+      window.localStorage.setItem(this.key, encoded);
+    } catch {
+      // A private/quota-limited browser storage must not break local editing;
+      // the queue still retains in-memory items for this process.
+    }
+  }
+}
+
 /** Serializes background Artifact Graph writes (layout/evidence/run) so two
  * rapid UI events never propose against the same stale head. Foreground model
  * edits keep using direct transactions so conflicts remain visible to the
  * caller. */
 export class ArtifactSyncQueue {
   private tail: Promise<void> = Promise.resolve();
+  private readonly storage: ArtifactOutboxStorage;
+  private readonly pending = new Map<string, ArtifactTransactionInput>();
+  private readonly results = new Map<string, Promise<string | undefined>>();
+
+  constructor(storage: ArtifactOutboxStorage = new BrowserArtifactOutboxStorage()) {
+    this.storage = storage;
+    for (const input of storage.read()) this.pending.set(this.keyOf(input), input);
+  }
 
   enqueue<T>(task: () => Promise<T>): Promise<T> {
     const result = this.tail.then(task, task);
@@ -49,6 +98,63 @@ export class ArtifactSyncQueue {
 
   flush(): Promise<void> {
     return this.tail;
+  }
+
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
+  enqueueTransaction(
+    input: ArtifactTransactionInput,
+    onFailure?: () => void,
+  ): Promise<string | undefined> {
+    const key = this.keyOf(input);
+    const existing = this.results.get(key);
+    if (existing) return existing;
+    this.pending.set(key, input);
+    this.persistPending();
+    const result = this.enqueue(async () => {
+      const pending = await beginArtifactTransaction(input);
+      if (!pending.enabled) throw new Error('artifact graph is not configured or unavailable');
+      try {
+        return await commitArtifactTransaction(pending, input.actor ?? 'runtime');
+      } catch (error) {
+        await rollbackArtifactTransaction(pending, 'background-transaction-failed').catch(
+          () => undefined,
+        );
+        onFailure?.();
+        throw error;
+      }
+    });
+    const settled = result.then(
+      (value) => {
+        this.pending.delete(key);
+        this.results.delete(key);
+        this.persistPending();
+        return value;
+      },
+      (error) => {
+        this.results.delete(key);
+        // Keep the item in the outbox for a future drain/restart retry.
+        throw error;
+      },
+    );
+    this.results.set(key, settled);
+    return settled;
+  }
+
+  /** Retry all persisted items after app-server/runtime recovery. */
+  drain(): Promise<void> {
+    for (const input of [...this.pending.values()]) this.enqueueTransaction(input);
+    return this.flush();
+  }
+
+  private keyOf(input: ArtifactTransactionInput): string {
+    return `${input.artifactId}:${input.operationType}:${canonicalize(input.payload)}`;
+  }
+
+  private persistPending(): void {
+    this.storage.write([...this.pending.values()]);
   }
 }
 
@@ -239,24 +345,16 @@ export async function persistEvidenceArtifact(
   path: string,
   record: unknown,
 ): Promise<string | undefined> {
-  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
-    const pending = await beginArtifactTransaction({
-      artifactId: `evidence:${path}:${
-        typeof record === 'object' && record !== null && 'id' in record
-          ? String((record as { id: unknown }).id)
-          : 'unknown'
-      }`,
-      artifactKind: 'evidence',
-      operationType: 'execution-evidence',
-      payload: record,
-      actor: 'runtime',
-    });
-    try {
-      return await commitArtifactTransaction(pending, 'runtime');
-    } catch (error) {
-      await rollbackArtifactTransaction(pending, 'evidence-commit-failed').catch(() => undefined);
-      throw error;
-    }
+  return ARTIFACT_SYNC_QUEUE.enqueueTransaction({
+    artifactId: `evidence:${path}:${
+      typeof record === 'object' && record !== null && 'id' in record
+        ? String((record as { id: unknown }).id)
+        : 'unknown'
+    }`,
+    artifactKind: 'evidence',
+    operationType: 'execution-evidence',
+    payload: record,
+    actor: 'runtime',
   });
 }
 
@@ -289,25 +387,15 @@ export async function persistRunArtifact(input: {
   readonly modelRevisionId?: string;
   readonly result: unknown;
 }): Promise<string | undefined> {
-  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
-    const pending = await beginArtifactTransaction({
-      artifactId: `run:${randomId('execution')}`,
-      artifactKind: 'run',
-      operationType: 'simulation-run',
-      payload: {
-        modelRevisionId: input.modelRevisionId ?? null,
-        result: input.result,
-      },
-      actor: 'runtime',
-    });
-    try {
-      return await commitArtifactTransaction(pending, 'runtime');
-    } catch (error) {
-      await rollbackArtifactTransaction(pending, 'simulation-run-commit-failed').catch(
-        () => undefined,
-      );
-      throw error;
-    }
+  return ARTIFACT_SYNC_QUEUE.enqueueTransaction({
+    artifactId: `run:${randomId('execution')}`,
+    artifactKind: 'run',
+    operationType: 'simulation-run',
+    payload: {
+      modelRevisionId: input.modelRevisionId ?? null,
+      result: input.result,
+    },
+    actor: 'runtime',
   });
 }
 

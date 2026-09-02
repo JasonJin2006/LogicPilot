@@ -31,6 +31,7 @@ import {
   type PluginRegistryFetchOptions,
   stopPluginRegistryLive,
 } from './registry';
+import { ARTIFACT_SYNC_QUEUE } from '../artifacts/artifactGraphClient';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -223,6 +224,7 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
           );
         })
         .then(() => {
+          void ARTIFACT_SYNC_QUEUE.drain();
           if (typeof window !== 'undefined' && options.registry !== null) {
             const configPromise = options.registry
               ? Promise.resolve(

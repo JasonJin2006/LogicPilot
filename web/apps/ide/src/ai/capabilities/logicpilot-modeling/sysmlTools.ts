@@ -74,32 +74,23 @@ function persistLayoutEdit(
 ): Record<string, unknown> | Promise<Record<string, unknown>> {
   const success = { ok: true, persisted: true };
   if (typeof window === 'undefined') return success;
-  return ARTIFACT_SYNC_QUEUE.enqueue(async () => {
-    let pending;
-    try {
-      pending = await beginArtifactTransaction({
-        artifactId: `layout:${path}`,
-        artifactKind: 'view-layout',
-        operationType,
-        payload: { path, before, after },
-      });
-      await commitArtifactTransaction(pending);
-      return success;
-    } catch (error) {
-      restore();
-      if (pending) {
-        await rollbackArtifactTransaction(pending, 'sysml-layout-commit-failed').catch(
-          () => undefined,
-        );
-      }
-      return {
-        ok: false,
-        error: `artifact transaction could not be committed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      };
-    }
-  });
+  return ARTIFACT_SYNC_QUEUE.enqueueTransaction(
+    {
+      artifactId: `layout:${path}`,
+      artifactKind: 'view-layout',
+      operationType,
+      payload: { path, before, after },
+    },
+    restore,
+  ).then(
+    () => success,
+    (error) => ({
+      ok: false,
+      error: `artifact transaction could not be committed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    }),
+  );
 }
 
 /** Persist edited source to whichever store owns the open document. The
