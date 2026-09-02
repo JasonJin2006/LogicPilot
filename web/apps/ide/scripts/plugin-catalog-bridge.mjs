@@ -11,7 +11,11 @@ import {
   createPluginManagementHandler,
   FileSystemArtifactStore,
   FileSystemPluginDraftStore,
+  AuditLog,
+  PackageManager,
+  PluginDraftPackageBuilder,
   PluginDraftValidationRunner,
+  ed25519DraftSigner,
   FileSystemPackageStore,
   NodePluginRuntime,
   pluginRootsFromEnv,
@@ -155,6 +159,37 @@ export async function handlePluginDrafts(req, res) {
         if (current.status !== 'approved')
           throw Object.assign(new Error('plugin draft is not approved'), { status: 400 });
         result = store.write({ ...current, status: 'published' });
+      } else if (action === 'install') {
+        if (current.status !== 'approved' && current.status !== 'published')
+          throw Object.assign(new Error('plugin draft is not approved'), { status: 400 });
+        const packageRoot = process.env.LOGICPILOT_PLUGIN_STORE_ROOT;
+        const signingKey = process.env.LOGICPILOT_PLUGIN_SIGNING_PRIVATE_KEY;
+        if (!packageRoot || !signingKey)
+          throw Object.assign(new Error('plugin package store or signing key is not configured'), {
+            status: 503,
+          });
+        const buildRoot = process.env.LOGICPILOT_PLUGIN_BUILD_ROOT ?? `${packageRoot}/draft-builds`;
+        const signer = ed25519DraftSigner(
+          process.env.LOGICPILOT_PLUGIN_SIGNING_KEY_ID ?? 'local-signing-key',
+          (await import('node:crypto')).createPrivateKey({ key: signingKey, format: 'pem' }),
+        );
+        const built = new PluginDraftPackageBuilder(buildRoot).build(current, signer);
+        const packageStore = new FileSystemPackageStore({ rootDir: packageRoot });
+        const manager = new PackageManager(packageStore, new AuditLog());
+        const lockEntry = await manager.install({
+          manifestJson: built.manifest,
+          sha256: built.sha256,
+          source: 'ai-draft',
+          packagePath: built.packagePath,
+          grants: built.manifest.permissions.map((permissionId) => ({
+            permissionId,
+            granted: true,
+            grantedBy: current.approvedBy ?? 'user',
+            grantedAt: current.approvedAt ?? new Date().toISOString(),
+          })),
+        });
+        result = store.write({ ...current, status: 'published' });
+        result = { draft: result, lockEntry, packageSha256: built.sha256 };
       } else if (action === 'reject') {
         result = store.write({
           ...current,

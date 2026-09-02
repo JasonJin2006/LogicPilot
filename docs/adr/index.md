@@ -121,3 +121,4 @@
 - [0090 Filesystem Plugin Draft Store](0090-filesystem-plugin-draft-store)
 - [0091 Plugin Draft Static Validation](0091-plugin-draft-static-validation)
 - [0092 Plugin Draft Review API](0092-plugin-draft-review-api)
+- [0093 Signed Plugin Draft Packaging and Installation](0093-plugin-draft-builder-signing-install)

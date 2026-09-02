@@ -7,5 +7,11 @@ export * from './wasm-bindings.js';
 export * from './node-runtime.js';
 export * from './contribution-loader.js';
 export * from '@logicpilot/artifact-store';
-export { PluginDraftRegistry, PluginDraftValidationRunner } from '@logicpilot/plugin-host';
+export {
+  AuditLog,
+  PackageManager,
+  PluginDraftRegistry,
+  PluginDraftValidationRunner,
+} from '@logicpilot/plugin-host';
 export { FileSystemPluginDraftStore } from '@logicpilot/plugin-host/node';
+export * from './plugin-draft-builder.js';

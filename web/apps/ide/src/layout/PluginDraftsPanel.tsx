@@ -188,6 +188,15 @@ export function PluginDraftsPanel() {
                     Publish
                   </button>
                 )}
+                {(draft.status === 'approved' || draft.status === 'published') && (
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void action(draft, { action: 'install', id: draft.id })}
+                  >
+                    Install
+                  </button>
+                )}
                 {draft.status !== 'published' && draft.status !== 'rejected' && (
                   <button
                     type="button"

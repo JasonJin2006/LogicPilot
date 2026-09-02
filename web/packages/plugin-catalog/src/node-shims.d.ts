@@ -11,6 +11,7 @@ declare class Buffer {
   static from(input: string, encoding?: string): Buffer;
   static byteLength(input: string, encoding?: string): number;
   readonly length: number;
+  toString(encoding?: string): string;
 }
 
 declare const process: { readonly pid: number };
@@ -61,6 +62,7 @@ declare module 'node:fs' {
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function renameSync(oldPath: string, newPath: string): void;
   export function unlinkSync(path: string): void;
+  export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function rmdirSync(path: string): void;
   export function writeFileSync(
     path: string,
@@ -76,6 +78,10 @@ declare module 'node:crypto' {
     digest(encoding: 'hex'): string;
   }
   export function createHash(algorithm: 'sha256'): Hash;
+  export function sign(algorithm: null, data: Buffer, key: unknown): Buffer;
+  export function verify(algorithm: null, data: Buffer, key: unknown, signature: Buffer): boolean;
+  export function generateKeyPairSync(type: 'ed25519'): { privateKey: unknown; publicKey: unknown };
+  export function createPrivateKey(options: { key: string; format: 'pem' }): unknown;
 }
 
 declare module 'node:url' {
