@@ -18,6 +18,13 @@ export interface AgentEngineTraceEvent {
 
 export type AgentEngineTraceSink = (event: AgentEngineTraceEvent) => void;
 
+/** Keep provider text out of the metadata-only channel. Detailed failures
+ * belong in a separately governed diagnostic store. */
+export function traceErrorCategory(error: unknown): string {
+  if (error instanceof Error && error.name.trim() !== '') return error.name.slice(0, 96);
+  return 'unknown-error';
+}
+
 export function traceRequestEvent(
   request: AgentStepRequest,
   at = new Date().toISOString(),

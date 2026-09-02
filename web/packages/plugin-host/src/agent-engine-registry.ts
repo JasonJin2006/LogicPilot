@@ -5,7 +5,7 @@ import type {
 } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import type { AgentEngineTraceSink } from './agent-engine-trace.js';
-import { traceRequestEvent } from './agent-engine-trace.js';
+import { traceErrorCategory, traceRequestEvent } from './agent-engine-trace.js';
 
 export interface AgentEngine {
   readonly descriptor: AgentEngineDescriptor;
@@ -85,7 +85,7 @@ export class AgentEngineRegistry {
         stepIndex: validated.value.stepIndex,
         at: new Date().toISOString(),
         latencyMs: Math.max(0, (this.options.now?.() ?? Date.now()) - startedAt),
-        error: error instanceof Error ? error.message : String(error),
+        error: traceErrorCategory(error),
       });
       throw error;
     }

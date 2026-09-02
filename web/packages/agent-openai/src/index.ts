@@ -7,7 +7,7 @@ import type {
   ToolDescriptor,
 } from '@logicpilot/contracts';
 import type { AgentEngine } from '@logicpilot/plugin-host';
-import { traceRequestEvent } from '@logicpilot/plugin-host';
+import { traceErrorCategory, traceRequestEvent } from '@logicpilot/plugin-host';
 import type { AgentEngineTraceSink } from '@logicpilot/plugin-host';
 export { validateContract } from '@logicpilot/contracts';
 
@@ -138,7 +138,7 @@ export class OpenAiAgentsEngine implements AgentEngine {
         stepIndex: request.stepIndex,
         at: new Date().toISOString(),
         latencyMs: Math.max(0, Date.now() - startedAt),
-        error: error instanceof Error ? error.message : String(error),
+        error: traceErrorCategory(error),
       });
       throw error;
     } finally {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentEngineRegistry } from '../src/index.js';
+import { AgentEngineRegistry, traceErrorCategory } from '../src/index.js';
 
 const descriptor = {
   schema: 'logicpilot.agent-engine-descriptor/v1',
@@ -21,6 +21,11 @@ function request(engineId = 'builtin-test') {
 }
 
 describe('AgentEngineRegistry', () => {
+  it('categorizes provider failures without retaining their message text', () => {
+    expect(traceErrorCategory(new TypeError('secret prompt and arguments'))).toBe('TypeError');
+    expect(traceErrorCategory('provider leaked text')).toBe('unknown-error');
+  });
+
   it('emits metadata-only start/completion traces without prompt or arguments', async () => {
     const traces: unknown[] = [];
     const registry = new AgentEngineRegistry({ traceSink: (event) => traces.push(event) });
