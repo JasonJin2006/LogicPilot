@@ -5,6 +5,7 @@
 //   node scripts/test-app-server.mjs [--lpserver <path>] [--lpcli <path>]
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,6 +13,12 @@ import { tmpdir } from 'node:os';
 import { findLpcli, findLpServer, logicPilotRoot } from './tool-paths.mjs';
 
 const root = logicPilotRoot();
+const temporaryRoots = [];
+function temporaryRoot(prefix) {
+  const path = mkdtempSync(join(tmpdir(), prefix));
+  temporaryRoots.push(path);
+  return path;
+}
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -79,8 +86,15 @@ const serverEnv = {
   ...process.env,
   LP_SERVER: selectedLpServer(),
   LPCLI: lpcli,
-  LOGICPILOT_ARTIFACT_STORE_ROOT: mkdtempSync(join(tmpdir(), 'logicpilot-app-artifact-')),
+  LOGICPILOT_ARTIFACT_STORE_ROOT: temporaryRoot('logicpilot-app-artifact-'),
+  LOGICPILOT_PLUGIN_DRAFT_ROOT: temporaryRoot('logicpilot-app-drafts-'),
+  LOGICPILOT_PLUGIN_STORE_ROOT: temporaryRoot('logicpilot-app-plugins-'),
+  LOGICPILOT_PLUGIN_SIGNING_KEY_ID: 'app-test-key',
 };
+const signingKeys = generateKeyPairSync('ed25519');
+serverEnv.LOGICPILOT_PLUGIN_SIGNING_PRIVATE_KEY = signingKeys.privateKey
+  .export({ type: 'pkcs8', format: 'pem' })
+  .toString();
 // Force the offline provider so the AI loop cannot depend on the network.
 delete serverEnv.OPENAI_API_KEY;
 
@@ -188,7 +202,80 @@ try {
   assert.equal(draftsResponse.status, 200);
   const draftsView = await draftsResponse.json();
   assert.equal(draftsView.schema, 'logicpilot.plugin-drafts/v1');
-  assert.equal(draftsView.configured, false);
+  assert.equal(draftsView.configured, true);
+  assert.equal(draftsView.drafts.length, 0);
+  const draftPlugin = 'logicpilot.app-draft';
+  const draftPayload = {
+    schema: 'logicpilot.plugin-draft/v1',
+    contractVersion: 1,
+    id: 'app-draft-1',
+    basePluginId: 'logicpilot.base',
+    manifest: {
+      schema: 'logicpilot.plugin-manifest/v2',
+      contractVersion: 1,
+      id: draftPlugin,
+      version: '1.0.0',
+      apiVersion: 1,
+      provides: [],
+      requires: [],
+      entrypoints: {},
+      permissions: [],
+      trust: { minLevel: 't0' },
+    },
+    contributions: {
+      schema: 'logicpilot.plugin-contributions/v1',
+      contractVersion: 1,
+      pluginId: draftPlugin,
+      version: '1.0.0',
+      knowledge: [],
+      skills: [],
+      instructions: [],
+      diagnostics: [],
+      views: [],
+      notations: [],
+      createActions: [],
+      palettes: [],
+      tools: [],
+    },
+    status: 'draft',
+    createdBy: 'agent',
+    createdAt: '2026-09-03T00:00:00Z',
+    permissionDiff: { added: [], removed: [] },
+  };
+  const draftAction = (body) =>
+    apiFetch(`${baseUrl}/api/plugin-drafts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  assert.equal(
+    (await (await draftAction({ action: 'create', draft: draftPayload })).json()).result.status,
+    'draft',
+  );
+  assert.equal(
+    (await (await draftAction({ action: 'validate', id: 'app-draft-1' })).json()).result.status,
+    'validated',
+  );
+  assert.equal(
+    (
+      await (
+        await draftAction({
+          action: 'approve',
+          id: 'app-draft-1',
+          approvedBy: 'user',
+          acceptedPermissions: [],
+        })
+      ).json()
+    ).result.status,
+    'approved',
+  );
+  assert.equal(
+    (await (await draftAction({ action: 'install', id: 'app-draft-1' })).json()).result.lockEntry
+      .id,
+    draftPlugin,
+  );
+  const installedPlugins = await (await apiFetch(`${baseUrl}/api/plugins`)).json();
+  assert.ok(installedPlugins.packages.includes(draftPlugin));
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {
@@ -392,5 +479,5 @@ try {
   throw error;
 } finally {
   child.kill();
-  rmSync(serverEnv.LOGICPILOT_ARTIFACT_STORE_ROOT, { recursive: true, force: true });
+  for (const path of temporaryRoots) rmSync(path, { recursive: true, force: true });
 }
