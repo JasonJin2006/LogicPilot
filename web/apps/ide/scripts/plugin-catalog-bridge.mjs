@@ -15,6 +15,8 @@ import {
 } from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 let nodePluginRuntime;
+const registryClients = new Set();
+let registrySubscription;
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {
@@ -45,22 +47,59 @@ export function handlePluginRegistry(req, res) {
     res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
     return;
   }
-  const snapshot = nodePluginRuntime?.snapshot();
-  const registry = nodePluginRuntime?.contributionRegistry().snapshot();
   res.writeHead(200, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
   });
-  res.end(
-    JSON.stringify({
-      schema: 'logicpilot.plugin-registry/v1',
-      contractVersion: 1,
-      generation: snapshot?.generation ?? registry?.generation ?? 0,
-      plugins: snapshot?.host.ids() ?? [],
-      contributions: (registry?.sets ?? []).map(sanitizeContributionSet),
-    }),
-  );
+  res.end(JSON.stringify(registryPayload()));
+}
+
+/** GET /api/plugin-registry/stream: SSE snapshots on every committed
+ * generation. The stream is read-only and inherits the app-server session and
+ * local-origin policy. */
+export function handlePluginRegistryStream(req, res) {
+  if (req.method !== 'GET') {
+    res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-store',
+    connection: 'keep-alive',
+    'x-content-type-options': 'nosniff',
+  });
+  res.write(`event: registry\ndata: ${JSON.stringify(registryPayload())}\n\n`);
+  registryClients.add(res);
+  res.on('close', () => registryClients.delete(res));
+  ensureRegistrySubscription();
+}
+
+function ensureRegistrySubscription() {
+  if (registrySubscription || !nodePluginRuntime) return;
+  registrySubscription = nodePluginRuntime.subscribe(() => {
+    const event = `event: registry\ndata: ${JSON.stringify(registryPayload())}\n\n`;
+    for (const client of [...registryClients]) {
+      try {
+        client.write(event);
+      } catch {
+        registryClients.delete(client);
+      }
+    }
+  });
+}
+
+function registryPayload() {
+  const snapshot = nodePluginRuntime?.snapshot();
+  const registry = nodePluginRuntime?.contributionRegistry().snapshot();
+  return {
+    schema: 'logicpilot.plugin-registry/v1',
+    contractVersion: 1,
+    generation: snapshot?.generation ?? registry?.generation ?? 0,
+    plugins: snapshot?.host.ids() ?? [],
+    contributions: (registry?.sets ?? []).map(sanitizeContributionSet),
+  };
 }
 
 function sanitizeContributionSet(set) {
@@ -102,6 +141,7 @@ export async function startNodePluginRuntime() {
   });
   await nodePluginRuntime.start();
   nodePluginRuntime.watch();
+  ensureRegistrySubscription();
   return nodePluginRuntime;
 }
 
@@ -109,4 +149,14 @@ export async function stopNodePluginRuntime() {
   if (!nodePluginRuntime) return;
   await nodePluginRuntime.stop();
   nodePluginRuntime = undefined;
+  registrySubscription?.();
+  registrySubscription = undefined;
+  for (const client of registryClients) {
+    try {
+      client.end();
+    } catch {
+      // Ignore clients that disconnected concurrently.
+    }
+  }
+  registryClients.clear();
 }

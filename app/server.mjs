@@ -35,6 +35,7 @@ import {
 import {
   handlePluginCatalog,
   handlePluginRegistry,
+  handlePluginRegistryStream,
   handlePlugins,
   startNodePluginRuntime,
   stopNodePluginRuntime,
@@ -273,6 +274,11 @@ async function main() {
     if (pathname === '/api/plugin-registry') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handlePluginRegistry(req, res));
+      return;
+    }
+    if (pathname === '/api/plugin-registry/stream') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handlePluginRegistryStream(req, res));
       return;
     }
     if (isApi) {

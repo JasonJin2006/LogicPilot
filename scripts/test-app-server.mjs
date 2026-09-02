@@ -121,6 +121,14 @@ try {
   const registry = await registryResponse.json();
   assert.equal(registry.schema, 'logicpilot.plugin-registry/v1');
   assert.equal(registry.generation, 0);
+  const registryStream = await apiFetch(`${baseUrl}/api/plugin-registry/stream`);
+  assert.equal(registryStream.status, 200);
+  assert.match(registryStream.headers.get('content-type') ?? '', /text\/event-stream/);
+  const streamReader = registryStream.body.getReader();
+  const firstEvent = await streamReader.read();
+  assert.equal(firstEvent.done, false);
+  assert.match(new TextDecoder().decode(firstEvent.value), /logicpilot\.plugin-registry\/v1/);
+  await streamReader.cancel();
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {

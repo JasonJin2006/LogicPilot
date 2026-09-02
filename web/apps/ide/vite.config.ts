@@ -13,6 +13,7 @@ import { createApiRequestPolicy } from '../../../app/request-policy.mjs';
 import {
   handlePluginCatalog,
   handlePluginRegistry,
+  handlePluginRegistryStream,
   handlePlugins,
 } from './scripts/plugin-catalog-bridge.mjs';
 
@@ -98,6 +99,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/plugins', (req, res) => {
       void runWithApiPolicy(req, res, () => handlePlugins(req, res));
+    });
+    server.middlewares.use('/api/plugin-registry/stream', (req, res) => {
+      void runWithApiPolicy(req, res, () => handlePluginRegistryStream(req, res));
     });
     server.middlewares.use('/api/plugin-registry', (req, res) => {
       void runWithApiPolicy(req, res, () => handlePluginRegistry(req, res));
