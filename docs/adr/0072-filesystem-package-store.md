@@ -50,13 +50,13 @@ durable audit trail, while keeping all filesystem access out of the browser.
   requiring repository `node_modules`.
 - Lockfile formatting changes do not change the version token, while semantic
   lockfile changes do.
-- The mutex is transient and is removed in a `finally` path. A future crash
-  recovery slice must add stale-mutex ownership/expiry before allowing a
-  process to remove another process's lock.
+- The mutex is transient and is removed in a `finally` path. It carries a
+  timestamp; only markers older than the configured stale interval are
+  reclaimable. Untimestamped legacy markers remain blocking by default.
 - The current store writes lockfile and package-tree files atomically per
   operation and compensates lockfile failures. ADR-0073 adds a durable
-  transaction journal for recovery after process death; stale mutex expiry is
-  still a separate hardening item.
+  transaction journal for recovery after process death, and timestamped stale
+  mutex reclamation.
 
 ## Gate evidence
 

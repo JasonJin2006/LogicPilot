@@ -33,6 +33,8 @@ export interface FileSystemPackageStoreOptions {
   readonly packagesDirName?: string;
   readonly stagingDirName?: string;
   readonly journalName?: string;
+  /** Age after which a mutex left by a crashed process may be reclaimed. */
+  readonly mutexStaleMs?: number;
 }
 
 export class FileSystemPackageStoreError extends Error {
@@ -90,6 +92,7 @@ export class FileSystemPackageStore implements PackageStore {
   private readonly packagesDir: string;
   private readonly stagingDir: string;
   private readonly journalPath: string;
+  private readonly mutexStaleMs: number;
 
   constructor(options: FileSystemPackageStoreOptions) {
     this.rootDir = resolve(options.rootDir);
@@ -99,6 +102,10 @@ export class FileSystemPackageStore implements PackageStore {
     const packagesDirName = options.packagesDirName ?? 'plugins';
     const stagingDirName = options.stagingDirName ?? '.plugin-staging';
     const journalName = options.journalName ?? 'plugin-transactions.json';
+    const mutexStaleMs = options.mutexStaleMs ?? 30 * 60 * 1000;
+    if (!Number.isSafeInteger(mutexStaleMs) || mutexStaleMs < 1_000) {
+      throw new FileSystemPackageStoreError('mutexStaleMs must be at least one second', 'path');
+    }
     const names = [
       lockfileName,
       snapshotName,
@@ -117,6 +124,7 @@ export class FileSystemPackageStore implements PackageStore {
     this.packagesDir = join(this.rootDir, packagesDirName);
     this.stagingDir = join(this.rootDir, stagingDirName);
     this.journalPath = join(this.rootDir, journalName);
+    this.mutexStaleMs = mutexStaleMs;
     this.recoverTransactions();
   }
 
@@ -156,9 +164,7 @@ export class FileSystemPackageStore implements PackageStore {
 
   writeLockfileIfVersion(lockfile: PluginLockfile, expectedVersion: string | null): void {
     this.ensureRoot();
-    try {
-      writeFileSync(this.mutexPath, '', { encoding: 'utf8', flag: 'wx' });
-    } catch {
+    if (!this.acquireMutex()) {
       throw new FileSystemPackageStoreError(
         'lockfile is being written by another process',
         'conflict',
@@ -587,6 +593,36 @@ export class FileSystemPackageStore implements PackageStore {
     }
     this.ensureRoot();
     this.atomicWrite(this.lockfilePath, `${JSON.stringify(validated.value, null, 2)}\n`);
+  }
+
+  private acquireMutex(): boolean {
+    const marker = JSON.stringify({ pid: process.pid, createdAt: Date.now() });
+    try {
+      writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
+      return true;
+    } catch {
+      let stale = false;
+      try {
+        const parsed = JSON.parse(readFileSync(this.mutexPath, 'utf8')) as {
+          createdAt?: unknown;
+        };
+        stale =
+          typeof parsed.createdAt === 'number' &&
+          Number.isFinite(parsed.createdAt) &&
+          Date.now() - parsed.createdAt >= this.mutexStaleMs;
+      } catch {
+        // An old pre-journal empty marker has no ownership proof. Leave it in
+        // place rather than risking deletion of an active writer's lock.
+      }
+      if (!stale) return false;
+      try {
+        unlinkSync(this.mutexPath);
+        writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
+        return true;
+      } catch {
+        return false;
+      }
+    }
   }
 
   private ensureRoot(): void {

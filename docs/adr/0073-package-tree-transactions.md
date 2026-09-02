@@ -9,7 +9,9 @@ Implements: `docs/architecture/next-generation-plugin-platform.md` §16 Phase 2B
 `FileSystemPackageStore` owns two additional directories below its dedicated
 store root: `plugins/` for installed package trees and `.plugin-staging/` for
 short-lived transaction state, plus `plugin-transactions.json` as a durable
-transaction journal. Install and upgrade first recompute the
+transaction journal. Lockfile writes use a timestamped mutex and reclaim only
+markers older than the configured stale interval. Install and upgrade first
+recompute the
 canonical bounded package digest, copy the complete tree without following
 symlinks, and then atomically rename the staged tree into place. The previous
 tree is retained as a tombstone until the lockfile write succeeds. A failed

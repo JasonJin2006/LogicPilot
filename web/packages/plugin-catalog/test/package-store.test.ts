@@ -73,6 +73,24 @@ describe('FileSystemPackageStore', () => {
     expect(store.readSnapshot()?.plugins[0]?.version).toBe('1.0.0');
   });
 
+  it('reclaims only timestamped stale mutexes and preserves active locks', () => {
+    const root = tempRoot();
+    const store = new FileSystemPackageStore({ rootDir: root, mutexStaleMs: 1_000 });
+    store.writeLockfile(lockfile('1.0.0'));
+    writeFileSync(join(root, 'logicpilot.lock.mutex'), JSON.stringify({ createdAt: Date.now() }));
+    expect(() =>
+      store.writeLockfileIfVersion(lockfile('2.0.0'), store.readLockfileVersion()),
+    ).toThrow(/another process/);
+    writeFileSync(
+      join(root, 'logicpilot.lock.mutex'),
+      JSON.stringify({ createdAt: Date.now() - 10_000 }),
+    );
+    expect(() =>
+      store.writeLockfileIfVersion(lockfile('2.0.0'), store.readLockfileVersion()),
+    ).not.toThrow();
+    expect(store.readLockfile()?.plugins[0]?.version).toBe('2.0.0');
+  });
+
   it('appends bounded audit records without exposing arbitrary files', () => {
     const root = tempRoot();
     const store = new FileSystemPackageStore({ rootDir: root });
