@@ -12,6 +12,7 @@ import {
   createPluginCatalogHandler,
   createPluginManagementHandler,
   FileSystemArtifactStore,
+  FileSystemArtifactOutbox,
   FileSystemPluginDraftStore,
   AuditLog,
   PackageManager,
@@ -330,6 +331,59 @@ function artifactStoreFromEnv() {
   return root ? new FileSystemArtifactStore({ rootDir: root }) : undefined;
 }
 
+function artifactOutboxFromEnv() {
+  const root = process.env.LOGICPILOT_ARTIFACT_STORE_ROOT;
+  return root ? new FileSystemArtifactOutbox({ rootDir: root }) : undefined;
+}
+
+let artifactOutboxDrain;
+
+async function drainArtifactOutbox(store, outbox) {
+  if (artifactOutboxDrain) return artifactOutboxDrain;
+  artifactOutboxDrain = (async () => {
+    for (;;) {
+      const entry = outbox.claimNext();
+      if (!entry) break;
+      try {
+        try {
+          store.artifact(entry.artifactId);
+        } catch (error) {
+          if (error?.code !== 'not-found') throw error;
+          store.createArtifact({
+            id: entry.artifactId,
+            kind: entry.artifactKind,
+            createdBy: entry.actor ?? 'runtime',
+          });
+        }
+        const transaction = store.propose({
+          id: `tx-${entry.digest}`,
+          idempotencyKey: entry.idempotencyKey,
+          proposedBy: entry.actor ?? 'runtime',
+          artifactRefs: [{ artifactId: entry.artifactId }],
+          operations: [
+            { opId: `op-${entry.digest}`, opType: entry.operationType, payload: entry.payload },
+          ],
+        });
+        store.validate(transaction.id);
+        store.approve(transaction.id, entry.actor ?? 'runtime');
+        const revision = store.commit({
+          transactionId: transaction.id,
+          revisionId: `rev-${entry.digest}`,
+          artifactId: entry.artifactId,
+          createdBy: entry.actor ?? 'runtime',
+          digest: entry.digest,
+        });
+        outbox.complete(entry.id, revision.id);
+      } catch (error) {
+        outbox.fail(entry.id, error instanceof Error ? error.message : String(error));
+      }
+    }
+  })().finally(() => {
+    artifactOutboxDrain = undefined;
+  });
+  return artifactOutboxDrain;
+}
+
 function sendArtifactError(res, error) {
   const status =
     error?.status ??
@@ -388,6 +442,8 @@ export async function handleArtifactGraph(req, res) {
   try {
     const store = artifactStoreFromEnv();
     if (!store) throw Object.assign(new Error('artifact graph is not configured'), { status: 503 });
+    const outbox = artifactOutboxFromEnv();
+    if (outbox) await drainArtifactOutbox(store, outbox);
     if (req.method === 'POST') {
       const raw = await readArtifactBody(req);
       let input;
@@ -423,6 +479,13 @@ export async function handleArtifactGraph(req, res) {
           break;
         case 'commit':
           result = store.commit(input.input ?? {});
+          break;
+        case 'enqueue-background':
+          if (!outbox)
+            throw Object.assign(new Error('artifact outbox is not configured'), { status: 503 });
+          result = outbox.enqueue(input.input ?? {});
+          await drainArtifactOutbox(store, outbox);
+          result = outbox.list().find((entry) => entry.id === result.id) ?? result;
           break;
         default:
           throw Object.assign(new Error(`unsupported artifact graph action '${input.action}'`), {

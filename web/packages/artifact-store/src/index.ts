@@ -16,6 +16,7 @@ import type {
   TypedOperation,
 } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
+export * from './outbox.js';
 
 export interface ArtifactGraphState {
   readonly artifacts: readonly Artifact[];

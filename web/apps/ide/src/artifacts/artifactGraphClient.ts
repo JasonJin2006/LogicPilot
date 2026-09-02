@@ -147,14 +147,12 @@ export class ArtifactSyncQueue {
     this.pending.set(key, previous ?? { input, attempts: 0 });
     this.persistPending();
     const result = this.enqueue(async () => {
-      const pending = await beginArtifactTransaction(input);
-      if (!pending.enabled) throw new Error('artifact graph is not configured or unavailable');
       try {
-        return await commitArtifactTransaction(pending, input.actor ?? 'runtime');
+        const revisionId = await enqueueBackgroundArtifact(input);
+        if (revisionId === undefined)
+          throw new Error('artifact graph outbox is not configured or unavailable');
+        return revisionId;
       } catch (error) {
-        await rollbackArtifactTransaction(pending, 'background-transaction-failed').catch(
-          () => undefined,
-        );
         onFailure?.();
         throw error;
       }
@@ -283,6 +281,27 @@ async function call<T>(
     throw new Error(error);
   }
   return payload as T;
+}
+
+/** Durable background path. The server writes the outbox record before it
+ * starts the normal transaction lifecycle, so a response lost after commit
+ * can be replayed by the same idempotency key. */
+async function enqueueBackgroundArtifact(
+  input: ArtifactTransactionInput,
+): Promise<string | undefined> {
+  if (typeof window === 'undefined') return undefined;
+  const config = await getAppConfig();
+  if (!config) return undefined;
+  const response = await call<
+    OperationResponse<{
+      readonly resultRevisionId?: string;
+      readonly status?: string;
+    }>
+  >(config.apiBase, sessionHeaders(config), {
+    action: 'enqueue-background',
+    input,
+  });
+  return response.result.resultRevisionId;
 }
 
 /** Begin a server-side transaction for any supported artifact operation. In
