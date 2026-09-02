@@ -2,7 +2,7 @@
 // receives a filesystem path or imports a package directly; it consumes the
 // already activated contributions through the host bridge.
 
-import { lstatSync, realpathSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginCatalogEntry, PluginModule, PluginScope } from '@logicpilot/plugin-host';
@@ -119,6 +119,106 @@ export function createDynamicEsmLoader(
         return candidate;
       } catch {
         throw new DynamicEsmLoaderError(`plugin '${entry.id}' module failed to load`, 'module');
+      }
+    };
+  };
+}
+
+export interface DynamicWasmLoaderOptions {
+  readonly roots: readonly PluginRootConfig[];
+  readonly scope: PluginScope;
+  readonly defaultTrustLevel?: 't0' | 't1' | 't2' | 't3' | 't4' | 't5';
+  readonly trustOverrides?: ReadonlyMap<string, 't0' | 't1' | 't2' | 't3' | 't4' | 't5'>;
+  readonly maxWasmBytes?: number;
+  readonly onError?: (error: DynamicEsmLoaderError) => void;
+}
+
+/** Creates a deliberately capability-free WASM resolver. The module receives
+ * no imports (therefore no filesystem/network/process access) and must expose
+ * `logicpilot_activate(): void`, with optional `logicpilot_deactivate(): void`.
+ * A richer host ABI belongs in a separate frozen contract. */
+export function createDynamicWasmLoader(
+  options: DynamicWasmLoaderOptions,
+): (entry: PluginCatalogEntry) => (() => Promise<PluginModule>) | undefined {
+  const rootsById = new Map<string, string>();
+  const counters = new Map<PluginScope, number>();
+  for (const root of options.roots) {
+    const index = (counters.get(root.scope) ?? 0) + 1;
+    counters.set(root.scope, index);
+    rootsById.set(`${root.scope}:${index}`, resolve(root.path));
+  }
+  const digestCache = new Set<string>();
+  const maxBytes = options.maxWasmBytes ?? 16 * 1024 * 1024;
+  return (entry) => {
+    if (entry.scope !== options.scope) return undefined;
+    const effective = options.trustOverrides?.get(entry.id) ?? options.defaultTrustLevel ?? 't0';
+    if (TRUST_ORDER.indexOf(effective) < TRUST_ORDER.indexOf(entry.manifest.trust.minLevel)) {
+      report(
+        options,
+        new DynamicEsmLoaderError(`plugin '${entry.id}' trust requirement denied`, 'trust'),
+      );
+      return undefined;
+    }
+    const relativeEntrypoint = entry.manifest.entrypoints.wasm;
+    const root = rootsById.get(entry.rootId);
+    if (relativeEntrypoint === undefined || root === undefined) return undefined;
+    let packageDir: string;
+    let wasmPath: string;
+    try {
+      if (!isSafeRelative(entry.path) || !isSafeRelative(relativeEntrypoint))
+        throw new Error('unsafe path');
+      const packageCandidate = resolve(root, entry.path);
+      packageDir = realpathSync(packageCandidate);
+      const wasmCandidate = resolve(packageCandidate, relativeEntrypoint);
+      const wasmReal = realpathSync(wasmCandidate);
+      if (!isWithin(root, packageDir) || !lstatSync(packageDir).isDirectory())
+        throw new Error('package path');
+      if (!isWithin(packageDir, wasmReal) || !lstatSync(wasmReal).isFile())
+        throw new Error('wasm path');
+      if (statSync(wasmReal).size > maxBytes) throw new Error('wasm size');
+      wasmPath = wasmCandidate;
+    } catch {
+      report(
+        options,
+        new DynamicEsmLoaderError(`plugin '${entry.id}' WASM path is invalid`, 'path'),
+      );
+      return undefined;
+    }
+    const digestKey = `${entry.id}@${entry.sha256.toLowerCase()}`;
+    if (!digestCache.has(digestKey)) {
+      try {
+        if (computePackageDigest(packageDir, entry.manifest) !== entry.sha256.toLowerCase())
+          throw new Error('digest mismatch');
+        digestCache.add(digestKey);
+      } catch {
+        report(
+          options,
+          new DynamicEsmLoaderError(`plugin '${entry.id}' integrity check failed`, 'integrity'),
+        );
+        return undefined;
+      }
+    }
+    return async () => {
+      try {
+        const bytes = readFileSync(wasmPath);
+        const instance = await WebAssembly.instantiate(bytes, {});
+        const exports = instance.instance.exports as Record<string, unknown>;
+        if (typeof exports.logicpilot_activate !== 'function')
+          throw new Error('missing activate export');
+        return {
+          activate: () => {
+            (exports.logicpilot_activate as () => void)();
+          },
+          deactivate: () => {
+            if (typeof exports.logicpilot_deactivate === 'function')
+              (exports.logicpilot_deactivate as () => void)();
+          },
+        } satisfies PluginModule;
+      } catch {
+        throw new DynamicEsmLoaderError(
+          `plugin '${entry.id}' WASM module failed to load`,
+          'module',
+        );
       }
     };
   };

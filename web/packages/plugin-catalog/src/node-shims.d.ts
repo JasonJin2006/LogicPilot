@@ -15,6 +15,13 @@ declare class Buffer {
 
 declare const process: { readonly pid: number };
 
+declare const WebAssembly: {
+  instantiate(
+    bytes: unknown,
+    imports: Readonly<Record<string, unknown>>,
+  ): Promise<{ readonly instance: { readonly exports: Record<string, unknown> } }>;
+};
+
 declare class URL {
   constructor(input: string, base?: string);
   readonly searchParams: { get(name: string): string | null };
