@@ -676,6 +676,15 @@ export interface PluginLockfile {
   readonly plugins: ReadonlyArray<PluginLockEntry>;
 }
 
+// --- PluginRegistry (plugin-registry.schema.json) ---
+export interface PluginRegistry {
+  readonly schema: "logicpilot.plugin-registry/v1";
+  readonly contractVersion: 1;
+  readonly generation: number;
+  readonly plugins: ReadonlyArray<PluginId>;
+  readonly contributions: ReadonlyArray<PluginContributionSet>;
+}
+
 // --- PluginRuntimeSession (plugin-runtime-session.schema.json) ---
 export interface PluginRuntimeSession {
   readonly schema: "logicpilot.plugin-runtime-session/v1";

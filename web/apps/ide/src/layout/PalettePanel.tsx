@@ -7,7 +7,7 @@
 // releasing over the canvas inserts at that point). Pointer events work in
 // every WebView2/Chromium host, unlike HTML5 drag-and-drop which WebView2
 // rejects with a no-drop cursor.
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChangeEvent, ComponentType, PointerEvent as ReactPointerEvent } from 'react';
 import { PencilLine, Plus } from 'lucide-react';
 import { portGlyphPoint } from '../model/blockDefs';
@@ -21,6 +21,11 @@ import { usePaletteStore } from '../state/paletteStore';
 import { useUiStore } from '../state/uiStore';
 import { insertFromPalette } from '../sysml/sysmlEditBridge';
 import { ScrollArea } from '../components/ScrollArea';
+import {
+  pluginRegistryGeneration,
+  structuredPaletteItems,
+  subscribePluginRegistry,
+} from '../plugins/registry';
 
 interface PaletteBlock {
   kind: string;
@@ -102,6 +107,7 @@ function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | und
 export function PalettePanel() {
   const library = usePaletteStore((state) => state.library);
   const customLibraries = usePaletteStore((state) => state.customLibraries);
+  useSyncExternalStore(subscribePluginRegistry, pluginRegistryGeneration);
   const recentKinds = usePaletteStore((state) => state.recentKinds);
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
@@ -134,6 +140,10 @@ export function PalettePanel() {
   // The registry owns the catalog: built-in libraries come from palette
   // contributions, custom imports override by kind.
   const defs = blockIndex(customLibraries);
+  const structuredItems = structuredPaletteItems().map((item) => toBlock(item));
+  for (const item of structuredItems) {
+    if (!defs.has(item.kind)) defs.set(item.kind, item);
+  }
 
   let visible: PaletteBlock[] = [];
   if (library === 'all') {
@@ -149,7 +159,8 @@ export function PalettePanel() {
       .map((item) => defs.get(item.kind))
       .filter((block): block is PaletteBlock => block !== undefined);
   } else {
-    visible = customLibraries[library]?.blocks ?? [];
+    visible = structuredItems.filter((item) => item.library === library);
+    if (visible.length === 0) visible = customLibraries[library]?.blocks ?? [];
   }
 
   const onImportFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -173,6 +184,9 @@ export function PalettePanel() {
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
     ...PALETTE_CONTRIBUTIONS.libraries().map((entry) => ({ id: entry.id, label: entry.name })),
+    ...structuredPaletteItems()
+      .map((item) => ({ id: item.library, label: item.library }))
+      .filter((tab, index, all) => all.findIndex((candidate) => candidate.id === tab.id) === index),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
     id: custom.name,

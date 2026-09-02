@@ -387,6 +387,7 @@ struct PluginMigration;
 struct PluginIntegrity;
 struct PluginLockEntry;
 struct PluginLockfile;
+struct PluginRegistry;
 struct PluginRuntimeSession;
 struct ViewQuery;
 struct ViewDefinition;
@@ -1454,6 +1455,21 @@ struct PluginContributionSet {
 [[nodiscard]] bool parse(std::string_view text, PluginContributionSet& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginContributionSet& value);
 [[nodiscard]] std::string dump(const PluginContributionSet& value);
+
+// plugin-registry.schema.json
+struct PluginRegistry {
+  std::string schema;
+  std::int64_t contract_version;
+  std::int64_t generation;
+  std::vector<std::string> plugins;
+  std::vector<PluginContributionSet> contributions;
+};
+
+[[nodiscard]] bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginRegistry& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginRegistry& value);
+[[nodiscard]] std::string dump(const PluginRegistry& value);
 
 // plugin-catalog.schema.json
 struct PluginCatalog {

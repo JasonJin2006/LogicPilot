@@ -1,4 +1,4 @@
-import type { PluginContributionSet } from '@logicpilot/contracts';
+import type { PluginContributionSet, PluginRegistry } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 
 export interface PluginRegistrySnapshot {
@@ -20,6 +20,13 @@ export interface PluginRegistryFetchOptions {
   }>;
 }
 
+export interface StructuredPaletteItem {
+  readonly kind: string;
+  readonly library: string;
+  readonly name: string;
+  readonly hint: string;
+}
+
 /** Browser-side generation store. A complete payload is validated before the
  * active snapshot changes, so a broken update cannot partially remove or add
  * UI/knowledge contributions. */
@@ -37,36 +44,22 @@ export class PluginRegistryStore {
   }
 
   apply(payload: unknown): PluginRegistrySnapshot {
-    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-      throw new Error('invalid plugin registry payload');
-    }
-    const value = payload as Record<string, unknown>;
-    if (
-      value.schema !== 'logicpilot.plugin-registry/v1' ||
-      value.contractVersion !== 1 ||
-      typeof value.generation !== 'number' ||
-      !Array.isArray(value.plugins) ||
-      !Array.isArray(value.contributions)
-    ) {
-      throw new Error('invalid plugin registry envelope');
-    }
-    const contributions: PluginContributionSet[] = [];
-    for (const raw of value.contributions) {
-      const validated = validateContract('PluginContributionSet', raw);
-      if (!validated.ok)
-        throw new Error(`invalid plugin contribution: ${validated.errors.join('; ')}`);
-      if (!value.plugins.includes(validated.value.pluginId)) {
-        throw new Error(
-          `invalid plugin contribution: unknown plugin '${validated.value.pluginId}'`,
-        );
+    const validated = validateContract('PluginRegistry', payload);
+    if (!validated.ok)
+      throw new Error(`invalid plugin registry payload: ${validated.errors.join('; ')}`);
+    const value: PluginRegistry = validated.value;
+    for (const contribution of value.contributions) {
+      if (!value.plugins.includes(contribution.pluginId)) {
+        throw new Error(`invalid plugin contribution: unknown plugin '${contribution.pluginId}'`);
       }
-      contributions.push(validated.value);
     }
-    const plugins = value.plugins.filter((plugin): plugin is string => typeof plugin === 'string');
-    if (plugins.length !== value.plugins.length) throw new Error('invalid plugin registry ids');
     if (value.generation < this.value.generation)
       throw new Error('stale plugin registry generation');
-    this.value = { generation: value.generation, plugins, contributions };
+    this.value = {
+      generation: value.generation,
+      plugins: value.plugins,
+      contributions: value.contributions,
+    };
     for (const listener of this.listeners) listener();
     return this.value;
   }
@@ -81,6 +74,29 @@ export class PluginRegistryStore {
       throw new Error(`plugin registry bridge responded with HTTP ${response.status}`);
     return this.apply(await response.json());
   }
+
+  paletteItems(): readonly StructuredPaletteItem[] {
+    return this.value.contributions.flatMap((set) =>
+      set.palettes.map((item) => ({
+        kind: item.itemKind,
+        library: `${set.pluginId}:${item.id}`,
+        name: item.label,
+        hint: item.semanticType,
+      })),
+    );
+  }
 }
 
 export const PLUGIN_REGISTRY = new PluginRegistryStore();
+
+export function structuredPaletteItems(): readonly StructuredPaletteItem[] {
+  return PLUGIN_REGISTRY.paletteItems();
+}
+
+export function subscribePluginRegistry(listener: () => void): () => void {
+  return PLUGIN_REGISTRY.subscribe(listener);
+}
+
+export function pluginRegistryGeneration(): number {
+  return PLUGIN_REGISTRY.snapshot().generation;
+}

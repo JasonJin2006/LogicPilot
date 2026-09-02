@@ -101,6 +101,7 @@ nlohmann::ordered_json to_json_value(const PluginMigration& v) { return to_json(
 nlohmann::ordered_json to_json_value(const PluginIntegrity& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockEntry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockfile& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginRegistry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginRuntimeSession& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewQuery& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewDefinition& v) { return to_json(v); }
@@ -7742,6 +7743,113 @@ bool operator==(const PluginLockfile& lhs, const PluginLockfile& rhs) {
   return lhs.schema == rhs.schema
       && lhs.contract_version == rhs.contract_version
       && lhs.plugins == rhs.plugins;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginRegistry";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "generation",
+      "plugins",
+      "contributions",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginRegistry: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "PluginRegistry");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.plugin-registry/v1") {
+        error = std::string("PluginRegistry.schema") + ": expected constant " + "logicpilot.plugin-registry/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "PluginRegistry");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("PluginRegistry.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "generation", "PluginRegistry");
+      if (!value.is_number_integer()) {
+        error = std::string("PluginRegistry.generation") + ": expected integer";
+        return false;
+      }
+      out.generation = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "plugins", "PluginRegistry");
+      if (!value.is_array()) {
+        error = std::string("PluginRegistry.plugins") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!item.is_string()) {
+          error = std::string("PluginRegistry.plugins") + ": expected string item";
+          return false;
+        }
+        out.plugins.emplace_back() = item.get<std::string>();
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contributions", "PluginRegistry");
+      if (!value.is_array()) {
+        error = std::string("PluginRegistry.contributions") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.contributions.emplace_back(), error)) {
+          error = std::string("PluginRegistry.contributions") + ": " + error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginRegistry& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginRegistry& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["generation"] = to_json_value(value.generation);
+    j["plugins"] = to_json_value(value.plugins);
+    j["contributions"] = to_json_value(value.contributions);
+  return j;
+}
+
+std::string dump(const PluginRegistry& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.generation == rhs.generation
+      && lhs.plugins == rhs.plugins
+      && lhs.contributions == rhs.contributions;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PluginRuntimeSession& out, std::string& error) {

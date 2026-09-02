@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/plugin-registry.schema.json",
+  "title": "LogicPilot active plugin registry",
+  "description": "Generation-addressed registry snapshot delivered from the Node runtime to the IDE.",
+  "$defs": {
+    "PluginRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "generation", "plugins", "contributions"],
+      "properties": {
+        "schema": { "const": "logicpilot.plugin-registry/v1" },
+        "contractVersion": { "const": 1 },
+        "generation": { "type": "integer", "minimum": 0 },
+        "plugins": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/PluginId" } },
+        "contributions": {
+          "type": "array",
+          "items": { "$ref": "plugin-contributions.schema.json#/$defs/PluginContributionSet" }
+        }
+      }
+    }
+  }
+}
