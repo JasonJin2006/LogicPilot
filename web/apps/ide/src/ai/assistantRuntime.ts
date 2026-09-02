@@ -189,6 +189,10 @@ async function requestStepTransport(
           context,
           capabilities: options.capabilities,
           skills: options.skills,
+          toolDescriptors: toolDescriptors([
+            ...resolveAgentTools(options.capabilities, options.toolScope),
+            ...(options.additionalTools ?? []),
+          ]),
           toolNames: [
             ...resolveAgentTools(options.capabilities, options.toolScope),
             ...(options.additionalTools ?? []),
@@ -282,6 +286,10 @@ async function requestStepStream(
       context,
       capabilities: options.capabilities,
       skills: options.skills,
+      toolDescriptors: toolDescriptors([
+        ...resolveAgentTools(options.capabilities, options.toolScope),
+        ...(options.additionalTools ?? []),
+      ]),
       toolNames: [
         ...resolveAgentTools(options.capabilities, options.toolScope),
         ...(options.additionalTools ?? []),

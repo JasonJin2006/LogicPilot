@@ -284,6 +284,33 @@ export const ASSISTANT_TOOLS = Object.freeze([
   },
 ]);
 
+function normalizeToolDescriptors(value) {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set();
+  const tools = [];
+  for (const candidate of value) {
+    if (
+      candidate === null ||
+      typeof candidate !== 'object' ||
+      typeof candidate.name !== 'string' ||
+      candidate.name.trim() === '' ||
+      typeof candidate.parameters !== 'object' ||
+      candidate.parameters === null ||
+      Array.isArray(candidate.parameters) ||
+      seen.has(candidate.name)
+    )
+      continue;
+    seen.add(candidate.name);
+    tools.push({
+      name: candidate.name,
+      description:
+        typeof candidate.description === 'string' ? candidate.description : candidate.name,
+      parameters: candidate.parameters,
+    });
+  }
+  return tools;
+}
+
 function nativeToolDefinitions(tools = ASSISTANT_TOOLS) {
   return tools.map((tool) => {
     const properties = {};
@@ -720,6 +747,7 @@ export function buildSystemPrompt({
   skillInstructions,
   extraTools = [],
   toolNames,
+  toolCatalog,
 } = {}) {
   const capabilityIds = normalizeAgentCapabilities(capabilities);
   const requestedToolNames = Array.isArray(toolNames) ? new Set(toolNames) : null;
@@ -748,13 +776,14 @@ export function buildSystemPrompt({
   const pluginAuthoringMounted = hasAgentCapability(capabilityIds, 'logicpilot-plugin-authoring');
   const modelPatchMounted = toolMounted('apply_model_patch');
   const sysmlMounted = toolMounted('inspect_sysml_projection');
+  const promptTools = toolCatalog ?? ASSISTANT_TOOLS;
   if (!modelingMounted && pluginAuthoringMounted) {
-    const authoringToolLines = ASSISTANT_TOOLS.filter(
-      (tool) => capabilityToolNames.has(tool.name) && toolMounted(tool.name),
-    ).map(
-      (tool) =>
-        `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
-    );
+    const authoringToolLines = promptTools
+      .filter((tool) => capabilityToolNames.has(tool.name) && toolMounted(tool.name))
+      .map(
+        (tool) =>
+          `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
+      );
     return [
       'You are the LogicPilot plugin-authoring assistant.',
       'Create only structured PluginDraft data. Never claim a draft is installed,',
@@ -781,11 +810,12 @@ export function buildSystemPrompt({
       ...(resolvedSkillInstructions ? ['', resolvedSkillInstructions] : []),
     ].join('\n');
   }
-  const toolLines = ASSISTANT_TOOLS.filter(
-    (tool) =>
-      capabilityToolNames.has(tool.name) &&
-      (requestedToolNames === null || requestedToolNames.has(tool.name)),
-  )
+  const toolLines = promptTools
+    .filter(
+      (tool) =>
+        capabilityToolNames.has(tool.name) &&
+        (requestedToolNames === null || requestedToolNames.has(tool.name)),
+    )
     .map(
       (tool) =>
         `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
@@ -1092,6 +1122,7 @@ export async function runAssistant({
   capabilities,
   skills,
   toolNames,
+  toolDescriptors,
   maxResponseBytes = 64 * 1024,
   onChunk,
   signal,
@@ -1109,7 +1140,8 @@ export async function runAssistant({
   const mcpTools = hasAgentCapability(capabilityIds, 'mcp')
     ? await listMcpToolDefinitions({ signal })
     : [];
-  const toolCatalog = [...ASSISTANT_TOOLS, ...mcpTools];
+  const providedTools = normalizeToolDescriptors(toolDescriptors);
+  const toolCatalog = [...(providedTools ?? ASSISTANT_TOOLS), ...mcpTools];
   const skillInstructions = await loadAgentSkillInstructions(skills, {
     workspaceRoot: typeof context?.workspaceRoot === 'string' ? context.workspaceRoot : undefined,
   });
@@ -1132,6 +1164,7 @@ export async function runAssistant({
     skillInstructions,
     extraTools: mcpTools,
     toolNames: [...allowedToolNames],
+    toolCatalog,
   });
   const exposedTools = toolCatalog.filter((tool) => allowedToolNames.has(tool.name));
   const nativeTools =

@@ -641,8 +641,11 @@ export async function handleAiAssistant(req, res) {
   const capabilities = Array.isArray(payload?.capabilities) ? payload.capabilities : undefined;
   const skills = Array.isArray(payload?.skills) ? payload.skills : undefined;
   const toolNames = Array.isArray(payload?.toolNames) ? payload.toolNames : undefined;
+  const toolDescriptors = Array.isArray(payload?.toolDescriptors)
+    ? payload.toolDescriptors
+    : undefined;
   if (
-    JSON.stringify({ messages: normalizedMessages, context, toolNames }).length >
+    JSON.stringify({ messages: normalizedMessages, context, toolNames, toolDescriptors }).length >
     2 * 1024 * 1024
   ) {
     send(res, 413, { ok: false, error: 'assistant payload is too large' });
@@ -660,6 +663,7 @@ export async function handleAiAssistant(req, res) {
       capabilities,
       skills,
       toolNames,
+      toolDescriptors,
       signal: abortController.signal,
     });
     send(res, 200, result);
@@ -705,8 +709,11 @@ export async function handleAiAssistantStream(req, res) {
   const capabilities = Array.isArray(payload?.capabilities) ? payload.capabilities : undefined;
   const skills = Array.isArray(payload?.skills) ? payload.skills : undefined;
   const toolNames = Array.isArray(payload?.toolNames) ? payload.toolNames : undefined;
+  const toolDescriptors = Array.isArray(payload?.toolDescriptors)
+    ? payload.toolDescriptors
+    : undefined;
   if (
-    JSON.stringify({ messages: normalizedMessages, context, toolNames }).length >
+    JSON.stringify({ messages: normalizedMessages, context, toolNames, toolDescriptors }).length >
     2 * 1024 * 1024
   ) {
     send(res, 413, { ok: false, error: 'assistant payload is too large' });
@@ -729,6 +736,7 @@ export async function handleAiAssistantStream(req, res) {
       capabilities,
       skills,
       toolNames,
+      toolDescriptors,
       signal: abortController.signal,
       onChunk: (chunk) => sendSse(res, chunk),
     });
