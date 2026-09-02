@@ -147,3 +147,4 @@
 - [0116 Server Durable Artifact Outbox](0116-server-artifact-outbox)
 - [0117 Process/SysML Agent Capability Split](0117-process-sysml-capability-split)
 - [0118 Palette Host Contribution Actions](0118-palette-host-contribution-actions)
+- [0119 Remove Built-in Forwarding Seams](0119-remove-builtin-forwarding-seams)

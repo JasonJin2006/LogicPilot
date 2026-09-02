@@ -10,7 +10,7 @@
 import { lazy, Suspense, type ComponentType } from 'react';
 import { useUiStore } from '../state/uiStore';
 import { documentContributionFor } from '../workbench/documentTypes';
-import { PropertiesPanel } from '../plugins/builtin/properties';
+import { PropertiesPanel } from '../model/PropertiesPanel';
 
 /** Contributed property editors keyed by document contribution id. */
 const contributedEditors = new Map<string, () => ComponentType>();

@@ -12,7 +12,7 @@ import {
   insertElement,
   renameElement,
   type RelationVerb,
-} from '../../../plugins/builtin/semantics';
+} from '../../../plugins/builtin/sysml/semantics';
 import {
   definitionAt,
   buildSysMLProjectIndex,
@@ -20,7 +20,7 @@ import {
   projectSysML,
   resolveInIndex,
   referencesOf,
-} from '../../../plugins/builtin/semantics';
+} from '../../../plugins/builtin/sysml/semantics';
 import {
   ARTIFACT_SYNC_QUEUE,
   beginArtifactTransaction,
