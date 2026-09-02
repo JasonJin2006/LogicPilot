@@ -17,6 +17,7 @@ import {
   projectCatalogEntries,
   CapabilityBroker,
   ContributionRegistry,
+  KnowledgeRegistry,
   type PreparedContributionGeneration,
   type AuditEntry,
   type DiscoverySource,
@@ -47,6 +48,7 @@ export interface NodePluginRuntimeOptions {
   readonly wasmImports?: WasmHostImports;
   readonly capabilityBroker?: CapabilityBroker;
   readonly contributionRegistry?: ContributionRegistry;
+  readonly knowledgeRegistry?: KnowledgeRegistry;
   readonly onAudit?: (entry: AuditEntry) => void;
   readonly scan?: Omit<PluginCatalogScanConfig, 'roots'>;
 }
@@ -79,11 +81,14 @@ export class NodePluginRuntime {
   private activeSnapshot: NodePluginRuntimeSnapshot | null = null;
   private readonly contributions: ContributionRegistry;
   private pendingContributions: PreparedContributionGeneration | null = null;
+  private readonly knowledge: KnowledgeRegistry;
+  private pendingKnowledge: ReturnType<KnowledgeRegistry['prepare']> | null = null;
 
   constructor(private readonly options: NodePluginRuntimeOptions) {
     this.lockfileValue = options.lockfile;
     this.broker = options.capabilityBroker ?? new CapabilityBroker();
     this.contributions = options.contributionRegistry ?? new ContributionRegistry();
+    this.knowledge = options.knowledgeRegistry ?? new KnowledgeRegistry();
     if (!options.capabilityBroker) {
       this.broker.register('runtime.log', () => undefined);
       this.broker.register('runtime.random', () => Math.floor(Math.random() * 0x100000000));
@@ -100,6 +105,10 @@ export class NodePluginRuntime {
 
   contributionRegistry(): ContributionRegistry {
     return this.contributions;
+  }
+
+  knowledgeRegistry(): KnowledgeRegistry {
+    return this.knowledge;
   }
 
   async start(): Promise<PluginHost> {
@@ -131,6 +140,8 @@ export class NodePluginRuntime {
     this.sessions.clear();
     const cleared = this.contributions.prepare([]);
     this.contributions.commit(cleared);
+    const clearedKnowledge = this.knowledge.prepare([]);
+    this.knowledge.commit(clearedKnowledge);
     this.host = null;
     this.activeSnapshot = null;
   }
@@ -212,6 +223,7 @@ export class NodePluginRuntime {
       this.catalogValue = previousCatalog;
       this.revokeSessions(this.revisionValue + 1);
       this.pendingContributions = null;
+      this.pendingKnowledge = null;
       throw error;
     }
     if (previous?.phaseValue === 'active') {
@@ -221,6 +233,7 @@ export class NodePluginRuntime {
         await next.stopAll().catch(() => undefined);
         this.catalogValue = previousCatalog;
         this.pendingContributions = null;
+        this.pendingKnowledge = null;
         throw error;
       }
     }
@@ -270,6 +283,9 @@ export class NodePluginRuntime {
     this.catalogValue = { ...catalog, entries: approved };
     const loadedContributions = loadContributionSets(approved, this.options.roots);
     this.pendingContributions = this.contributions.prepare(loadedContributions.sets);
+    this.pendingKnowledge = this.knowledge.prepare(
+      loadedContributions.sets.flatMap((set) => set.knowledge),
+    );
     const loaders = new Map<string, () => Promise<PluginModule>>();
     const loaderErrors: string[] = [];
     const errors = (error: unknown): void => {
@@ -459,6 +475,10 @@ export class NodePluginRuntime {
     if (!this.pendingContributions) return;
     this.contributions.commit(this.pendingContributions);
     this.pendingContributions = null;
+    if (this.pendingKnowledge) {
+      this.knowledge.commit(this.pendingKnowledge);
+      this.pendingKnowledge = null;
+    }
   }
 }
 

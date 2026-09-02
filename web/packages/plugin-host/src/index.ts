@@ -3,3 +3,4 @@ export * from './package-manager.js';
 export * from './catalog.js';
 export * from './capability-broker.js';
 export * from './contribution-registry.js';
+export * from './knowledge-registry.js';
