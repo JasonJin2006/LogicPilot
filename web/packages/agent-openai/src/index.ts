@@ -7,6 +7,7 @@ import type {
   ToolDescriptor,
 } from '@logicpilot/contracts';
 import type { AgentEngine } from '@logicpilot/plugin-host';
+export { validateContract } from '@logicpilot/contracts';
 
 export interface OpenAiAgentsEngineOptions {
   readonly model?: string | Model;

@@ -1,5 +1,3 @@
-import { validateContract } from '../../../packages/contracts/dist/index.js';
-
 const MAX_AGENT_BODY_BYTES = 4 * 1024 * 1024;
 let engineModule;
 
@@ -57,12 +55,13 @@ export async function handleAgentStep(req, res) {
       if (error?.status === 413) throw error;
       throw Object.assign(new Error('request body is not valid JSON'), { status: 400 });
     }
+    engineModule ??= await import('../../../packages/agent-openai/dist/index.bundle.js');
+    const { validateContract } = engineModule;
     const request = validateContract('AgentStepRequest', payload);
     if (!request.ok) throw Object.assign(new Error(request.errors.join('; ')), { status: 400 });
     if (request.value.engineId !== 'sdk.openai-agents') {
       throw Object.assign(new Error('agent engine id is not enabled'), { status: 409 });
     }
-    engineModule ??= await import('../../../packages/agent-openai/dist/index.js');
     const engine = new engineModule.OpenAiAgentsEngine({
       model: process.env.OPENAI_MODEL,
     });

@@ -63,7 +63,10 @@ if (!Number.isInteger(nodeMajor) || nodeMajor < 20) {
   throw new Error(`desktop runtime requires Node >= 20, got '${nodeVersion || 'unknown'}'`);
 }
 const lpcli = requireFile(
-  argument('--lpcli', join(buildRoot, 'windows-msvc-release', 'kernel', 'apps', 'lpcli', 'lpcli.exe')),
+  argument(
+    '--lpcli',
+    join(buildRoot, 'windows-msvc-release', 'kernel', 'apps', 'lpcli', 'lpcli.exe'),
+  ),
   'lpcli release sidecar',
 );
 const lpserver = requireFile(
@@ -93,6 +96,7 @@ const requiredFiles = [
   'scripts/tool-paths.mjs',
   'scripts/verify-run.mjs',
   'web/apps/ide/scripts/ai-endpoint.mjs',
+  'web/apps/ide/scripts/agent-endpoint.mjs',
   'web/apps/ide/scripts/plugin-catalog-bridge.mjs',
   'LICENSE',
 ];
@@ -123,18 +127,40 @@ if (!existsSync(pluginCatalogBundle)) {
     'plugin-catalog bundle is missing; run pnpm --filter @logicpilot/plugin-catalog build',
   );
 }
-copyFile(pluginCatalogBundle, join(output, 'web', 'packages', 'plugin-catalog', 'dist', 'index.bundle.js'));
+copyFile(
+  pluginCatalogBundle,
+  join(output, 'web', 'packages', 'plugin-catalog', 'dist', 'index.bundle.js'),
+);
+const agentOpenAiBundle = join(root, 'web', 'packages', 'agent-openai', 'dist', 'index.bundle.js');
+if (!existsSync(agentOpenAiBundle)) {
+  throw new Error(
+    'agent-openai bundle is missing; run pnpm --filter @logicpilot/agent-openai build',
+  );
+}
+copyFile(
+  agentOpenAiBundle,
+  join(output, 'web', 'packages', 'agent-openai', 'dist', 'index.bundle.js'),
+);
 copyFile(node, join(output, 'runtime', 'node', process.platform === 'win32' ? 'node.exe' : 'node'));
-copyFile(lpcli, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lpcli.exe' : 'lpcli'));
-copyFile(lpserver, join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lp-server.exe' : 'lp-server'));
+copyFile(
+  lpcli,
+  join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lpcli.exe' : 'lpcli'),
+);
+copyFile(
+  lpserver,
+  join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lp-server.exe' : 'lp-server'),
+);
 
 // CMake places required non-system runtime DLLs beside each release binary.
 for (const directory of new Set([dirname(lpcli), dirname(lpserver)])) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     // Skip test-only artifacts (e.g. logicpilot_test_cabi_plugin.dll) that
     // CMake copies beside the release binaries; they must not ship.
-    if (entry.isFile() && entry.name.toLowerCase().endsWith('.dll') &&
-        !entry.name.toLowerCase().includes('test')) {
+    if (
+      entry.isFile() &&
+      entry.name.toLowerCase().endsWith('.dll') &&
+      !entry.name.toLowerCase().includes('test')
+    ) {
       copyFile(join(directory, entry.name), join(output, 'runtime', 'bin', entry.name));
     }
   }
