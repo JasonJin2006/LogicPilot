@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/wasm-host-abi.schema.json",
+  "title": "LogicPilot WASM host ABI",
+  "description": "Frozen capability import and lifecycle contract for sandboxed LogicPilot WASM plugins.",
+  "$defs": {
+    "WasmAbiValueType": {
+      "type": "string",
+      "enum": ["i32", "i64", "f32", "f64", "string", "bytes", "void"]
+    },
+    "WasmHostImport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "capability", "permissionId", "params", "result"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "capability": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "permissionId": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" },
+        "params": { "type": "array", "items": { "$ref": "#/$defs/WasmAbiValueType" } },
+        "result": { "$ref": "#/$defs/WasmAbiValueType" }
+      }
+    },
+    "WasmHostAbi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "abiVersion",
+        "imports",
+        "abiVersionExport",
+        "activateExport",
+        "deactivateExport"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.wasm-host-abi/v1" },
+        "contractVersion": { "const": 1 },
+        "abiVersion": { "const": 1 },
+        "imports": { "type": "array", "items": { "$ref": "#/$defs/WasmHostImport" } },
+        "abiVersionExport": { "type": "string", "const": "logicpilot_abi_version" },
+        "activateExport": { "type": "string", "const": "logicpilot_activate" },
+        "deactivateExport": { "type": "string", "const": "logicpilot_deactivate" }
+      }
+    }
+  }
+}

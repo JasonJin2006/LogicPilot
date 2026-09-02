@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import type { PluginCatalogEntry, PluginModule, PluginScope } from '@logicpilot/plugin-host';
 import type { PluginRootConfig } from './catalog.js';
 import { computePackageDigest } from './catalog.js';
-import { buildWasmImports, type WasmHostImports } from './wasm-abi.js';
+import { buildWasmImports, WASM_HOST_ABI, type WasmHostImports } from './wasm-abi.js';
 
 export interface DynamicEsmLoaderOptions {
   readonly roots: readonly PluginRootConfig[];
@@ -259,7 +259,12 @@ export function createDynamicWasmLoader(
           entry.id,
         );
         const exports = instance.instance.exports as Record<string, unknown>;
-        if (typeof exports.logicpilot_activate !== 'function')
+        if (
+          typeof exports[WASM_HOST_ABI.abiVersionExport] !== 'function' ||
+          (exports[WASM_HOST_ABI.abiVersionExport] as () => number)() !== WASM_HOST_ABI.abiVersion
+        )
+          throw new Error('unsupported ABI version');
+        if (typeof exports[WASM_HOST_ABI.activateExport] !== 'function')
           throw new Error('missing activate export');
         const memoryBytes = (exports.memory as { buffer?: { byteLength?: unknown } } | undefined)
           ?.buffer?.byteLength;
@@ -273,15 +278,15 @@ export function createDynamicWasmLoader(
         return {
           activate: () =>
             withTimeout(
-              Promise.resolve((exports.logicpilot_activate as () => void)()),
+              Promise.resolve((exports[WASM_HOST_ABI.activateExport] as () => void)()),
               options.activationTimeoutMs,
               entry.id,
             ),
-          ...(typeof exports.logicpilot_deactivate === 'function'
+          ...(typeof exports[WASM_HOST_ABI.deactivateExport] === 'function'
             ? {
                 deactivate: () =>
                   withTimeout(
-                    Promise.resolve((exports.logicpilot_deactivate as () => void)()),
+                    Promise.resolve((exports[WASM_HOST_ABI.deactivateExport] as () => void)()),
                     options.activationTimeoutMs,
                     entry.id,
                   ),
@@ -390,6 +395,7 @@ function createWasmWorkerController(
         const memory = instance.exports.memory;
         const size = memory && memory.buffer ? memory.buffer.byteLength : 0;
         if (workerData.maxMemoryBytes && size > workerData.maxMemoryBytes) throw new Error('memory-limit');
+        if (typeof instance.exports.logicpilot_abi_version !== 'function' || instance.exports.logicpilot_abi_version() !== 1) throw new Error('unsupported-abi');
         if (typeof instance.exports.logicpilot_activate !== 'function') throw new Error('missing-activate');
         parentPort.postMessage({ ok: true });
       } catch (error) {

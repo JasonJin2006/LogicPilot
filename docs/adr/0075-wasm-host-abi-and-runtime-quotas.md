@@ -22,9 +22,11 @@ The lifecycle exports are `logicpilot_activate() -> void` and optional
 filesystem handles, sockets, process APIs or arbitrary host callbacks are
 available in v1.
 
-The canonical table and import filtering implementation live in
+The machine-readable ABI is frozen in
+`schemas/contracts/wasm-host-abi.schema.json` and generated into the TS/C++
+contract surfaces. Import filtering is implemented in
 `web/packages/plugin-catalog/src/wasm-abi.ts`; this ADR is the human-readable
-contract and must change together with that table and its tests.
+contract and must change together with those sources and their tests.
 
 ## Runtime quotas
 

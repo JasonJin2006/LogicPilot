@@ -95,6 +95,9 @@ export interface ContractTypes {
   NotationPack: C.NotationPack;
   CreateActionRef: C.CreateActionRef;
   CreateAction: C.CreateAction;
+  WasmAbiValueType: C.WasmAbiValueType;
+  WasmHostImport: C.WasmHostImport;
+  WasmHostAbi: C.WasmHostAbi;
 }
 
 export type ContractDefName = keyof ContractTypes;

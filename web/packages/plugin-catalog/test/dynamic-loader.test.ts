@@ -166,6 +166,7 @@ describe('WASM capability import table', () => {
 });
 
 function wasmLifecycleModule(): Uint8Array {
+  const abi = new TextEncoder().encode('logicpilot_abi_version');
   const name = new TextEncoder().encode('logicpilot_activate');
   return new Uint8Array([
     0,
@@ -177,27 +178,41 @@ function wasmLifecycleModule(): Uint8Array {
     0,
     0,
     1,
-    4,
-    1,
+    8,
+    2,
     96,
     0,
-    0, // () -> () type
+    1,
+    127,
+    96,
+    0,
+    0, // () -> i32 ABI version and () -> () lifecycle types
+    3,
     3,
     2,
-    1,
-    0, // one function using type 0
+    0,
+    1, // ABI version and lifecycle function types
     7,
-    23,
-    1,
+    48,
+    2,
+    abi.length,
+    ...abi,
+    0,
+    0,
     name.length,
     ...name,
     0,
-    0, // export function
+    1, // export ABI version and lifecycle
     10,
+    9,
+    2,
     4,
+    0,
+    65,
     1,
+    11,
     2,
     0,
-    11, // empty function body
+    11, // i32.const 1; empty body
   ]);
 }

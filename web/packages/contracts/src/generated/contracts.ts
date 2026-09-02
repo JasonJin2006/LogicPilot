@@ -668,3 +668,26 @@ export interface CreateAction {
   readonly order?: number;
 }
 
+// --- WasmAbiValueType (wasm-host-abi.schema.json) ---
+export type WasmAbiValueType = "i32" | "i64" | "f32" | "f64" | "string" | "bytes" | "void";
+
+// --- WasmHostImport (wasm-host-abi.schema.json) ---
+export interface WasmHostImport {
+  readonly name: string;
+  readonly capability: CapabilityId;
+  readonly permissionId: PermissionId;
+  readonly params: ReadonlyArray<WasmAbiValueType>;
+  readonly result: WasmAbiValueType;
+}
+
+// --- WasmHostAbi (wasm-host-abi.schema.json) ---
+export interface WasmHostAbi {
+  readonly schema: "logicpilot.wasm-host-abi/v1";
+  readonly contractVersion: 1;
+  readonly abiVersion: 1;
+  readonly imports: ReadonlyArray<WasmHostImport>;
+  readonly abiVersionExport: "logicpilot_abi_version";
+  readonly activateExport: "logicpilot_activate";
+  readonly deactivateExport: "logicpilot_deactivate";
+}
+

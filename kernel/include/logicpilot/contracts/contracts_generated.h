@@ -265,6 +265,20 @@ enum class LayoutPersistence : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, LayoutPersistence& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(LayoutPersistence value);
 
+enum class WasmAbiValueType : std::uint8_t {
+  kI32,
+  kI64,
+  kF32,
+  kF64,
+  kString,
+  kBytes,
+  kVoid,
+};
+
+[[nodiscard]] std::string dump(WasmAbiValueType value);
+[[nodiscard]] bool parse(std::string_view text, WasmAbiValueType& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(WasmAbiValueType value);
+
 using AgentEngineId = std::string;
 using ArtifactId = std::string;
 using RevisionId = std::string;
@@ -338,6 +352,8 @@ struct PortRule;
 struct NotationPack;
 struct CreateActionRef;
 struct CreateAction;
+struct WasmHostImport;
+struct WasmHostAbi;
 
 // agent-engine.schema.json
 struct AgentCheckpoint {
@@ -938,6 +954,21 @@ struct ViewQuery {
 [[nodiscard]] nlohmann::ordered_json to_json(const ViewQuery& value);
 [[nodiscard]] std::string dump(const ViewQuery& value);
 
+// wasm-host-abi.schema.json
+struct WasmHostImport {
+  std::string name;
+  std::string capability;
+  PermissionId permission_id;
+  std::vector<WasmAbiValueType> params;
+  WasmAbiValueType result;
+};
+
+[[nodiscard]] bool operator==(const WasmHostImport& lhs, const WasmHostImport& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, WasmHostImport& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, WasmHostImport& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const WasmHostImport& value);
+[[nodiscard]] std::string dump(const WasmHostImport& value);
+
 // agent-engine.schema.json
 struct AgentStepRequest {
   std::string schema;
@@ -1188,6 +1219,23 @@ struct ViewDefinition {
 [[nodiscard]] bool parse(std::string_view text, ViewDefinition& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const ViewDefinition& value);
 [[nodiscard]] std::string dump(const ViewDefinition& value);
+
+// wasm-host-abi.schema.json
+struct WasmHostAbi {
+  std::string schema;
+  std::int64_t contract_version;
+  std::int64_t abi_version;
+  std::vector<WasmHostImport> imports;
+  std::string abi_version_export;
+  std::string activate_export;
+  std::string deactivate_export;
+};
+
+[[nodiscard]] bool operator==(const WasmHostAbi& lhs, const WasmHostAbi& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, WasmHostAbi& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, WasmHostAbi& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const WasmHostAbi& value);
+[[nodiscard]] std::string dump(const WasmHostAbi& value);
 
 // plugin-catalog.schema.json
 struct PluginCatalogEntry {

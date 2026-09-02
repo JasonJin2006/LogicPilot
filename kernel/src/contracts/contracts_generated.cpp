@@ -44,6 +44,7 @@ nlohmann::ordered_json to_json_value(PluginCatalogSeverity v) { return to_json(v
 nlohmann::ordered_json to_json_value(PluginCatalogDiagnosticKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CanvasEngineId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(LayoutPersistence v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(WasmAbiValueType v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ToolDescriptor& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ToolCall& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ToolResult& v) { return to_json(v); }
@@ -99,6 +100,8 @@ nlohmann::ordered_json to_json_value(const PortRule& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const NotationPack& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const CreateActionRef& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const CreateAction& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const WasmHostImport& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const WasmHostAbi& v) { return to_json(v); }
 template <typename T>
 nlohmann::ordered_json to_json_value(const std::vector<T>& v) {
   auto arr = nlohmann::ordered_json::array();
@@ -740,6 +743,41 @@ bool parse(std::string_view text, LayoutPersistence& out, std::string& error) {
 }
 
 nlohmann::ordered_json to_json(LayoutPersistence value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(WasmAbiValueType value) {
+  switch (value) {
+    case WasmAbiValueType::kI32: return "i32";
+    case WasmAbiValueType::kI64: return "i64";
+    case WasmAbiValueType::kF32: return "f32";
+    case WasmAbiValueType::kF64: return "f64";
+    case WasmAbiValueType::kString: return "string";
+    case WasmAbiValueType::kBytes: return "bytes";
+    case WasmAbiValueType::kVoid: return "void";
+  }
+  return "<invalid WasmAbiValueType>";
+}
+
+bool parse(std::string_view text, WasmAbiValueType& out, std::string& error) {
+  static const std::pair<std::string_view, WasmAbiValueType> kTable[] = {
+      {"i32", WasmAbiValueType::kI32},
+      {"i64", WasmAbiValueType::kI64},
+      {"f32", WasmAbiValueType::kF32},
+      {"f64", WasmAbiValueType::kF64},
+      {"string", WasmAbiValueType::kString},
+      {"bytes", WasmAbiValueType::kBytes},
+      {"void", WasmAbiValueType::kVoid},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid WasmAbiValueType value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(WasmAbiValueType value) { return nlohmann::ordered_json(dump(value)); }
 
 bool parse_json(const nlohmann::ordered_json& j, ToolDescriptor& out, std::string& error) {
   if (!j.is_object()) {
@@ -7569,6 +7607,231 @@ bool operator==(const CreateAction& lhs, const CreateAction& rhs) {
       && lhs.notation_id == rhs.notation_id
       && lhs.target_semantic_kind == rhs.target_semantic_kind
       && lhs.order == rhs.order;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, WasmHostImport& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for WasmHostImport";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "name",
+      "capability",
+      "permissionId",
+      "params",
+      "result",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "WasmHostImport: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "name", "WasmHostImport");
+      if (!value.is_string()) {
+        error = std::string("WasmHostImport.name") + ": expected string";
+        return false;
+      }
+      out.name = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "capability", "WasmHostImport");
+      if (!value.is_string()) {
+        error = std::string("WasmHostImport.capability") + ": expected string";
+        return false;
+      }
+      out.capability = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "permissionId", "WasmHostImport");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.permission_id, enum_error)) {
+        error = std::string("WasmHostImport.permissionId") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "params", "WasmHostImport");
+      if (!value.is_array()) {
+        error = std::string("WasmHostImport.params") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        std::string enum_error;
+        if (!parse(item.get<std::string>(), out.params.emplace_back(), enum_error)) {
+          error = std::string("WasmHostImport.params") + ": " + enum_error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "result", "WasmHostImport");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.result, enum_error)) {
+        error = std::string("WasmHostImport.result") + ": " + enum_error;
+        return false;
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, WasmHostImport& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const WasmHostImport& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["name"] = to_json_value(value.name);
+    j["capability"] = to_json_value(value.capability);
+    j["permissionId"] = to_json(value.permission_id);
+    j["params"] = to_json_value(value.params);
+    j["result"] = to_json(value.result);
+  return j;
+}
+
+std::string dump(const WasmHostImport& value) { return to_json(value).dump(2); }
+
+bool operator==(const WasmHostImport& lhs, const WasmHostImport& rhs) {
+  return lhs.name == rhs.name
+      && lhs.capability == rhs.capability
+      && lhs.permission_id == rhs.permission_id
+      && lhs.params == rhs.params
+      && lhs.result == rhs.result;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, WasmHostAbi& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for WasmHostAbi";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "abiVersion",
+      "imports",
+      "abiVersionExport",
+      "activateExport",
+      "deactivateExport",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "WasmHostAbi: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "WasmHostAbi");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.wasm-host-abi/v1") {
+        error = std::string("WasmHostAbi.schema") + ": expected constant " + "logicpilot.wasm-host-abi/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "WasmHostAbi");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("WasmHostAbi.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "abiVersion", "WasmHostAbi");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("WasmHostAbi.abiVersion") + ": expected constant 1";
+        return false;
+      }
+      out.abi_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "imports", "WasmHostAbi");
+      if (!value.is_array()) {
+        error = std::string("WasmHostAbi.imports") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.imports.emplace_back(), error)) {
+          error = std::string("WasmHostAbi.imports") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "abiVersionExport", "WasmHostAbi");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot_abi_version") {
+        error = std::string("WasmHostAbi.abiVersionExport") + ": expected constant " + "logicpilot_abi_version";
+        return false;
+      }
+      out.abi_version_export = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "activateExport", "WasmHostAbi");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot_activate") {
+        error = std::string("WasmHostAbi.activateExport") + ": expected constant " + "logicpilot_activate";
+        return false;
+      }
+      out.activate_export = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "deactivateExport", "WasmHostAbi");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot_deactivate") {
+        error = std::string("WasmHostAbi.deactivateExport") + ": expected constant " + "logicpilot_deactivate";
+        return false;
+      }
+      out.deactivate_export = value.get<std::string>();
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, WasmHostAbi& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const WasmHostAbi& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["abiVersion"] = to_json_value(value.abi_version);
+    j["imports"] = to_json_value(value.imports);
+    j["abiVersionExport"] = to_json_value(value.abi_version_export);
+    j["activateExport"] = to_json_value(value.activate_export);
+    j["deactivateExport"] = to_json_value(value.deactivate_export);
+  return j;
+}
+
+std::string dump(const WasmHostAbi& value) { return to_json(value).dump(2); }
+
+bool operator==(const WasmHostAbi& lhs, const WasmHostAbi& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.abi_version == rhs.abi_version
+      && lhs.imports == rhs.imports
+      && lhs.abi_version_export == rhs.abi_version_export
+      && lhs.activate_export == rhs.activate_export
+      && lhs.deactivate_export == rhs.deactivate_export;
 }
 
 }  // namespace logicpilot::contracts
