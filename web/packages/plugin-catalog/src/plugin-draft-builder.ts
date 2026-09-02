@@ -1,7 +1,7 @@
 import { sign } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { PluginDraft, PluginManifest } from '@logicpilot/contracts';
+import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import { computePackageDigest } from './catalog.js';
 
@@ -37,7 +37,8 @@ export class PluginDraftPackageBuilder {
     mkdirSync(root, { recursive: true });
     const temporary = join(root, `.draft-${process.pid}-${Date.now()}`);
     mkdirSync(temporary, { recursive: true });
-    const { integrity: _ignored, ...unsignedManifest } = draft.manifest;
+    const unsignedManifest = { ...draft.manifest };
+    delete unsignedManifest.integrity;
     writeFileSync(
       join(temporary, 'plugin.json'),
       `${JSON.stringify(unsignedManifest, null, 2)}\n`,

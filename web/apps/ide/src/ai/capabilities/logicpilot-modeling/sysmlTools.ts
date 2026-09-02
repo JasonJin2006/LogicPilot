@@ -8,7 +8,6 @@ import { useSysMLStore, type SysMLViewMode } from '../../../state/sysmlStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useUiStore } from '../../../state/uiStore';
 import { projectSysML } from '../../../sysml/sysmlProjection';
-import type { SysMLLayout } from '../../../sysml/sysmlProjection';
 import {
   addRelationStatement,
   insertElement,
@@ -23,6 +22,8 @@ import {
   commitArtifactTransaction,
   rollbackArtifactTransaction,
 } from '../../../artifacts/artifactGraphClient';
+
+type SysMLLayoutSnapshot = NonNullable<ReturnType<typeof useSysMLStore.getState>['layout']>;
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
   return typeof args[key] === 'number' && Number.isFinite(args[key] as number)
@@ -61,8 +62,8 @@ function currentSysMLSource(): string | null {
 
 function persistLayoutEdit(
   path: string,
-  before: SysMLLayout,
-  after: SysMLLayout,
+  before: SysMLLayoutSnapshot,
+  after: SysMLLayoutSnapshot,
   operationType: string,
   restore: () => void,
 ): Record<string, unknown> | Promise<Record<string, unknown>> {
