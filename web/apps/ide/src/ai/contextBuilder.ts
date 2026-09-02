@@ -6,10 +6,10 @@ import type { ModelDocument } from '@logicpilot/editor';
 import type { AssistantContext, AssistantSessionState } from './assistantTypes';
 import type { AiMetrics } from './api';
 import { PLUGIN_REGISTRY } from '../plugins/registry';
+import { compilePluginContext } from './contextCompiler';
 
 const MAX_NODES_IN_SUMMARY = 200;
 const MAX_DSL_CHARS = 12000;
-const MAX_KNOWLEDGE_CHARS = 12000;
 
 function paramText(params: Record<string, unknown> | undefined): string {
   const entries = Object.entries(params ?? {});
@@ -105,37 +105,26 @@ function renderDiagnostics(diagnostics: Array<{ code: string; message: string }>
   return diagnostics.map((entry) => `${entry.code}: ${entry.message}`).join('\n');
 }
 
-function renderKnowledge(): string | undefined {
-  const blocks = PLUGIN_REGISTRY.snapshot()
-    .contributions.flatMap((set) => set.knowledge)
-    .filter((block) => block.status === 'trusted')
-    .map((block) => ({
-      id: block.id,
-      type: block.type,
-      owner: block.owner,
-      scope: block.scope,
-      content: block.content,
-      formula: block.formula,
-      provenance: block.provenance,
-      verification: block.verification,
-    }));
-  if (blocks.length === 0) return undefined;
-  return JSON.stringify(blocks).slice(0, MAX_KNOWLEDGE_CHARS);
-}
-
 export interface ContextInput {
   projectName: string;
   workspaceRoot?: string;
   document: ModelDocument;
   selectedId: string | null;
   session: AssistantSessionState;
+  documentType?: string | null;
+  paradigm?: string | null;
+  domain?: string | null;
 }
 
 /** Build the bounded context snapshot for the next reasoning step. */
 export function buildAssistantContext(input: ContextInput): AssistantContext {
   const { document, selectedId, session } = input;
   const dsl = session.dsl && document === session.documentSnapshot ? session.dsl : '';
-  const knowledge = renderKnowledge();
+  const compiled = compilePluginContext(PLUGIN_REGISTRY.snapshot(), {
+    documentType: input.documentType,
+    paradigm: input.paradigm,
+    domain: input.domain,
+  });
   return {
     project: input.projectName,
     ...(input.workspaceRoot === undefined ? {} : { workspaceRoot: input.workspaceRoot }),
@@ -143,7 +132,12 @@ export function buildAssistantContext(input: ContextInput): AssistantContext {
     selection: renderSelection(document, selectedId),
     dsl: dsl.slice(0, MAX_DSL_CHARS),
     diagnostics: renderDiagnostics(session.diagnostics),
-    ...(knowledge === undefined ? {} : { knowledge }),
+    ...(compiled.knowledge === undefined ? {} : { knowledge: compiled.knowledge }),
+    ...(compiled.skills === undefined ? {} : { skills: compiled.skills }),
+    ...(compiled.instructions === undefined ? {} : { instructions: compiled.instructions }),
+    ...(compiled.diagnosticDefinitions === undefined
+      ? {}
+      : { diagnosticDefinitions: compiled.diagnosticDefinitions }),
     runStatus: session.runStatus,
     runMetrics:
       session.runMetrics === null ? 'no run metrics yet' : renderMetrics(session.runMetrics),

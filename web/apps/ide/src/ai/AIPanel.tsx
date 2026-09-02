@@ -807,6 +807,7 @@ export function AIPanel() {
       workspaceRoot: projectPath ?? undefined,
       selectedId: useModelStore.getState().selectedId,
       session,
+      documentType: documentContributionFor(useUiStore.getState().activeFile)?.id ?? null,
     });
     const turns = histories[scope] ?? [];
     const persistedEvents = turns.flatMap((turn) => turn.kernelEvents ?? []);

@@ -114,6 +114,11 @@ export interface AssistantContext {
   diagnostics: string;
   /** Bounded structured knowledge selected from trusted plugin blocks. */
   knowledge?: string;
+  /** Bounded structured skill and instruction contributions selected for the turn. */
+  skills?: string;
+  instructions?: string;
+  /** Definitions that explain diagnostic codes and available fixes. */
+  diagnosticDefinitions?: string;
   runStatus: string;
   runMetrics: string;
 }

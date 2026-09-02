@@ -632,6 +632,10 @@ function renderContext(context) {
   push('Current selection', context.selection);
   push('Model DSL', context.dsl);
   push('Compile diagnostics', context.diagnostics);
+  push('Structured knowledge blocks', context.knowledge);
+  push('Structured skills', context.skills);
+  push('Structured instructions', context.instructions);
+  push('Diagnostic definitions and fixes', context.diagnosticDefinitions);
   push('Last run status', context.runStatus);
   push('Last run metrics', context.runMetrics);
   return sections.join('\n\n');

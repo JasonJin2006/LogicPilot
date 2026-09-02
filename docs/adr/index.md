@@ -103,3 +103,4 @@
 - [0072 File-System Package Store with Lockfile CAS and Durable Audit](0072-filesystem-package-store)
 - [0084 Persistent Artifact Graph Store](0084-filesystem-artifact-store)
 - [0086 Persistent Artifact Transaction API](0086-persistent-artifact-transaction-api)
+- [0087 Structured Agent Context Compiler](0087-structured-agent-context-compiler)
