@@ -53,6 +53,12 @@ export interface NodePluginRuntimeChange {
   readonly catalog: Awaited<ReturnType<typeof scanPluginCatalog>>;
 }
 
+export interface NodePluginRuntimeSnapshot {
+  readonly generation: number;
+  readonly host: PluginHost;
+  readonly catalog: Awaited<ReturnType<typeof scanPluginCatalog>>;
+}
+
 export class NodePluginRuntime {
   private host: PluginHost | null = null;
   private catalogValue: Awaited<ReturnType<typeof scanPluginCatalog>> | null = null;
@@ -66,6 +72,7 @@ export class NodePluginRuntime {
   private readonly broker: CapabilityBroker;
   private readonly sessions = new Map<string, PluginRuntimeSession>();
   private capabilityRequestSequence = 0;
+  private activeSnapshot: NodePluginRuntimeSnapshot | null = null;
 
   constructor(private readonly options: NodePluginRuntimeOptions) {
     this.lockfileValue = options.lockfile;
@@ -91,6 +98,11 @@ export class NodePluginRuntime {
       this.host = await this.starting;
       this.revisionValue += 1;
       this.broker.activateGeneration(this.revisionValue);
+      this.activeSnapshot = {
+        generation: this.revisionValue,
+        host: this.host,
+        catalog: this.catalogValue!,
+      };
       return this.host;
     } finally {
       this.starting = null;
@@ -105,6 +117,7 @@ export class NodePluginRuntime {
     for (const session of this.sessions.values()) this.broker.revokeSession(session.sessionId);
     this.sessions.clear();
     this.host = null;
+    this.activeSnapshot = null;
   }
 
   /** Re-scans and transactionally replaces the active host. If the new
@@ -122,6 +135,10 @@ export class NodePluginRuntime {
   subscribe(listener: (change: NodePluginRuntimeChange) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  snapshot(): NodePluginRuntimeSnapshot | null {
+    return this.activeSnapshot;
   }
 
   /** Starts bounded polling for catalog changes. The callback is invoked only
@@ -195,6 +212,12 @@ export class NodePluginRuntime {
     this.revisionValue += 1;
     this.broker.activateGeneration(this.revisionValue);
     this.broker.revokeGeneration(previousGeneration);
+    const snapshot: NodePluginRuntimeSnapshot = {
+      generation: this.revisionValue,
+      host: next,
+      catalog: this.catalogValue!,
+    };
+    this.activeSnapshot = snapshot;
     const change = { revision: this.revisionValue, host: next, catalog: this.catalogValue! };
     for (const listener of this.listeners) {
       try {
@@ -395,7 +418,13 @@ function catalogFingerprint(catalog: Awaited<ReturnType<typeof scanPluginCatalog
 function lockfileFingerprint(lockfile: PluginLockfile | null | undefined): string {
   if (!lockfile) return '';
   return lockfile.plugins
-    .map((entry) => `${entry.id}@${entry.version}:${entry.sha256.toLowerCase()}:${entry.trust}`)
+    .map(
+      (entry) =>
+        `${entry.id}@${entry.version}:${entry.sha256.toLowerCase()}:${entry.trust}:${entry.permissions
+          .map((grant) => `${grant.permissionId}=${grant.granted}`)
+          .sort()
+          .join(',')}`,
+    )
     .sort()
     .join('|');
 }

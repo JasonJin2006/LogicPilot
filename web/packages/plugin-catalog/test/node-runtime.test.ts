@@ -43,6 +43,7 @@ describe('NodePluginRuntime', () => {
     const host = await runtime.start();
     expect(host.phaseValue).toBe('active');
     expect(host.isActive('logicpilot.runtime-plugin')).toBe(true);
+    expect(runtime.snapshot()?.generation).toBe(1);
     expect(host.manifestOf('logicpilot.runtime-plugin')?.id).toBe(manifest.id);
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
     let changes = 0;
@@ -58,6 +59,7 @@ describe('NodePluginRuntime', () => {
     stopWatch();
     unsubscribe();
     expect(changes).toBeGreaterThanOrEqual(1);
+    expect(runtime.snapshot()?.generation).toBe(2);
     await runtime.stop();
     expect(host.phaseValue).toBe('stopped');
 
