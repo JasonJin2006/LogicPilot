@@ -74,6 +74,14 @@ export interface InstallInput {
   readonly grants?: readonly PermissionGrant[];
 }
 
+export interface PackageManagerOptions {
+  /** Required to install a package that declares manifest.integrity.signature. */
+  readonly verifySignature?: (
+    manifest: PluginManifest,
+    sha256: string,
+  ) => boolean | Promise<boolean>;
+}
+
 export class PackageError extends Error {
   constructor(
     message: string,
@@ -100,6 +108,7 @@ export class PackageManager {
   constructor(
     private readonly store: PackageStore,
     private readonly audit: AuditLog,
+    private readonly options: PackageManagerOptions = {},
   ) {}
 
   async lockfile(): Promise<PluginLockfile> {
@@ -217,6 +226,7 @@ export class PackageManager {
         'integrity-missing',
       );
     }
+    await this.verifySignature(manifest, sha256);
 
     // The resulting dependency graph must resolve with the new entry added.
     const projected: PluginLockEntry = {
@@ -299,6 +309,7 @@ export class PackageManager {
         'integrity-missing',
       );
     }
+    await this.verifySignature(manifest, sha256);
 
     const permissionDecisions = new Map(
       current.permissions
@@ -395,6 +406,16 @@ export class PackageManager {
     }
     if (packageCommit !== null) await this.finalizePackage(packageCommit);
     await this.record('uninstall', pluginId, `version=${current.version}`);
+  }
+
+  private async verifySignature(manifest: PluginManifest, sha256: string): Promise<void> {
+    if (manifest.integrity?.signature === undefined) return;
+    if (this.options.verifySignature === undefined) {
+      throw new PackageError('signed plugin requires a configured signature verifier', 'storage');
+    }
+    if (!(await this.options.verifySignature(manifest, sha256))) {
+      throw new PackageError(`plugin '${manifest.id}' signature verification failed`, 'storage');
+    }
   }
 
   /** Restores the previous lockfile snapshot (best effort). */

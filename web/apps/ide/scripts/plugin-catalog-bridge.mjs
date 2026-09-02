@@ -169,13 +169,25 @@ export async function handlePluginDrafts(req, res) {
             status: 503,
           });
         const buildRoot = process.env.LOGICPILOT_PLUGIN_BUILD_ROOT ?? `${packageRoot}/draft-builds`;
+        const crypto = await import('node:crypto');
+        const privateKey = crypto.createPrivateKey({ key: signingKey, format: 'pem' });
+        const publicKey = crypto.createPublicKey(privateKey);
         const signer = ed25519DraftSigner(
           process.env.LOGICPILOT_PLUGIN_SIGNING_KEY_ID ?? 'local-signing-key',
-          (await import('node:crypto')).createPrivateKey({ key: signingKey, format: 'pem' }),
+          privateKey,
         );
         const built = new PluginDraftPackageBuilder(buildRoot).build(current, signer);
         const packageStore = new FileSystemPackageStore({ rootDir: packageRoot });
-        const manager = new PackageManager(packageStore, new AuditLog());
+        const manager = new PackageManager(packageStore, new AuditLog(), {
+          verifySignature: (manifest) =>
+            manifest.integrity?.signature !== undefined &&
+            crypto.verify(
+              null,
+              Buffer.from(built.sha256, 'utf8'),
+              publicKey,
+              Buffer.from(manifest.integrity.signature, 'base64'),
+            ),
+        });
         const lockEntry = await manager.install({
           manifestJson: built.manifest,
           sha256: built.sha256,

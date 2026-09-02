@@ -370,20 +370,17 @@ describe('PackageManager', () => {
     let saved: import('@logicpilot/contracts').PluginLockfile | null = null;
     let snapshot: import('@logicpilot/contracts').PluginLockfile | null = null;
     const audit = new AuditLog();
-    const manager = new PackageManager(
-      {
-        readLockfile: () => saved,
-        writeLockfile: (lockfile) => {
-          saved = lockfile;
-        },
-        snapshotLockfile: () => {
-          snapshot = saved;
-        },
-        readSnapshot: () => snapshot,
+    const store = {
+      readLockfile: () => saved,
+      writeLockfile: (lockfile: import('@logicpilot/contracts').PluginLockfile) => {
+        saved = lockfile;
       },
-      audit,
-    );
-    return { manager, audit };
+      snapshotLockfile: () => {
+        snapshot = saved;
+      },
+      readSnapshot: () => snapshot,
+    };
+    return { manager: new PackageManager(store, audit), audit, store };
   }
 
   it('installs a valid manifest and writes a lockfile entry', async () => {
@@ -583,5 +580,24 @@ describe('PackageManager', () => {
     await expect(
       manager.setGrant('logicpilot.ghost', { permissionId: 'plugin.install', granted: true }),
     ).rejects.toBeInstanceOf(PackageError);
+  });
+
+  it('requires and invokes a verifier for signed packages', async () => {
+    const { store, audit } = makeManager();
+    const signed = makeManifest({
+      id: 'logicpilot.signed',
+      integrity: { sha256: TEST_SHA, signature: 'signature', signedBy: 'test-key' },
+    });
+    await expect(
+      new PackageManager(store, audit).install({ manifestJson: signed }),
+    ).rejects.toMatchObject({
+      code: 'storage',
+    });
+    const manager = new PackageManager(store, audit, {
+      verifySignature: async (manifest, digest) =>
+        manifest.integrity?.signedBy === 'test-key' && digest === TEST_SHA,
+    });
+    await manager.install({ manifestJson: signed });
+    expect((await manager.lockfile()).plugins[0]?.id).toBe('logicpilot.signed');
   });
 });

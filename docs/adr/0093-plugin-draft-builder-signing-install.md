@@ -15,8 +15,10 @@ publishes the package under its digest as the content-addressed directory.
 The app-server `install` action requires an approved/published draft, a
 configured signing key and `FileSystemPackageStore`; it then calls the existing
 `PackageManager.install` with approved permission grants. Build/signing failure
-or package-store failure leaves the lockfile unchanged. The private key is
-never persisted in the draft or package.
+or package-store failure leaves the lockfile unchanged. `PackageManager` now
+requires an injected verifier for any manifest that declares a signature, so a
+signature is checked before package staging. The private key is never persisted
+in the draft or package.
 
 ## Consequences
 
