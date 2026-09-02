@@ -16,14 +16,15 @@ export interface ModelSemanticProvider {
 /** Runtime seam for model-semantic contributions. The Process provider is the
  * initial builtin implementation; future Process/Statechart/Agent plugins can
  * register providers without changing state or canvas consumers. */
-const processProvider: ModelSemanticProvider = Object.freeze({
+export const PROCESS_MODEL_SEMANTIC_PROVIDER: ModelSemanticProvider = Object.freeze({
   id: 'logicpilot-process',
   blockPorts,
   isExecutableProcessKind,
   portGlyphPoint,
 });
 
-const providers = new Map<string, ModelSemanticProvider>([[processProvider.id, processProvider]]);
+const providers = new Map<string, ModelSemanticProvider>();
+let fallbackEnabled = true;
 
 export function registerModelSemanticProvider(provider: ModelSemanticProvider): () => void {
   if (providers.has(provider.id))
@@ -34,16 +35,23 @@ export function registerModelSemanticProvider(provider: ModelSemanticProvider): 
   };
 }
 
+/** Controls the local fallback used by isolated model tests. Zero-paradigm
+ * boot disables it so no Process semantics survive without a plugin. */
+export function setModelSemanticFallbackEnabled(enabled: boolean): void {
+  fallbackEnabled = enabled;
+}
+
 export function modelSemanticProviders(): readonly ModelSemanticProvider[] {
-  return [...providers.values()];
+  if (providers.size > 0) return [...providers.values()];
+  return fallbackEnabled ? [PROCESS_MODEL_SEMANTIC_PROVIDER] : [];
 }
 
 export function modelBlockPorts(kind: string) {
-  return providers.values().next().value?.blockPorts(kind) ?? [];
+  return modelSemanticProviders()[0]?.blockPorts(kind) ?? [];
 }
 
 export function modelIsExecutableProcessKind(kind: string): boolean {
-  return providers.values().next().value?.isExecutableProcessKind(kind) ?? false;
+  return modelSemanticProviders()[0]?.isExecutableProcessKind(kind) ?? false;
 }
 
 export function modelPortGlyphPoint(
@@ -52,7 +60,7 @@ export function modelPortGlyphPoint(
   direction: Parameters<typeof portGlyphPoint>[2],
 ) {
   return (
-    providers.values().next().value?.portGlyphPoint(kind, port, direction) ??
+    modelSemanticProviders()[0]?.portGlyphPoint(kind, port, direction) ??
     (direction === 'in' ? [7, 20] : [33, 20])
   );
 }

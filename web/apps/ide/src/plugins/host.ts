@@ -33,6 +33,7 @@ import {
   stopPluginRegistryLive,
 } from './registry';
 import { ARTIFACT_SYNC_QUEUE } from '../artifacts/artifactGraphClient';
+import { setModelSemanticFallbackEnabled } from './registries/modelSemantics';
 
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
@@ -193,6 +194,7 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
     (import.meta.env.VITE_ZERO_PLUGINS === '1' || import.meta.env.VITE_PLUGINS === '0'
       ? []
       : BUILTIN_PLUGINS);
+  setModelSemanticFallbackEnabled(builtins.length > 0);
   const sources: DiscoverySource[] = [builtinSourceFor(builtins, 'system')];
   const remoteSources = await remoteCatalogSources(
     options.catalog,

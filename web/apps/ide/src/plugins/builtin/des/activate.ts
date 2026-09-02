@@ -13,6 +13,10 @@ import { DOCUMENT_CONTRIBUTIONS } from '../../../workbench/documentTypes';
 import { registerModelPaletteContributions } from '../../../model/paletteContributions';
 import { registerDesModelValidation } from '../../../model/modelValidation';
 import { registerDslOutlineContribution } from '../../../project/dslOutlineContribution';
+import {
+  PROCESS_MODEL_SEMANTIC_PROVIDER,
+  registerModelSemanticProvider,
+} from '../../registries/modelSemantics';
 
 export function activateDesPlugin(): PluginModule {
   return {
@@ -30,6 +34,7 @@ export function activateDesPlugin(): PluginModule {
       ctx.effect(registerModelPaletteContributions());
       ctx.effect(registerDesModelValidation());
       ctx.effect(registerDslOutlineContribution());
+      ctx.effect(registerModelSemanticProvider(PROCESS_MODEL_SEMANTIC_PROVIDER));
     },
   };
 }

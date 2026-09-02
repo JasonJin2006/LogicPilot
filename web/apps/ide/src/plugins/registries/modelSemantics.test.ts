@@ -5,6 +5,7 @@ import {
   modelPortGlyphPoint,
   modelSemanticProviders,
   registerModelSemanticProvider,
+  setModelSemanticFallbackEnabled,
 } from './modelSemantics';
 
 describe('model semantic registry', () => {
@@ -26,5 +27,16 @@ describe('model semantic registry', () => {
     expect(modelSemanticProviders().some((entry) => entry.id === provider.id)).toBe(true);
     dispose();
     expect(modelSemanticProviders().some((entry) => entry.id === provider.id)).toBe(false);
+  });
+
+  it('removes the builtin fallback during a zero-paradigm lifecycle', () => {
+    setModelSemanticFallbackEnabled(false);
+    try {
+      expect(modelSemanticProviders()).toEqual([]);
+      expect(modelBlockPorts('queue')).toEqual([]);
+      expect(modelIsExecutableProcessKind('queue')).toBe(false);
+    } finally {
+      setModelSemanticFallbackEnabled(true);
+    }
   });
 });
