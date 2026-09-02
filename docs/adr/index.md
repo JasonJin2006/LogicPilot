@@ -134,3 +134,4 @@
 - [0103 Runtime Tool Descriptor Migration](0103-runtime-tool-descriptor-migration)
 - [0104 Hermetic Staged Agent SDK Bundle](0104-staged-agent-sdk-bundle)
 - [0105 Serialized Background Artifact Sync](0105-artifact-sync-queue)
+- [0106 Remove Server Static Tool Catalog](0106-remove-server-static-tool-catalog)

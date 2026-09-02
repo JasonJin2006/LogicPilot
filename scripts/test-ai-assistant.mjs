@@ -5,7 +5,6 @@
 import assert from 'node:assert/strict';
 
 import {
-  ASSISTANT_TOOLS,
   buildSystemPrompt,
   parseAssistantResponseContent,
   visibleAssistantMessage,
@@ -14,6 +13,7 @@ import {
   validateAssistantMessages,
   validateAssistantResponse,
 } from './ai-assistant.mjs';
+import { TEST_TOOL_DESCRIPTORS as ASSISTANT_TOOLS } from './test-agent-tool-descriptors.mjs';
 import {
   clearAssistantProviderSession,
   configureAssistantProvider,
