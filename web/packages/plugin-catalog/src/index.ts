@@ -16,3 +16,4 @@ export {
 export { FileSystemPluginDraftStore } from '@logicpilot/plugin-host/node';
 export * from './plugin-draft-builder.js';
 export * from './plugin-signature.js';
+export * from './registry-history.js';

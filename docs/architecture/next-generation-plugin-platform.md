@@ -102,7 +102,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    outbox/FIFO drain 和稳定幂等键，死信、跨进程锁和服务端持久化 outbox 仍待完成；
 3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表已删除，
    需要继续审计其他兼容层）；
-4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布。
+4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
+   已将经契约校验的 replay history 原子持久化到 PackageStore 旁，签名发布和远端分发仍待完成。
 
 ## 4. 目标架构
 

@@ -20,6 +20,7 @@ import {
   FileSystemPackageStore,
   NodePluginRuntime,
   pluginRootsFromEnv,
+  FileSystemRegistryHistory,
 } from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 let nodePluginRuntime;
@@ -27,6 +28,7 @@ const registryClients = new Set();
 const registryHistory = [];
 const REGISTRY_HISTORY_LIMIT = 32;
 let registrySubscription;
+let registryHistoryStore;
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {
@@ -497,6 +499,15 @@ function rememberRegistrySnapshot(payload) {
   const generation = Number(payload.generation);
   if (!Number.isSafeInteger(generation)) return;
   if (registryHistory.some((entry) => entry.generation === generation)) return;
+  if (registryHistoryStore) {
+    try {
+      registryHistoryStore.append(payload);
+    } catch (error) {
+      // Keep the live stream available, but make persistence failure visible
+      // to the host logs; a later snapshot will retry the write.
+      console.error('[plugin-registry] cannot persist history snapshot', error);
+    }
+  }
   registryHistory.push({ generation, payload });
   while (registryHistory.length > REGISTRY_HISTORY_LIMIT) registryHistory.shift();
 }
@@ -543,6 +554,15 @@ export async function startNodePluginRuntime() {
   if (!storeRoot) {
     throw new Error('LOGICPILOT_PLUGIN_STORE_ROOT is required when Node plugins are enabled');
   }
+  registryHistoryStore = new FileSystemRegistryHistory({ rootDir: storeRoot });
+  try {
+    registryHistory.push(...registryHistoryStore.read());
+  } catch (error) {
+    registryHistoryStore = undefined;
+    throw new Error(
+      `plugin registry history cannot be loaded: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   const store = new FileSystemPackageStore({ rootDir: storeRoot });
   nodePluginRuntime = new NodePluginRuntime({
     roots: pluginRootsFromEnv(process.env),
@@ -575,4 +595,5 @@ export async function stopNodePluginRuntime() {
   }
   registryClients.clear();
   registryHistory.length = 0;
+  registryHistoryStore = undefined;
 }
