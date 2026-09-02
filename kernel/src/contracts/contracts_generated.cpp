@@ -7103,6 +7103,7 @@ bool parse_json(const nlohmann::ordered_json& j, PluginDraft& out, std::string& 
       "approvedBy",
       "approvedAt",
       "permissionDiff",
+      "files",
       "diagnostics",
   };
   for (auto it = j.begin(); it != j.end(); ++it) {
@@ -7229,6 +7230,24 @@ bool parse_json(const nlohmann::ordered_json& j, PluginDraft& out, std::string& 
       }
   }
   {
+    auto field_it = j.find("files");
+    if (field_it != j.end()) {
+      std::map<std::string, std::string> parsed{};
+      if (!(*field_it).is_object()) {
+        error = std::string("PluginDraft.files") + ": expected object";
+        return false;
+      }
+      for (auto entry_it = (*field_it).begin(); entry_it != (*field_it).end(); ++entry_it) {
+        if (!entry_it.value().is_string()) {
+          error = std::string("PluginDraft.files") + ": expected string item";
+          return false;
+        }
+        parsed[entry_it.key()] = entry_it.value().get<std::string>();
+      }
+      out.files = std::move(parsed);
+    }
+  }
+  {
     auto field_it = j.find("diagnostics");
     if (field_it != j.end()) {
       std::vector<std::string> parsed{};
@@ -7281,6 +7300,9 @@ nlohmann::ordered_json to_json(const PluginDraft& value) {
     j["approvedAt"] = to_json_value(*value.approved_at);
   }
     j["permissionDiff"] = to_json(value.permission_diff);
+  if (value.files.has_value()) {
+    j["files"] = to_json_value(*value.files);
+  }
   if (value.diagnostics.has_value()) {
     j["diagnostics"] = to_json_value(*value.diagnostics);
   }
@@ -7303,6 +7325,7 @@ bool operator==(const PluginDraft& lhs, const PluginDraft& rhs) {
       && lhs.approved_by == rhs.approved_by
       && lhs.approved_at == rhs.approved_at
       && lhs.permission_diff == rhs.permission_diff
+      && lhs.files == rhs.files
       && lhs.diagnostics == rhs.diagnostics;
 }
 

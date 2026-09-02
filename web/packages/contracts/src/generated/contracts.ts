@@ -639,6 +639,7 @@ export interface PluginDraft {
   readonly approvedBy?: Actor;
   readonly approvedAt?: Iso8601Timestamp;
   readonly permissionDiff: PermissionDiff;
+  readonly files?: { readonly [key: string]: string };
   readonly diagnostics?: ReadonlyArray<string>;
 }
 

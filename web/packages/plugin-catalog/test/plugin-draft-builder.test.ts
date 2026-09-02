@@ -55,6 +55,7 @@ function approvedDraft() {
     approvedBy: 'user',
     approvedAt: '2026-09-03T00:01:00Z',
     permissionDiff: { added: [], removed: [] },
+    files: { 'assets/notation.json': '{"glyph":"box"}' },
   } as const;
 }
 
@@ -69,6 +70,7 @@ describe('PluginDraftPackageBuilder', () => {
     );
     expect(built.packagePath).toBe(join(root, built.sha256));
     expect(existsSync(join(built.packagePath, 'contributions.json'))).toBe(true);
+    expect(existsSync(join(built.packagePath, 'assets', 'notation.json'))).toBe(true);
     const manifest = JSON.parse(readFileSync(join(built.packagePath, 'plugin.json'), 'utf8')) as {
       integrity: { sha256: string; signature: string; signedBy: string };
     };

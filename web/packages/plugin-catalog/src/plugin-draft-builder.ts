@@ -1,9 +1,10 @@
 import { sign } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import { computePackageDigest } from './catalog.js';
+import { isSafeDraftFilePath, PluginDraftValidationRunner } from '@logicpilot/plugin-host';
 
 export interface DraftPackageSigner {
   readonly keyId: string;
@@ -49,6 +50,22 @@ export class PluginDraftPackageBuilder {
       `${JSON.stringify(draft.contributions, null, 2)}\n`,
       'utf8',
     );
+    const fileReport = new PluginDraftValidationRunner().run(draft);
+    if (!fileReport.ok || fileReport.checks.files === 'failed') {
+      throw new Error(
+        `plugin draft data files failed validation: ${fileReport.diagnostics.join('; ')}`,
+      );
+    }
+    for (const [filePath, content] of Object.entries(draft.files ?? {})) {
+      const normalized = filePath.replaceAll('\\', '/');
+      const target = resolve(temporary, normalized);
+      const escaped = relative(temporary, target);
+      if (!isSafeDraftFilePath(filePath) || escaped.startsWith('..') || isAbsolute(escaped)) {
+        throw new Error(`plugin draft file path is unsafe: ${filePath}`);
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, content, 'utf8');
+    }
     try {
       const sha256 = computePackageDigest(temporary, unsignedManifest);
       const signature = signer.signDigest(sha256);

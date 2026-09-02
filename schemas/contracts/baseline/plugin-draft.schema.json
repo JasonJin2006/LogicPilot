@@ -58,6 +58,11 @@
         "approvedBy": { "$ref": "common.schema.json#/$defs/Actor" },
         "approvedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
         "permissionDiff": { "$ref": "#/$defs/PermissionDiff" },
+        "files": {
+          "type": "object",
+          "description": "Optional UTF-8/base64 data assets. Paths are validated by the draft gate and included in the package digest.",
+          "additionalProperties": { "type": "string", "maxLength": 262144 }
+        },
         "diagnostics": { "type": "array", "items": { "type": "string", "maxLength": 2048 } }
       }
     }

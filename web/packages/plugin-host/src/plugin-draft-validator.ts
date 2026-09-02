@@ -18,6 +18,19 @@ export interface PluginDraftValidationReport {
   readonly checks: Readonly<Record<string, 'passed' | 'failed'>>;
 }
 
+export function isSafeDraftFilePath(path: string): boolean {
+  const normalized = path.replaceAll('\\', '/');
+  return (
+    normalized !== '' &&
+    !normalized.startsWith('/') &&
+    !/^[A-Za-z]:/.test(normalized) &&
+    !normalized.split('/').includes('..') &&
+    !normalized.includes('\0') &&
+    normalized !== 'plugin.json' &&
+    normalized !== 'contributions.json'
+  );
+}
+
 /** Side-effect-free static gate for a plugin draft. It validates the complete
  * envelope and cross-entity invariants, but never imports or executes an
  * entrypoint. */
@@ -89,6 +102,23 @@ export class PluginDraftValidationRunner {
     }
     checks.trust =
       TRUST_RANK[draft.manifest.trust.minLevel] >= entrypointTrust ? 'passed' : 'failed';
+
+    const draftFiles = Object.keys(draft.files ?? {});
+    const unsafeFiles = draftFiles.filter((path) => !isSafeDraftFilePath(path));
+    const totalFileBytes = draftFiles.reduce(
+      // Count UTF-16 code units conservatively; this may reject a few valid
+      // multi-byte edge cases but cannot allow an oversized payload through.
+      (total, path) => total + draft.files![path]!.length,
+      0,
+    );
+    if (unsafeFiles.length > 0) {
+      diagnostics.push(`draft contains unsafe file paths: ${unsafeFiles.join(', ')}`);
+    }
+    if (totalFileBytes > 4 * 1024 * 1024) {
+      diagnostics.push('draft data files exceed the 4 MiB total limit');
+    }
+    checks.files =
+      unsafeFiles.length === 0 && totalFileBytes <= 4 * 1024 * 1024 ? 'passed' : 'failed';
 
     const knowledgeIds = new Set(draft.contributions.knowledge.map((block) => block.id));
     const missingExplanations = draft.contributions.diagnostics

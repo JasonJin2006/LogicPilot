@@ -53,6 +53,7 @@ describe('PluginDraftValidationRunner', () => {
       ids: 'passed',
       permissions: 'passed',
       trust: 'passed',
+      files: 'passed',
       references: 'passed',
     });
   });

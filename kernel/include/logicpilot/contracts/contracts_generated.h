@@ -1517,6 +1517,7 @@ struct PluginDraft {
   std::optional<std::string> approved_by;
   std::optional<std::string> approved_at;
   PermissionDiff permission_diff;
+  std::optional<std::map<std::string, std::string>> files;
   std::optional<std::vector<std::string>> diagnostics;
 };
 
