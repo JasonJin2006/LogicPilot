@@ -110,6 +110,39 @@ describe('FileSystemArtifactStore', () => {
     expect(store.read().revisions).toHaveLength(1);
   });
 
+  it('replays an idempotent proposal and commit without creating a second revision', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-idempotency-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root });
+    const artifact = store.createArtifact({
+      id: 'model.idempotent',
+      kind: 'semantic-model',
+      createdBy: 'user',
+    });
+    const input = {
+      id: 'tx-first-attempt',
+      idempotencyKey: 'artifact:stable-key',
+      proposedBy: 'runtime',
+      artifactRefs: [{ artifactId: artifact.id }],
+      operations: [{ opId: 'op-stable', opType: 'model-save', payload: { value: 1 } }],
+    } as const;
+    const first = store.propose(input);
+    const replay = store.propose({ ...input, id: 'tx-after-crash' });
+    expect(replay.id).toBe(first.id);
+    store.validate(first.id);
+    store.approve(first.id, 'runtime');
+    const commitInput = {
+      transactionId: first.id,
+      revisionId: 'rev-stable',
+      artifactId: artifact.id,
+      createdBy: 'runtime',
+      digest: 'c'.repeat(64),
+    } as const;
+    expect(store.commit(commitInput).id).toBe('rev-stable');
+    expect(store.commit({ ...commitInput, revisionId: 'rev-after-crash' }).id).toBe('rev-stable');
+    expect(store.read().revisions).toHaveLength(1);
+  });
+
   it('rejects invalid operations without committing them', () => {
     const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-validation-'));
     roots.push(root);

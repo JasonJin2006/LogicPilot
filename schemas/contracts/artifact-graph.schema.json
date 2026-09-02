@@ -132,6 +132,12 @@
         "schema": { "const": "logicpilot.transaction/v1" },
         "contractVersion": { "const": 1 },
         "id": { "type": "string", "minLength": 1 },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Stable client-generated key. Repeating a proposal with the same key and payload returns the original transaction."
+        },
         "status": { "$ref": "#/$defs/TransactionStatus" },
         "proposedBy": { "$ref": "common.schema.json#/$defs/Actor" },
         "approvedBy": { "$ref": "common.schema.json#/$defs/Actor" },

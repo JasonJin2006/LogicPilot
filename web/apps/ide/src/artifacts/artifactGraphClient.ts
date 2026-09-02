@@ -242,8 +242,16 @@ export async function beginArtifactTransaction(
   const head = graph.revisions
     .filter((revision) => revision.artifactId === input.artifactId)
     .at(-1);
+  // Derive the operation and idempotency identities from the logical input,
+  // not from process-local random ids. A browser crash between commit and
+  // outbox cleanup can therefore safely replay the exact same transaction.
+  const inputDigest = await sha256Hex({
+    artifactId: input.artifactId,
+    operationType: input.operationType,
+    payload: input.payload,
+  });
   const operation = {
-    opId: randomId('op'),
+    opId: `op-${inputDigest}`,
     opType: input.operationType,
     payload: input.payload,
   };
@@ -252,6 +260,7 @@ export async function beginArtifactTransaction(
     action: 'propose',
     input: {
       id: transactionId,
+      idempotencyKey: `artifact:${inputDigest}`,
       proposedBy: input.actor ?? 'agent',
       artifactRefs: [{ artifactId: input.artifactId, ...(head ? { revisionId: head.id } : {}) }],
       operations: [operation],

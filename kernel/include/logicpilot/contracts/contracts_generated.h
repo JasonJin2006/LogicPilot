@@ -1410,6 +1410,7 @@ struct Transaction {
   std::string schema;
   std::int64_t contract_version;
   std::string id;
+  std::optional<std::string> idempotency_key;
   TransactionStatus status;
   std::string proposed_by;
   std::optional<std::string> approved_by;

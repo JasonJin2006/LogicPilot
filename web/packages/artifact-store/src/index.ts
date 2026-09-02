@@ -147,6 +147,7 @@ export class FileSystemArtifactStore {
 
   propose(input: {
     readonly id: string;
+    readonly idempotencyKey?: string;
     readonly proposedBy: string;
     readonly artifactRefs: readonly ArtifactRef[];
     readonly operations: readonly TypedOperation[];
@@ -163,12 +164,30 @@ export class FileSystemArtifactStore {
     if (state.transactions.some((transaction) => transaction.id === input.id)) {
       throw new ArtifactStoreError(`transaction '${input.id}' already exists`, 'conflict');
     }
+    if (input.idempotencyKey !== undefined) {
+      const existing = state.transactions.find(
+        (transaction) => transaction.idempotencyKey === input.idempotencyKey,
+      );
+      if (existing !== undefined) {
+        const samePayload =
+          existing.proposedBy === input.proposedBy &&
+          canonicalize(existing.artifactRefs) === canonicalize(input.artifactRefs) &&
+          canonicalize(existing.operations) === canonicalize(input.operations);
+        if (!samePayload)
+          throw new ArtifactStoreError(
+            `idempotency key '${input.idempotencyKey}' was reused with a different transaction`,
+            'conflict',
+          );
+        return existing;
+      }
+    }
     const transaction: Transaction = {
       schema: 'logicpilot.transaction/v1',
       contractVersion: 1,
       id: input.id,
       status: 'proposed',
       proposedBy: input.proposedBy,
+      ...(input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey }),
       artifactRefs: input.artifactRefs,
       operations: input.operations,
       createdAt: this.now(),
@@ -191,6 +210,8 @@ export class FileSystemArtifactStore {
     const transaction = state.transactions.find((candidate) => candidate.id === transactionId);
     if (!transaction)
       throw new ArtifactStoreError(`transaction '${transactionId}' was not found`, 'not-found');
+    if (transaction.status === 'committed' || transaction.status === 'awaiting-approval')
+      return transaction;
     const errors = transaction.operations.flatMap(
       (operation) => this.validateOperation?.(operation) ?? [],
     );
@@ -213,6 +234,7 @@ export class FileSystemArtifactStore {
     const transaction = state.transactions.find((candidate) => candidate.id === transactionId);
     if (!transaction)
       throw new ArtifactStoreError(`transaction '${transactionId}' was not found`, 'not-found');
+    if (transaction.status === 'committed') return transaction;
     if (transaction.status !== 'validated' && transaction.status !== 'awaiting-approval') {
       throw new ArtifactStoreError(`transaction '${transactionId}' is not validated`, 'validation');
     }
@@ -267,6 +289,16 @@ export class FileSystemArtifactStore {
         `transaction '${input.transactionId}' was not found`,
         'not-found',
       );
+    if (transaction.status === 'committed') {
+      const existing = state.revisions.find(
+        (revision) => revision.id === transaction.committedRevisionId,
+      );
+      if (!existing)
+        throw new ArtifactStoreError('committed transaction is missing its revision', 'invalid');
+      if (existing.artifactId !== input.artifactId || existing.digest !== input.digest)
+        throw new ArtifactStoreError('idempotent commit payload does not match', 'conflict');
+      return existing;
+    }
     if (transaction.status !== 'awaiting-approval') {
       throw new ArtifactStoreError('transaction is not approved', 'validation');
     }
@@ -384,4 +416,13 @@ function validateState(value: unknown): ArtifactGraphState {
     transactions.push(checked.value);
   }
   return { artifacts, revisions, transactions };
+}
+
+function canonicalize(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(',')}]`;
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalize(entry)}`)
+    .join(',')}}`;
 }

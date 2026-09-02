@@ -137,3 +137,4 @@
 - [0106 Remove Server Static Tool Catalog](0106-remove-server-static-tool-catalog)
 - [0107 Rotatable Plugin Signature Keyring](0107-plugin-signature-keyring)
 - [0108 Resumable Agent Turns and Trace Boundary](0108-resumable-agent-turns-and-trace-boundary)
+- [0109 Idempotent Artifact Sync Transactions](0109-idempotent-artifact-sync)

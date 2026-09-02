@@ -2566,6 +2566,7 @@ bool parse_json(const nlohmann::ordered_json& j, Transaction& out, std::string& 
       "schema",
       "contractVersion",
       "id",
+      "idempotencyKey",
       "status",
       "proposedBy",
       "approvedBy",
@@ -2608,6 +2609,18 @@ bool parse_json(const nlohmann::ordered_json& j, Transaction& out, std::string& 
         return false;
       }
       out.id = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("idempotencyKey");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("Transaction.idempotencyKey") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.idempotency_key = std::move(parsed);
+    }
   }
   {
     const auto& value = field_or_fail(error, j, "status", "Transaction");
@@ -2718,6 +2731,9 @@ nlohmann::ordered_json to_json(const Transaction& value) {
     j["schema"] = to_json_value(value.schema);
     j["contractVersion"] = to_json_value(value.contract_version);
     j["id"] = to_json_value(value.id);
+  if (value.idempotency_key.has_value()) {
+    j["idempotencyKey"] = to_json_value(*value.idempotency_key);
+  }
     j["status"] = to_json(value.status);
     j["proposedBy"] = to_json_value(value.proposed_by);
   if (value.approved_by.has_value()) {
@@ -2743,6 +2759,7 @@ bool operator==(const Transaction& lhs, const Transaction& rhs) {
   return lhs.schema == rhs.schema
       && lhs.contract_version == rhs.contract_version
       && lhs.id == rhs.id
+      && lhs.idempotency_key == rhs.idempotency_key
       && lhs.status == rhs.status
       && lhs.proposed_by == rhs.proposed_by
       && lhs.approved_by == rhs.approved_by

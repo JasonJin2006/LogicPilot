@@ -174,6 +174,7 @@ export interface Transaction {
   readonly schema: "logicpilot.transaction/v1";
   readonly contractVersion: 1;
   readonly id: string;
+  readonly idempotencyKey?: string;
   readonly status: TransactionStatus;
   readonly proposedBy: Actor;
   readonly approvedBy?: Actor;
