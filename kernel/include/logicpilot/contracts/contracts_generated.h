@@ -1189,6 +1189,8 @@ struct AgentStepRequest {
   std::vector<ToolDescriptor> tools;
   std::optional<JsonValue> compiled_context;
   std::optional<std::int64_t> max_tokens;
+  std::optional<AgentCheckpoint> checkpoint;
+  std::optional<std::vector<ToolResult>> tool_results;
 };
 
 [[nodiscard]] bool operator==(const AgentStepRequest& lhs, const AgentStepRequest& rhs);

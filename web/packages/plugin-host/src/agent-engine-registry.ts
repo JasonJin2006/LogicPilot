@@ -4,6 +4,8 @@ import type {
   AgentStepResult,
 } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
+import type { AgentEngineTraceSink } from './agent-engine-trace.js';
+import { traceRequestEvent } from './agent-engine-trace.js';
 
 export interface AgentEngine {
   readonly descriptor: AgentEngineDescriptor;
@@ -11,11 +13,18 @@ export interface AgentEngine {
   cancel?(turnId: string): Promise<void> | void;
 }
 
+export interface AgentEngineRegistryOptions {
+  readonly traceSink?: AgentEngineTraceSink;
+  readonly now?: () => number;
+}
+
 /** Registry for builtin and SDK-backed agent loops. Engines only reason over
  * the compiled request; tool execution, grants, transactions and evidence
  * remain owned by LogicPilot. */
 export class AgentEngineRegistry {
   private readonly engines = new Map<string, AgentEngine>();
+
+  constructor(private readonly options: AgentEngineRegistryOptions = {}) {}
 
   register(engine: AgentEngine): () => void {
     const descriptor = validateContract('AgentEngineDescriptor', engine.descriptor);
@@ -51,9 +60,34 @@ export class AgentEngineRegistry {
     if (!validated.ok)
       throw new Error(`invalid agent step request: ${validated.errors.join('; ')}`);
     if (validated.value.engineId !== engineId) throw new Error('agent request engine id mismatch');
-    const result = await engine.runStep(validated.value);
-    const checked = validateContract('AgentStepResult', result);
-    if (!checked.ok) throw new Error(`invalid agent step result: ${checked.errors.join('; ')}`);
-    return checked.value;
+    const startedAt = this.options.now?.() ?? Date.now();
+    this.options.traceSink?.(traceRequestEvent(validated.value));
+    try {
+      const result = await engine.runStep(validated.value);
+      const checked = validateContract('AgentStepResult', result);
+      if (!checked.ok) throw new Error(`invalid agent step result: ${checked.errors.join('; ')}`);
+      this.options.traceSink?.({
+        phase: 'completed',
+        turnId: validated.value.turnId,
+        engineId,
+        stepIndex: validated.value.stepIndex,
+        at: new Date().toISOString(),
+        latencyMs: Math.max(0, (this.options.now?.() ?? Date.now()) - startedAt),
+        status: checked.value.status,
+        toolNames: checked.value.toolCalls.map((call) => call.name),
+      });
+      return checked.value;
+    } catch (error) {
+      this.options.traceSink?.({
+        phase: 'failed',
+        turnId: validated.value.turnId,
+        engineId,
+        stepIndex: validated.value.stepIndex,
+        at: new Date().toISOString(),
+        latencyMs: Math.max(0, (this.options.now?.() ?? Date.now()) - startedAt),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 }

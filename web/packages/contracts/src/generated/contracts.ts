@@ -47,6 +47,8 @@ export interface AgentStepRequest {
   readonly tools: ReadonlyArray<ToolDescriptor>;
   readonly compiledContext?: JsonValue;
   readonly maxTokens?: number;
+  readonly checkpoint?: AgentCheckpoint;
+  readonly toolResults?: ReadonlyArray<ToolResult>;
 }
 
 // --- StepStatus (agent-engine.schema.json) ---

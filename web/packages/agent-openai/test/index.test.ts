@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ScriptedModel, functionCall, modelResponse } from '@openai/agents/testing';
+import {
+  ScriptedModel,
+  assistantMessage,
+  functionCall,
+  modelResponse,
+} from '@openai/agents/testing';
 import type { AgentStepRequest } from '@logicpilot/contracts';
 import { OpenAiAgentsEngine, normalizeParameters, parseArguments } from '../src/index.js';
 
@@ -42,6 +47,60 @@ describe('OpenAI Agents SDK adapter helpers', () => {
     expect(result.status).toBe('continue');
     expect(result.toolCalls[0]).toMatchObject({ callId: 'sdk-call-1', name: 'inspect_model' });
     expect(model.calls).toHaveLength(1);
+    expect(result.checkpoint?.state).toEqual(expect.any(String));
+  });
+
+  it('resumes a checkpoint after the host executes the approved tool', async () => {
+    const model = new ScriptedModel([
+      modelResponse([functionCall('inspect_model', {}, { callId: 'sdk-call-resume' })]),
+      modelResponse([assistantMessage('The model contains no nodes.')]),
+    ]);
+    const engine = new OpenAiAgentsEngine({ model });
+    const request: AgentStepRequest = {
+      schema: 'logicpilot.agent-step-request/v1',
+      contractVersion: 1,
+      turnId: 'sdk-resume-turn',
+      engineId: 'sdk.openai-agents',
+      stepIndex: 0,
+      input: { prompt: 'inspect' },
+      tools: [{ name: 'inspect_model', description: 'inspect', parameters: { type: 'object' } }],
+    };
+    const paused = await engine.runStep(request);
+    expect(paused.status).toBe('continue');
+    const resumed = await engine.runStep({
+      ...request,
+      stepIndex: 1,
+      checkpoint: paused.checkpoint,
+      toolResults: [
+        {
+          callId: 'sdk-call-resume',
+          ok: true,
+          content: { nodes: 0 },
+        },
+      ],
+    });
+    expect(resumed.status).toBe('done');
+    expect(resumed.message).toBe('The model contains no nodes.');
+    expect(resumed.toolResults).toEqual([
+      { callId: 'sdk-call-resume', ok: true, content: { nodes: 0 } },
+    ]);
+    expect(model.calls).toHaveLength(2);
+  });
+
+  it('rejects tool results that are not tied to a checkpoint', async () => {
+    const engine = new OpenAiAgentsEngine({ model: new ScriptedModel() });
+    await expect(
+      engine.runStep({
+        schema: 'logicpilot.agent-step-request/v1',
+        contractVersion: 1,
+        turnId: 'sdk-invalid-resume',
+        engineId: 'sdk.openai-agents',
+        stepIndex: 0,
+        input: { prompt: 'inspect' },
+        tools: [],
+        toolResults: [{ callId: 'unknown', ok: true, content: {} }],
+      }),
+    ).rejects.toThrow(/require a checkpoint/);
   });
 
   it('cancels an in-flight SDK model request and reports a cancelled step', async () => {

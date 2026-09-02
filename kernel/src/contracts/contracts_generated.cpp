@@ -1204,6 +1204,8 @@ bool parse_json(const nlohmann::ordered_json& j, AgentStepRequest& out, std::str
       "tools",
       "compiledContext",
       "maxTokens",
+      "checkpoint",
+      "toolResults",
   };
   for (auto it = j.begin(); it != j.end(); ++it) {
     bool known = false;
@@ -1292,6 +1294,34 @@ bool parse_json(const nlohmann::ordered_json& j, AgentStepRequest& out, std::str
       out.max_tokens = std::move(parsed);
     }
   }
+  {
+    auto field_it = j.find("checkpoint");
+    if (field_it != j.end()) {
+      AgentCheckpoint parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("AgentStepRequest.checkpoint") + ": " + error;
+        return false;
+      }
+      out.checkpoint = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("toolResults");
+    if (field_it != j.end()) {
+      std::vector<ToolResult> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("AgentStepRequest.toolResults") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("AgentStepRequest.toolResults") + ": " + error;
+          return false;
+        }
+      }
+      out.tool_results = std::move(parsed);
+    }
+  }
   (void)error;
   return true;
 }
@@ -1321,6 +1351,12 @@ nlohmann::ordered_json to_json(const AgentStepRequest& value) {
   if (value.max_tokens.has_value()) {
     j["maxTokens"] = to_json_value(*value.max_tokens);
   }
+  if (value.checkpoint.has_value()) {
+    j["checkpoint"] = to_json(*value.checkpoint);
+  }
+  if (value.tool_results.has_value()) {
+    j["toolResults"] = to_json_value(*value.tool_results);
+  }
   return j;
 }
 
@@ -1336,7 +1372,9 @@ bool operator==(const AgentStepRequest& lhs, const AgentStepRequest& rhs) {
       && lhs.tools == rhs.tools
       && (lhs.compiled_context.has_value() == rhs.compiled_context.has_value()
       && (!lhs.compiled_context.has_value() || lhs.compiled_context->dump() == rhs.compiled_context->dump()))
-      && lhs.max_tokens == rhs.max_tokens;
+      && lhs.max_tokens == rhs.max_tokens
+      && lhs.checkpoint == rhs.checkpoint
+      && lhs.tool_results == rhs.tool_results;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, AgentUsage& out, std::string& error) {

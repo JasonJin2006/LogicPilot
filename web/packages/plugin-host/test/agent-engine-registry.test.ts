@@ -21,6 +21,39 @@ function request(engineId = 'builtin-test') {
 }
 
 describe('AgentEngineRegistry', () => {
+  it('emits metadata-only start/completion traces without prompt or arguments', async () => {
+    const traces: unknown[] = [];
+    const registry = new AgentEngineRegistry({ traceSink: (event) => traces.push(event) });
+    registry.register({
+      descriptor: {
+        schema: 'logicpilot.agent-engine-descriptor/v1',
+        contractVersion: 1,
+        id: 'trace-engine',
+        implementation: 'builtin',
+      },
+      runStep: async (input) => ({
+        schema: 'logicpilot.agent-step-result/v1',
+        contractVersion: 1,
+        turnId: input.turnId,
+        engineId: input.engineId,
+        stepIndex: input.stepIndex,
+        status: 'done',
+        toolCalls: [],
+        toolResults: [],
+        message: { secret: 'should-not-be-traced' },
+      }),
+    });
+    await registry.runStep('trace-engine', {
+      ...request('trace-engine'),
+      input: { prompt: 'private prompt' },
+      tools: [{ name: 'inspect', parameters: { type: 'object' } }],
+    });
+    expect(traces).toHaveLength(2);
+    expect(traces[0]).toMatchObject({ phase: 'started', toolNames: ['inspect'] });
+    expect(JSON.stringify(traces)).not.toContain('private prompt');
+    expect(JSON.stringify(traces)).not.toContain('should-not-be-traced');
+    expect(traces[1]).toMatchObject({ phase: 'completed', status: 'done' });
+  });
   it('validates engine descriptors and step request/results at the boundary', async () => {
     const registry = new AgentEngineRegistry();
     registry.register({

@@ -70,7 +70,16 @@
           "items": { "$ref": "#/$defs/ToolDescriptor" }
         },
         "compiledContext": { "$ref": "common.schema.json#/$defs/JsonValue" },
-        "maxTokens": { "type": "integer", "minimum": 1 }
+        "maxTokens": { "type": "integer", "minimum": 1 },
+        "checkpoint": {
+          "$ref": "#/$defs/AgentCheckpoint",
+          "description": "A checkpoint returned by a previous step. When present, the engine resumes the paused run after applying toolResults."
+        },
+        "toolResults": {
+          "type": "array",
+          "description": "Host-executed results for the checkpoint's pending tool calls. The engine never executes these tools itself.",
+          "items": { "$ref": "#/$defs/ToolResult" }
+        }
       }
     },
     "StepStatus": {

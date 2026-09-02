@@ -1,4 +1,10 @@
-import type { AgentStepRequest, AgentStepResult, JsonValue, ToolCall } from '@logicpilot/contracts';
+import type {
+  AgentStepRequest,
+  AgentStepResult,
+  JsonValue,
+  ToolCall,
+  ToolResult,
+} from '@logicpilot/contracts';
 import type { AgentEngine } from './agent-engine-registry.js';
 
 export interface SdkRunnerInput {
@@ -6,6 +12,8 @@ export interface SdkRunnerInput {
   readonly tools: AgentStepRequest['tools'];
   readonly compiledContext?: JsonValue;
   readonly maxTokens?: number;
+  readonly checkpoint?: AgentStepRequest['checkpoint'];
+  readonly toolResults?: ReadonlyArray<ToolResult>;
 }
 
 export interface SdkRunnerOutput {
@@ -54,6 +62,8 @@ export class SdkAgentEngineAdapter implements AgentEngine {
         ? {}
         : { compiledContext: request.compiledContext }),
       ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
+      ...(request.checkpoint === undefined ? {} : { checkpoint: request.checkpoint }),
+      ...(request.toolResults === undefined ? {} : { toolResults: request.toolResults }),
     });
     const calls: ToolCall[] = [];
     for (const call of result.toolCalls ?? []) {
