@@ -483,7 +483,7 @@ function renderMessages(messages) {
 }
 
 export function buildSystemPrompt({
-  capabilities = ['logicpilot-modeling'],
+  capabilities = ['logicpilot-process', 'logicpilot-sysml'],
   skills = [],
   skillInstructions,
   extraTools = [],
@@ -500,11 +500,15 @@ export function buildSystemPrompt({
         `- ${tool.name}${Object.keys(tool.parameters ?? {}).length > 0 ? ` ${JSON.stringify(tool.parameters)}` : ''}: ${tool.description}`,
     );
   const modelingMounted =
-    hasAgentCapability(capabilityIds, 'logicpilot-modeling') ||
-    hasAgentCapability(capabilityIds, 'logicpilot-modeling-readonly');
+    hasAgentCapability(capabilityIds, 'logicpilot-process') ||
+    hasAgentCapability(capabilityIds, 'logicpilot-sysml') ||
+    hasAgentCapability(capabilityIds, 'logicpilot-process-readonly') ||
+    hasAgentCapability(capabilityIds, 'logicpilot-sysml-readonly');
   const modelingReadOnly =
-    hasAgentCapability(capabilityIds, 'logicpilot-modeling-readonly') &&
-    !hasAgentCapability(capabilityIds, 'logicpilot-modeling');
+    (hasAgentCapability(capabilityIds, 'logicpilot-process-readonly') ||
+      hasAgentCapability(capabilityIds, 'logicpilot-sysml-readonly')) &&
+    !hasAgentCapability(capabilityIds, 'logicpilot-process') &&
+    !hasAgentCapability(capabilityIds, 'logicpilot-sysml');
   const capabilityToolNames = new Set(
     resolveAgentCapabilities(capabilityIds).flatMap((capability) => capability.toolNames ?? []),
   );
