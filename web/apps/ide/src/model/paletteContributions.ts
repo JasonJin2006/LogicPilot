@@ -4,10 +4,9 @@
 // contract, so the Palette panel never imports the catalog union directly.
 
 import { PALETTE_CONTRIBUTIONS, type PaletteItem } from '../workbench/palette';
-import { BLOCK_DEFS, LIBRARIES, type BlockDef } from './blockDefs';
+import { BLOCK_DEFS, LIBRARIES, portGlyphPoint, type BlockDef } from './blockDefs';
 import { BlockIcon } from './BlockIcon';
 import { insertBlockAt } from './canvasInsert';
-import { portGlyphPoint } from './blockDefs';
 
 function paletteItem(def: BlockDef): PaletteItem {
   return {
