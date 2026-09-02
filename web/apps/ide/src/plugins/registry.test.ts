@@ -37,6 +37,8 @@ describe('PluginRegistryStore', () => {
     expect(store.apply(envelope(1)).generation).toBe(1);
     expect(store.snapshot().contributions[0]?.pluginId).toBe('logicpilot.registry-test');
     expect(updates).toBe(1);
+    expect(store.apply(envelope(1)).generation).toBe(1);
+    expect(updates).toBe(1);
     expect(() => store.apply(envelope(0))).toThrow(/stale/);
   });
 

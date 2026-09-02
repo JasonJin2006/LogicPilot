@@ -71,6 +71,7 @@ export class PluginRegistryStore {
     }
     if (value.generation < this.value.generation)
       throw new Error('stale plugin registry generation');
+    if (value.generation === this.value.generation) return this.value;
     this.value = {
       generation: value.generation,
       plugins: value.plugins,
@@ -121,7 +122,10 @@ export class PluginRegistryStore {
       while (!stopped) {
         try {
           const response = await fetchImpl(options.url ?? '/api/plugin-registry/stream', {
-            ...(options.headers === undefined ? {} : { headers: options.headers }),
+            headers: {
+              ...(options.headers ?? {}),
+              'last-event-id': String(this.value.generation),
+            },
             signal: controller.signal,
           });
           if (!response.ok || response.body === null) {

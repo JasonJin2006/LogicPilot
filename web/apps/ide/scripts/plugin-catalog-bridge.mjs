@@ -23,6 +23,8 @@ import {
 
 let nodePluginRuntime;
 const registryClients = new Set();
+const registryHistory = [];
+const REGISTRY_HISTORY_LIMIT = 32;
 let registrySubscription;
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
@@ -441,7 +443,17 @@ export function handlePluginRegistryStream(req, res) {
     connection: 'keep-alive',
     'x-content-type-options': 'nosniff',
   });
-  res.write(`event: registry\ndata: ${JSON.stringify(registryPayload())}\n\n`);
+  const current = registryPayload();
+  rememberRegistrySnapshot(current);
+  const lastEventId = Number(req.headers?.['last-event-id'] ?? 0);
+  const replay = Number.isSafeInteger(lastEventId)
+    ? registryHistory.filter((entry) => entry.generation > lastEventId)
+    : [];
+  if (replay.length > 0) {
+    for (const entry of replay) res.write(registryEvent(entry));
+  } else {
+    res.write(registryEvent({ generation: current.generation, payload: current }));
+  }
   registryClients.add(res);
   res.on('close', () => registryClients.delete(res));
   ensureRegistrySubscription();
@@ -450,7 +462,9 @@ export function handlePluginRegistryStream(req, res) {
 function ensureRegistrySubscription() {
   if (registrySubscription || !nodePluginRuntime) return;
   registrySubscription = nodePluginRuntime.subscribe(() => {
-    const event = `event: registry\ndata: ${JSON.stringify(registryPayload())}\n\n`;
+    const payload = registryPayload();
+    rememberRegistrySnapshot(payload);
+    const event = registryEvent({ generation: payload.generation, payload });
     for (const client of [...registryClients]) {
       try {
         client.write(event);
@@ -459,6 +473,18 @@ function ensureRegistrySubscription() {
       }
     }
   });
+}
+
+function rememberRegistrySnapshot(payload) {
+  const generation = Number(payload.generation);
+  if (!Number.isSafeInteger(generation)) return;
+  if (registryHistory.some((entry) => entry.generation === generation)) return;
+  registryHistory.push({ generation, payload });
+  while (registryHistory.length > REGISTRY_HISTORY_LIMIT) registryHistory.shift();
+}
+
+function registryEvent(entry) {
+  return `id: ${entry.generation}\nevent: registry\ndata: ${JSON.stringify(entry.payload)}\n\n`;
 }
 
 function registryPayload() {

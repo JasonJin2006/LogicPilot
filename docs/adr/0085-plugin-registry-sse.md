@@ -12,7 +12,9 @@ and after every committed Node runtime generation. The existing GET endpoint
 remains the initial snapshot and fallback path. The IDE client uses a bounded
 fetch-based SSE loop with session headers, exponential reconnect backoff,
 generation-aware atomic application and explicit stop cleanup; it does not use
-an uncredentialed `EventSource`.
+an uncredentialed `EventSource`. The bridge retains the latest 32 generations,
+labels events with their generation, and replays events newer than the
+client's `Last-Event-ID`; equal/older generations are ignored by the client.
 
 The bridge owns a client set and unsubscribes it on response close. Runtime
 shutdown closes all clients and removes the generation subscription. Every
