@@ -32,6 +32,7 @@ export interface FileSystemPackageStoreOptions {
   readonly auditName?: string;
   readonly packagesDirName?: string;
   readonly stagingDirName?: string;
+  readonly journalName?: string;
 }
 
 export class FileSystemPackageStoreError extends Error {
@@ -45,6 +46,17 @@ export class FileSystemPackageStoreError extends Error {
 }
 
 let tempSequence = 0;
+
+interface TransactionRecord {
+  readonly id: string;
+  readonly pluginId: string;
+  readonly operation: 'install' | 'upgrade' | 'remove';
+  readonly state: 'staged' | 'committed';
+  readonly targetPath: string;
+  readonly stagePath?: string;
+  readonly backupPath?: string;
+  readonly sha256?: string;
+}
 
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -77,6 +89,7 @@ export class FileSystemPackageStore implements PackageStore {
   private readonly mutexPath: string;
   private readonly packagesDir: string;
   private readonly stagingDir: string;
+  private readonly journalPath: string;
 
   constructor(options: FileSystemPackageStoreOptions) {
     this.rootDir = resolve(options.rootDir);
@@ -85,7 +98,15 @@ export class FileSystemPackageStore implements PackageStore {
     const auditName = options.auditName ?? 'plugin-audit.jsonl';
     const packagesDirName = options.packagesDirName ?? 'plugins';
     const stagingDirName = options.stagingDirName ?? '.plugin-staging';
-    const names = [lockfileName, snapshotName, auditName, packagesDirName, stagingDirName];
+    const journalName = options.journalName ?? 'plugin-transactions.json';
+    const names = [
+      lockfileName,
+      snapshotName,
+      auditName,
+      packagesDirName,
+      stagingDirName,
+      journalName,
+    ];
     if (!names.every(isSafeName) || new Set(names).size !== names.length) {
       throw new FileSystemPackageStoreError('store filenames must be simple child names', 'path');
     }
@@ -95,6 +116,8 @@ export class FileSystemPackageStore implements PackageStore {
     this.mutexPath = join(this.rootDir, `${lockfileName}.mutex`);
     this.packagesDir = join(this.rootDir, packagesDirName);
     this.stagingDir = join(this.rootDir, stagingDirName);
+    this.journalPath = join(this.rootDir, journalName);
+    this.recoverTransactions();
   }
 
   readLockfile(): PluginLockfile | null {
@@ -231,7 +254,13 @@ export class FileSystemPackageStore implements PackageStore {
     readonly manifest: PluginManifest;
     readonly sha256: string;
     readonly operation: 'install' | 'upgrade';
-  }): { readonly pluginId: string; readonly stagePath: string; readonly targetPath: string } {
+  }): {
+    readonly pluginId: string;
+    readonly stagePath: string;
+    readonly targetPath: string;
+    readonly operation: 'install' | 'upgrade';
+    readonly sha256: string;
+  } {
     if (!isSafeName(input.pluginId)) {
       throw new FileSystemPackageStoreError('plugin id is not a safe package name', 'path');
     }
@@ -298,11 +327,24 @@ export class FileSystemPackageStore implements PackageStore {
       if (existsSync(stagePath)) removeTree(stagePath);
       throw new FileSystemPackageStoreError('cannot stage package payload', 'io');
     }
-    return {
+    const stage = {
       pluginId: input.pluginId,
       stagePath,
       targetPath: join(this.packagesDir, input.pluginId),
+      operation: input.operation,
+      sha256: input.sha256.toLowerCase(),
     };
+    try {
+      this.upsertTransaction({
+        id: stage.stagePath,
+        ...stage,
+        state: 'staged',
+      });
+    } catch (error) {
+      removeTree(stagePath);
+      throw error;
+    }
+    return stage;
   }
 
   /** Atomically swaps a staged tree into the controlled package directory and
@@ -311,12 +353,24 @@ export class FileSystemPackageStore implements PackageStore {
     readonly pluginId: string;
     readonly stagePath: string;
     readonly targetPath: string;
-  }): { readonly pluginId: string; readonly targetPath: string; readonly backupPath?: string } {
+    readonly operation?: 'install' | 'upgrade';
+    readonly sha256?: string;
+  }): {
+    readonly pluginId: string;
+    readonly targetPath: string;
+    readonly backupPath?: string;
+    readonly operation?: 'install' | 'upgrade';
+    readonly sha256?: string;
+  } {
     if (
       !isPathWithin(this.stagingDir, stage.stagePath) ||
       !isPathWithin(this.packagesDir, stage.targetPath)
     ) {
       throw new FileSystemPackageStoreError('package transaction path escapes store', 'path');
+    }
+    const transaction = this.findTransaction(stage.stagePath);
+    if (!transaction) {
+      throw new FileSystemPackageStoreError('package transaction journal entry is missing', 'io');
     }
     mkdirSync(this.packagesDir, { recursive: true });
     const backupPath = join(
@@ -330,13 +384,24 @@ export class FileSystemPackageStore implements PackageStore {
       if (!existsSync(stage.targetPath) && existsSync(backupPath))
         renameSync(backupPath, stage.targetPath);
       if (existsSync(stage.stagePath)) removeTree(stage.stagePath);
+      this.removeTransaction(transaction.id);
       throw new FileSystemPackageStoreError('cannot commit package transaction', 'io');
     }
-    return {
+    const committed = {
       pluginId: stage.pluginId,
       targetPath: stage.targetPath,
       ...(existsSync(backupPath) ? { backupPath } : {}),
+      ...(transaction.operation === 'remove'
+        ? {}
+        : { operation: transaction.operation, sha256: transaction.sha256 }),
     };
+    this.replaceTransaction(transaction.id, {
+      ...transaction,
+      state: 'committed',
+      targetPath: committed.targetPath,
+      ...(committed.backupPath ? { backupPath: committed.backupPath } : {}),
+    });
+    return committed;
   }
 
   /** Moves an installed tree to a rollback-safe tombstone. */
@@ -352,16 +417,34 @@ export class FileSystemPackageStore implements PackageStore {
     if (!existsSync(targetPath)) return { pluginId, targetPath };
     mkdirSync(this.stagingDir, { recursive: true });
     const backupPath = join(this.stagingDir, `${pluginId}.remove.${process.pid}.${Date.now()}`);
+    const transaction: TransactionRecord = {
+      id: backupPath,
+      pluginId,
+      operation: 'remove',
+      state: 'staged',
+      targetPath,
+      backupPath,
+    };
+    this.upsertTransaction(transaction);
     try {
       renameSync(targetPath, backupPath);
     } catch {
+      this.removeTransaction(transaction.id);
       throw new FileSystemPackageStoreError('cannot stage package removal', 'io');
+    }
+    try {
+      this.replaceTransaction(transaction.id, { ...transaction, state: 'committed' });
+    } catch (error) {
+      renameSync(backupPath, targetPath);
+      this.removeTransaction(transaction.id);
+      throw error;
     }
     return { pluginId, targetPath, backupPath };
   }
 
   finalizePackage(commit: { readonly targetPath: string; readonly backupPath?: string }): void {
     if (commit.backupPath && existsSync(commit.backupPath)) removeTree(commit.backupPath);
+    this.removeTransactionForCommit(commit);
   }
 
   rollbackPackage(commit: { readonly targetPath: string; readonly backupPath?: string }): void {
@@ -370,6 +453,7 @@ export class FileSystemPackageStore implements PackageStore {
       mkdirSync(resolve(commit.targetPath, '..'), { recursive: true });
       renameSync(commit.backupPath, commit.targetPath);
     }
+    this.removeTransactionForCommit(commit);
   }
 
   listInstalledPackages(): readonly string[] {
@@ -378,6 +462,119 @@ export class FileSystemPackageStore implements PackageStore {
       .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
       .map((entry) => entry.name)
       .sort();
+  }
+
+  private readTransactions(): TransactionRecord[] {
+    if (!existsSync(this.journalPath)) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(this.readText(this.journalPath, 'transaction journal'));
+    } catch {
+      throw new FileSystemPackageStoreError('transaction journal is not valid JSON', 'io');
+    }
+    if (!Array.isArray(parsed)) {
+      throw new FileSystemPackageStoreError('transaction journal has an invalid shape', 'io');
+    }
+    if (parsed.some((entry) => !isTransactionRecord(entry))) {
+      throw new FileSystemPackageStoreError('transaction journal has an invalid entry', 'io');
+    }
+    return parsed as TransactionRecord[];
+  }
+
+  private writeTransactions(transactions: readonly TransactionRecord[]): void {
+    this.ensureRoot();
+    if (transactions.length === 0) {
+      if (existsSync(this.journalPath)) unlinkSync(this.journalPath);
+      return;
+    }
+    this.atomicWrite(this.journalPath, `${JSON.stringify(transactions, null, 2)}\n`);
+  }
+
+  private upsertTransaction(transaction: TransactionRecord): void {
+    const transactions = this.readTransactions().filter((entry) => entry.id !== transaction.id);
+    transactions.push(transaction);
+    this.writeTransactions(transactions);
+  }
+
+  private findTransaction(id: string): TransactionRecord | undefined {
+    return this.readTransactions().find((entry) => entry.id === id);
+  }
+
+  private replaceTransaction(id: string, transaction: TransactionRecord): void {
+    const transactions = this.readTransactions().map((entry) =>
+      entry.id === id ? transaction : entry,
+    );
+    this.writeTransactions(transactions);
+  }
+
+  private removeTransaction(id: string): void {
+    this.writeTransactions(this.readTransactions().filter((entry) => entry.id !== id));
+  }
+
+  private removeTransactionForCommit(commit: {
+    readonly targetPath: string;
+    readonly backupPath?: string;
+  }): void {
+    const transactions = this.readTransactions();
+    const match = transactions.find(
+      (entry) => entry.targetPath === commit.targetPath && entry.backupPath === commit.backupPath,
+    );
+    if (match) this.writeTransactions(transactions.filter((entry) => entry.id !== match.id));
+  }
+
+  /** Completes or reverts transactions left by a process that died between
+   * package-tree replacement and lockfile/finalize. The lockfile is the
+   * source of truth: an install/upgrade is kept only when its digest is
+   * declared; a removal is kept only when its id is absent. */
+  private recoverTransactions(): void {
+    const transactions = this.readTransactions();
+    if (transactions.length === 0) return;
+    let lockfile: PluginLockfile | null = null;
+    try {
+      lockfile = this.readLockfileState().lockfile;
+    } catch {
+      // Invalid lockfiles must not make a half-written package look installed.
+      lockfile = null;
+    }
+    for (const transaction of transactions) {
+      if (
+        !isPathWithin(this.packagesDir, transaction.targetPath) ||
+        (transaction.stagePath !== undefined &&
+          !isPathWithin(this.stagingDir, transaction.stagePath)) ||
+        (transaction.backupPath !== undefined &&
+          !isPathWithin(this.stagingDir, transaction.backupPath))
+      ) {
+        throw new FileSystemPackageStoreError('transaction journal path escapes store', 'path');
+      }
+      const targetExists = existsSync(transaction.targetPath);
+      const stageExists = transaction.stagePath !== undefined && existsSync(transaction.stagePath);
+      const backupExists =
+        transaction.backupPath !== undefined && existsSync(transaction.backupPath);
+      const looksCommitted =
+        transaction.state === 'committed' || (!stageExists && (targetExists || backupExists));
+      const lockEntry = lockfile?.plugins.find((entry) => entry.id === transaction.pluginId);
+      const shouldKeep =
+        transaction.operation === 'remove'
+          ? lockEntry === undefined
+          : lockEntry?.sha256.toLowerCase() === transaction.sha256;
+      if (looksCommitted && shouldKeep) {
+        if (transaction.stagePath && existsSync(transaction.stagePath))
+          removeTree(transaction.stagePath);
+        if (transaction.backupPath && existsSync(transaction.backupPath))
+          removeTree(transaction.backupPath);
+      } else {
+        if (looksCommitted && targetExists && transaction.operation !== 'remove') {
+          removeTree(transaction.targetPath);
+        }
+        if (transaction.backupPath && existsSync(transaction.backupPath)) {
+          mkdirSync(resolve(transaction.targetPath, '..'), { recursive: true });
+          renameSync(transaction.backupPath, transaction.targetPath);
+        }
+        if (transaction.stagePath && existsSync(transaction.stagePath))
+          removeTree(transaction.stagePath);
+      }
+    }
+    this.writeTransactions([]);
   }
 
   private writeValidatedLockfile(lockfile: PluginLockfile): void {
@@ -433,6 +630,23 @@ export class FileSystemPackageStore implements PackageStore {
 export function isPathWithin(rootDir: string, candidate: string): boolean {
   const relativePath = relative(resolve(rootDir), resolve(candidate));
   return relativePath !== '' && !relativePath.startsWith('..') && !isAbsolute(relativePath);
+}
+
+function isTransactionRecord(value: unknown): value is TransactionRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === 'string' &&
+    typeof record.pluginId === 'string' &&
+    (record.operation === 'install' ||
+      record.operation === 'upgrade' ||
+      record.operation === 'remove') &&
+    (record.state === 'staged' || record.state === 'committed') &&
+    typeof record.targetPath === 'string' &&
+    (record.stagePath === undefined || typeof record.stagePath === 'string') &&
+    (record.backupPath === undefined || typeof record.backupPath === 'string') &&
+    (record.sha256 === undefined || typeof record.sha256 === 'string')
+  );
 }
 
 function copyTree(source: string, target: string): void {

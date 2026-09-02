@@ -54,8 +54,9 @@ durable audit trail, while keeping all filesystem access out of the browser.
   recovery slice must add stale-mutex ownership/expiry before allowing a
   process to remove another process's lock.
 - The current store writes lockfile and package-tree files atomically per
-  operation and compensates lockfile failures; crash recovery between those
-  operations still requires a journal/expiry slice.
+  operation and compensates lockfile failures. ADR-0073 adds a durable
+  transaction journal for recovery after process death; stale mutex expiry is
+  still a separate hardening item.
 
 ## Gate evidence
 

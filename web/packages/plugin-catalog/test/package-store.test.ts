@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -191,6 +191,60 @@ describe('FileSystemPackageStore', () => {
     expect(
       readFileSync(join(root, 'store', 'plugins', manifest.id as string, 'entry.mjs'), 'utf8'),
     ).toBe('payload');
+  });
+
+  it('recovers interrupted package swaps from the journal using lockfile truth', () => {
+    const root = tempRoot();
+    const source = join(root, 'incoming');
+    mkdirSync(source);
+    const { integrity: _integrity, ...manifest } = lockManifest('logicpilot.recovery');
+    void _integrity;
+    writeFileSync(join(source, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(join(source, 'entry.mjs'), 'payload');
+    const storeRoot = join(root, 'store');
+    const firstStore = new FileSystemPackageStore({ rootDir: storeRoot });
+    const typedManifest = manifest as unknown as PluginManifest;
+    const sha256 = computePackageDigest(source, typedManifest);
+    const committed = firstStore.commitPackage(
+      firstStore.stagePackage({
+        pluginId: manifest.id as string,
+        sourcePath: source,
+        manifest: typedManifest,
+        sha256,
+        operation: 'install',
+      }),
+    );
+    // No lockfile was written: a new process must undo the directory swap.
+    const recoveredRollback = new FileSystemPackageStore({ rootDir: storeRoot });
+    expect(recoveredRollback.listInstalledPackages()).toEqual([]);
+    expect(committed.targetPath).toContain('plugins');
+
+    const second = recoveredRollback.commitPackage(
+      recoveredRollback.stagePackage({
+        pluginId: manifest.id as string,
+        sourcePath: source,
+        manifest: typedManifest,
+        sha256,
+        operation: 'install',
+      }),
+    );
+    recoveredRollback.writeLockfile({
+      schema: 'logicpilot.plugin-lock/v1',
+      contractVersion: 1,
+      plugins: [
+        {
+          id: manifest.id as string,
+          version: manifest.version as string,
+          apiVersion: 1,
+          sha256,
+          trust: 't0',
+          permissions: [],
+        },
+      ],
+    });
+    const recoveredFinalize = new FileSystemPackageStore({ rootDir: storeRoot });
+    expect(recoveredFinalize.listInstalledPackages()).toEqual(['logicpilot.recovery']);
+    expect(second.backupPath === undefined || !existsSync(second.backupPath)).toBe(true);
   });
 });
 

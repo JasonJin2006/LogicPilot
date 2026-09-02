@@ -8,7 +8,8 @@ Implements: `docs/architecture/next-generation-plugin-platform.md` §16 Phase 2B
 
 `FileSystemPackageStore` owns two additional directories below its dedicated
 store root: `plugins/` for installed package trees and `.plugin-staging/` for
-short-lived transaction state. Install and upgrade first recompute the
+short-lived transaction state, plus `plugin-transactions.json` as a durable
+transaction journal. Install and upgrade first recompute the
 canonical bounded package digest, copy the complete tree without following
 symlinks, and then atomically rename the staged tree into place. The previous
 tree is retained as a tombstone until the lockfile write succeeds. A failed
@@ -32,14 +33,16 @@ are omitted before crossing the HTTP boundary.
 - The source manifest must validate, match the requested manifest exactly, and
   produce the requested digest before copying begins.
 - Staging and lockfile replacement are separate filesystem operations; the
-  manager compensates a lockfile failure by rolling back the package tree.
-  Crash recovery for a process that dies between those operations remains a
-  follow-up journal/recovery slice.
+  manager compensates a lockfile failure by rolling back the package tree. On
+  the next process start, the journal compares each pending transaction with
+  lockfile truth and completes or reverts it.
 - Dynamic ESM/WASM/native loading is not part of this endpoint or store.
 
 ## Gate evidence
 
 - Package-tree stage/commit/finalize/rollback/removal tests pass.
 - PackageManager verifies rollback on a failed lockfile write.
+- Recovery tests cover both an interrupted install (revert) and a committed
+  install awaiting cleanup (finalize).
 - The management bridge test verifies catalog response shape and path
   redaction.
