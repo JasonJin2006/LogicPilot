@@ -20,4 +20,10 @@ function SysMLWorkspacePanel() {
   );
 }
 
-registerPanel('sysml', { title: 'SysML', area: 'center', component: SysMLWorkspacePanel });
+export function registerSysmlPanelContribution(): () => void {
+  return registerPanel('sysml', {
+    title: 'SysML',
+    area: 'center',
+    component: SysMLWorkspacePanel,
+  });
+}

@@ -3,7 +3,7 @@
 // store, validate/run endpoints) is the real implementation, so tool order,
 // validation, version conflicts and undo behavior are tested for real.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDocument, type ModelDocument } from '@logicpilot/editor';
 import { createProject } from '../project/project';
@@ -17,6 +17,10 @@ import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useWorkspaceStore } from '../state/workspaceStore';
 import { useAiConversationStore } from './conversationStore';
+import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
+
+beforeAll(() => startIdePluginHost());
+afterAll(() => stopIdePluginHost());
 
 interface MockCall {
   url: string;

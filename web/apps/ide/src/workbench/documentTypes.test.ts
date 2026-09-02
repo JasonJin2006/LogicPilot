@@ -1,13 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   DOCUMENT_CONTRIBUTIONS,
   documentContributionFor,
   editorPanelFor,
   newFileContentFor,
 } from './documentTypes';
-// Every paradigm registers from its own plugin module; the composition root
-// wires them exactly as the app does.
-import '../plugins';
+import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
+
+beforeAll(() => startIdePluginHost());
+afterAll(() => stopIdePluginHost());
 
 describe('Workbench document contributions', () => {
   it('routes SysML documents to the projection editor with its standard icon', () => {

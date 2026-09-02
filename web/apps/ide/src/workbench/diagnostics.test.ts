@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DIAGNOSTIC_PROVIDERS, diagnoseDocument } from './diagnostics';
-// Registers the DSL document type's DES graph diagnostic provider.
-import '../plugins/des';
+import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
+
+beforeAll(() => startIdePluginHost());
+afterAll(() => stopIdePluginHost());
 
 describe('Workbench diagnostic providers', () => {
   it('aggregates the registered DES graph validator for DSL documents', () => {

@@ -4,9 +4,6 @@ import { generateDsl } from '@logicpilot/editor';
 import { aiValidateDsl } from '../../api';
 import type { AssistantSessionState } from '../../assistantTypes';
 import { diagnoseDocument } from '../../../workbench/diagnostics';
-// Side-effect import: registers the DES graph diagnostic provider consumed
-// through the seam below.
-import '../../../model/modelValidation';
 import { useModelStore } from '../../../state/modelStore';
 
 export async function compileCurrent(

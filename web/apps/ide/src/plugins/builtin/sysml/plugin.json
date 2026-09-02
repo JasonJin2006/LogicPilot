@@ -1,0 +1,19 @@
+{
+  "schema": "logicpilot.plugin-manifest/v2",
+  "contractVersion": 1,
+  "id": "logicpilot.sysml",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "displayName": "LogicPilot SysML",
+  "description": "SysML v2 projection: views, language service, AI tools, lowering",
+  "provides": ["logicpilot.document-type.sysml"],
+  "requires": [],
+  "entrypoints": {
+    "web": "./activate.ts"
+  },
+  "permissions": [],
+  "trust": {
+    "minLevel": "t0",
+    "sandbox": "none"
+  }
+}

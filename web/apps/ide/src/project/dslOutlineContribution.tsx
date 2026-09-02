@@ -479,8 +479,10 @@ function findChildren(source: string, bodyClose: number): ProjectMember[] {
   return search(parsed.members);
 }
 
-OUTLINE_CONTRIBUTIONS.register({
-  id: 'logicpilot.project-tree',
-  applies: ({ hasProject }) => hasProject,
-  component: DslOutline,
-});
+export function registerDslOutlineContribution(): () => void {
+  return OUTLINE_CONTRIBUTIONS.register({
+    id: 'logicpilot.project-tree',
+    applies: ({ hasProject }) => hasProject,
+    component: DslOutline,
+  });
+}

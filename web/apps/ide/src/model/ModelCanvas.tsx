@@ -60,9 +60,6 @@ import { useRunStore } from '../state/runStore';
 import { PressGesture, snapRect, type SnapGuide } from '@logicpilot/canvas';
 import { graphicIntersectsViewport, worldViewportFromCamera } from '@logicpilot/canvas';
 import { diagnoseDocument } from '../workbench/diagnostics';
-// Side-effect import: registers the DES graph diagnostic provider for the
-// DSL document type (the validator itself is not referenced here).
-import './modelValidation';
 
 // Desired on-screen distance between grid lines (px); the step in world
 // units is the smallest "nice" value that lands near this spacing.

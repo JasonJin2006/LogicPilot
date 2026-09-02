@@ -291,8 +291,10 @@ function validateMinimum(
 // (workbench-architecture-plan.md §9.1). Canvas badges, Properties, the Run
 // gate and the AI preflight aggregate through the Workbench seam, so further
 // DSL validators register here without touching consumers.
-DIAGNOSTIC_PROVIDERS.register({
-  id: 'logicpilot.des-graph',
-  documentTypes: ['dsl'],
-  diagnose: (document) => validateDesModel(document as ModelDocument),
-});
+export function registerDesModelValidation(): () => void {
+  return DIAGNOSTIC_PROVIDERS.register({
+    id: 'logicpilot.des-graph',
+    documentTypes: ['dsl'],
+    diagnose: (document) => validateDesModel(document as ModelDocument),
+  });
+}

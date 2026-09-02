@@ -12,11 +12,14 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "verify:headless": "node scripts/headless-verify.mjs",
-    "verify:browser": "node scripts/browser-verify.mjs"
+    "verify:browser": "node scripts/browser-verify.mjs",
+    "verify:zero-paradigm": "node scripts/zero-paradigm-verify.mjs"
   },
   "dependencies": {
     "@logicpilot/canvas": "workspace:*",
+    "@logicpilot/contracts": "workspace:*",
     "@logicpilot/editor": "workspace:*",
+    "@logicpilot/plugin-host": "workspace:*",
     "@logicpilot/protocol": "workspace:*",
     "@logicpilot/renderer2d": "workspace:*",
     "@tauri-apps/api": "^2.11.1",

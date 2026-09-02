@@ -1,16 +1,25 @@
 // Regression coverage for the unified problem aggregation: model-canvas
-// diagnostics and SysML projection entries land in one sorted list.
+// diagnostics and plugin-contributed problem sources land in one sorted
+// list (Phase 2: contributors register through the seam, the aggregator
+// never names a paradigm).
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parseDsl } from '@logicpilot/editor';
-// Side-effect import: activates the DES plugin registrations consumed
-// through the seam below (document type + graph diagnostic provider).
-import '../plugins/des';
-import { collectProblems, type ParadigmDiagnostic, type SysmlProblemsInput } from './problems';
+import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
+import {
+  clearProblemSources,
+  collectProblems,
+  problemSourcesVersion,
+  registerProblemSource,
+  subscribeProblemSources,
+  type ProblemEntry,
+} from './problems';
 
-const sysml = (diagnostics: ParadigmDiagnostic[], parseDirty = false): SysmlProblemsInput => ({
-  projection: { diagnostics },
-  parseDirty,
+beforeAll(() => startIdePluginHost());
+afterAll(() => stopIdePluginHost());
+
+afterEach(() => {
+  clearProblemSources();
 });
 
 const emptyModel = () => {
@@ -19,12 +28,43 @@ const emptyModel = () => {
   return parsed.document;
 };
 
+/** Minimal fake contributed source: fixed entries, version bumped on each
+ *  emit so the panel-side subscription semantics stay exercised. */
+function fakeSource(
+  id: string,
+  entries: () => readonly ProblemEntry[],
+): {
+  source: Parameters<typeof registerProblemSource>[0];
+  emit: () => void;
+  version: () => number;
+} {
+  let version = 0;
+  const listeners = new Set<() => void>();
+  return {
+    source: {
+      id,
+      read: entries,
+      subscribe: (listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    },
+    emit: () => {
+      version += 1;
+      for (const listener of [...listeners]) listener();
+    },
+    version: () => version,
+  };
+}
+
 describe('collectProblems', () => {
   it('surfaces canvas flow diagnostics as navigable model entries', () => {
     const parsed = parseDsl('model M {\n  use process\n  source s { arrival = rate(1) }\n}\n');
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    const problems = collectProblems({ document: parsed.document }, sysml([], false));
+    const problems = collectProblems({ document: parsed.document });
     const unconnected = problems.filter(
       (entry) => entry.origin === 'model' && entry.code === 'LPV1001',
     );
@@ -34,22 +74,67 @@ describe('collectProblems', () => {
     );
   });
 
-  it('flags a dirty SysML parse and sorts errors before warnings', () => {
-    const problems = collectProblems(
-      { document: emptyModel() },
-      sysml([{ code: 'SY0003', severity: 'warning', message: 'duplicate member', line: 4 }], true),
-    );
-    expect(problems[0]).toMatchObject({
-      origin: 'sysml',
-      severity: 'error',
-      id: 'sysml:parse-dirty',
-    });
-    expect(problems.some((entry) => entry.code === 'SY0003' && entry.line === 4)).toBe(true);
-    const ranks = problems.map((entry) => (entry.severity === 'error' ? 0 : 1));
-    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  it('merges contributed problem sources and sorts errors before warnings', () => {
+    const source = fakeSource('contributed', () => [
+      {
+        id: 'contributed:1:SY0003',
+        origin: 'contributed',
+        code: 'SY0003',
+        severity: 'warning',
+        message: 'duplicate member',
+        line: 4,
+      },
+      {
+        id: 'contributed:dirty',
+        origin: 'contributed',
+        code: 'SY0001',
+        severity: 'error',
+        message: 'the source has parse errors',
+      },
+    ]);
+    const dispose = registerProblemSource(source.source);
+    try {
+      const problems = collectProblems({ document: emptyModel() });
+      expect(problems[0]).toMatchObject({
+        origin: 'contributed',
+        severity: 'error',
+        id: 'contributed:dirty',
+      });
+      expect(problems.some((entry) => entry.code === 'SY0003' && entry.line === 4)).toBe(true);
+      const ranks = problems.map((entry) => (entry.severity === 'error' ? 0 : 1));
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    } finally {
+      dispose();
+    }
   });
 
-  it('returns an empty list for a clean workspace', () => {
-    expect(collectProblems({ document: emptyModel() }, sysml([], false))).toEqual([]);
+  it('rejects duplicate problem source ids and removes sources on disposal', () => {
+    const first = fakeSource('dup', () => []);
+    const dispose = registerProblemSource(first.source);
+    expect(() => registerProblemSource(fakeSource('dup', () => []).source)).toThrow(
+      /already registered/,
+    );
+    dispose();
+    // After disposal the id is free again.
+    const second = fakeSource('dup', () => []);
+    const dispose2 = registerProblemSource(second.source);
+    dispose2();
+  });
+
+  it('notifies live hosts when sources register, update and deactivate', () => {
+    const versions: number[] = [];
+    const unsubscribe = subscribeProblemSources(() => versions.push(problemSourcesVersion()));
+    const source = fakeSource('live', () => []);
+    const dispose = registerProblemSource(source.source);
+    source.emit();
+    dispose();
+    unsubscribe();
+    expect(versions).toHaveLength(3);
+    expect(versions[0]! < versions[1]!).toBe(true);
+    expect(versions[1]! < versions[2]!).toBe(true);
+  });
+
+  it('returns an empty list for a clean workspace with no contributors', () => {
+    expect(collectProblems({ document: emptyModel() })).toEqual([]);
   });
 });

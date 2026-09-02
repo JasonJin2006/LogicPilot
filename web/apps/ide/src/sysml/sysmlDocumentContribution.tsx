@@ -9,17 +9,19 @@ import { completionsAt } from './sysmlLanguage';
 import { projectSysML } from './sysmlProjection';
 import { SysMLFileIcon } from './sysmlIcons';
 
-DOCUMENT_CONTRIBUTIONS.register({
-  id: 'sysml',
-  label: 'SysML v2',
-  extensions: ['.sysml'],
-  editorPanel: 'sysml',
-  providesProjection: true,
-  icon: SysMLFileIcon,
-  completions: (source, offset) =>
-    completionsAt(source, offset, projectSysML(source)).map((item) => ({
-      label: item.label,
-      insertText: item.insertText,
-      detail: item.kind === 'element' ? 'element' : undefined,
-    })),
-});
+export function registerSysmlDocumentContribution(): () => void {
+  return DOCUMENT_CONTRIBUTIONS.register({
+    id: 'sysml',
+    label: 'SysML v2',
+    extensions: ['.sysml'],
+    editorPanel: 'sysml',
+    providesProjection: true,
+    icon: SysMLFileIcon,
+    completions: (source, offset) =>
+      completionsAt(source, offset, projectSysML(source)).map((item) => ({
+        label: item.label,
+        insertText: item.insertText,
+        detail: item.kind === 'element' ? 'element' : undefined,
+      })),
+  });
+}

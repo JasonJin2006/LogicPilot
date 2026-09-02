@@ -19,15 +19,32 @@ function paletteItem(def: BlockDef): PaletteItem {
   };
 }
 
-for (const library of LIBRARIES) {
-  PALETTE_CONTRIBUTIONS.register({
-    id: `logicpilot.${library.id}`,
-    library: { id: library.id, name: library.name },
-    // Catalog-only process kinds have no kernel registry entry yet; hiding
-    // them here keeps the palette honest (dragging one would fail DSL
-    // compile with LP2004).
-    items: BLOCK_DEFS.filter(
-      (block) => block.library === library.id && !(library.id === 'process' && !block.executable),
-    ).map(paletteItem),
-  });
+/** Register the model libraries for one plugin activation. Nothing is
+ *  registered at module evaluation time: a zero-plugin host must leave the
+ *  palette empty, and plugin deactivation must remove every contribution. */
+export function registerModelPaletteContributions(): () => void {
+  const disposers: Array<() => void> = [];
+  try {
+    for (const library of LIBRARIES) {
+      disposers.push(
+        PALETTE_CONTRIBUTIONS.register({
+          id: `logicpilot.${library.id}`,
+          library: { id: library.id, name: library.name },
+          // Catalog-only process kinds have no kernel registry entry yet;
+          // hiding them keeps the palette honest (dragging one would fail
+          // DSL compile with LP2004).
+          items: BLOCK_DEFS.filter(
+            (block) =>
+              library.id === block.library && !(library.id === 'process' && !block.executable),
+          ).map(paletteItem),
+        }),
+      );
+    }
+  } catch (error) {
+    for (const dispose of disposers.reverse()) dispose();
+    throw error;
+  }
+  return () => {
+    for (const dispose of disposers.reverse()) dispose();
+  };
 }

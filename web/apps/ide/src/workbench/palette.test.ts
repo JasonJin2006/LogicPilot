@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PALETTE_CONTRIBUTIONS, type PaletteContribution } from './palette';
-// Registers the built-in LogicPilot libraries.
-import '../plugins/des';
+import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
+
+beforeAll(() => startIdePluginHost());
+afterAll(() => stopIdePluginHost());
 
 describe('palette provider registry', () => {
   it('exposes the built-in library tabs through the seam', () => {
@@ -14,6 +16,7 @@ describe('palette provider registry', () => {
       'agent',
       'analysis',
       'controls',
+      'sysml',
     ]);
   });
 

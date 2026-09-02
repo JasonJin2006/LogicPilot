@@ -1,0 +1,19 @@
+{
+  "schema": "logicpilot.plugin-manifest/v2",
+  "contractVersion": 1,
+  "id": "logicpilot.des",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "displayName": "LogicPilot DES",
+  "description": "Discrete-event process modeling: DSL documents, palette, graph validation and DSL outline",
+  "provides": ["logicpilot.document-type.dsl"],
+  "requires": [],
+  "entrypoints": {
+    "web": "./activate.ts"
+  },
+  "permissions": [],
+  "trust": {
+    "minLevel": "t0",
+    "sandbox": "none"
+  }
+}

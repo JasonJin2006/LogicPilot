@@ -1,0 +1,26 @@
+{
+  "name": "@logicpilot/plugin-host",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LogicPilot Phase 2 plugin host: discovery, dependency-resolved deterministic activation, lifecycle (service/event/effect), capability grants, install/upgrade/rollback and append-only audit log",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@logicpilot/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

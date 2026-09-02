@@ -98,3 +98,4 @@
 
 - [0068 Paradigm Plugins - Removable Method Units with a Neutral Core](0068-paradigm-plugins)
 - [0069 Phase 1 Contract Freeze - JSON Schemas as the Single Source of Truth](0069-platform-contracts-freeze)
+- [0070 Transactional Plugin Host with Cordis-Compatible Lifecycle](0070-plugin-host-and-cordis)

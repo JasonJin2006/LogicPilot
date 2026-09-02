@@ -20,7 +20,6 @@ import { ProblemsPanel } from './ProblemsPanel';
 import { PropertiesHost } from './PropertiesHost';
 import { WelcomePanel } from './WelcomePanel';
 import { useModelStore } from '../state/modelStore';
-import { useSysMLStore } from '../state/sysmlStore';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
@@ -39,6 +38,20 @@ export interface PanelDef {
   focus?: () => boolean;
 }
 
+/** Extra focus probes contributed by plugins (plan §5.1: the shell never
+ *  names a paradigm). Each probe participates in focusedPanelId(); plugins
+ *  register theirs alongside their panels so a language owns its
+ *  properties-panel rule without a core edit. */
+const contributedFocusProbes = new Set<() => boolean>();
+
+/** Register a focus probe from a plugin contribution. Returns its disposer. */
+export function registerFocusProbe(probe: () => boolean): () => void {
+  contributedFocusProbes.add(probe);
+  return () => {
+    contributedFocusProbes.delete(probe);
+  };
+}
+
 const registry: Record<PanelId, PanelDef> = {
   // center: the modeling workspace.
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
@@ -46,15 +59,14 @@ const registry: Record<PanelId, PanelDef> = {
   welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
-  // right: properties host - one Properties tab that shows the model block
-  // inspector or the SysML element inspector depending on the active
-  // document kind; focused while either canvas has a selection.
+  // right: properties host - one Properties tab whose content the active
+  // document kind decides; focused while any known selection store has a
+  // selection (probes from plugins add their own rules below).
   properties: {
     title: 'Properties',
     area: 'right',
     component: PropertiesHost,
-    focus: () =>
-      useModelStore.getState().selectedId !== null || useSysMLStore.getState().selectedId !== null,
+    focus: () => useModelStore.getState().selectedId !== null,
   },
   // bottom: diagnostics / event stream.
   console: { title: 'Console', area: 'bottom', component: ConsolePanel },
@@ -81,12 +93,18 @@ export function registerPanel(id: PanelId, definition: PanelDef): () => void {
 /** The visible panel table (built-ins + registered contributions). */
 export const PANELS = registry as Readonly<Record<PanelId, PanelDef>>;
 
-/** First panel in `area` whose focus probe fires, or null when nothing
- *  claims focus (the workspace then falls back to its default tab). */
+/** First panel in `area` whose focus probe fires (panel probes plus any
+ *  plugin-contributed probes), or null when nothing claims focus (the
+ *  workspace then falls back to its default tab). */
 export function focusedPanelId(area: AreaId): PanelId | null {
   for (const [id, definition] of Object.entries(PANELS)) {
     if (definition.area === area && definition.focus?.()) {
       return id;
+    }
+  }
+  if (area === 'right') {
+    for (const probe of contributedFocusProbes) {
+      if (probe()) return 'properties';
     }
   }
   return null;

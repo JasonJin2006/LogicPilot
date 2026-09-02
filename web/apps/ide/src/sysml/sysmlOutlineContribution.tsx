@@ -87,11 +87,13 @@ function SysMLOutlinePanel() {
   );
 }
 
-OUTLINE_CONTRIBUTIONS.register({
-  id: 'sysml.outline',
-  // The SysML outline replaces the generic project tree while a .sysml
-  // document is active.
-  priority: 10,
-  applies: ({ activeDocumentType }) => activeDocumentType === 'sysml',
-  component: SysMLOutlinePanel,
-});
+export function registerSysmlOutlineContribution(): () => void {
+  return OUTLINE_CONTRIBUTIONS.register({
+    id: 'sysml.outline',
+    // The SysML outline replaces the generic project tree while a .sysml
+    // document is active.
+    priority: 10,
+    applies: ({ activeDocumentType }) => activeDocumentType === 'sysml',
+    component: SysMLOutlinePanel,
+  });
+}

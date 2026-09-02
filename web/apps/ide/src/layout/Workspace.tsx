@@ -3,7 +3,7 @@
 // visibility toggling keeps live data alive); splitters resize areas by
 // writing size values into the store. See docs/specs/ide-layout.md.
 
-import { useEffect } from 'react';
+import { useEffect, useReducer } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { Hammer, Play, Save, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
@@ -12,13 +12,13 @@ import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { useCanvasView } from '../state/canvasView';
-import { useSysMLStore } from '../state/sysmlStore';
 import { mergeModelSource } from '../project/project';
 import { generateDsl, parseDsl } from '@logicpilot/editor';
 import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, focusedPanelId, type AreaId, type PanelId } from './panels';
 import { ScrollArea } from '../components/ScrollArea';
 import { editorPanelFor } from '../workbench/documentTypes';
+import { onSelectionChanged } from '../workbench/selectionFocus';
 
 function Splitter({
   area,
@@ -413,14 +413,16 @@ function PanelArea({ area }: { area: AreaId }) {
 export function Workspace() {
   const areas = useLayoutStore((s) => s.areas);
   const selectedId = useModelStore((s) => s.selectedId);
-  const sysmlSelectedId = useSysMLStore((s) => s.selectedId);
+  const [selectionEpoch, bumpSelectionEpoch] = useReducer((count: number) => count + 1, 0);
   const setActive = useLayoutStore((s) => s.setActive);
   const openPanel = useLayoutStore((s) => s.openPanel);
   // Selection-driven panel focus: the first registered right-area panel
   // whose focus probe fires comes forward; with nothing selected the AI tab
-  // (the area default) returns. The probes live on the panel definitions,
-  // so languages own their properties-panel rule - these two subscriptions
-  // only re-run the probe when either known selection store changes.
+  // (the area default) returns. The probes live on the panel definitions
+  // plus plugin-contributed probes (workbench/selectionFocus), so languages
+  // own their properties-panel rule - this effect re-runs on model selection
+  // changes and on any store a plugin registered through the seam.
+  useEffect(() => onSelectionChanged(bumpSelectionEpoch), [bumpSelectionEpoch]);
   useEffect(() => {
     const focused = focusedPanelId('right');
     if (focused !== null) {
@@ -428,7 +430,7 @@ export function Workspace() {
     } else {
       setActive('right', 'ai');
     }
-  }, [selectedId, sysmlSelectedId, setActive, openPanel]);
+  }, [selectedId, selectionEpoch, setActive, openPanel]);
   const style = {
     '--left-w': `${areas.left.collapsed ? 0 : areas.left.size}px`,
     '--right-w': `${areas.right.collapsed ? 0 : areas.right.size}px`,

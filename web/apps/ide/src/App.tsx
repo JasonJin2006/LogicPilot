@@ -3,10 +3,7 @@
 // (activity bar gear); stats charts and results are center-workspace tabs
 // (AnyLogic-style opt-in telemetry views), not pinned side panels.
 
-// Composition root for paradigm plugins: register document types and panels
-// before any other module evaluates, so persisted layouts validate against
-// the complete panel table and file routing sees every extension (ADR-0068).
-import './plugins';
+import { useEffect } from 'react';
 
 import { ActivityBar } from './layout/ActivityBar';
 import { TopBar } from './layout/TopBar';
@@ -27,7 +24,6 @@ import { useConnectionStore } from './state/connectionStore';
 import { useUiStore } from './state/uiStore';
 import { ThemeManager } from './theme/ThemeManager';
 import { editorPanelFor } from './workbench/documentTypes';
-import { useEffect } from 'react';
 
 export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);

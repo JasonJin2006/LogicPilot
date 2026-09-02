@@ -134,7 +134,10 @@ jobs:
         run: pnpm typecheck
 
       - name: Lint
-        run: pnpm lint --max-warnings=0
+        # ADR-0068 migration debt is explicitly capped. The cap must decrease
+        # as remaining cross-paradigm imports move behind plugin services;
+        # any newly introduced warning fails CI immediately.
+        run: pnpm lint:ci
 
       - name: Formatting
         run: pnpm format:check
@@ -148,6 +151,12 @@ jobs:
         env:
           LOGICPILOT_ALLOW_MISSING_INTEROP: '1'
         run: pnpm test
+
+      - name: Zero-paradigm shell gate
+        # Phase 2: importing builtin entrypoints must not register them when
+        # discovery is empty. The gate also boots the shell and edits a plain
+        # file, then verifies the Vite child exits cleanly.
+        run: pnpm test:zero-paradigm
 
       - name: Docs build (VitePress user manual)
         # The user manual lives in docs/ and is built with VitePress; a broken

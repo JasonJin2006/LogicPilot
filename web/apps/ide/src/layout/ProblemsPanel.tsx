@@ -2,12 +2,20 @@
 // kinds. Entries come from the workbench diagnostic aggregation; clicking
 // an entry selects the owning node on the originating canvas so the user
 // can answer "what is wrong and where" without touring every surface.
+//
+// Phase 2: the panel subscribes to the shell model store plus every
+// contributed problem source through useSyncExternalStore - it never
+// names a paradigm.
 
-import { useMemo } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 import { AlertTriangle, AlertOctagon, Info } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
-import { useSysMLStore } from '../state/sysmlStore';
-import { collectProblems, type ProblemEntry } from '../workbench/problems';
+import {
+  collectProblems,
+  problemSourcesVersion,
+  subscribeProblemSources,
+  type ProblemEntry,
+} from '../workbench/problems';
 import { requestOpenPanel } from '../workbench/panelCommands';
 import { ScrollArea } from '../components/ScrollArea';
 function severityIcon(severity: ProblemEntry['severity']) {
@@ -16,16 +24,22 @@ function severityIcon(severity: ProblemEntry['severity']) {
   return <Info size={13} className="problem-icon-info" />;
 }
 
+/** Monotonic epoch over all contributed problem sources: re-renders the
+ *  aggregation when any contributed store emits. */
+function useContributedEpoch(): number {
+  return useSyncExternalStore(
+    subscribeProblemSources,
+    problemSourcesVersion,
+    problemSourcesVersion,
+  );
+}
+
 export function ProblemsPanel() {
   const document = useModelStore((state) => state.document);
   const selectNode = useModelStore((state) => state.select);
-  const projection = useSysMLStore((state) => state.projection);
-  const parseDirty = useSysMLStore((state) => state.parseDirty);
+  const contributedEpoch = useContributedEpoch();
 
-  const problems = useMemo(
-    () => collectProblems({ document }, { projection, parseDirty }),
-    [document, projection, parseDirty],
-  );
+  const problems = useMemo(() => collectProblems({ document }), [document, contributedEpoch]);
 
   if (problems.length === 0) {
     return <p className="console-empty">No problems detected.</p>;
@@ -39,9 +53,8 @@ export function ProblemsPanel() {
       requestOpenPanel('center', 'model');
       selectNode(entry.nodeId);
     }
-    // Text-backed SysML entries carry a line only; the projection canvas
-    // already highlights SYxxxx warnings inline, so there is nowhere more
-    // precise to navigate yet.
+    // Text-backed contributed entries carry a line only; their owners may
+    // highlight inline, so navigation beyond the row is source-defined.
   };
 
   return (
