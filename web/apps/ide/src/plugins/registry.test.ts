@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PluginRegistryStore } from './registry';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import type { PluginRegistry } from '@logicpilot/contracts';
+import { createPluginRegistryVerifier, PluginRegistryStore } from './registry';
 
 function envelope(generation: number) {
   return {
@@ -55,6 +57,38 @@ describe('PluginRegistryStore', () => {
     });
   });
 
+  it('verifies signed snapshots with browser WebCrypto and rejects tampering', async () => {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const unsigned = envelope(1);
+    const canonical = stableJson(unsigned);
+    const digest = createHash('sha256').update(canonical).digest('hex');
+    const signed = {
+      ...unsigned,
+      integrity: {
+        sha256: digest,
+        signedBy: 'registry-key',
+        signature: sign(null, Buffer.from(digest, 'utf8'), privateKey).toString('base64'),
+      },
+    } as PluginRegistry;
+    const pem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+    const verify = createPluginRegistryVerifier({ 'registry-key': pem });
+    const signedIntegrity = signed.integrity!;
+    expect(await verify(signed)).toBe(true);
+    expect(await verify({ ...signed, generation: 2 })).toBe(false);
+    expect(
+      await verify({
+        ...signed,
+        integrity: { ...signedIntegrity, signedBy: 'unknown-key' },
+      }),
+    ).toBe(false);
+  });
+
+  it('does not mutate when an async verifier rejects a structurally valid snapshot', async () => {
+    const store = new PluginRegistryStore();
+    await expect(store.applyVerified(envelope(1), async () => false)).rejects.toThrow(/integrity/);
+    expect(store.snapshot().generation).toBe(0);
+  });
+
   it('rejects malformed contribution payloads without mutating the active state', () => {
     const store = new PluginRegistryStore();
     store.apply(envelope(1));
@@ -85,3 +119,14 @@ describe('PluginRegistryStore', () => {
     expect(store.snapshot().plugins).toEqual(['logicpilot.registry-test']);
   });
 });
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}

@@ -132,13 +132,41 @@ function sendBodyError(res, error) {
 // LOGICPILOT_WS_URL; the vite dev server falls back to the default.
 export function handleConfig(req, res) {
   const configuredEngine = process.env.LOGICPILOT_AGENT_ENGINE;
+  let registrySigningKeys;
+  try {
+    registrySigningKeys = readRegistrySigningKeys();
+  } catch {
+    send(res, 503, { ok: false, error: 'plugin registry public key configuration is invalid' });
+    return;
+  }
   send(res, 200, {
     wsUrl: process.env.LOGICPILOT_WS_URL ?? 'ws://127.0.0.1:8089/sim',
     agentEngine: configuredEngine === 'sdk.openai-agents' ? configuredEngine : 'builtin',
+    ...(registrySigningKeys === undefined ? {} : { registrySigningKeys }),
     ...(process.env.LOGICPILOT_SESSION_TOKEN
       ? { sessionToken: process.env.LOGICPILOT_SESSION_TOKEN }
       : {}),
   });
+}
+
+function readRegistrySigningKeys() {
+  const raw = process.env.LOGICPILOT_PLUGIN_REGISTRY_SIGNING_PUBLIC_KEYS;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error('keyring must be an object');
+    const entries = Object.entries(parsed);
+    if (
+      entries.some(
+        ([key, pem]) => key.trim() === '' || typeof pem !== 'string' || pem.trim() === '',
+      )
+    )
+      throw new Error('keyring values are invalid');
+    return Object.fromEntries(entries);
+  } catch {
+    throw new Error('public keyring is not valid JSON');
+  }
 }
 
 export async function handleAiProviders(req, res) {

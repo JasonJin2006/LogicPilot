@@ -23,7 +23,10 @@ export interface PluginRegistryFetchOptions {
     readonly status: number;
     json(): Promise<unknown>;
   }>;
+  readonly verify?: PluginRegistryVerifier;
 }
+
+export type PluginRegistryVerifier = (payload: PluginRegistry) => boolean | Promise<boolean>;
 
 export interface PluginRegistryStreamOptions {
   readonly url?: string;
@@ -38,6 +41,7 @@ export interface PluginRegistryStreamOptions {
   }>;
   readonly retryBaseMs?: number;
   readonly retryMaxMs?: number;
+  readonly verify?: PluginRegistryVerifier;
 }
 
 export interface StructuredPaletteItem {
@@ -55,6 +59,8 @@ export class PluginRegistryStore {
   private readonly listeners = new Set<() => void>();
   private stopStream: (() => void) | null = null;
 
+  constructor(private readonly options: { readonly verify?: PluginRegistryVerifier } = {}) {}
+
   snapshot(): PluginRegistrySnapshot {
     return this.value;
   }
@@ -65,15 +71,7 @@ export class PluginRegistryStore {
   }
 
   apply(payload: unknown): PluginRegistrySnapshot {
-    const validated = validateContract('PluginRegistry', payload);
-    if (!validated.ok)
-      throw new Error(`invalid plugin registry payload: ${validated.errors.join('; ')}`);
-    const value: PluginRegistry = validated.value;
-    for (const contribution of value.contributions) {
-      if (!value.plugins.includes(contribution.pluginId)) {
-        throw new Error(`invalid plugin contribution: unknown plugin '${contribution.pluginId}'`);
-      }
-    }
+    const value = validateRegistryPayload(payload);
     if (value.generation < this.value.generation)
       throw new Error('stale plugin registry generation');
     if (value.generation === this.value.generation) return this.value;
@@ -87,6 +85,19 @@ export class PluginRegistryStore {
     return this.value;
   }
 
+  /** Applies a structurally valid snapshot only after the optional signature
+   * verifier accepts it. The synchronous apply is retained for trusted
+   * in-process fixtures and tests. */
+  async applyVerified(
+    payload: unknown,
+    verifier: PluginRegistryVerifier | undefined = this.options.verify,
+  ): Promise<PluginRegistrySnapshot> {
+    const value = validateRegistryPayload(payload);
+    if (verifier !== undefined && !(await verifier(value)))
+      throw new Error('plugin registry integrity verification failed');
+    return this.apply(value);
+  }
+
   async refresh(options: PluginRegistryFetchOptions = {}): Promise<PluginRegistrySnapshot> {
     const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis);
     if (!fetchImpl) throw new Error('no fetch implementation available for plugin registry');
@@ -95,7 +106,7 @@ export class PluginRegistryStore {
     });
     if (!response.ok)
       throw new Error(`plugin registry bridge responded with HTTP ${response.status}`);
-    return this.apply(await response.json());
+    return this.applyVerified(await response.json(), options.verify);
   }
 
   /** Start a reconnecting full-snapshot SSE stream. Applying a malformed or
@@ -148,11 +159,12 @@ export class PluginRegistryStore {
             buffer = lines.pop() ?? '';
             for (const line of lines) {
               const payload = line.startsWith('data:') ? line.slice(5).trim() : '';
-              if (payload) this.apply(JSON.parse(payload));
+              if (payload) await this.applyVerified(JSON.parse(payload), options.verify);
             }
             if (next.done) break;
           }
-          if (buffer.startsWith('data:')) this.apply(JSON.parse(buffer.slice(5).trim()));
+          if (buffer.startsWith('data:'))
+            await this.applyVerified(JSON.parse(buffer.slice(5).trim()), options.verify);
           if (!stopped) throw new Error('plugin registry stream ended');
         } catch (error) {
           if (stopped || controller.signal.aborted) return;
@@ -185,6 +197,103 @@ export class PluginRegistryStore {
       })),
     );
   }
+}
+
+function validateRegistryPayload(payload: unknown): PluginRegistry {
+  const validated = validateContract('PluginRegistry', payload);
+  if (!validated.ok)
+    throw new Error(`invalid plugin registry payload: ${validated.errors.join('; ')}`);
+  const value: PluginRegistry = validated.value;
+  for (const contribution of value.contributions) {
+    if (!value.plugins.includes(contribution.pluginId)) {
+      throw new Error(`invalid plugin contribution: unknown plugin '${contribution.pluginId}'`);
+    }
+  }
+  return value;
+}
+
+/** Creates a browser-native verifier for PEM/SPKI Ed25519 public keys. The
+ * key map is normally supplied by the authenticated app-config endpoint; an
+ * unknown key id or an unsigned snapshot is rejected. */
+export function createPluginRegistryVerifier(
+  publicKeys: Readonly<Record<string, string>>,
+): PluginRegistryVerifier {
+  const imported = new Map<string, Promise<CryptoKey | null>>();
+  return async (payload) => {
+    const integrity = payload.integrity;
+    if (
+      integrity === undefined ||
+      integrity.signature === undefined ||
+      integrity.signedBy === undefined
+    )
+      return false;
+    const publicKey = publicKeys[integrity.signedBy];
+    if (typeof publicKey !== 'string') return false;
+    const digest = await digestPluginRegistry(payload);
+    if (digest !== integrity.sha256) return false;
+    let keyPromise = imported.get(integrity.signedBy);
+    if (keyPromise === undefined) {
+      keyPromise = importRegistryPublicKey(publicKey);
+      imported.set(integrity.signedBy, keyPromise);
+    }
+    const key = await keyPromise;
+    if (key === null || !globalThis.crypto?.subtle) return false;
+    try {
+      return await globalThis.crypto.subtle.verify(
+        { name: 'Ed25519' },
+        key,
+        decodeBase64(integrity.signature) as BufferSource,
+        new TextEncoder().encode(digest),
+      );
+    } catch {
+      return false;
+    }
+  };
+}
+
+async function importRegistryPublicKey(pem: string): Promise<CryptoKey | null> {
+  if (!globalThis.crypto?.subtle) return null;
+  try {
+    const body = pem
+      .replace(/-----BEGIN PUBLIC KEY-----/g, '')
+      .replace(/-----END PUBLIC KEY-----/g, '')
+      .replace(/\s/g, '');
+    return await globalThis.crypto.subtle.importKey(
+      'spki',
+      decodeBase64(body) as BufferSource,
+      { name: 'Ed25519' },
+      false,
+      ['verify'],
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function digestPluginRegistry(payload: PluginRegistry): Promise<string> {
+  if (!globalThis.crypto?.subtle) return '';
+  const unsigned = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => key !== 'integrity'),
+  );
+  const bytes = new TextEncoder().encode(stableJson(unsigned));
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function decodeBase64(value: string): Uint8Array {
+  const decoded = globalThis.atob(value);
+  return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
 }
 
 export const PLUGIN_REGISTRY = new PluginRegistryStore();

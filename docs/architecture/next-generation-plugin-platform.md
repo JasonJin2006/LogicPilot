@@ -105,7 +105,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    modeling 工具别名 facade 已删除，测试 fixture 中的历史变量名不属于生产路径）；
 4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
    已将经契约校验的 replay history 原子持久化到 PackageStore 旁，并支持可选的 canonical
-   snapshot 签名/轮换 keyring，外部 registry 发布与浏览器密钥分发仍待完成。
+   snapshot 签名/轮换 keyring，并通过 authenticated `/api/config` 在 IDE 使用 WebCrypto
+   校验；外部 registry 发布与远端密钥分发仍待完成。
 
 ## 4. 目标架构
 
