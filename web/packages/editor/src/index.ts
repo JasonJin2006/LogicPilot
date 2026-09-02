@@ -69,6 +69,8 @@ export type {
 } from './presentation.js';
 export { modelRunParams } from './runParams.js';
 export type { ModelRunParams } from './runParams.js';
+export { RevisionStore, RevisionStoreError } from './revisionStore.js';
+export type { RevisionStoreOptions } from './revisionStore.js';
 export { applyModelPatch, diffModelDocuments, MODEL_PATCH_VERSION } from './modelPatch.js';
 export type {
   ModelPatch,

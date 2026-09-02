@@ -122,6 +122,9 @@ importers:
 
   web/packages/editor:
     dependencies:
+      '@logicpilot/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       polygon-clipping:
         specifier: ^0.15.7
         version: 0.15.7
