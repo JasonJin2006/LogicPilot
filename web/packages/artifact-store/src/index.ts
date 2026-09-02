@@ -40,6 +40,8 @@ export class FileSystemArtifactStore {
   private readonly rootDir: string;
   private readonly statePath: string;
   private readonly snapshotPath: string;
+  private readonly mutexPath: string;
+  private readonly mutexStaleMs: number;
   private readonly now: () => string;
   private readonly validateOperation?: (operation: TypedOperation) => readonly string[];
 
@@ -47,12 +49,17 @@ export class FileSystemArtifactStore {
     readonly rootDir: string;
     readonly stateName?: string;
     readonly snapshotName?: string;
+    readonly mutexStaleMs?: number;
     readonly now?: () => string;
     readonly validateOperation?: (operation: TypedOperation) => readonly string[];
   }) {
     this.rootDir = resolve(options.rootDir);
     this.statePath = join(this.rootDir, options.stateName ?? 'artifact-graph.json');
     this.snapshotPath = join(this.rootDir, options.snapshotName ?? 'artifact-graph.snapshot.json');
+    this.mutexPath = join(this.rootDir, `${options.stateName ?? 'artifact-graph.json'}.mutex`);
+    this.mutexStaleMs = options.mutexStaleMs ?? 30 * 60 * 1000;
+    if (!Number.isSafeInteger(this.mutexStaleMs) || this.mutexStaleMs < 1_000)
+      throw new ArtifactStoreError('mutexStaleMs must be at least one second', 'invalid');
     this.now = options.now ?? (() => new Date().toISOString());
     this.validateOperation = options.validateOperation;
   }
@@ -68,21 +75,40 @@ export class FileSystemArtifactStore {
     return validateState(parsed);
   }
 
-  write(state: ArtifactGraphState): void {
+  /** Canonical optimistic-concurrency token for callers coordinating writes
+   * across processes. An empty store has the empty token. */
+  version(): string {
+    return this.versionOf(this.read());
+  }
+
+  write(state: ArtifactGraphState, expectedVersion?: string): void {
     const validated = validateState(state);
     mkdirSync(this.rootDir, { recursive: true });
-    const temporary = `${this.statePath}.tmp-${process.pid}-${Date.now()}`;
+    if (!this.acquireMutex())
+      throw new ArtifactStoreError(
+        'artifact graph is being written by another process',
+        'conflict',
+      );
     try {
-      writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');
-      try {
-        renameSync(temporary, this.statePath);
-      } catch {
-        if (existsSync(this.statePath)) unlinkSync(this.statePath);
-        renameSync(temporary, this.statePath);
+      const currentVersion = existsSync(this.statePath) ? canonicalize(this.read()) : '';
+      if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+        throw new ArtifactStoreError('artifact graph changed concurrently', 'conflict');
       }
-    } catch {
-      if (existsSync(temporary)) unlinkSync(temporary);
-      throw new ArtifactStoreError('cannot atomically write artifact graph', 'io');
+      const temporary = `${this.statePath}.tmp-${process.pid}-${Date.now()}`;
+      try {
+        writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');
+        try {
+          renameSync(temporary, this.statePath);
+        } catch {
+          if (existsSync(this.statePath)) unlinkSync(this.statePath);
+          renameSync(temporary, this.statePath);
+        }
+      } catch {
+        if (existsSync(temporary)) unlinkSync(temporary);
+        throw new ArtifactStoreError('cannot atomically write artifact graph', 'io');
+      }
+    } finally {
+      if (existsSync(this.mutexPath)) unlinkSync(this.mutexPath);
     }
   }
 
@@ -101,7 +127,8 @@ export class FileSystemArtifactStore {
       throw new ArtifactStoreError('artifact graph snapshot is not valid JSON', 'invalid');
     }
     const state = validateState(parsed);
-    this.write(state);
+    const currentState = this.read();
+    this.write(state, this.versionOf(currentState));
     return state;
   }
 
@@ -128,7 +155,7 @@ export class FileSystemArtifactStore {
     };
     const checked = validateContract('Artifact', artifact);
     if (!checked.ok) throw new ArtifactStoreError(checked.errors.join('; '), 'invalid');
-    this.write({ ...state, artifacts: [...state.artifacts, checked.value] });
+    this.write({ ...state, artifacts: [...state.artifacts, checked.value] }, this.versionOf(state));
     return checked.value;
   }
 
@@ -194,7 +221,10 @@ export class FileSystemArtifactStore {
     };
     const checked = validateContract('Transaction', transaction);
     if (!checked.ok) throw new ArtifactStoreError(checked.errors.join('; '), 'invalid');
-    this.write({ ...state, transactions: [...state.transactions, checked.value] });
+    this.write(
+      { ...state, transactions: [...state.transactions, checked.value] },
+      this.versionOf(state),
+    );
     return checked.value;
   }
 
@@ -219,12 +249,15 @@ export class FileSystemArtifactStore {
       ...transaction,
       status: errors.length === 0 ? 'validated' : 'rejected',
     };
-    this.write({
-      ...state,
-      transactions: state.transactions.map((candidate) =>
-        candidate.id === transactionId ? next : candidate,
-      ),
-    });
+    this.write(
+      {
+        ...state,
+        transactions: state.transactions.map((candidate) =>
+          candidate.id === transactionId ? next : candidate,
+        ),
+      },
+      this.versionOf(state),
+    );
     if (errors.length > 0) throw new ArtifactStoreError(errors.join('; '), 'validation');
     return next;
   }
@@ -239,12 +272,15 @@ export class FileSystemArtifactStore {
       throw new ArtifactStoreError(`transaction '${transactionId}' is not validated`, 'validation');
     }
     const next: Transaction = { ...transaction, status: 'awaiting-approval', approvedBy };
-    this.write({
-      ...state,
-      transactions: state.transactions.map((candidate) =>
-        candidate.id === transactionId ? next : candidate,
-      ),
-    });
+    this.write(
+      {
+        ...state,
+        transactions: state.transactions.map((candidate) =>
+          candidate.id === transactionId ? next : candidate,
+        ),
+      },
+      this.versionOf(state),
+    );
     return next;
   }
 
@@ -264,12 +300,15 @@ export class FileSystemArtifactStore {
       status: 'rolled-back',
       resolutionRecord,
     };
-    this.write({
-      ...state,
-      transactions: state.transactions.map((candidate) =>
-        candidate.id === transactionId ? next : candidate,
-      ),
-    });
+    this.write(
+      {
+        ...state,
+        transactions: state.transactions.map((candidate) =>
+          candidate.id === transactionId ? next : candidate,
+        ),
+      },
+      this.versionOf(state),
+    );
     return next;
   }
 
@@ -335,13 +374,16 @@ export class FileSystemArtifactStore {
       status: 'committed',
       committedRevisionId: revision.id,
     };
-    this.write({
-      artifacts: state.artifacts,
-      revisions: [...state.revisions, checked.value],
-      transactions: state.transactions.map((candidate) =>
-        candidate.id === transaction.id ? committed : candidate,
-      ),
-    });
+    this.write(
+      {
+        artifacts: state.artifacts,
+        revisions: [...state.revisions, checked.value],
+        transactions: state.transactions.map((candidate) =>
+          candidate.id === transaction.id ? committed : candidate,
+        ),
+      },
+      this.versionOf(state),
+    );
     return checked.value;
   }
 
@@ -372,13 +414,41 @@ export class FileSystemArtifactStore {
         input.transaction,
       ],
     };
-    this.write(next);
+    this.write(next, this.versionOf(state));
     return next;
   }
 
   private writeFile(path: string, state: ArtifactGraphState): void {
     mkdirSync(this.rootDir, { recursive: true });
     writeFileSync(path, `${JSON.stringify(validateState(state), null, 2)}\n`, 'utf8');
+  }
+
+  private versionOf(state: ArtifactGraphState): string {
+    return existsSync(this.statePath) ? canonicalize(state) : '';
+  }
+
+  private acquireMutex(): boolean {
+    const marker = JSON.stringify({ pid: process.pid, createdAt: Date.now() });
+    try {
+      writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
+      return true;
+    } catch {
+      if (!existsSync(this.mutexPath)) return false;
+      try {
+        const raw = JSON.parse(readFileSync(this.mutexPath, 'utf8')) as { createdAt?: unknown };
+        if (typeof raw.createdAt !== 'number' || Date.now() - raw.createdAt < this.mutexStaleMs)
+          return false;
+      } catch {
+        return false;
+      }
+      try {
+        unlinkSync(this.mutexPath);
+        writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
+        return true;
+      } catch {
+        return false;
+      }
+    }
   }
 }
 

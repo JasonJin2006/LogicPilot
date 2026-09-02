@@ -143,6 +143,36 @@ describe('FileSystemArtifactStore', () => {
     expect(store.read().revisions).toHaveLength(1);
   });
 
+  it('rejects a stale cross-process write instead of silently losing state', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-concurrency-'));
+    roots.push(root);
+    const first = new FileSystemArtifactStore({ rootDir: root });
+    const second = new FileSystemArtifactStore({ rootDir: root });
+    first.write(stateFixture());
+    const stale = first.read();
+    const staleVersion = first.version();
+    second.write({
+      ...stale,
+      transactions: [
+        {
+          schema: 'logicpilot.transaction/v1',
+          contractVersion: 1,
+          id: 'tx-new',
+          status: 'proposed',
+          proposedBy: 'runtime',
+          artifactRefs: [{ artifactId: 'model.main' }],
+          operations: [{ opId: 'op-new', opType: 'probe', payload: {} }],
+        },
+      ],
+    });
+    expect(() =>
+      first.write(
+        { ...stale, artifacts: [...stale.artifacts, { ...stale.artifacts[0]!, id: 'new' }] },
+        staleVersion,
+      ),
+    ).toThrow(/changed concurrently/);
+  });
+
   it('rejects invalid operations without committing them', () => {
     const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-validation-'));
     roots.push(root);

@@ -143,3 +143,4 @@
 - [0112 Remove IDE Modeling Tool Compatibility Facade](0112-remove-ide-modeling-tool-facade)
 - [0113 Signed Plugin Registry Snapshots](0113-signed-plugin-registry-snapshots)
 - [0114 Browser Registry Signature Verification](0114-browser-registry-signature-verification)
+- [0115 Artifact Store Cross-Process Concurrency](0115-artifact-store-cross-process-concurrency)
