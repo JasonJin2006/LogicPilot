@@ -75,6 +75,8 @@ export interface AssistantSessionState {
   lastPatch: ModelPatch | null;
   /** One-line description of the last AI-applied change. */
   lastChangeSummary: string;
+  /** Persistent Artifact Graph revision produced by the last AI change. */
+  lastArtifactRevisionId?: string;
   /** The only AI transaction that may currently be undone. Kept in memory;
    * persisted conversation records only retain its opaque id. */
   activeUndo: {

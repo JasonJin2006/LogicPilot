@@ -226,6 +226,31 @@ export class FileSystemArtifactStore {
     return next;
   }
 
+  rollbackTransaction(
+    transactionId: string,
+    resolutionRecord = 'artifact-graph.rollback',
+  ): Transaction {
+    const state = this.read();
+    const transaction = state.transactions.find((candidate) => candidate.id === transactionId);
+    if (!transaction)
+      throw new ArtifactStoreError(`transaction '${transactionId}' was not found`, 'not-found');
+    if (transaction.status === 'committed') {
+      throw new ArtifactStoreError('committed transactions cannot be rolled back', 'validation');
+    }
+    const next: Transaction = {
+      ...transaction,
+      status: 'rolled-back',
+      resolutionRecord,
+    };
+    this.write({
+      ...state,
+      transactions: state.transactions.map((candidate) =>
+        candidate.id === transactionId ? next : candidate,
+      ),
+    });
+    return next;
+  }
+
   commit(input: {
     readonly transactionId: string;
     readonly revisionId: string;

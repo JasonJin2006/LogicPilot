@@ -20,6 +20,9 @@ That would allow a stale proposal to bypass approval and revision-head checks.
 propose -> validate -> approve -> commit
 ```
 
+An uncommitted proposal may also be closed with `rollback` when local
+application or compilation fails.
+
 Every transition rewrites one validated graph state atomically. `commit`
 requires the transaction's expected artifact head and rejects stale writers,
 duplicate revisions, missing artifacts and unapproved transactions. Operation
@@ -28,7 +31,7 @@ particular paradigm.
 
 The Node app-server exposes this boundary through `POST /api/artifact-graph`
 with an explicit `action` (`create-artifact`, `propose`, `validate`, `approve`,
-or `commit`). Responses contain only the resulting validated entity and stable
+`commit`, or `rollback`). Responses contain only the resulting validated entity and stable
 error status; filesystem exception text and paths are not returned.
 
 ## Consequences

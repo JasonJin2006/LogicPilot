@@ -169,6 +169,14 @@ export async function handleArtifactGraph(req, res) {
         case 'approve':
           result = store.approve(String(input.transactionId ?? ''), String(input.approvedBy ?? ''));
           break;
+        case 'rollback':
+          result = store.rollbackTransaction(
+            String(input.transactionId ?? ''),
+            typeof input.resolutionRecord === 'string'
+              ? input.resolutionRecord
+              : 'artifact-graph.rollback',
+          );
+          break;
         case 'commit':
           result = store.commit(input.input ?? {});
           break;

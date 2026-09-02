@@ -17,6 +17,11 @@ import { useModelStore } from '../../../state/modelStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useWorkspaceStore } from '../../../state/workspaceStore';
 import { compileCurrent } from './compile';
+import {
+  beginModelPatchTransaction,
+  commitModelPatchTransaction,
+  rollbackModelPatchTransaction,
+} from '../../../artifacts/artifactGraphClient';
 
 function stringArg(args: Record<string, unknown>, key: string): string | null {
   return typeof args[key] === 'string' ? (args[key] as string) : null;
@@ -151,14 +156,35 @@ export const MODEL_MUTATION_TOOLS: readonly AssistantTool[] = [
             .join('; ')}`,
         };
       }
+      let pendingArtifactTransaction;
+      try {
+        pendingArtifactTransaction = await beginModelPatchTransaction(patch);
+      } catch (error) {
+        return {
+          ok: false,
+          error: `artifact transaction could not be prepared: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
       const result = store.applyPatch(patch);
-      if (!result.ok)
+      if (!result.ok) {
+        await rollbackModelPatchTransaction(pendingArtifactTransaction, 'local-apply-failed').catch(
+          () => undefined,
+        );
         return { ok: false, error: result.diagnostics.map((entry) => entry.message).join('; ') };
+      }
       const after = useModelStore.getState().document;
       let compiled;
       try {
         compiled = await compileCurrent(session, signal);
+        const revisionId = await commitModelPatchTransaction(pendingArtifactTransaction);
+        if (revisionId !== undefined) session.lastArtifactRevisionId = revisionId;
       } catch (error) {
+        await rollbackModelPatchTransaction(
+          pendingArtifactTransaction,
+          'local-compile-or-commit-failed',
+        ).catch(() => undefined);
         store.undo();
         session.dsl = generateDsl(before);
         session.documentSnapshot = before;

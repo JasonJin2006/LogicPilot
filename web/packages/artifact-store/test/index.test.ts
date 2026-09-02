@@ -128,4 +128,21 @@ describe('FileSystemArtifactStore', () => {
     expect(store.transaction('tx-invalid').status).toBe('rejected');
     expect(store.read().revisions).toHaveLength(0);
   });
+
+  it('closes an uncommitted transaction with a durable rollback record', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-rollback-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root });
+    store.write(stateFixture());
+    store.propose({
+      id: 'tx-rollback',
+      proposedBy: 'agent',
+      artifactRefs: [{ artifactId: 'model.main' }],
+      operations: [{ opId: 'op-1', opType: 'model-patch', payload: {} }],
+    });
+    const rolledBack = store.rollbackTransaction('tx-rollback', 'local-apply-failed');
+    expect(rolledBack.status).toBe('rolled-back');
+    expect(rolledBack.resolutionRecord).toBe('local-apply-failed');
+    expect(() => store.rollbackTransaction('tx-rollback')).not.toThrow();
+  });
 });
