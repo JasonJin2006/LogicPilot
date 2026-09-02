@@ -22,3 +22,6 @@ Builtin, OpenAI Agents and future Cordis implementations can be compared with
 the same deterministic contract tests. Differences become explicit data for a
 migration decision instead of hidden behavior changes inside the assistant
 loop.
+
+The OpenAI adapter package now runs a real SDK `ScriptedModel` fixture through
+this harness; the tool-interruption case is green without network credentials.
