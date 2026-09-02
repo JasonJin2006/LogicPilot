@@ -7,22 +7,22 @@ import {
   type SysMLLayout,
   type SysMLProjection,
   type SysMLPosition,
-} from '../sysml/sysmlProjection';
+} from '../plugins/builtin/semantics';
 import {
   extractExecutionTargets,
   runExecutionTarget,
   SYSML_EXECUTION_CONFORMANCE_VERSION,
   type TraceStep,
-} from '../sysml/sysmlExecution';
+} from '../plugins/builtin/semantics';
 import {
   appendEvidence,
   makeEvidenceId,
   parseEvidence,
   serializeEvidence,
   type SysMLEvidenceRecord,
-} from '../sysml/sysmlEvidence';
-import { autoLayoutChunkedWithElk, autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
-import { buildLinkedSysMLModel, type SysMLFileUnit } from '../sysml/sysmlLinkedModel';
+} from '../plugins/builtin/semantics';
+import { autoLayoutChunkedWithElk, autoLayoutWithElk } from '../plugins/builtin/semantics';
+import { buildLinkedSysMLModel, type SysMLFileUnit } from '../plugins/builtin/semantics';
 import { persistEvidenceArtifact } from '../artifacts/artifactGraphClient';
 
 export type SysMLViewMode =

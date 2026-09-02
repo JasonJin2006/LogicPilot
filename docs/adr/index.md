@@ -125,3 +125,4 @@
 - [0094 SDK AgentEngine Adapter Boundary](0094-sdk-agent-engine-adapter)
 - [0095 View Planner and Extended Canvas Contract](0095-view-planner-canvas-contract)
 - [0096 Agent View Planning Tool](0096-agent-view-planning-tool)
+- [0097 Builtin Semantics Composition Seam](0097-builtin-semantics-composition-seam)

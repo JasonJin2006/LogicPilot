@@ -7,16 +7,20 @@ import type { AssistantTool } from '../../toolTypes';
 import { useSysMLStore, type SysMLViewMode } from '../../../state/sysmlStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useUiStore } from '../../../state/uiStore';
-import { projectSysML } from '../../../sysml/sysmlProjection';
 import {
   addRelationStatement,
   insertElement,
   renameElement,
   type RelationVerb,
-} from '../../../sysml/sysmlEdits';
-import { definitionAt, referencesOf } from '../../../sysml/sysmlLanguage';
-import { lowerStateMachine } from '../../../sysml/sysmlLowering';
-import { buildSysMLProjectIndex, resolveInIndex } from '../../../sysml/sysmlProjectIndex';
+} from '../../../plugins/builtin/semantics';
+import {
+  definitionAt,
+  buildSysMLProjectIndex,
+  lowerStateMachine,
+  projectSysML,
+  resolveInIndex,
+  referencesOf,
+} from '../../../plugins/builtin/semantics';
 import {
   beginArtifactTransaction,
   commitArtifactTransaction,
