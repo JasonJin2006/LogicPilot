@@ -715,6 +715,13 @@ export interface PluginLockfile {
   readonly plugins: ReadonlyArray<PluginLockEntry>;
 }
 
+// --- PluginRegistryIntegrity (plugin-registry.schema.json) ---
+export interface PluginRegistryIntegrity {
+  readonly sha256: Sha256Hex;
+  readonly signature?: string;
+  readonly signedBy?: string;
+}
+
 // --- PluginRegistry (plugin-registry.schema.json) ---
 export interface PluginRegistry {
   readonly schema: "logicpilot.plugin-registry/v1";
@@ -722,6 +729,7 @@ export interface PluginRegistry {
   readonly generation: number;
   readonly plugins: ReadonlyArray<PluginId>;
   readonly contributions: ReadonlyArray<PluginContributionSet>;
+  readonly integrity?: PluginRegistryIntegrity;
 }
 
 // --- PluginRuntimeSession (plugin-runtime-session.schema.json) ---

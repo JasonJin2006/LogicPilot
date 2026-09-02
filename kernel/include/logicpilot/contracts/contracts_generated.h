@@ -407,6 +407,7 @@ struct PluginMigration;
 struct PluginIntegrity;
 struct PluginLockEntry;
 struct PluginLockfile;
+struct PluginRegistryIntegrity;
 struct PluginRegistry;
 struct PluginRuntimeSession;
 struct ViewQuery;
@@ -920,6 +921,19 @@ struct PluginPaletteContribution {
 [[nodiscard]] bool parse(std::string_view text, PluginPaletteContribution& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginPaletteContribution& value);
 [[nodiscard]] std::string dump(const PluginPaletteContribution& value);
+
+// plugin-registry.schema.json
+struct PluginRegistryIntegrity {
+  std::string sha256;
+  std::optional<std::string> signature;
+  std::optional<std::string> signed_by;
+};
+
+[[nodiscard]] bool operator==(const PluginRegistryIntegrity& lhs, const PluginRegistryIntegrity& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRegistryIntegrity& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginRegistryIntegrity& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginRegistryIntegrity& value);
+[[nodiscard]] std::string dump(const PluginRegistryIntegrity& value);
 
 // plugin-runtime-session.schema.json
 struct PluginRuntimeSession {
@@ -1537,6 +1551,7 @@ struct PluginRegistry {
   std::int64_t generation;
   std::vector<std::string> plugins;
   std::vector<PluginContributionSet> contributions;
+  std::optional<PluginRegistryIntegrity> integrity;
 };
 
 [[nodiscard]] bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs);

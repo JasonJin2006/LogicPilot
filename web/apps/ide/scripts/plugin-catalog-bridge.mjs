@@ -6,6 +6,8 @@
 // LOGICPILOT_PLUGIN_ROOTS (JSON: {"system":[...],"user":[...],"workspace":[...]})
 // configures the scanned directories. Unset means no roots -> empty catalog.
 
+import { createPrivateKey } from 'node:crypto';
+
 import {
   createPluginCatalogHandler,
   createPluginManagementHandler,
@@ -21,6 +23,7 @@ import {
   NodePluginRuntime,
   pluginRootsFromEnv,
   FileSystemRegistryHistory,
+  signPluginRegistry,
 } from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 let nodePluginRuntime;
@@ -29,6 +32,7 @@ const registryHistory = [];
 const REGISTRY_HISTORY_LIMIT = 32;
 let registrySubscription;
 let registryHistoryStore;
+let registrySigner;
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {
@@ -278,12 +282,22 @@ export function handlePluginRegistry(req, res) {
     res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
     return;
   }
+  let payload;
+  try {
+    payload = registryPayload();
+  } catch (error) {
+    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(
+      JSON.stringify({ ok: false, error: 'plugin registry signing configuration is invalid' }),
+    );
+    return;
+  }
   res.writeHead(200, {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
   });
-  res.end(JSON.stringify(registryPayload()));
+  res.end(JSON.stringify(payload));
 }
 
 function readArtifactBody(req) {
@@ -457,13 +471,22 @@ export function handlePluginRegistryStream(req, res) {
     res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
     return;
   }
+  let current;
+  try {
+    current = registryPayload();
+  } catch {
+    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(
+      JSON.stringify({ ok: false, error: 'plugin registry signing configuration is invalid' }),
+    );
+    return;
+  }
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache, no-store',
     connection: 'keep-alive',
     'x-content-type-options': 'nosniff',
   });
-  const current = registryPayload();
   rememberRegistrySnapshot(current);
   const lastEventId = Number(req.headers?.['last-event-id'] ?? 0);
   const replay = Number.isSafeInteger(lastEventId)
@@ -519,13 +542,33 @@ function registryEvent(entry) {
 function registryPayload() {
   const snapshot = nodePluginRuntime?.snapshot();
   const registry = nodePluginRuntime?.contributionRegistry().snapshot();
-  return {
+  const payload = {
     schema: 'logicpilot.plugin-registry/v1',
     contractVersion: 1,
     generation: snapshot?.generation ?? registry?.generation ?? 0,
     plugins: snapshot?.host.ids() ?? [],
     contributions: (registry?.sets ?? []).map(sanitizeContributionSet),
   };
+  const signer = getRegistrySigner();
+  return signer == null ? payload : signPluginRegistry(payload, signer.signedBy, signer.privateKey);
+}
+
+function getRegistrySigner() {
+  if (registrySigner !== undefined) return registrySigner;
+  const pem = process.env.LOGICPILOT_PLUGIN_REGISTRY_SIGNING_PRIVATE_KEY;
+  if (!pem) {
+    registrySigner = null;
+    return registrySigner;
+  }
+  try {
+    registrySigner = {
+      signedBy: process.env.LOGICPILOT_PLUGIN_REGISTRY_SIGNING_KEY_ID ?? 'registry-signing-key',
+      privateKey: createPrivateKey({ key: pem, format: 'pem' }),
+    };
+    return registrySigner;
+  } catch {
+    throw new Error('plugin registry signing private key is invalid');
+  }
 }
 
 function sanitizeContributionSet(set) {
@@ -596,4 +639,5 @@ export async function stopNodePluginRuntime() {
   registryClients.clear();
   registryHistory.length = 0;
   registryHistoryStore = undefined;
+  registrySigner = undefined;
 }

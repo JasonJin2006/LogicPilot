@@ -98,6 +98,7 @@ export interface ContractTypes {
   PluginIntegrity: C.PluginIntegrity;
   PluginLockEntry: C.PluginLockEntry;
   PluginLockfile: C.PluginLockfile;
+  PluginRegistryIntegrity: C.PluginRegistryIntegrity;
   PluginRegistry: C.PluginRegistry;
   PluginRuntimeSession: C.PluginRuntimeSession;
   CanvasEngineId: C.CanvasEngineId;

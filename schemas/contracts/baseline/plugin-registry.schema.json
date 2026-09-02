@@ -4,6 +4,16 @@
   "title": "LogicPilot active plugin registry",
   "description": "Generation-addressed registry snapshot delivered from the Node runtime to the IDE.",
   "$defs": {
+    "PluginRegistryIntegrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {
+        "sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "signature": { "type": "string", "minLength": 1 },
+        "signedBy": { "type": "string", "minLength": 1 }
+      }
+    },
     "PluginRegistry": {
       "type": "object",
       "additionalProperties": false,
@@ -16,7 +26,8 @@
         "contributions": {
           "type": "array",
           "items": { "$ref": "plugin-contributions.schema.json#/$defs/PluginContributionSet" }
-        }
+        },
+        "integrity": { "$ref": "#/$defs/PluginRegistryIntegrity" }
       }
     }
   }

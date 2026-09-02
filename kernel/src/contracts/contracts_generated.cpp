@@ -105,6 +105,7 @@ nlohmann::ordered_json to_json_value(const PluginMigration& v) { return to_json(
 nlohmann::ordered_json to_json_value(const PluginIntegrity& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockEntry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockfile& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginRegistryIntegrity& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginRegistry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginRuntimeSession& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewQuery& v) { return to_json(v); }
@@ -8267,6 +8268,92 @@ bool operator==(const PluginLockfile& lhs, const PluginLockfile& rhs) {
       && lhs.plugins == rhs.plugins;
 }
 
+bool parse_json(const nlohmann::ordered_json& j, PluginRegistryIntegrity& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginRegistryIntegrity";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "sha256",
+      "signature",
+      "signedBy",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginRegistryIntegrity: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sha256", "PluginRegistryIntegrity");
+      if (!value.is_string()) {
+        error = std::string("PluginRegistryIntegrity.sha256") + ": expected string";
+        return false;
+      }
+      out.sha256 = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("signature");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginRegistryIntegrity.signature") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.signature = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("signedBy");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginRegistryIntegrity.signedBy") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.signed_by = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginRegistryIntegrity& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginRegistryIntegrity& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["sha256"] = to_json_value(value.sha256);
+  if (value.signature.has_value()) {
+    j["signature"] = to_json_value(*value.signature);
+  }
+  if (value.signed_by.has_value()) {
+    j["signedBy"] = to_json_value(*value.signed_by);
+  }
+  return j;
+}
+
+std::string dump(const PluginRegistryIntegrity& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginRegistryIntegrity& lhs, const PluginRegistryIntegrity& rhs) {
+  return lhs.sha256 == rhs.sha256
+      && lhs.signature == rhs.signature
+      && lhs.signed_by == rhs.signed_by;
+}
+
 bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::string& error) {
   if (!j.is_object()) {
     error = "expected object for PluginRegistry";
@@ -8278,6 +8365,7 @@ bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::strin
       "generation",
       "plugins",
       "contributions",
+      "integrity",
   };
   for (auto it = j.begin(); it != j.end(); ++it) {
     bool known = false;
@@ -8340,6 +8428,17 @@ bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::strin
         }
       }
   }
+  {
+    auto field_it = j.find("integrity");
+    if (field_it != j.end()) {
+      PluginRegistryIntegrity parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("PluginRegistry.integrity") + ": " + error;
+        return false;
+      }
+      out.integrity = std::move(parsed);
+    }
+  }
   (void)error;
   return true;
 }
@@ -8361,6 +8460,9 @@ nlohmann::ordered_json to_json(const PluginRegistry& value) {
     j["generation"] = to_json_value(value.generation);
     j["plugins"] = to_json_value(value.plugins);
     j["contributions"] = to_json_value(value.contributions);
+  if (value.integrity.has_value()) {
+    j["integrity"] = to_json(*value.integrity);
+  }
   return j;
 }
 
@@ -8371,7 +8473,8 @@ bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs) {
       && lhs.contract_version == rhs.contract_version
       && lhs.generation == rhs.generation
       && lhs.plugins == rhs.plugins
-      && lhs.contributions == rhs.contributions;
+      && lhs.contributions == rhs.contributions
+      && lhs.integrity == rhs.integrity;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PluginRuntimeSession& out, std::string& error) {
