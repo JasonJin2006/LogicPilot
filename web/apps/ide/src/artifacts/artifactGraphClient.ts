@@ -23,6 +23,14 @@ export interface PendingArtifactTransaction {
   readonly digest?: string;
 }
 
+export interface ArtifactTransactionInput {
+  readonly artifactId: string;
+  readonly artifactKind: 'semantic-model' | 'source-document' | 'view-layout';
+  readonly operationType: string;
+  readonly payload: unknown;
+  readonly actor?: string;
+}
+
 function requestUrl(apiBase: string): string {
   return `${apiBase.replace(/\/$/, '')}/api/artifact-graph`;
 }
@@ -77,13 +85,12 @@ async function call<T>(
   return payload as T;
 }
 
-/** Begin a server-side transaction for a model patch. In unit-test/SSR
- * environments there is no app server, so the local editor remains usable and
- * the returned transaction is explicitly disabled rather than silently
- * pretending it was persisted. */
-export async function beginModelPatchTransaction(
-  patch: ModelPatch,
-  actor = 'agent',
+/** Begin a server-side transaction for any supported artifact operation. In
+ * unit-test/SSR environments there is no app server, so the local editor
+ * remains usable and the returned transaction is explicitly disabled rather
+ * than silently pretending it was persisted. */
+export async function beginArtifactTransaction(
+  input: ArtifactTransactionInput,
 ): Promise<PendingArtifactTransaction> {
   if (typeof window === 'undefined') return { enabled: false };
   const config = await getAppConfig();
@@ -93,23 +100,31 @@ export async function beginModelPatchTransaction(
   // A development server may intentionally run without a persistence root.
   // Keep the local editor usable, but make the absence explicit to callers.
   if (graph.configured === false) return { enabled: false };
-  if (!graph.artifacts.some((artifact) => artifact.id === MODEL_ARTIFACT_ID)) {
+  if (!graph.artifacts.some((artifact) => artifact.id === input.artifactId)) {
     await call(config.apiBase, headers, {
       action: 'create-artifact',
-      input: { id: MODEL_ARTIFACT_ID, kind: 'semantic-model', createdBy: actor },
+      input: {
+        id: input.artifactId,
+        kind: input.artifactKind,
+        createdBy: input.actor ?? 'agent',
+      },
     });
   }
   const head = graph.revisions
-    .filter((revision) => revision.artifactId === MODEL_ARTIFACT_ID)
+    .filter((revision) => revision.artifactId === input.artifactId)
     .at(-1);
-  const operation = { opId: randomId('op'), opType: 'model-patch', payload: patch };
+  const operation = {
+    opId: randomId('op'),
+    opType: input.operationType,
+    payload: input.payload,
+  };
   const transactionId = randomId('tx');
   await call(config.apiBase, headers, {
     action: 'propose',
     input: {
       id: transactionId,
-      proposedBy: actor,
-      artifactRefs: [{ artifactId: MODEL_ARTIFACT_ID, ...(head ? { revisionId: head.id } : {}) }],
+      proposedBy: input.actor ?? 'agent',
+      artifactRefs: [{ artifactId: input.artifactId, ...(head ? { revisionId: head.id } : {}) }],
       operations: [operation],
     },
   });
@@ -117,14 +132,27 @@ export async function beginModelPatchTransaction(
   return {
     enabled: true,
     transactionId,
-    artifactId: MODEL_ARTIFACT_ID,
-    digest: await sha256Hex({ artifactId: MODEL_ARTIFACT_ID, operations: [operation] }),
+    artifactId: input.artifactId,
+    digest: await sha256Hex({ artifactId: input.artifactId, operations: [operation] }),
   };
+}
+
+export async function beginModelPatchTransaction(
+  patch: ModelPatch,
+  actor = 'agent',
+): Promise<PendingArtifactTransaction> {
+  return beginArtifactTransaction({
+    artifactId: MODEL_ARTIFACT_ID,
+    artifactKind: 'semantic-model',
+    operationType: 'model-patch',
+    payload: patch,
+    actor,
+  });
 }
 
 /** Approve and commit a transaction after local application and compilation
  * have succeeded. If either phase fails, callers should invoke rollback. */
-export async function commitModelPatchTransaction(
+export async function commitArtifactTransaction(
   pending: PendingArtifactTransaction,
   actor = 'user',
 ): Promise<string | undefined> {
@@ -156,7 +184,14 @@ export async function commitModelPatchTransaction(
   return committed.result.id;
 }
 
-export async function rollbackModelPatchTransaction(
+export async function commitModelPatchTransaction(
+  pending: PendingArtifactTransaction,
+  actor = 'user',
+): Promise<string | undefined> {
+  return commitArtifactTransaction(pending, actor);
+}
+
+export async function rollbackArtifactTransaction(
   pending: PendingArtifactTransaction,
   reason: string,
 ): Promise<void> {
@@ -168,6 +203,13 @@ export async function rollbackModelPatchTransaction(
     transactionId: pending.transactionId,
     resolutionRecord: reason,
   });
+}
+
+export async function rollbackModelPatchTransaction(
+  pending: PendingArtifactTransaction,
+  reason: string,
+): Promise<void> {
+  return rollbackArtifactTransaction(pending, reason);
 }
 
 export { MODEL_ARTIFACT_ID, canonicalize, sha256Hex };

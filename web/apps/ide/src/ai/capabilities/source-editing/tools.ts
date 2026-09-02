@@ -3,6 +3,11 @@ import { refreshCanvasDocument } from '../../../state/projectSync';
 import { useProjectStore } from '../../../state/projectStore';
 import { useWorkspaceStore } from '../../../state/workspaceStore';
 import { readProjectFile } from '../../../state/tauriFs';
+import {
+  beginArtifactTransaction,
+  commitArtifactTransaction,
+  rollbackArtifactTransaction,
+} from '../../../artifacts/artifactGraphClient';
 
 const SOURCE_ROOTS = ['model/', 'presentation/', 'experiments/'];
 const MAX_SOURCE_BYTES = 512 * 1024;
@@ -113,7 +118,45 @@ export const SOURCE_EDITING_TOOLS: readonly AssistantTool[] = [
             'source files in a plain-folder workspace cannot be patched from here; edit the file in the IDE or open the project as a bundle',
         };
       }
+      let pending;
+      try {
+        pending = await beginArtifactTransaction({
+          artifactId: `source:${path}`,
+          artifactKind: path.startsWith('presentation/') ? 'view-layout' : 'source-document',
+          operationType: 'source-patch',
+          payload: {
+            path,
+            expectedChecksum: expected,
+            oldText,
+            newText: String(args.newText),
+          },
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          error: `artifact transaction could not be prepared: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
       project.updateFiles((files) => ({ ...files, [path]: next }));
+      try {
+        await commitArtifactTransaction(pending);
+      } catch (error) {
+        const currentBundle = useProjectStore.getState().bundle;
+        if (currentBundle?.files[path] === next) {
+          useProjectStore.getState().updateFiles((files) => ({ ...files, [path]: current }));
+        }
+        await rollbackArtifactTransaction(pending, 'source-patch-commit-failed').catch(
+          () => undefined,
+        );
+        return {
+          ok: false,
+          error: `artifact transaction could not be committed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
       // Keep the user's tabs/views; only the parsed projection swaps.
       if (path.startsWith('model/')) refreshCanvasDocument();
       return {
