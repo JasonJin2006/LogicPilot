@@ -16,3 +16,4 @@ export function handleAiProviderTest(req: unknown, res: unknown): Promise<void>;
 export function handleMcpCapabilities(req: unknown, res: unknown): Promise<void>;
 export function handleMcpCall(req: unknown, res: unknown): Promise<void>;
 export function handleConfig(req: unknown, res: unknown): void;
+export function handleAgentStep(req: unknown, res: unknown): Promise<void>;

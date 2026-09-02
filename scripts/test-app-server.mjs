@@ -132,6 +132,13 @@ try {
   assert.equal(configResponse.status, 200);
   const config = await configResponse.json();
   assert.match(config.wsUrl, /^ws:\/\/127\.0\.0\.1:\d+\/sim\?token=/);
+  assert.equal(config.agentEngine, 'builtin');
+  const disabledSdk = await apiFetch(`${baseUrl}/api/agent-step`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  assert.equal(disabledSdk.status, 503);
   const registryResponse = await apiFetch(`${baseUrl}/api/plugin-registry`);
   assert.equal(registryResponse.status, 200);
   const registry = await registryResponse.json();

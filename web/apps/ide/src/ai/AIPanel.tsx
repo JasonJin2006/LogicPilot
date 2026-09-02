@@ -907,6 +907,7 @@ export function AIPanel() {
       history,
       apiBase: config?.apiBase ?? '',
       sessionToken: config?.sessionToken,
+      engineId: config?.agentEngine ?? 'builtin',
       // Dynamic discovery (plan §7): capabilities see the active document's
       // contribution type and mount only their relevant tools.
       toolScope: {

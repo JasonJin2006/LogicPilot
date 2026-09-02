@@ -32,6 +32,7 @@ import {
   handleAiValidate,
   handleConfig,
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
+import { handleAgentStep } from '../web/apps/ide/scripts/agent-endpoint.mjs';
 import {
   handlePluginCatalog,
   handlePluginRegistry,
@@ -256,6 +257,11 @@ async function main() {
     if (pathname === '/api/assistant/stream') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handleAiAssistantStream(req, res));
+      return;
+    }
+    if (pathname === '/api/agent-step') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handleAgentStep(req, res));
       return;
     }
     if (pathname === '/api/config') {

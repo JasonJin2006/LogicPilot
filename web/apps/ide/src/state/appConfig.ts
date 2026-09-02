@@ -7,6 +7,7 @@ export interface AppConfig {
   apiBase: string;
   wsUrl: string;
   sessionToken: string;
+  agentEngine: 'builtin' | 'sdk.openai-agents';
 }
 
 let cached: AppConfig | null | undefined;
@@ -22,11 +23,13 @@ export async function getAppConfig(): Promise<AppConfig | null> {
         api_base: string;
         ws_url: string;
         session_token: string;
+        agent_engine?: string;
       };
       cached = {
         apiBase: config.api_base,
         wsUrl: config.ws_url,
         sessionToken: config.session_token,
+        agentEngine: config.agent_engine === 'sdk.openai-agents' ? 'sdk.openai-agents' : 'builtin',
       };
       return cached;
     } catch {
@@ -49,11 +52,13 @@ export async function getAppConfig(): Promise<AppConfig | null> {
     const config = (await response.json()) as {
       wsUrl?: string;
       sessionToken?: string;
+      agentEngine?: string;
     };
     cached = {
       apiBase: '',
       wsUrl: config.wsUrl ?? '',
       sessionToken: config.sessionToken ?? '',
+      agentEngine: config.agentEngine === 'sdk.openai-agents' ? 'sdk.openai-agents' : 'builtin',
     };
     return cached;
   } catch {

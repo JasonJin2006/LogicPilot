@@ -94,6 +94,8 @@ export interface RunAssistantOptions {
   /** Base URL prefix for the assistant endpoint ('' in the desktop app). */
   apiBase?: string;
   sessionToken?: string;
+  /** Engine selected by the app-server; builtin remains the default. */
+  engineId?: 'builtin' | 'sdk.openai-agents';
   /** Capability packages mounted by the host (for example modeling tools). */
   capabilities?: string[];
   /** Where this turn runs (the active document's contribution type). When
@@ -354,6 +356,9 @@ async function requestStep(
     ...resolveAgentTools(options.capabilities, options.toolScope),
     ...(options.additionalTools ?? []),
   ];
+  if (options.engineId === 'sdk.openai-agents') {
+    return requestSdkStep(messages, context, options, tools);
+  }
   const engine = new BuiltinAgentEngine(({ messages: inputMessages, context: inputContext }) =>
     requestStepTransport(inputMessages.slice(), inputContext as AssistantContext, options),
   );
@@ -369,6 +374,47 @@ async function requestStep(
     tools: toolDescriptors(tools),
   });
   return decodeBuiltinAgentResult(result);
+}
+
+async function requestSdkStep(
+  messages: AssistantTurnMessage[],
+  context: AssistantContext,
+  options: RunAssistantOptions,
+  tools: readonly AssistantTool[],
+): Promise<AssistantStepResponse> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(`${options.apiBase ?? ''}/api/agent-step`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(options.sessionToken ? { 'x-logicpilot-session': options.sessionToken } : {}),
+    },
+    body: JSON.stringify({
+      schema: 'logicpilot.agent-step-request/v1',
+      contractVersion: 1,
+      turnId: `ide-turn-${Date.now()}-${++agentStepSequence}`,
+      engineId: 'sdk.openai-agents',
+      stepIndex: 0,
+      input: { messages, context },
+      tools: toolDescriptors(tools),
+      compiledContext: context,
+    }),
+    signal: options.signal,
+  });
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    throw new Error(
+      typeof data === 'object' && data !== null && 'error' in data
+        ? String((data as { error?: unknown }).error)
+        : `agent engine request failed (HTTP ${response.status})`,
+    );
+  }
+  return decodeBuiltinAgentResult(data as Parameters<typeof decodeBuiltinAgentResult>[0]);
 }
 
 const TOOL_LABELS: Record<string, string> = {
