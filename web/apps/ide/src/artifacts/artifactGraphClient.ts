@@ -257,4 +257,31 @@ export async function persistModelSnapshot(
   }
 }
 
+/** Persist a simulation execution and bind it to the model revision known by
+ * the assistant session. The run artifact is immutable and can be queried
+ * independently of the current canvas head. */
+export async function persistRunArtifact(input: {
+  readonly modelRevisionId?: string;
+  readonly result: unknown;
+}): Promise<string | undefined> {
+  const pending = await beginArtifactTransaction({
+    artifactId: `run:${randomId('execution')}`,
+    artifactKind: 'run',
+    operationType: 'simulation-run',
+    payload: {
+      modelRevisionId: input.modelRevisionId ?? null,
+      result: input.result,
+    },
+    actor: 'runtime',
+  });
+  try {
+    return await commitArtifactTransaction(pending, 'runtime');
+  } catch (error) {
+    await rollbackArtifactTransaction(pending, 'simulation-run-commit-failed').catch(
+      () => undefined,
+    );
+    throw error;
+  }
+}
+
 export { MODEL_ARTIFACT_ID, canonicalize, sha256Hex };

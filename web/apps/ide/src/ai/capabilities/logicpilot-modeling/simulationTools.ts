@@ -6,6 +6,7 @@ import { useModelStore } from '../../../state/modelStore';
 import { compileCurrent } from './compile';
 import { summarizeMetrics } from './metrics';
 import { undoAssistantChange } from './undo';
+import { persistRunArtifact } from '../../../artifacts/artifactGraphClient';
 
 function stringArg(args: Record<string, unknown>, key: string): string | null {
   return typeof args[key] === 'string' ? (args[key] as string) : null;
@@ -88,16 +89,38 @@ export const MODEL_SIMULATION_TOOLS: readonly AssistantTool[] = [
       session.runStatus = 'running';
       const previousRunMetrics = session.runMetrics;
       const run = await aiRunDsl(session.dsl, experiment, signal);
+      let artifactRevisionId: string | undefined;
+      let artifactSyncError: string | undefined;
+      try {
+        artifactRevisionId = await persistRunArtifact({
+          modelRevisionId: session.lastArtifactRevisionId,
+          result: run,
+        });
+      } catch (error) {
+        artifactSyncError = error instanceof Error ? error.message : String(error);
+      }
       if (!run.ok || run.metrics === undefined) {
         session.runStatus = 'failed';
         session.runSummary = run.runSummary ?? 'run failed';
-        return { ok: false, error: 'run failed', diagnostics: run.diagnostics };
+        return {
+          ok: false,
+          error: 'run failed',
+          diagnostics: run.diagnostics,
+          ...(artifactRevisionId === undefined ? {} : { artifactRevisionId }),
+          ...(artifactSyncError === undefined ? {} : { artifactSyncError }),
+        };
       }
       session.runStatus = 'finished';
       session.previousRunMetrics = previousRunMetrics;
       session.runMetrics = run.metrics;
       session.runSummary = run.runSummary;
-      return { ok: true, metrics: summarizeMetrics(run.metrics), summary: run.runSummary };
+      return {
+        ok: true,
+        metrics: summarizeMetrics(run.metrics),
+        summary: run.runSummary,
+        ...(artifactRevisionId === undefined ? {} : { artifactRevisionId }),
+        ...(artifactSyncError === undefined ? {} : { artifactSyncError }),
+      };
     },
   },
   {
