@@ -13,7 +13,7 @@
 // stall the app-server event loop.
 
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import {
   isSupportedPluginApiVersion,
@@ -49,6 +49,8 @@ export interface PluginCatalogScanConfig {
   readonly maxFileBytes?: number;
   /** Maximum total payload bytes of one package (default 64 MiB). */
   readonly maxPackageBytes?: number;
+  /** Maximum directory entries in any single payload directory (default 100k). */
+  readonly maxDirEntries?: number;
 }
 
 const DEFAULT_MAX_MANIFEST_BYTES = 256 * 1024;
@@ -56,6 +58,7 @@ const DEFAULT_MAX_PACKAGE_DEPTH = 16;
 const DEFAULT_MAX_PACKAGE_FILES = 5000;
 const DEFAULT_MAX_FILE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_DIR_ENTRIES = 100_000;
 const SCOPE_ORDER: readonly PluginScope[] = ['system', 'user', 'workspace'];
 
 interface ScanLimits {
@@ -64,6 +67,7 @@ interface ScanLimits {
   readonly maxPackageFiles: number;
   readonly maxFileBytes: number;
   readonly maxPackageBytes: number;
+  readonly maxDirEntries: number;
 }
 
 /** Thrown for package payloads that exceed the scan limits; the message is
@@ -80,6 +84,7 @@ export async function scanPluginCatalog(config: PluginCatalogScanConfig): Promis
     maxPackageFiles: config.maxPackageFiles ?? DEFAULT_MAX_PACKAGE_FILES,
     maxFileBytes: config.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES,
     maxPackageBytes: config.maxPackageBytes ?? DEFAULT_MAX_PACKAGE_BYTES,
+    maxDirEntries: config.maxDirEntries ?? DEFAULT_MAX_DIR_ENTRIES,
   };
   const roots: PluginCatalogRoot[] = [];
   const diagnostics: PluginCatalogDiagnostic[] = [];
@@ -358,7 +363,10 @@ function scanPackage(
     return;
   }
   const declared = manifest.integrity?.sha256;
-  if (declared !== undefined && declared !== sha256) {
+  // Sha256Hex accepts lowercase or uppercase; the computed digest is canonical
+  // lowercase, so compare case-insensitively (an equivalent uppercase
+  // declaration is NOT drift).
+  if (declared !== undefined && declared.toLowerCase() !== sha256) {
     diagnostics.push({
       severity: 'error',
       kind: 'hash-drift',
@@ -412,24 +420,8 @@ function payloadDigest(packageDir: string, manifest: PluginManifest, limits: Sca
   hash.update(':');
   hash.update(manifestBytes);
 
-  let count = 0;
-  let totalBytes = 0;
-  for (const file of walkPackageFiles(packageDir, '', 1, limits)) {
+  for (const file of collectPackageFiles(packageDir, limits)) {
     if (file.rel === 'plugin.json') continue;
-    const stat = statSync(file.absolute);
-    if (stat.size > limits.maxFileBytes) {
-      throw new ScanLimitError(
-        `package payload file '${file.rel}' exceeds ${limits.maxFileBytes} bytes`,
-      );
-    }
-    count += 1;
-    totalBytes += stat.size;
-    if (count > limits.maxPackageFiles) {
-      throw new ScanLimitError(`package payload has more than ${limits.maxPackageFiles} files`);
-    }
-    if (totalBytes > limits.maxPackageBytes) {
-      throw new ScanLimitError(`package payload exceeds ${limits.maxPackageBytes} bytes`);
-    }
     const content = readFileSync(file.absolute);
     const relBytes = Buffer.from(file.rel, 'utf8');
     hash.update(String(relBytes.length));
@@ -463,17 +455,32 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Collects package payload files while enforcing every size/count limit
+ *  DURING the traversal - a huge tree trips the bound immediately instead of
+ *  after the full recursive list has been built in memory. */
+function collectPackageFiles(
+  packageDir: string,
+  limits: ScanLimits,
+): { rel: string; absolute: string; size: number }[] {
+  const budget = { count: 0, bytes: 0 };
+  return walkPackageFiles(packageDir, '', 1, limits, budget);
+}
+
 function walkPackageFiles(
   directory: string,
   prefix: string,
   depth: number,
   limits: ScanLimits,
-): { rel: string; absolute: string }[] {
+  budget: { count: number; bytes: number },
+): { rel: string; absolute: string; size: number }[] {
   if (depth > limits.maxPackageDepth) {
     throw new ScanLimitError(`package payload exceeds directory depth ${limits.maxPackageDepth}`);
   }
-  const files: { rel: string; absolute: string }[] = [];
+  const files: { rel: string; absolute: string; size: number }[] = [];
   const entries = readdirSync(directory, { withFileTypes: true });
+  if (entries.length > limits.maxDirEntries) {
+    throw new ScanLimitError(`package directory exceeds ${limits.maxDirEntries} entries`);
+  }
   entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   for (const entry of entries) {
     const absolute = join(directory, entry.name);
@@ -481,9 +488,22 @@ function walkPackageFiles(
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) continue;
     if (stat.isDirectory()) {
-      files.push(...walkPackageFiles(absolute, rel, depth + 1, limits));
+      files.push(...walkPackageFiles(absolute, rel, depth + 1, limits, budget));
     } else if (stat.isFile()) {
-      files.push({ rel, absolute });
+      budget.count += 1;
+      if (budget.count > limits.maxPackageFiles) {
+        throw new ScanLimitError(`package payload has more than ${limits.maxPackageFiles} files`);
+      }
+      if (stat.size > limits.maxFileBytes) {
+        throw new ScanLimitError(
+          `package payload file '${rel}' exceeds ${limits.maxFileBytes} bytes`,
+        );
+      }
+      budget.bytes += stat.size;
+      if (budget.bytes > limits.maxPackageBytes) {
+        throw new ScanLimitError(`package payload exceeds ${limits.maxPackageBytes} bytes`);
+      }
+      files.push({ rel, absolute, size: stat.size });
     }
   }
   return files;

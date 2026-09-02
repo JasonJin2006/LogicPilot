@@ -47,12 +47,14 @@ export function isPluginScope(value: unknown): value is PluginScope {
   return typeof value === 'string' && (PLUGIN_SCOPES as readonly string[]).includes(value);
 }
 
-/** A safe catalog path: posix, non-absolute, no empty or '..' segments, no
- *  backslashes. The frozen schema pattern already rejects these; this is the
- *  code-level guard for consumers that only see parsed values. */
+/** A canonical catalog path: posix, relative, no Windows drive prefix, no
+ *  backslash, no empty/'.'/'..' segments, no trailing slash. The frozen
+ *  schema pattern already rejects these; this is the code-level guard for
+ *  consumers that only see parsed values. */
 function isSafeCatalogPath(path: string): boolean {
   if (path.length === 0 || path.startsWith('/') || path.includes('\\')) return false;
-  return path.split('/').every((segment) => segment !== '' && segment !== '..');
+  if (/^[A-Za-z]:/.test(path)) return false;
+  return path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
 }
 
 /** Structural validation of a bridge payload (frozen contract) plus the
@@ -444,11 +446,13 @@ export class RemoteCatalogDiscoverySource implements DiscoverySource {
 }
 
 /** The scanner-computed payload digest is authoritative for lockfile
- *  projections; normalize the manifest so host.toLockfile() carries it. */
+ *  projections; normalize the manifest so host.toLockfile() carries it.
+ *  Sha256Hex accepts mixed case, so comparisons are case-insensitive and the
+ *  projected value is canonicalized to lowercase. */
 function withCatalogDigest(entry: PluginCatalogEntry): PluginManifest {
   const declared = entry.manifest.integrity;
-  if (declared && declared.sha256 === entry.sha256) {
-    return { ...entry.manifest, integrity: declared };
+  if (declared && declared.sha256.toLowerCase() === entry.sha256.toLowerCase()) {
+    return { ...entry.manifest, integrity: { ...declared, sha256: declared.sha256.toLowerCase() } };
   }
-  return { ...entry.manifest, integrity: { sha256: entry.sha256 } };
+  return { ...entry.manifest, integrity: { sha256: entry.sha256.toLowerCase() } };
 }

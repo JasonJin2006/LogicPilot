@@ -18,8 +18,8 @@
     },
     "PluginCatalogPath": {
       "type": "string",
-      "description": "Package directory relative to its root, posix-style. Never absolute, never escaping ('..' segments and backslashes are rejected).",
-      "pattern": "^(?!\\.\\.)(?!.*/\\.\\.($|/))[^\\\\]+$",
+      "description": "Package directory relative to its root, posix-style. Canonical: never absolute, no Windows drive prefix, no backslash, no empty/'.'/'..' segments, no trailing slash.",
+      "pattern": "^(?!^/)(?!.*//)(?!.*/$)(?!^[A-Za-z]:)(?!.*(^|/)\\.\\.($|/))(?!^\\.)(?!.*(^|/)\\.($|/))[^\\\\]+$",
       "minLength": 1,
       "maxLength": 256
     },

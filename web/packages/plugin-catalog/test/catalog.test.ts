@@ -153,6 +153,25 @@ describe('plugin catalog scanner', () => {
     expect(second.diagnostics).toEqual([]);
   });
 
+  it('accepts an equivalent UPPERCASE declared integrity (case-insensitive digest)', async () => {
+    const root = tempRoot();
+    const pkg = join(root, 'signed-upper');
+    mkdirSync(pkg);
+    writePlugin(pkg, { id: 'logicpilot.signed-upper' });
+    writeAsset(pkg, 'asset.txt', 'payload');
+    const first = await scanPluginCatalog({ roots: [{ scope: 'user', path: root }] });
+    const digest = first.entries[0]?.sha256;
+    expect(digest).toBeDefined();
+    writePlugin(
+      pkg,
+      declares({ id: 'logicpilot.signed-upper' }, { integrity: { sha256: digest?.toUpperCase() } }),
+    );
+    const second = await scanPluginCatalog({ roots: [{ scope: 'user', path: root }] });
+    // No hash-drift; the published digest stays canonical lowercase.
+    expect(second.entries[0]?.sha256).toBe(digest);
+    expect(second.diagnostics).toEqual([]);
+  });
+
   it('binds manifest semantics to the digest (permission change alters it)', async () => {
     const root = tempRoot();
     const pkg = join(root, 'secure');

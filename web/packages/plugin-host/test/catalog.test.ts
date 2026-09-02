@@ -116,6 +116,18 @@ describe('plugin catalog payload validation', () => {
     expect(parsePluginCatalogPayload(payload).ok).toBe(true);
   });
 
+  it('rejects non-canonical catalog paths (drive prefix, dot/empty segments)', () => {
+    for (const path of ['C:/private', './dot', 'a/./b', 'a//b', 'a/b/', '../up', 'a\\b', '/abs']) {
+      const payload = catalogFixture({ entries: [{ ...entry(), path }] });
+      expect(parsePluginCatalogPayload(payload).ok, `path '${path}' must be rejected`).toBe(false);
+    }
+  });
+
+  it('accepts ordinary dotted names as catalog paths', () => {
+    const payload = catalogFixture({ entries: [{ ...entry(), path: 'assets.v1/knowledge' }] });
+    expect(parsePluginCatalogPayload(payload).ok).toBe(true);
+  });
+
   it('rejects non-hex digests and invalid scopes through the frozen schema', () => {
     const nonHex = catalogFixture({
       entries: [{ ...entry(), sha256: 'g'.repeat(64) }],
