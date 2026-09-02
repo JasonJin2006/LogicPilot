@@ -4,9 +4,14 @@
 
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
+  realpathSync,
+  rmdirSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -15,8 +20,9 @@ import {
 } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { AuditEntry, PackageStore } from '@logicpilot/plugin-host';
-import type { PluginLockfile } from '@logicpilot/contracts';
+import type { PluginLockfile, PluginManifest } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
+import { computePackageDigest } from './catalog.js';
 
 export interface FileSystemPackageStoreOptions {
   /** Dedicated directory containing lockfile, snapshots and audit data. */
@@ -24,6 +30,8 @@ export interface FileSystemPackageStoreOptions {
   readonly lockfileName?: string;
   readonly snapshotName?: string;
   readonly auditName?: string;
+  readonly packagesDirName?: string;
+  readonly stagingDirName?: string;
 }
 
 export class FileSystemPackageStoreError extends Error {
@@ -67,19 +75,26 @@ export class FileSystemPackageStore implements PackageStore {
   private readonly snapshotPath: string;
   private readonly auditPath: string;
   private readonly mutexPath: string;
+  private readonly packagesDir: string;
+  private readonly stagingDir: string;
 
   constructor(options: FileSystemPackageStoreOptions) {
     this.rootDir = resolve(options.rootDir);
     const lockfileName = options.lockfileName ?? 'logicpilot.lock';
     const snapshotName = options.snapshotName ?? 'logicpilot.lock.snapshot';
     const auditName = options.auditName ?? 'plugin-audit.jsonl';
-    if (![lockfileName, snapshotName, auditName].every(isSafeName)) {
+    const packagesDirName = options.packagesDirName ?? 'plugins';
+    const stagingDirName = options.stagingDirName ?? '.plugin-staging';
+    const names = [lockfileName, snapshotName, auditName, packagesDirName, stagingDirName];
+    if (!names.every(isSafeName) || new Set(names).size !== names.length) {
       throw new FileSystemPackageStoreError('store filenames must be simple child names', 'path');
     }
     this.lockfilePath = join(this.rootDir, lockfileName);
     this.snapshotPath = join(this.rootDir, snapshotName);
     this.auditPath = join(this.rootDir, auditName);
     this.mutexPath = join(this.rootDir, `${lockfileName}.mutex`);
+    this.packagesDir = join(this.rootDir, packagesDirName);
+    this.stagingDir = join(this.rootDir, stagingDirName);
   }
 
   readLockfile(): PluginLockfile | null {
@@ -208,6 +223,163 @@ export class FileSystemPackageStore implements PackageStore {
     return entries;
   }
 
+  /** Copies a package into an isolated staging directory after validating its
+   * manifest and recomputing the canonical bounded payload digest. */
+  stagePackage(input: {
+    readonly pluginId: string;
+    readonly sourcePath: string;
+    readonly manifest: PluginManifest;
+    readonly sha256: string;
+    readonly operation: 'install' | 'upgrade';
+  }): { readonly pluginId: string; readonly stagePath: string; readonly targetPath: string } {
+    if (!isSafeName(input.pluginId)) {
+      throw new FileSystemPackageStoreError('plugin id is not a safe package name', 'path');
+    }
+    if (!/^[0-9a-f]{64}$/i.test(input.sha256)) {
+      throw new FileSystemPackageStoreError('package digest is not a SHA-256 value', 'path');
+    }
+    const source = resolve(input.sourcePath);
+    let sourceReal: string;
+    try {
+      sourceReal = realpathSync(source);
+      if (!lstatSync(sourceReal).isDirectory()) throw new Error('not a directory');
+    } catch {
+      throw new FileSystemPackageStoreError('package source is not a readable directory', 'io');
+    }
+    const manifestPath = join(sourceReal, 'plugin.json');
+    try {
+      if (statSync(manifestPath).size > 256 * 1024) {
+        throw new Error('manifest too large');
+      }
+    } catch {
+      throw new FileSystemPackageStoreError('package source has no readable plugin.json', 'io');
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    } catch {
+      throw new FileSystemPackageStoreError('package source has no valid plugin.json', 'io');
+    }
+    const validated = validateContract('PluginManifest', parsed);
+    if (!validated.ok || validated.value.id !== input.pluginId) {
+      throw new FileSystemPackageStoreError(
+        'package manifest does not match requested plugin',
+        'path',
+      );
+    }
+    if (stableJson(validated.value) !== stableJson(input.manifest)) {
+      throw new FileSystemPackageStoreError(
+        'package manifest differs from requested manifest',
+        'path',
+      );
+    }
+    let digest: string;
+    try {
+      digest = computePackageDigest(sourceReal, validated.value);
+    } catch {
+      throw new FileSystemPackageStoreError('package payload cannot be scanned', 'io');
+    }
+    if (digest !== input.sha256.toLowerCase()) {
+      throw new FileSystemPackageStoreError(
+        'package payload digest does not match lock entry',
+        'path',
+      );
+    }
+
+    this.ensureRoot();
+    mkdirSync(this.stagingDir, { recursive: true });
+    const stagePath = join(
+      this.stagingDir,
+      `${input.pluginId}.${process.pid}.${Date.now()}.${++tempSequence}`,
+    );
+    try {
+      copyTree(sourceReal, stagePath);
+    } catch {
+      if (existsSync(stagePath)) removeTree(stagePath);
+      throw new FileSystemPackageStoreError('cannot stage package payload', 'io');
+    }
+    return {
+      pluginId: input.pluginId,
+      stagePath,
+      targetPath: join(this.packagesDir, input.pluginId),
+    };
+  }
+
+  /** Atomically swaps a staged tree into the controlled package directory and
+   * retains the previous tree until finalize/rollback. */
+  commitPackage(stage: {
+    readonly pluginId: string;
+    readonly stagePath: string;
+    readonly targetPath: string;
+  }): { readonly pluginId: string; readonly targetPath: string; readonly backupPath?: string } {
+    if (
+      !isPathWithin(this.stagingDir, stage.stagePath) ||
+      !isPathWithin(this.packagesDir, stage.targetPath)
+    ) {
+      throw new FileSystemPackageStoreError('package transaction path escapes store', 'path');
+    }
+    mkdirSync(this.packagesDir, { recursive: true });
+    const backupPath = join(
+      this.stagingDir,
+      `${stage.pluginId}.backup.${process.pid}.${Date.now()}`,
+    );
+    try {
+      if (existsSync(stage.targetPath)) renameSync(stage.targetPath, backupPath);
+      renameSync(stage.stagePath, stage.targetPath);
+    } catch {
+      if (!existsSync(stage.targetPath) && existsSync(backupPath))
+        renameSync(backupPath, stage.targetPath);
+      if (existsSync(stage.stagePath)) removeTree(stage.stagePath);
+      throw new FileSystemPackageStoreError('cannot commit package transaction', 'io');
+    }
+    return {
+      pluginId: stage.pluginId,
+      targetPath: stage.targetPath,
+      ...(existsSync(backupPath) ? { backupPath } : {}),
+    };
+  }
+
+  /** Moves an installed tree to a rollback-safe tombstone. */
+  prepareRemovePackage(pluginId: string): {
+    readonly pluginId: string;
+    readonly targetPath: string;
+    readonly backupPath?: string;
+  } {
+    if (!isSafeName(pluginId)) {
+      throw new FileSystemPackageStoreError('plugin id is not a safe package name', 'path');
+    }
+    const targetPath = join(this.packagesDir, pluginId);
+    if (!existsSync(targetPath)) return { pluginId, targetPath };
+    mkdirSync(this.stagingDir, { recursive: true });
+    const backupPath = join(this.stagingDir, `${pluginId}.remove.${process.pid}.${Date.now()}`);
+    try {
+      renameSync(targetPath, backupPath);
+    } catch {
+      throw new FileSystemPackageStoreError('cannot stage package removal', 'io');
+    }
+    return { pluginId, targetPath, backupPath };
+  }
+
+  finalizePackage(commit: { readonly targetPath: string; readonly backupPath?: string }): void {
+    if (commit.backupPath && existsSync(commit.backupPath)) removeTree(commit.backupPath);
+  }
+
+  rollbackPackage(commit: { readonly targetPath: string; readonly backupPath?: string }): void {
+    if (existsSync(commit.targetPath)) removeTree(commit.targetPath);
+    if (commit.backupPath && existsSync(commit.backupPath)) {
+      mkdirSync(resolve(commit.targetPath, '..'), { recursive: true });
+      renameSync(commit.backupPath, commit.targetPath);
+    }
+  }
+
+  listInstalledPackages(): readonly string[] {
+    if (!existsSync(this.packagesDir)) return [];
+    return readdirSync(this.packagesDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+      .map((entry) => entry.name)
+      .sort();
+  }
+
   private writeValidatedLockfile(lockfile: PluginLockfile): void {
     const validated = validateContract('PluginLockfile', lockfile);
     if (!validated.ok) {
@@ -261,4 +433,39 @@ export class FileSystemPackageStore implements PackageStore {
 export function isPathWithin(rootDir: string, candidate: string): boolean {
   const relativePath = relative(resolve(rootDir), resolve(candidate));
   return relativePath !== '' && !relativePath.startsWith('..') && !isAbsolute(relativePath);
+}
+
+function copyTree(source: string, target: string): void {
+  const sourceStat = lstatSync(source);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) {
+    throw new Error('package tree contains a non-directory root');
+  }
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name);
+    const to = join(target, entry.name);
+    if (entry.isSymbolicLink()) throw new Error('symbolic links are not allowed in packages');
+    if (entry.isDirectory()) {
+      copyTree(from, to);
+    } else if (entry.isFile()) {
+      copyFileSync(from, to);
+    } else {
+      throw new Error('unsupported package filesystem entry');
+    }
+  }
+}
+
+function removeTree(path: string): void {
+  if (!existsSync(path)) return;
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || stat.isFile()) {
+    unlinkSync(path);
+    return;
+  }
+  for (const entry of readdirSync(path, { withFileTypes: true })) {
+    removeTree(join(path, entry.name));
+  }
+  // Directory is empty after children have been removed. unlinkSync is not
+  // valid for directories in Node, so use the small rmdir shim below.
+  rmdirSync(path);
 }

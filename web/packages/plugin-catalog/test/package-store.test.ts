@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { FileSystemPackageStore, FileSystemPackageStoreError } from '../src/package-store.js';
-import type { PluginLockfile } from '@logicpilot/contracts';
+import {
+  computePackageDigest,
+  FileSystemPackageStore,
+  FileSystemPackageStoreError,
+} from '../src/index.js';
+import type { PluginLockfile, PluginManifest } from '@logicpilot/contracts';
 import { AuditLog, PackageManager } from '@logicpilot/plugin-host';
 
 const roots: string[] = [];
@@ -104,6 +108,89 @@ describe('FileSystemPackageStore', () => {
     const manager = new PackageManager(store, new AuditLog());
     await manager.install({ manifestJson: lockManifest('logicpilot.audit-store') });
     expect(store.readAudit().map((entry) => entry.action)).toEqual(['install']);
+  });
+
+  it('stages, commits, lists and finalizes a validated package tree', () => {
+    const root = tempRoot();
+    const source = join(root, 'incoming');
+    mkdirSync(source);
+    const manifest = lockManifest('logicpilot.tree');
+    writeFileSync(join(source, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(join(source, 'entry.mjs'), 'export default 1;');
+    const store = new FileSystemPackageStore({ rootDir: join(root, 'store') });
+    const sha256 = computePackageDigest(source, manifest as unknown as PluginManifest);
+    const stage = store.stagePackage({
+      pluginId: 'logicpilot.tree',
+      sourcePath: source,
+      manifest: manifest as unknown as PluginManifest,
+      sha256,
+      operation: 'install',
+    });
+    const commit = store.commitPackage(stage);
+    expect(readFileSync(join(commit.targetPath, 'entry.mjs'), 'utf8')).toBe('export default 1;');
+    expect(store.listInstalledPackages()).toEqual(['logicpilot.tree']);
+    store.finalizePackage(commit);
+    expect(store.listInstalledPackages()).toEqual(['logicpilot.tree']);
+  });
+
+  it('restores the previous tree on rollback and supports transactional removal', () => {
+    const root = tempRoot();
+    const source = join(root, 'incoming');
+    mkdirSync(source);
+    const manifest = lockManifest('logicpilot.tree-rollback');
+    writeFileSync(join(source, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(join(source, 'entry.mjs'), 'old');
+    const store = new FileSystemPackageStore({ rootDir: join(root, 'store') });
+    const sha256 = computePackageDigest(source, manifest as unknown as PluginManifest);
+    const first = store.commitPackage(
+      store.stagePackage({
+        pluginId: manifest.id as string,
+        sourcePath: source,
+        manifest: manifest as unknown as PluginManifest,
+        sha256,
+        operation: 'install',
+      }),
+    );
+    store.finalizePackage(first);
+    writeFileSync(join(source, 'entry.mjs'), 'new');
+    const upgraded = store.commitPackage(
+      store.stagePackage({
+        pluginId: manifest.id as string,
+        sourcePath: source,
+        manifest: manifest as unknown as PluginManifest,
+        sha256: computePackageDigest(source, manifest as unknown as PluginManifest),
+        operation: 'upgrade',
+      }),
+    );
+    store.rollbackPackage(upgraded);
+    expect(readFileSync(join(upgraded.targetPath, 'entry.mjs'), 'utf8')).toBe('old');
+    const removal = store.prepareRemovePackage(manifest.id as string);
+    expect(store.listInstalledPackages()).toEqual([]);
+    store.rollbackPackage(removal);
+    expect(store.listInstalledPackages()).toEqual([manifest.id]);
+  });
+
+  it('integrates package-directory transactions with PackageManager', async () => {
+    const root = tempRoot();
+    const source = join(root, 'incoming');
+    mkdirSync(source);
+    const { integrity: _integrity, ...manifest } = lockManifest('logicpilot.manager-tree');
+    void _integrity;
+    writeFileSync(join(source, 'plugin.json'), JSON.stringify(manifest));
+    writeFileSync(join(source, 'entry.mjs'), 'payload');
+    const store = new FileSystemPackageStore({ rootDir: join(root, 'store') });
+    const manager = new PackageManager(store, new AuditLog());
+    const sha256 = computePackageDigest(source, manifest as unknown as PluginManifest);
+    await manager.install({
+      manifestJson: manifest,
+      sha256,
+      packagePath: source,
+      source: 'local-upload',
+    });
+    expect(store.listInstalledPackages()).toEqual(['logicpilot.manager-tree']);
+    expect(
+      readFileSync(join(root, 'store', 'plugins', manifest.id as string, 'entry.mjs'), 'utf8'),
+    ).toBe('payload');
   });
 });
 

@@ -5,6 +5,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { PluginCatalog, PluginScope } from '@logicpilot/plugin-host';
+import type { PluginLockfile } from '@logicpilot/contracts';
 import { isPluginScope } from '@logicpilot/plugin-host';
 import { scanPluginCatalog } from './catalog.js';
 import type { PluginCatalogScanConfig, PluginRootConfig } from './catalog.js';
@@ -37,6 +38,61 @@ export function createPluginCatalogHandler(
       sendJson(res, 500, {
         ok: false,
         error: `plugin catalog scan failed: ${(error as Error).message}`,
+      });
+    }
+  };
+}
+
+export interface PluginManagementHandlerOptions {
+  readonly catalog: PluginCatalogScanConfig;
+  readonly readLockfile?: () => PluginLockfile | null | Promise<PluginLockfile | null>;
+  readonly readAudit?: () => readonly {
+    readonly seq: number;
+    readonly timestamp: string;
+    readonly action: string;
+    readonly pluginId?: string;
+  }[];
+  readonly listInstalledPackages?: () => readonly string[];
+}
+
+/** Creates the read-only management view used by the IDE's plugin screen.
+ * It deliberately omits lockfile source paths and audit details: catalog
+ * paths are root-relative by contract, while provenance strings may be local
+ * absolute paths supplied by an installer. */
+export function createPluginManagementHandler(
+  options: PluginManagementHandlerOptions,
+): PluginCatalogBridgeHandler {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { ok: false, error: 'method not allowed' });
+      return;
+    }
+    try {
+      const catalog = await scanPluginCatalog(options.catalog);
+      const lockfile = options.readLockfile ? await options.readLockfile() : null;
+      const installed = (lockfile?.plugins ?? []).map((entry) => {
+        const { source, ...safeEntry } = entry;
+        void source;
+        return safeEntry;
+      });
+      const audit = (options.readAudit?.() ?? []).map((entry) => ({
+        seq: entry.seq,
+        timestamp: entry.timestamp,
+        action: entry.action,
+        ...(entry.pluginId === undefined ? {} : { pluginId: entry.pluginId }),
+      }));
+      sendJson(res, 200, {
+        schema: 'logicpilot.plugin-management/v1',
+        contractVersion: 1,
+        catalog,
+        installed,
+        packages: options.listInstalledPackages?.() ?? [],
+        audit,
+      });
+    } catch (error) {
+      sendJson(res, 500, {
+        ok: false,
+        error: `plugin management query failed: ${(error as Error).message}`,
       });
     }
   };
@@ -100,7 +156,7 @@ function filterByScope(catalog: PluginCatalog, scope: PluginScope): PluginCatalo
 function sendJson(
   res: ServerResponse,
   status: number,
-  payload: { ok: boolean; error?: string } | PluginCatalog,
+  payload: { ok: boolean; error?: string } | PluginCatalog | Record<string, unknown>,
 ): void {
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',

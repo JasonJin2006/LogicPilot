@@ -32,7 +32,10 @@ import {
   handleAiValidate,
   handleConfig,
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
-import { handlePluginCatalog } from '../web/apps/ide/scripts/plugin-catalog-bridge.mjs';
+import {
+  handlePluginCatalog,
+  handlePlugins,
+} from '../web/apps/ide/scripts/plugin-catalog-bridge.mjs';
 import { createApiRequestPolicy } from './request-policy.mjs';
 import { extendNativeRuntimePath, findLpServer } from '../scripts/tool-paths.mjs';
 
@@ -256,6 +259,11 @@ async function main() {
     if (pathname === '/api/plugin-catalog') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handlePluginCatalog(req, res));
+      return;
+    }
+    if (pathname === '/api/plugins') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handlePlugins(req, res));
       return;
     }
     if (isApi) {

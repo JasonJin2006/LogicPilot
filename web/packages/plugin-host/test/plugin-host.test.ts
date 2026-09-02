@@ -419,6 +419,36 @@ describe('PackageManager', () => {
     expect(saved?.plugins[0]?.id).toBe('logicpilot.cas');
   });
 
+  it('rolls back a committed package tree when the lockfile write fails', async () => {
+    let rolledBack = 0;
+    let committed = 0;
+    const manager = new PackageManager(
+      {
+        readLockfile: () => null,
+        stagePackage: () => ({ staged: true }),
+        commitPackage: () => {
+          committed += 1;
+          return { committed: true };
+        },
+        writeLockfile: () => {
+          throw new Error('disk full');
+        },
+        rollbackPackage: () => {
+          rolledBack += 1;
+        },
+      },
+      new AuditLog(),
+    );
+    await expect(
+      manager.install({
+        manifestJson: makeManifest({ id: 'logicpilot.transaction' }),
+        packagePath: 'C:/incoming/logicpilot.transaction',
+      }),
+    ).rejects.toThrow('disk full');
+    expect(committed).toBe(1);
+    expect(rolledBack).toBe(1);
+  });
+
   it('rejects manifests that fail contract validation', async () => {
     const { manager } = makeManager();
     await expect(manager.install({ manifestJson: { id: 'not-a-manifest' } })).rejects.toMatchObject(

@@ -412,6 +412,20 @@ function entriesHasId(
 // version, trust, ...). Symlinks are never followed and never hashed.
 // ---------------------------------------------------------------------------
 
+/** Computes the canonical package digest used by the catalog and package
+ * installation transactions. This intentionally uses the scanner's bounded
+ * traversal so callers cannot bypass payload limits while staging a package. */
+export function computePackageDigest(packageDir: string, manifest: PluginManifest): string {
+  return payloadDigest(packageDir, manifest, {
+    maxManifestBytes: DEFAULT_MAX_MANIFEST_BYTES,
+    maxPackageDepth: DEFAULT_MAX_PACKAGE_DEPTH,
+    maxPackageFiles: DEFAULT_MAX_PACKAGE_FILES,
+    maxFileBytes: DEFAULT_MAX_FILE_BYTES,
+    maxPackageBytes: DEFAULT_MAX_PACKAGE_BYTES,
+    maxDirEntries: DEFAULT_MAX_DIR_ENTRIES,
+  });
+}
+
 function payloadDigest(packageDir: string, manifest: PluginManifest, limits: ScanLimits): string {
   const hash = createHash('sha256');
   const canonicalManifest = canonicalJson(omitIntegrity(manifest));

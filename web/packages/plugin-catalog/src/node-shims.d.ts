@@ -47,10 +47,12 @@ declare module 'node:fs' {
   export function readdirSync(path: string, options: { withFileTypes: true }): Dirent[];
   export function readFileSync(path: string, encoding?: undefined): Buffer;
   export function readFileSync(path: string, encoding: 'utf8'): string;
+  export function copyFileSync(source: string, destination: string): void;
   export function realpathSync(path: string): string;
   export function mkdirSync(path: string, options?: { recursive?: boolean }): void;
   export function renameSync(oldPath: string, newPath: string): void;
   export function unlinkSync(path: string): void;
+  export function rmdirSync(path: string): void;
   export function writeFileSync(
     path: string,
     data: string,

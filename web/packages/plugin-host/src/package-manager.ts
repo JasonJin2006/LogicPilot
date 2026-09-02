@@ -44,6 +44,20 @@ export interface PackageStore {
     readonly pluginId?: string;
     readonly detail?: string;
   }): void | Promise<void>;
+  /** Optional package-tree transaction hooks. Implementations must stage and
+   * validate a package before commit, then keep the previous tree available
+   * until finalizePackage is called. */
+  stagePackage?(input: {
+    readonly pluginId: string;
+    readonly sourcePath: string;
+    readonly manifest: PluginManifest;
+    readonly sha256: string;
+    readonly operation: 'install' | 'upgrade';
+  }): unknown | Promise<unknown>;
+  commitPackage?(stage: unknown): unknown | Promise<unknown>;
+  prepareRemovePackage?(pluginId: string): unknown | Promise<unknown>;
+  finalizePackage?(commit: unknown): void | Promise<void>;
+  rollbackPackage?(commit: unknown): void | Promise<void>;
 }
 
 export interface InstallInput {
@@ -53,6 +67,9 @@ export interface InstallInput {
    *  manifest already carries integrity information. */
   readonly sha256?: string;
   readonly source?: string;
+  /** Optional local package directory. Stores that implement tree
+   * transactions copy it into their controlled package root. */
+  readonly packagePath?: string;
   /** Permission grants approved by the user for this install. */
   readonly grants?: readonly PermissionGrant[];
 }
@@ -67,7 +84,8 @@ export class PackageError extends Error {
       | 'api-version'
       | 'dependency'
       | 'integrity-missing'
-      | 'invalid-lockfile',
+      | 'invalid-lockfile'
+      | 'storage',
   ) {
     super(message);
     this.name = 'PackageError';
@@ -126,6 +144,41 @@ export class PackageManager {
   private async record(action: AuditAction, pluginId?: string, detail?: string): Promise<void> {
     const entry = this.audit.append(action, pluginId, detail);
     await this.store.appendAudit?.(entry);
+  }
+
+  private async preparePackage(
+    input: InstallInput,
+    manifest: PluginManifest,
+    sha256: string,
+    operation: 'install' | 'upgrade',
+  ): Promise<unknown | null> {
+    if (input.packagePath === undefined) return null;
+    if (!this.store.stagePackage || !this.store.commitPackage) {
+      throw new PackageError('package store does not support directory transactions', 'storage');
+    }
+    try {
+      const stage = await this.store.stagePackage({
+        pluginId: manifest.id,
+        sourcePath: input.packagePath,
+        manifest,
+        sha256,
+        operation,
+      });
+      return await this.store.commitPackage(stage);
+    } catch (error) {
+      throw new PackageError(
+        `cannot stage package '${manifest.id}': ${(error as Error).message}`,
+        'storage',
+      );
+    }
+  }
+
+  private async finalizePackage(commit: unknown): Promise<void> {
+    await this.store.finalizePackage?.(commit);
+  }
+
+  private async rollbackPackage(commit: unknown): Promise<void> {
+    await this.store.rollbackPackage?.(commit);
   }
 
   async installedIds(): Promise<readonly string[]> {
@@ -188,14 +241,21 @@ export class PackageManager {
     }
     assertDependencyVersions(nextEntries, `installing '${manifest.id}'`);
 
-    await this.write(
-      {
-        schema: 'logicpilot.plugin-lock/v1',
-        contractVersion: 1,
-        plugins: [...lock.plugins, projected].sort((a, b) => (a.id < b.id ? -1 : 1)),
-      },
-      state.version,
-    );
+    const packageCommit = await this.preparePackage(input, manifest, sha256, 'install');
+    try {
+      await this.write(
+        {
+          schema: 'logicpilot.plugin-lock/v1',
+          contractVersion: 1,
+          plugins: [...lock.plugins, projected].sort((a, b) => (a.id < b.id ? -1 : 1)),
+        },
+        state.version,
+      );
+    } catch (error) {
+      if (packageCommit !== null) await this.rollbackPackage(packageCommit);
+      throw error;
+    }
+    if (packageCommit !== null) await this.finalizePackage(packageCommit);
     await this.record('install', manifest.id, `version=${manifest.version}`);
     return projected;
   }
@@ -270,14 +330,21 @@ export class PackageManager {
     }
     assertDependencyVersions([next, ...others], `upgrading '${manifest.id}'`);
     await this.store.snapshotLockfile?.();
-    await this.write(
-      {
-        schema: 'logicpilot.plugin-lock/v1',
-        contractVersion: 1,
-        plugins: [next, ...others].sort((a, b) => (a.id < b.id ? -1 : 1)),
-      },
-      state.version,
-    );
+    const packageCommit = await this.preparePackage(input, manifest, sha256, 'upgrade');
+    try {
+      await this.write(
+        {
+          schema: 'logicpilot.plugin-lock/v1',
+          contractVersion: 1,
+          plugins: [next, ...others].sort((a, b) => (a.id < b.id ? -1 : 1)),
+        },
+        state.version,
+      );
+    } catch (error) {
+      if (packageCommit !== null) await this.rollbackPackage(packageCommit);
+      throw error;
+    }
+    if (packageCommit !== null) await this.finalizePackage(packageCommit);
     await this.record('upgrade', manifest.id, `${current.version} -> ${manifest.version}`);
     return next;
   }
@@ -302,14 +369,31 @@ export class PackageManager {
       }
     }
     await this.store.snapshotLockfile?.();
-    await this.write(
-      {
-        schema: 'logicpilot.plugin-lock/v1',
-        contractVersion: 1,
-        plugins: lock.plugins.filter((entry) => entry.id !== pluginId),
-      },
-      state.version,
-    );
+    let packageCommit: unknown | null = null;
+    if (this.store.prepareRemovePackage) {
+      try {
+        packageCommit = await this.store.prepareRemovePackage(pluginId);
+      } catch (error) {
+        throw new PackageError(
+          `cannot stage removal of '${pluginId}': ${(error as Error).message}`,
+          'storage',
+        );
+      }
+    }
+    try {
+      await this.write(
+        {
+          schema: 'logicpilot.plugin-lock/v1',
+          contractVersion: 1,
+          plugins: lock.plugins.filter((entry) => entry.id !== pluginId),
+        },
+        state.version,
+      );
+    } catch (error) {
+      if (packageCommit !== null) await this.rollbackPackage(packageCommit);
+      throw error;
+    }
+    if (packageCommit !== null) await this.finalizePackage(packageCommit);
     await this.record('uninstall', pluginId, `version=${current.version}`);
   }
 

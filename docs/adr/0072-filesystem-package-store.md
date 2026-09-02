@@ -39,10 +39,10 @@ durable audit trail, while keeping all filesystem access out of the browser.
 6. Audit records are JSONL append operations with bounded detail text. Reads
    enforce a byte limit before loading the file, and no raw filesystem paths,
    credentials or tokens are accepted as audit data by the store.
-7. Package directory staging, atomic package-tree swap and cross-scope
-   overlay resolution are intentionally separate Phase 2B-2 slices. This ADR
-   does not claim that installing executable code is safe; dynamic ESM/WASM
-   loading remains Phase 2B-3.
+7. Package directory staging and atomic package-tree swap are specified in
+   ADR-0073. Cross-scope overlay resolution remains a separate Phase 2B-2
+   concern. This ADR does not claim that installing executable code is safe;
+   dynamic ESM/WASM loading remains Phase 2B-3.
 
 ## Consequences
 
@@ -53,8 +53,9 @@ durable audit trail, while keeping all filesystem access out of the browser.
 - The mutex is transient and is removed in a `finally` path. A future crash
   recovery slice must add stale-mutex ownership/expiry before allowing a
   process to remove another process's lock.
-- The current store writes lockfile and snapshot files atomically per file;
-  package-tree + lockfile two-phase commit is still pending.
+- The current store writes lockfile and package-tree files atomically per
+  operation and compensates lockfile failures; crash recovery between those
+  operations still requires a journal/expiry slice.
 
 ## Gate evidence
 

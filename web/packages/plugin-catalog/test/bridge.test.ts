@@ -5,7 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createPluginCatalogHandler, pluginRootsFromEnv } from '../src/index.js';
+import {
+  createPluginCatalogHandler,
+  createPluginManagementHandler,
+  pluginRootsFromEnv,
+} from '../src/index.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 let fixtureSeq = 0;
@@ -122,6 +126,49 @@ describe('plugin catalog bridge', () => {
     const post = fakeResponse();
     await handler(fakeRequest('POST', '/api/plugin-catalog'), post.res);
     expect(post.state.status).toBe(405);
+  });
+});
+
+describe('plugin management bridge', () => {
+  it('returns catalog, installed packages and sanitized audit state', async () => {
+    const root = tempRoot();
+    const pkg = join(root, 'pkg');
+    mkdirSync(pkg);
+    writePlugin(pkg, { id: 'logicpilot.management' });
+    const handler = createPluginManagementHandler({
+      catalog: { roots: [{ scope: 'workspace', path: root }] },
+      readLockfile: () => ({
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: [
+          {
+            id: 'logicpilot.management',
+            version: '1.0.0',
+            apiVersion: 1,
+            sha256: 'a'.repeat(64),
+            source: 'C:/private/absolute/path',
+            trust: 't0',
+            permissions: [],
+          },
+        ],
+      }),
+      readAudit: () => [
+        {
+          seq: 1,
+          timestamp: '2026-09-02T00:00:00Z',
+          action: 'install',
+          pluginId: 'logicpilot.management',
+        },
+      ],
+      listInstalledPackages: () => ['logicpilot.management'],
+    });
+    const { res, state } = fakeResponse();
+    await handler(fakeRequest('GET', '/api/plugins'), res);
+    expect(state.status).toBe(200);
+    const payload = JSON.parse(state.body) as Record<string, unknown>;
+    expect(payload.schema).toBe('logicpilot.plugin-management/v1');
+    expect(JSON.stringify(payload)).not.toContain('C:/private');
+    expect(payload.packages).toEqual(['logicpilot.management']);
   });
 });
 

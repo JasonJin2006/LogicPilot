@@ -2,3 +2,4 @@
 // The implementation lives in plugin-catalog-bridge.mjs; the scan/validation
 // logic is in @logicpilot/plugin-catalog (Node-only, never bundled).
 export function handlePluginCatalog(req: unknown, res: unknown): Promise<void>;
+export function handlePlugins(req: unknown, res: unknown): Promise<void>;
