@@ -11,7 +11,7 @@ import type {
   PluginManifest,
   PermissionGrant,
 } from '@logicpilot/contracts';
-import type { AuditLog } from './host.js';
+import type { AuditAction, AuditLog } from './host.js';
 import {
   isSupportedPluginApiVersion,
   resolveActivationOrder,
@@ -22,9 +22,28 @@ import {
 export interface PackageStore {
   /** Read the whole lockfile, or null when absent. */
   readLockfile(): PluginLockfile | null | Promise<PluginLockfile | null>;
+  /** Optional atomic read of the lockfile and its optimistic version token. */
+  readLockfileState?():
+    | { readonly lockfile: PluginLockfile | null; readonly version: string | null }
+    | Promise<{ readonly lockfile: PluginLockfile | null; readonly version: string | null }>;
   writeLockfile(lockfile: PluginLockfile): void | Promise<void>;
+  /** Optional optimistic-concurrency token for a lockfile snapshot. */
+  readLockfileVersion?(): string | null | Promise<string | null>;
+  writeLockfileIfVersion?(
+    lockfile: PluginLockfile,
+    expectedVersion: string | null,
+  ): void | Promise<void>;
   /** Optional rollback snapshot kept by the store itself. */
   snapshotLockfile?(): void | Promise<void>;
+  readSnapshot?(): PluginLockfile | null | Promise<PluginLockfile | null>;
+  /** Optional durable append-only audit sink. */
+  appendAudit?(entry: {
+    readonly seq: number;
+    readonly timestamp: string;
+    readonly action: AuditAction;
+    readonly pluginId?: string;
+    readonly detail?: string;
+  }): void | Promise<void>;
 }
 
 export interface InstallInput {
@@ -47,7 +66,8 @@ export class PackageError extends Error {
       | 'not-installed'
       | 'api-version'
       | 'dependency'
-      | 'integrity-missing',
+      | 'integrity-missing'
+      | 'invalid-lockfile',
   ) {
     super(message);
     this.name = 'PackageError';
@@ -65,13 +85,47 @@ export class PackageManager {
   ) {}
 
   async lockfile(): Promise<PluginLockfile> {
-    return (
-      (await this.store.readLockfile()) ?? {
-        schema: 'logicpilot.plugin-lock/v1',
-        contractVersion: 1,
-        plugins: [],
-      }
-    );
+    return (await this.readState()).lockfile;
+  }
+
+  private async readState(): Promise<{
+    lockfile: PluginLockfile;
+    version: string | null;
+  }> {
+    const state = this.store.readLockfileState
+      ? await this.store.readLockfileState()
+      : {
+          lockfile: await this.store.readLockfile(),
+          version: this.store.readLockfileVersion ? await this.store.readLockfileVersion() : null,
+        };
+    const stored = state.lockfile;
+    if (stored === null) {
+      return {
+        lockfile: { schema: 'logicpilot.plugin-lock/v1', contractVersion: 1, plugins: [] },
+        version: state.version,
+      };
+    }
+    const validated = validateContract('PluginLockfile', stored);
+    if (!validated.ok) {
+      throw new PackageError(
+        `invalid lockfile: ${validated.errors.join('; ')}`,
+        'invalid-lockfile',
+      );
+    }
+    return { lockfile: validated.value, version: state.version };
+  }
+
+  private async write(lockfile: PluginLockfile, expectedVersion: string | null): Promise<void> {
+    if (this.store.writeLockfileIfVersion) {
+      await this.store.writeLockfileIfVersion(lockfile, expectedVersion);
+      return;
+    }
+    await this.store.writeLockfile(lockfile);
+  }
+
+  private async record(action: AuditAction, pluginId?: string, detail?: string): Promise<void> {
+    const entry = this.audit.append(action, pluginId, detail);
+    await this.store.appendAudit?.(entry);
   }
 
   async installedIds(): Promise<readonly string[]> {
@@ -88,13 +142,14 @@ export class PackageManager {
       );
     }
     const manifest: PluginManifest = validated.value;
-    const lock = await this.lockfile();
+    const state = await this.readState();
+    const lock = state.lockfile;
 
     if (lock.plugins.some((entry) => entry.id === manifest.id)) {
       throw new PackageError(`plugin '${manifest.id}' is already installed`, 'already-installed');
     }
     if (!isSupportedPluginApiVersion(manifest.apiVersion)) {
-      this.audit.append(
+      await this.record(
         'deny',
         manifest.id,
         `install: unsupported apiVersion ${manifest.apiVersion}`,
@@ -133,12 +188,15 @@ export class PackageManager {
     }
     assertDependencyVersions(nextEntries, `installing '${manifest.id}'`);
 
-    await this.store.writeLockfile({
-      schema: 'logicpilot.plugin-lock/v1',
-      contractVersion: 1,
-      plugins: [...lock.plugins, projected].sort((a, b) => (a.id < b.id ? -1 : 1)),
-    });
-    this.audit.append('install', manifest.id, `version=${manifest.version}`);
+    await this.write(
+      {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: [...lock.plugins, projected].sort((a, b) => (a.id < b.id ? -1 : 1)),
+      },
+      state.version,
+    );
+    await this.record('install', manifest.id, `version=${manifest.version}`);
     return projected;
   }
 
@@ -152,13 +210,14 @@ export class PackageManager {
       );
     }
     const manifest: PluginManifest = validated.value;
-    const lock = await this.lockfile();
+    const state = await this.readState();
+    const lock = state.lockfile;
     const current = lock.plugins.find((entry) => entry.id === manifest.id);
     if (!current) {
       throw new PackageError(`plugin '${manifest.id}' is not installed`, 'not-installed');
     }
     if (!isSupportedPluginApiVersion(manifest.apiVersion)) {
-      this.audit.append(
+      await this.record(
         'deny',
         manifest.id,
         `upgrade: unsupported apiVersion ${manifest.apiVersion}`,
@@ -211,17 +270,21 @@ export class PackageManager {
     }
     assertDependencyVersions([next, ...others], `upgrading '${manifest.id}'`);
     await this.store.snapshotLockfile?.();
-    await this.store.writeLockfile({
-      schema: 'logicpilot.plugin-lock/v1',
-      contractVersion: 1,
-      plugins: [next, ...others].sort((a, b) => (a.id < b.id ? -1 : 1)),
-    });
-    this.audit.append('upgrade', manifest.id, `${current.version} -> ${manifest.version}`);
+    await this.write(
+      {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: [next, ...others].sort((a, b) => (a.id < b.id ? -1 : 1)),
+      },
+      state.version,
+    );
+    await this.record('upgrade', manifest.id, `${current.version} -> ${manifest.version}`);
     return next;
   }
 
   async uninstall(pluginId: string): Promise<void> {
-    const lock = await this.lockfile();
+    const state = await this.readState();
+    const lock = state.lockfile;
     const current = lock.plugins.find((entry) => entry.id === pluginId);
     if (!current) {
       throw new PackageError(`plugin '${pluginId}' is not installed`, 'not-installed');
@@ -239,12 +302,15 @@ export class PackageManager {
       }
     }
     await this.store.snapshotLockfile?.();
-    await this.store.writeLockfile({
-      schema: 'logicpilot.plugin-lock/v1',
-      contractVersion: 1,
-      plugins: lock.plugins.filter((entry) => entry.id !== pluginId),
-    });
-    this.audit.append('uninstall', pluginId, `version=${current.version}`);
+    await this.write(
+      {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: lock.plugins.filter((entry) => entry.id !== pluginId),
+      },
+      state.version,
+    );
+    await this.record('uninstall', pluginId, `version=${current.version}`);
   }
 
   /** Restores the previous lockfile snapshot (best effort). */
@@ -259,7 +325,7 @@ export class PackageManager {
     ).readSnapshot();
     if (!snapshot) return false;
     await this.store.writeLockfile(snapshot);
-    this.audit.append(
+    await this.record(
       'rollback',
       undefined,
       `restored snapshot with ${snapshot.plugins.length} plugins`,
@@ -269,7 +335,8 @@ export class PackageManager {
 
   /** Records a permission grant decision (audit + lockfile update). */
   async setGrant(pluginId: string, grant: PermissionGrant): Promise<void> {
-    const lock = await this.lockfile();
+    const state = await this.readState();
+    const lock = state.lockfile;
     const entry = lock.plugins.find((candidate) => candidate.id === pluginId);
     if (!entry) {
       throw new PackageError(`plugin '${pluginId}' is not installed`, 'not-installed');
@@ -278,14 +345,17 @@ export class PackageManager {
       ...entry.permissions.filter((existing) => existing.permissionId !== grant.permissionId),
       grant,
     ];
-    await this.store.writeLockfile({
-      schema: 'logicpilot.plugin-lock/v1',
-      contractVersion: 1,
-      plugins: lock.plugins.map((candidate) =>
-        candidate.id === pluginId ? { ...candidate, permissions } : candidate,
-      ),
-    });
-    this.audit.append(grant.granted ? 'grant' : 'deny', pluginId, grant.permissionId);
+    await this.write(
+      {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: lock.plugins.map((candidate) =>
+          candidate.id === pluginId ? { ...candidate, permissions } : candidate,
+        ),
+      },
+      state.version,
+    );
+    await this.record(grant.granted ? 'grant' : 'deny', pluginId, grant.permissionId);
   }
 }
 

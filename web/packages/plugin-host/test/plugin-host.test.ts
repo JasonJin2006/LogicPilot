@@ -2,7 +2,7 @@
 // activation, capability grants, lifecycle/effect cleanup, audit log and the
 // package manager install/upgrade/rollback flows.
 import { describe, expect, it } from 'vitest';
-import type { PluginManifest, PermissionGrant } from '@logicpilot/contracts';
+import type { PluginLockfile, PluginManifest, PermissionGrant } from '@logicpilot/contracts';
 import {
   AuditLog,
   PackageError,
@@ -392,6 +392,31 @@ describe('PackageManager', () => {
     expect(entry.id).toBe('logicpilot.p1');
     expect(entry.sha256).toBe(TEST_SHA);
     expect(await manager.installedIds()).toEqual(['logicpilot.p1']);
+  });
+
+  it('uses the store version token for an optimistic conditional write', async () => {
+    let saved: PluginLockfile | null = null;
+    let version: string | null = null;
+    let conditionalWrites = 0;
+    const manager = new PackageManager(
+      {
+        readLockfile: () => saved,
+        readLockfileState: () => ({ lockfile: saved, version }),
+        writeLockfile: (lockfile) => {
+          saved = lockfile;
+        },
+        readLockfileVersion: () => version,
+        writeLockfileIfVersion: (lockfile, expected) => {
+          expect(expected).toBe(version);
+          saved = lockfile;
+          version = `v${++conditionalWrites}`;
+        },
+      },
+      new AuditLog(),
+    );
+    await manager.install({ manifestJson: makeManifest({ id: 'logicpilot.cas' }) });
+    expect(conditionalWrites).toBe(1);
+    expect(saved?.plugins[0]?.id).toBe('logicpilot.cas');
   });
 
   it('rejects manifests that fail contract validation', async () => {
