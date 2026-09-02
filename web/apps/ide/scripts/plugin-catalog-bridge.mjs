@@ -10,6 +10,8 @@ import {
   createPluginCatalogHandler,
   createPluginManagementHandler,
   FileSystemArtifactStore,
+  FileSystemPluginDraftStore,
+  PluginDraftValidationRunner,
   FileSystemPackageStore,
   NodePluginRuntime,
   pluginRootsFromEnv,
@@ -39,6 +41,149 @@ export function handlePlugins(req, res) {
         }
       : {}),
   })(req, res);
+}
+
+function draftStoreFromEnv() {
+  const root = process.env.LOGICPILOT_PLUGIN_DRAFT_ROOT;
+  return root ? new FileSystemPluginDraftStore({ rootDir: root }) : undefined;
+}
+
+function sendDraftJson(res, status, payload) {
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(JSON.stringify(payload));
+}
+
+/** GET/POST /api/plugin-drafts: persisted draft review lifecycle. This route
+ * never installs packages or mutates the plugin lockfile. */
+export async function handlePluginDrafts(req, res) {
+  if (!['GET', 'POST'].includes(req.method)) {
+    sendDraftJson(res, 405, { ok: false, error: 'method not allowed' });
+    return;
+  }
+  const store = draftStoreFromEnv();
+  if (!store) {
+    if (req.method === 'GET') {
+      sendDraftJson(res, 200, {
+        schema: 'logicpilot.plugin-drafts/v1',
+        contractVersion: 1,
+        configured: false,
+        drafts: [],
+      });
+    } else {
+      sendDraftJson(res, 503, { ok: false, error: 'plugin draft store is not configured' });
+    }
+    return;
+  }
+  try {
+    if (req.method === 'GET') {
+      const drafts = store.list();
+      const validator = new PluginDraftValidationRunner();
+      sendDraftJson(res, 200, {
+        schema: 'logicpilot.plugin-drafts/v1',
+        contractVersion: 1,
+        configured: true,
+        drafts: drafts.map((draft) => ({
+          ...draft,
+          validation: validator.run(draft),
+        })),
+      });
+      return;
+    }
+    const raw = await readArtifactBody(req);
+    let input;
+    try {
+      input = JSON.parse(raw || '{}');
+    } catch {
+      throw Object.assign(new Error('request body is not valid JSON'), { status: 400 });
+    }
+    if (typeof input !== 'object' || input === null || typeof input.action !== 'string') {
+      throw Object.assign(new Error('plugin draft action is required'), { status: 400 });
+    }
+    const action = input.action;
+    let result;
+    if (action === 'create') {
+      const draft = input.draft;
+      if (draft?.status !== 'draft')
+        throw Object.assign(new Error('new plugin drafts must start in draft status'), {
+          status: 400,
+        });
+      const report = new PluginDraftValidationRunner().run(draft);
+      if (!report.ok) {
+        sendDraftJson(res, 400, { ok: false, error: 'plugin draft validation failed', report });
+        return;
+      }
+      result = store.write(draft);
+    } else {
+      const id = typeof input.id === 'string' ? input.id : '';
+      const current = store.read(id);
+      if (action === 'validate') {
+        const report = new PluginDraftValidationRunner().run(current);
+        result = store.write({
+          ...current,
+          status: report.ok ? 'validated' : 'rejected',
+          validatedAt: new Date().toISOString(),
+          ...(report.ok ? {} : { diagnostics: report.diagnostics }),
+        });
+      } else if (action === 'approve') {
+        if (current.status !== 'validated')
+          throw Object.assign(new Error('plugin draft is not validated'), { status: 400 });
+        const accepted = Array.isArray(input.acceptedPermissions)
+          ? input.acceptedPermissions.filter((value) => typeof value === 'string')
+          : [];
+        const added = current.permissionDiff.added;
+        if (added.some((permission) => !accepted.includes(permission)))
+          throw Object.assign(new Error('all added permissions require explicit approval'), {
+            status: 400,
+          });
+        if (current.permissionDiff.trustEscalation !== true && input.allowTrustEscalation === true)
+          throw Object.assign(new Error('trust escalation was not requested'), { status: 400 });
+        if (current.permissionDiff.trustEscalation === true && input.allowTrustEscalation !== true)
+          throw Object.assign(new Error('trust escalation requires explicit approval'), {
+            status: 400,
+          });
+        result = store.write({
+          ...current,
+          status: 'approved',
+          approvedBy: typeof input.approvedBy === 'string' ? input.approvedBy : 'user',
+          approvedAt: new Date().toISOString(),
+        });
+      } else if (action === 'publish') {
+        if (current.status !== 'approved')
+          throw Object.assign(new Error('plugin draft is not approved'), { status: 400 });
+        result = store.write({ ...current, status: 'published' });
+      } else if (action === 'reject') {
+        result = store.write({
+          ...current,
+          status: 'rejected',
+          diagnostics: [
+            ...(current.diagnostics ?? []),
+            typeof input.reason === 'string' ? input.reason : 'rejected by user',
+          ],
+        });
+      } else {
+        throw Object.assign(new Error(`unsupported plugin draft action '${action}'`), {
+          status: 400,
+        });
+      }
+    }
+    sendDraftJson(res, 200, {
+      schema: 'logicpilot.plugin-draft-operation/v1',
+      contractVersion: 1,
+      action,
+      result,
+    });
+  } catch (error) {
+    const status =
+      error?.status ?? (error?.code === 'not-found' ? 404 : error?.code === 'invalid' ? 400 : 500);
+    sendDraftJson(res, status, {
+      ok: false,
+      error: String(error?.message ?? 'plugin draft unavailable'),
+    });
+  }
 }
 
 /** GET /api/plugin-registry: active generation plus structured contributions. */

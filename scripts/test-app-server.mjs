@@ -184,6 +184,11 @@ try {
   assert.equal((await committed.json()).result.id, 'app.rev-1');
   const graphAfterCommit = await (await apiFetch(`${baseUrl}/api/artifact-graph`)).json();
   assert.equal(graphAfterCommit.revisions.length, 1);
+  const draftsResponse = await apiFetch(`${baseUrl}/api/plugin-drafts`);
+  assert.equal(draftsResponse.status, 200);
+  const draftsView = await draftsResponse.json();
+  assert.equal(draftsView.schema, 'logicpilot.plugin-drafts/v1');
+  assert.equal(draftsView.configured, false);
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {

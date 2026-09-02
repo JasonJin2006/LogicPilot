@@ -7,3 +7,8 @@ export * from './wasm-bindings.js';
 export * from './node-runtime.js';
 export * from './contribution-loader.js';
 export * from '@logicpilot/artifact-store';
+export {
+  FileSystemPluginDraftStore,
+  PluginDraftRegistry,
+  PluginDraftValidationRunner,
+} from '@logicpilot/plugin-host';
