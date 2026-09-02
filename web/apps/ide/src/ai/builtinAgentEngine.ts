@@ -81,6 +81,7 @@ export function decodeBuiltinAgentResult(result: AgentStepResult): AssistantStep
     })),
     done: result.status === 'done',
     ...(result.usage === undefined ? {} : { usage: result.usage }),
+    ...(result.checkpoint === undefined ? {} : { checkpoint: result.checkpoint }),
   };
 }
 

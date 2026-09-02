@@ -206,6 +206,62 @@ afterEach(() => {
 });
 
 describe('assistant runtime: control flow', () => {
+  it('keeps a stable SDK turn and resumes through a provider checkpoint', async () => {
+    useModelStore.setState({ document: blankDocument() });
+    let sdkCalls = 0;
+    const { calls } = installFetch(async ({ url, body }, recordedCalls) => {
+      if (!url.endsWith('/api/agent-step')) throw new Error(`unexpected fetch to ${url}`);
+      sdkCalls += 1;
+      if (sdkCalls === 1) {
+        return {
+          schema: 'logicpilot.agent-step-result/v1',
+          contractVersion: 1,
+          turnId: body.turnId,
+          engineId: 'sdk.openai-agents',
+          stepIndex: 0,
+          status: 'continue',
+          toolCalls: [{ callId: 'sdk-inspect-1', name: 'inspect_model', arguments: {} }],
+          toolResults: [],
+          checkpoint: {
+            schema: 'logicpilot.agent-checkpoint/v1',
+            contractVersion: 1,
+            turnId: body.turnId,
+            engineId: 'sdk.openai-agents',
+            revision: 1,
+            state: 'serialized-sdk-state',
+          },
+        };
+      }
+      expect(body.stepIndex).toBe(1);
+      expect(body.turnId).toBe(recordedCalls[0]!.body.turnId);
+      expect(body.checkpoint).toMatchObject({ state: 'serialized-sdk-state' });
+      expect(body.toolResults).toEqual([
+        expect.objectContaining({ callId: 'sdk-inspect-1', ok: true }),
+      ]);
+      return {
+        schema: 'logicpilot.agent-step-result/v1',
+        contractVersion: 1,
+        turnId: body.turnId,
+        engineId: 'sdk.openai-agents',
+        stepIndex: 1,
+        status: 'done',
+        message: 'SDK finished',
+        toolCalls: [],
+        toolResults: body.toolResults,
+      };
+    });
+    const run = await runAssistantTurn({
+      message: 'inspect the model',
+      context: baseContext(),
+      session: createAssistantSession(),
+      engineId: 'sdk.openai-agents',
+    });
+    expect(run.ok).toBe(true);
+    expect(run.message).toBe('SDK finished');
+    expect(sdkCalls).toBe(2);
+    expect(calls.filter((call) => call.url.endsWith('/api/agent-step'))).toHaveLength(2);
+  });
+
   it('runs one step and finishes when the model is done', async () => {
     const { calls } = queueAssistant([
       { message: 'ok', plan: [{ id: 's1', label: 'check' }], toolCalls: [], done: true },

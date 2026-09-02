@@ -96,8 +96,9 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
 这些实现不等于所有生态能力都已完成。当前仍明确保留的工作项是：
 
 1. 将 SDK adapter 的真实 provider 多轮/拒绝审批/生产 tracing 纳入 parity benchmark，并
-   决定是否切换默认 AgentEngine；当前已完成可持久化 checkpoint、多轮恢复和 metadata-only
-   trace seam 和显式 JSONL trace sink，真实 provider parity 与生产保留/导出策略仍未通过门禁；
+   决定是否切换默认 AgentEngine；当前已完成可持久化 checkpoint、多轮恢复、IDE 宿主编排、
+   metadata-only trace seam 和显式 JSONL trace sink，真实 provider parity 与生产保留/导出
+   策略仍未通过门禁；
 2. 将高频手工 layout/evidence 同步从异步补偿提升为严格可重试事务队列；当前已有浏览器
    outbox/FIFO drain、稳定幂等键和有界死信重试，跨进程锁和服务端持久化 outbox 仍待完成；
 3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表已删除，

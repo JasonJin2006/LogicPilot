@@ -36,6 +36,7 @@ import {
 import { findAssistantTool, type AssistantTool } from './capabilities/logicpilot-modeling/tools';
 import { useModelStore } from '../state/modelStore';
 import type { ModelPatch } from '@logicpilot/editor';
+import type { AgentCheckpoint, JsonValue, ToolResult } from '@logicpilot/contracts';
 
 export const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -359,13 +360,15 @@ async function requestStep(
   messages: AssistantTurnMessage[],
   context: AssistantContext,
   options: RunAssistantOptions,
+  sdkTurn?: SdkTurnState,
 ): Promise<AssistantStepResponse> {
   const tools = [
     ...resolveAgentTools(options.capabilities, options.toolScope),
     ...(options.additionalTools ?? []),
   ];
   if (options.engineId === 'sdk.openai-agents') {
-    return requestSdkStep(messages, context, options, tools);
+    if (sdkTurn === undefined) throw new Error('SDK turn state is required');
+    return requestSdkStep(messages, context, options, tools, sdkTurn);
   }
   const engine = new BuiltinAgentEngine(({ messages: inputMessages, context: inputContext }) =>
     requestStepTransport(inputMessages.slice(), inputContext as AssistantContext, options),
@@ -384,11 +387,19 @@ async function requestStep(
   return decodeBuiltinAgentResult(result);
 }
 
+interface SdkTurnState {
+  readonly turnId: string;
+  stepIndex: number;
+  checkpoint?: AgentCheckpoint;
+  toolResults?: ToolResult[];
+}
+
 async function requestSdkStep(
   messages: AssistantTurnMessage[],
   context: AssistantContext,
   options: RunAssistantOptions,
   tools: readonly AssistantTool[],
+  sdkTurn: SdkTurnState,
 ): Promise<AssistantStepResponse> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const response = await fetchImpl(`${options.apiBase ?? ''}/api/agent-step`, {
@@ -400,12 +411,14 @@ async function requestSdkStep(
     body: JSON.stringify({
       schema: 'logicpilot.agent-step-request/v1',
       contractVersion: 1,
-      turnId: `ide-turn-${Date.now()}-${++agentStepSequence}`,
+      turnId: sdkTurn.turnId,
       engineId: 'sdk.openai-agents',
-      stepIndex: 0,
+      stepIndex: sdkTurn.stepIndex,
       input: { messages, context },
       tools: toolDescriptors(tools),
       compiledContext: context,
+      ...(sdkTurn.checkpoint === undefined ? {} : { checkpoint: sdkTurn.checkpoint }),
+      ...(sdkTurn.toolResults === undefined ? {} : { toolResults: sdkTurn.toolResults }),
     }),
     signal: options.signal,
   });
@@ -422,7 +435,12 @@ async function requestSdkStep(
         : `agent engine request failed (HTTP ${response.status})`,
     );
   }
-  return decodeBuiltinAgentResult(data as Parameters<typeof decodeBuiltinAgentResult>[0]);
+  const decoded = decodeBuiltinAgentResult(data as Parameters<typeof decodeBuiltinAgentResult>[0]);
+  if (!decoded.done && decoded.checkpoint === undefined)
+    throw new Error('SDK agent returned continue without a resumable checkpoint');
+  sdkTurn.checkpoint = decoded.checkpoint;
+  sdkTurn.stepIndex += 1;
+  return decoded;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -625,8 +643,21 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
   if (options.checkpoint === undefined)
     kernel.beginTurn({ role: 'user', content: options.message });
   const publishCheckpoint = () => options.onCheckpoint?.(kernel.checkpoint());
+  const sdkTurn: SdkTurnState | undefined =
+    options.engineId === 'sdk.openai-agents'
+      ? { turnId: `ide-turn-${Date.now()}-${++agentStepSequence}`, stepIndex: 0 }
+      : undefined;
+  let sdkToolResults: ToolResult[] = [];
   const recordToolResult = (result: AssistantToolResult) => {
     kernel.recordToolResult(result);
+    if (sdkTurn) {
+      sdkToolResults.push({
+        callId: result.toolCallId,
+        ok: result.ok,
+        content: result.result as JsonValue,
+        ...(result.error === undefined ? {} : { error: result.error }),
+      });
+    }
   };
   publishCheckpoint();
   let stepOpen = false;
@@ -658,7 +689,15 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
         }
         kernel.beginStep();
         stepOpen = true;
-        const response = await requestStep(kernel.deriveMessages(), options.context, options);
+        const response = await requestStep(
+          kernel.deriveMessages(),
+          options.context,
+          options,
+          sdkTurn,
+        );
+        // Results recorded below belong to the next provider round; retain
+        // the previous round's results until requestStep has consumed them.
+        sdkToolResults = [];
         kernel.recordAssistant(response);
         lastMessage = response.message;
         record({
@@ -979,6 +1018,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
             break;
           }
         }
+        if (sdkTurn) sdkTurn.toolResults = sdkToolResults.slice();
         if (cancelled) {
           closeStep('aborted');
           closeTurn('aborted');

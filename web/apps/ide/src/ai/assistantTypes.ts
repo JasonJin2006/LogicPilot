@@ -5,6 +5,7 @@
 
 import type { ModelDocument, ModelPatch } from '@logicpilot/editor';
 import type { AiMetrics } from './api';
+import type { AgentCheckpoint } from '@logicpilot/contracts';
 
 /** One tool call proposed by the model (validated before execution). */
 export interface AssistantToolCall {
@@ -46,6 +47,8 @@ export interface AssistantStepResponse {
   usage?: AssistantUsage;
   /** Provider-native reasoning items needed by Responses-style follow-ups. */
   providerItems?: Array<Record<string, unknown>>;
+  /** SDK run state used to resume an approval-gated provider turn. */
+  checkpoint?: AgentCheckpoint;
 }
 
 /** Persistent AI session state the runtime keeps between turns. */

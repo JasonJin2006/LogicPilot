@@ -139,3 +139,4 @@
 - [0108 Resumable Agent Turns and Trace Boundary](0108-resumable-agent-turns-and-trace-boundary)
 - [0109 Idempotent Artifact Sync Transactions](0109-idempotent-artifact-sync)
 - [0110 Persistent Plugin Registry Replay History](0110-persistent-plugin-registry-replay)
+- [0111 IDE SDK Turn Orchestration](0111-ide-sdk-turn-orchestration)
