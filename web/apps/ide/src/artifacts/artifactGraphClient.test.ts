@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { ArtifactSyncQueue } from './artifactGraphClient';
+import {
+  ArtifactSyncQueue,
+  type ArtifactOutboxRecord,
+  type ArtifactTransactionInput,
+} from './artifactGraphClient';
 
 describe('ArtifactSyncQueue', () => {
+  it('hydrates legacy inputs and bounded outbox records', () => {
+    const input: ArtifactTransactionInput = {
+      artifactId: 'evidence:one',
+      artifactKind: 'evidence',
+      operationType: 'execution-evidence',
+      payload: { id: 'one' },
+    };
+    const record: ArtifactOutboxRecord = { input, attempts: 2, lastError: 'offline' };
+    const storage = {
+      read: () => [record],
+      write: () => undefined,
+    };
+    const queue = new ArtifactSyncQueue(storage);
+    expect(queue.pendingCount()).toBe(1);
+    expect(queue.deadLetterCount()).toBe(0);
+  });
+
   it('serializes background writes and keeps the queue usable after failure', async () => {
     const queue = new ArtifactSyncQueue();
     const order: string[] = [];

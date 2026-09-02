@@ -31,35 +31,52 @@ export interface ArtifactTransactionInput {
   readonly actor?: string;
 }
 
+export interface ArtifactOutboxRecord {
+  readonly input: ArtifactTransactionInput;
+  readonly attempts: number;
+  readonly lastError?: string;
+}
+
 export interface ArtifactOutboxStorage {
-  read(): readonly ArtifactTransactionInput[];
-  write(items: readonly ArtifactTransactionInput[]): void;
+  read(): readonly (ArtifactTransactionInput | ArtifactOutboxRecord)[];
+  write(items: readonly (ArtifactTransactionInput | ArtifactOutboxRecord)[]): void;
 }
 
 class BrowserArtifactOutboxStorage implements ArtifactOutboxStorage {
   private readonly key = 'logicpilot.artifact.outbox.v1';
 
-  read(): readonly ArtifactTransactionInput[] {
+  read(): readonly (ArtifactTransactionInput | ArtifactOutboxRecord)[] {
     if (typeof window === 'undefined') return [];
     try {
       const raw = window.localStorage.getItem(this.key);
       if (!raw) return [];
       const parsed: unknown = JSON.parse(raw);
       return Array.isArray(parsed)
-        ? parsed.filter(
-            (item): item is ArtifactTransactionInput =>
-              typeof item === 'object' &&
-              item !== null &&
+        ? parsed.filter((item): item is ArtifactTransactionInput | ArtifactOutboxRecord => {
+            if (typeof item !== 'object' || item === null) return false;
+            const record = item as { input?: unknown; attempts?: unknown };
+            if (record.input !== undefined) {
+              const input = record.input as { artifactId?: unknown; operationType?: unknown };
+              return (
+                typeof input === 'object' &&
+                input !== null &&
+                typeof input.artifactId === 'string' &&
+                typeof input.operationType === 'string' &&
+                typeof record.attempts === 'number'
+              );
+            }
+            return (
               typeof (item as { artifactId?: unknown }).artifactId === 'string' &&
-              typeof (item as { operationType?: unknown }).operationType === 'string',
-          )
+              typeof (item as { operationType?: unknown }).operationType === 'string'
+            );
+          })
         : [];
     } catch {
       return [];
     }
   }
 
-  write(items: readonly ArtifactTransactionInput[]): void {
+  write(items: readonly (ArtifactTransactionInput | ArtifactOutboxRecord)[]): void {
     if (typeof window === 'undefined') return;
     try {
       const encoded = JSON.stringify(items);
@@ -79,12 +96,23 @@ class BrowserArtifactOutboxStorage implements ArtifactOutboxStorage {
 export class ArtifactSyncQueue {
   private tail: Promise<void> = Promise.resolve();
   private readonly storage: ArtifactOutboxStorage;
-  private readonly pending = new Map<string, ArtifactTransactionInput>();
+  private readonly pending = new Map<string, ArtifactOutboxRecord>();
+  private readonly deadLetters = new Map<string, ArtifactOutboxRecord>();
   private readonly results = new Map<string, Promise<string | undefined>>();
+  private readonly maxAttempts: number;
 
-  constructor(storage: ArtifactOutboxStorage = new BrowserArtifactOutboxStorage()) {
+  constructor(
+    storage: ArtifactOutboxStorage = new BrowserArtifactOutboxStorage(),
+    options: { readonly maxAttempts?: number } = {},
+  ) {
     this.storage = storage;
-    for (const input of storage.read()) this.pending.set(this.keyOf(input), input);
+    this.maxAttempts = options.maxAttempts ?? 3;
+    if (!Number.isSafeInteger(this.maxAttempts) || this.maxAttempts < 1)
+      throw new Error('artifact sync maxAttempts must be a positive integer');
+    for (const item of storage.read()) {
+      const record = isOutboxRecord(item) ? item : { input: item, attempts: 0 };
+      this.pending.set(this.keyOf(record.input), record);
+    }
   }
 
   enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -104,6 +132,10 @@ export class ArtifactSyncQueue {
     return this.pending.size;
   }
 
+  deadLetterCount(): number {
+    return this.deadLetters.size;
+  }
+
   enqueueTransaction(
     input: ArtifactTransactionInput,
     onFailure?: () => void,
@@ -111,7 +143,8 @@ export class ArtifactSyncQueue {
     const key = this.keyOf(input);
     const existing = this.results.get(key);
     if (existing) return existing;
-    this.pending.set(key, input);
+    const previous = this.pending.get(key);
+    this.pending.set(key, previous ?? { input, attempts: 0 });
     this.persistPending();
     const result = this.enqueue(async () => {
       const pending = await beginArtifactTransaction(input);
@@ -135,7 +168,23 @@ export class ArtifactSyncQueue {
       },
       (error) => {
         this.results.delete(key);
-        // Keep the item in the outbox for a future drain/restart retry.
+        const current = this.pending.get(key);
+        if (current !== undefined) {
+          const failed: ArtifactOutboxRecord = {
+            ...current,
+            attempts: current.attempts + 1,
+            lastError: error instanceof Error ? error.message : String(error),
+          };
+          if (failed.attempts >= this.maxAttempts) {
+            this.pending.delete(key);
+            this.deadLetters.set(key, failed);
+          } else {
+            this.pending.set(key, failed);
+          }
+          this.persistPending();
+        }
+        // Keep retryable items in the outbox; exhausted items become an
+        // explicit dead letter instead of retrying forever in the background.
         throw error;
       },
     );
@@ -145,8 +194,17 @@ export class ArtifactSyncQueue {
 
   /** Retry all persisted items after app-server/runtime recovery. */
   drain(): Promise<void> {
-    for (const input of [...this.pending.values()]) this.enqueueTransaction(input);
+    for (const { input } of [...this.pending.values()]) this.enqueueTransaction(input);
     return this.flush();
+  }
+
+  /** Explicitly requeue exhausted items after an operator/user decision. */
+  retryDeadLetters(): void {
+    for (const [key, record] of this.deadLetters) {
+      this.pending.set(key, { input: record.input, attempts: 0 });
+      this.deadLetters.delete(key);
+    }
+    this.persistPending();
   }
 
   private keyOf(input: ArtifactTransactionInput): string {
@@ -156,6 +214,19 @@ export class ArtifactSyncQueue {
   private persistPending(): void {
     this.storage.write([...this.pending.values()]);
   }
+}
+
+function isOutboxRecord(
+  value: ArtifactTransactionInput | ArtifactOutboxRecord,
+): value is ArtifactOutboxRecord {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'input' in value &&
+    typeof value.input === 'object' &&
+    value.input !== null &&
+    typeof value.attempts === 'number'
+  );
 }
 
 export const ARTIFACT_SYNC_QUEUE = new ArtifactSyncQueue();

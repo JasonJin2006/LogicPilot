@@ -99,7 +99,7 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    决定是否切换默认 AgentEngine；当前已完成可持久化 checkpoint、多轮恢复和 metadata-only
    trace seam，真实 provider 与 exporter 仍未通过门禁；
 2. 将高频手工 layout/evidence 同步从异步补偿提升为严格可重试事务队列；当前已有浏览器
-   outbox/FIFO drain 和稳定幂等键，死信、跨进程锁和服务端持久化 outbox 仍待完成；
+   outbox/FIFO drain、稳定幂等键和有界死信重试，跨进程锁和服务端持久化 outbox 仍待完成；
 3. 删除服务端旧 `ASSISTANT_TOOLS` fallback 和剩余兼容 facade（服务端静态工具表已删除，
    需要继续审计其他兼容层）；
 4. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
