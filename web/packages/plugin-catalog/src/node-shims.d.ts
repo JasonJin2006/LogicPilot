@@ -82,6 +82,15 @@ declare module 'node:url' {
   export function pathToFileURL(path: string): { readonly href: string };
 }
 
+declare module 'node:worker_threads' {
+  export class Worker {
+    constructor(code: string, options: { readonly eval: boolean; readonly workerData?: unknown });
+    once(event: 'message' | 'error', listener: (value: unknown) => void): this;
+    postMessage(value: unknown): void;
+    terminate(): Promise<number>;
+  }
+}
+
 declare module 'node:http' {
   export interface IncomingMessage {
     readonly method?: string;

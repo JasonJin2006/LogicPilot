@@ -148,6 +148,7 @@ describe('dynamic ESM loader', () => {
       roots: [{ scope: 'workspace', path: root }],
       scope: 'workspace',
       defaultTrustLevel: 't2',
+      isolate: true,
     })(entry);
     expect(thunk).toBeDefined();
     const module = await thunk!();

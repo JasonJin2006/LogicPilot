@@ -126,12 +126,11 @@ export class NodePluginRuntime {
           await this.refresh();
         }
       } catch (error) {
-        this.options.onAudit?.({
-          seq: 0,
-          timestamp: new Date().toISOString(),
-          action: 'error',
-          detail: `[registry] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-        });
+        this.host?.auditLog.append(
+          'error',
+          undefined,
+          `[registry] refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       if (!stopped) this.watchTimer = setTimeout(() => void tick(), intervalMs);
     };
@@ -195,17 +194,11 @@ export class NodePluginRuntime {
     const approved = this.approvedEntries(catalog.entries, this.lockfileValue);
     this.catalogValue = { ...catalog, entries: approved };
     const loaders = new Map<string, () => Promise<PluginModule>>();
+    const loaderErrors: string[] = [];
     const errors = (error: unknown): void => {
       // Keep diagnostics structured and path-free; the catalog scanner already
       // strips raw filesystem details before this callback is invoked.
-      if (error instanceof Error) {
-        this.options.onAudit?.({
-          seq: 0,
-          timestamp: new Date().toISOString(),
-          action: 'error',
-          detail: `[dynamic-loader] ${error.message}`,
-        });
-      }
+      if (error instanceof Error) loaderErrors.push(`[dynamic-loader] ${error.message}`);
     };
     const lockPlugins = this.lockfileValue?.plugins ?? [];
     const lockGrants = new Map(lockPlugins.map((entry) => [entry.id, entry.permissions]));
@@ -232,6 +225,7 @@ export class NodePluginRuntime {
         activationTimeoutMs: this.options.activationTimeoutMs,
         capabilities: this.wasmCapabilitiesFor(entry, grants),
         imports: this.options.wasmImports,
+        isolate: true,
         onError: errors,
       })(entry);
       const thunk = esm ?? wasm;
@@ -246,13 +240,15 @@ export class NodePluginRuntime {
       scope,
       discover: () => this.discoverScope(approved, scope, loaders),
     }));
-    return new PluginHost({
+    const host = new PluginHost({
       sources,
       grants,
       defaultTrustLevel: this.options.defaultTrustLevel,
       trustOverrides,
       onAudit: this.options.onAudit,
     });
+    for (const detail of loaderErrors) host.auditLog.append('error', undefined, detail);
+    return host;
   }
 
   private discoverScope(

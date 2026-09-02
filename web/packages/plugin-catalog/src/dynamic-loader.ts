@@ -3,6 +3,7 @@
 // already activated contributions through the host bridge.
 
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { Worker } from 'node:worker_threads';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PluginCatalogEntry, PluginModule, PluginScope } from '@logicpilot/plugin-host';
@@ -167,6 +168,8 @@ export interface DynamicWasmLoaderOptions {
   readonly activationTimeoutMs?: number;
   readonly capabilities?: ReadonlySet<string>;
   readonly imports?: WasmHostImports;
+  /** Run the WASM instance in a disposable Worker with hard termination. */
+  readonly isolate?: boolean;
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -238,6 +241,17 @@ export function createDynamicWasmLoader(
     }
     return async () => {
       try {
+        if (options.isolate) {
+          const controller = createWasmWorkerController(wasmPath, {
+            maxMemoryBytes: options.maxMemoryBytes,
+            timeoutMs: options.activationTimeoutMs,
+            capabilities: options.capabilities,
+          });
+          return {
+            activate: () => controller.activate(),
+            deactivate: () => controller.deactivate(),
+          } satisfies PluginModule;
+        }
         const bytes = readFileSync(wasmPath);
         const instance = await withTimeout(
           WebAssembly.instantiate(bytes, buildWasmImports(options.capabilities, options.imports)),
@@ -343,4 +357,118 @@ function withTimeout<T>(
     );
   });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+interface WasmWorkerController {
+  activate(): Promise<void>;
+  deactivate(): Promise<void>;
+}
+
+function createWasmWorkerController(
+  wasmPath: string,
+  options: {
+    readonly maxMemoryBytes?: number;
+    readonly timeoutMs?: number;
+    readonly capabilities?: ReadonlySet<string>;
+  },
+): WasmWorkerController {
+  const workerSource = `
+    const { parentPort, workerData } = require('node:worker_threads');
+    const { readFileSync } = require('node:fs');
+    let instance;
+    function importsFor(capabilities) {
+      const logicpilot = {};
+      if (capabilities.includes('runtime.log')) logicpilot.log = () => {};
+      if (capabilities.includes('runtime.random')) logicpilot.random_u32 = () => Math.floor(Math.random() * 0x100000000);
+      return { logicpilot };
+    }
+    (async () => {
+      try {
+        const bytes = readFileSync(workerData.path);
+        const result = await WebAssembly.instantiate(bytes, importsFor(workerData.capabilities));
+        instance = result.instance;
+        const memory = instance.exports.memory;
+        const size = memory && memory.buffer ? memory.buffer.byteLength : 0;
+        if (workerData.maxMemoryBytes && size > workerData.maxMemoryBytes) throw new Error('memory-limit');
+        if (typeof instance.exports.logicpilot_activate !== 'function') throw new Error('missing-activate');
+        parentPort.postMessage({ ok: true });
+      } catch (error) {
+        parentPort.postMessage({ ok: false, error: String(error && error.message || error) });
+      }
+    })();
+    parentPort.on('message', (message) => {
+      try {
+        if (!instance) throw new Error('not-ready');
+        const fn = message.kind === 'activate' ? instance.exports.logicpilot_activate : instance.exports.logicpilot_deactivate;
+        if (message.kind === 'activate' && typeof fn !== 'function') throw new Error('missing-activate');
+        if (typeof fn === 'function') fn();
+        parentPort.postMessage({ ok: true, request: message.request });
+      } catch (error) {
+        parentPort.postMessage({ ok: false, request: message.request, error: String(error && error.message || error) });
+      }
+    });
+  `;
+  const worker = new Worker(workerSource, {
+    eval: true,
+    workerData: {
+      path: wasmPath,
+      maxMemoryBytes: options.maxMemoryBytes,
+      capabilities: [...(options.capabilities ?? [])],
+    },
+  });
+  let request = 0;
+  const ready = new Promise<void>((resolveReady, rejectReady) => {
+    worker.once('message', (value: unknown) => {
+      const message = value as { readonly ok?: boolean };
+      if (message.ok) resolveReady();
+      else
+        rejectReady(
+          new DynamicEsmLoaderError('isolated WASM worker failed to initialize', 'module'),
+        );
+    });
+    worker.once('error', () =>
+      rejectReady(new DynamicEsmLoaderError('isolated WASM worker failed', 'module')),
+    );
+  });
+  const call = (kind: 'activate' | 'deactivate'): Promise<void> => {
+    const id = ++request;
+    const operation = new Promise<void>((resolveOperation, rejectOperation) => {
+      const onMessage = (value: unknown) => {
+        const message = value as {
+          readonly ok?: boolean;
+          readonly request?: number;
+          readonly error?: string;
+        };
+        if (message.request !== undefined && message.request !== id) return;
+        if (message.ok) resolveOperation();
+        else rejectOperation(new DynamicEsmLoaderError('isolated WASM execution failed', 'module'));
+      };
+      worker.once('message', onMessage);
+      worker.once('error', () =>
+        rejectOperation(new DynamicEsmLoaderError('isolated WASM worker failed', 'module')),
+      );
+      worker.postMessage({ kind, request: id });
+    });
+    return withTimeout(operation, options.timeoutMs, 'isolated-wasm');
+  };
+  const ensureReady = (): Promise<void> => ready;
+  return {
+    activate: async () => {
+      try {
+        await ensureReady();
+        await call('activate');
+      } catch (error) {
+        await worker.terminate();
+        throw error;
+      }
+    },
+    deactivate: async () => {
+      try {
+        await ensureReady();
+        await call('deactivate');
+      } finally {
+        await worker.terminate();
+      }
+    },
+  };
 }
