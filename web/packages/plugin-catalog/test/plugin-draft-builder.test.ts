@@ -97,4 +97,14 @@ describe('PluginDraftPackageBuilder', () => {
       ),
     ).toThrow(/approved/);
   });
+
+  it('never replaces an existing content-addressed package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-draft-package-immutable-'));
+    roots.push(root);
+    const signer = { keyId: 'test', signDigest: () => 'signature' };
+    const builder = new PluginDraftPackageBuilder(root);
+    const first = builder.build(approvedDraft(), signer);
+    expect(() => builder.build(approvedDraft(), signer)).toThrow(/already exists/);
+    expect(existsSync(first.packagePath)).toBe(true);
+  });
 });

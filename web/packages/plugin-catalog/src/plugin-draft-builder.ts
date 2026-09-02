@@ -65,7 +65,9 @@ export class PluginDraftPackageBuilder {
         'utf8',
       );
       const packagePath = join(root, sha256);
-      if (existsSync(packagePath)) rmSync(packagePath, { recursive: true, force: true });
+      if (existsSync(packagePath)) {
+        throw new Error(`content-addressed package '${sha256}' already exists`);
+      }
       renameSync(temporary, packagePath);
       return {
         packagePath,
