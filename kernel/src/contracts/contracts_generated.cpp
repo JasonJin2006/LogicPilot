@@ -29,6 +29,7 @@ nlohmann::ordered_json to_json_value(StepStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(ArtifactKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(RelationKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(TransactionStatus v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(CapabilityRpcStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(Severity v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(FixKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(RuntimeKind v) { return to_json(v); }
@@ -59,6 +60,8 @@ nlohmann::ordered_json to_json_value(const TypedOperation& v) { return to_json(v
 nlohmann::ordered_json to_json_value(const Revision& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const Relation& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const Transaction& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const CapabilityRpcEnvelope& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const CapabilityRpcResponse& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const Provenance& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const DiagnosticDefinition& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const FixDefinition& v) { return to_json(v); }
@@ -91,6 +94,7 @@ nlohmann::ordered_json to_json_value(const PluginMigration& v) { return to_json(
 nlohmann::ordered_json to_json_value(const PluginIntegrity& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockEntry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginLockfile& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginRuntimeSession& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewQuery& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewDefinition& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewContributions& v) { return to_json(v); }
@@ -258,6 +262,37 @@ bool parse(std::string_view text, TransactionStatus& out, std::string& error) {
 }
 
 nlohmann::ordered_json to_json(TransactionStatus value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(CapabilityRpcStatus value) {
+  switch (value) {
+    case CapabilityRpcStatus::kOk: return "ok";
+    case CapabilityRpcStatus::kDenied: return "denied";
+    case CapabilityRpcStatus::kInvalid: return "invalid";
+    case CapabilityRpcStatus::kTimeout: return "timeout";
+    case CapabilityRpcStatus::kFailed: return "failed";
+  }
+  return "<invalid CapabilityRpcStatus>";
+}
+
+bool parse(std::string_view text, CapabilityRpcStatus& out, std::string& error) {
+  static const std::pair<std::string_view, CapabilityRpcStatus> kTable[] = {
+      {"ok", CapabilityRpcStatus::kOk},
+      {"denied", CapabilityRpcStatus::kDenied},
+      {"invalid", CapabilityRpcStatus::kInvalid},
+      {"timeout", CapabilityRpcStatus::kTimeout},
+      {"failed", CapabilityRpcStatus::kFailed},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid CapabilityRpcStatus value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(CapabilityRpcStatus value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(Severity value) {
   switch (value) {
@@ -494,6 +529,16 @@ std::string dump(PermissionId value) {
     case PermissionId::kThemeDraftWrite: return "theme.draft.write";
     case PermissionId::kValidatorDraftWrite: return "validator.draft.write";
     case PermissionId::kRuntimeWasmBuild: return "runtime.wasm.build";
+    case PermissionId::kRuntimeLogWrite: return "runtime.log.write";
+    case PermissionId::kRuntimeRandomRead: return "runtime.random.read";
+    case PermissionId::kRuntimeClockRead: return "runtime.clock.read";
+    case PermissionId::kRuntimeEventEmit: return "runtime.event.emit";
+    case PermissionId::kRuntimeEventSubscribe: return "runtime.event.subscribe";
+    case PermissionId::kRuntimeServiceProvide: return "runtime.service.provide";
+    case PermissionId::kRuntimeServiceCall: return "runtime.service.call";
+    case PermissionId::kRuntimeStorageRead: return "runtime.storage.read";
+    case PermissionId::kRuntimeStorageWrite: return "runtime.storage.write";
+    case PermissionId::kRuntimeNetworkFetch: return "runtime.network.fetch";
     case PermissionId::kRuntimeNativeBuild: return "runtime.native.build";
     case PermissionId::kPluginInstall: return "plugin.install";
     case PermissionId::kPluginUpgrade: return "plugin.upgrade";
@@ -512,6 +557,16 @@ bool parse(std::string_view text, PermissionId& out, std::string& error) {
       {"theme.draft.write", PermissionId::kThemeDraftWrite},
       {"validator.draft.write", PermissionId::kValidatorDraftWrite},
       {"runtime.wasm.build", PermissionId::kRuntimeWasmBuild},
+      {"runtime.log.write", PermissionId::kRuntimeLogWrite},
+      {"runtime.random.read", PermissionId::kRuntimeRandomRead},
+      {"runtime.clock.read", PermissionId::kRuntimeClockRead},
+      {"runtime.event.emit", PermissionId::kRuntimeEventEmit},
+      {"runtime.event.subscribe", PermissionId::kRuntimeEventSubscribe},
+      {"runtime.service.provide", PermissionId::kRuntimeServiceProvide},
+      {"runtime.service.call", PermissionId::kRuntimeServiceCall},
+      {"runtime.storage.read", PermissionId::kRuntimeStorageRead},
+      {"runtime.storage.write", PermissionId::kRuntimeStorageWrite},
+      {"runtime.network.fetch", PermissionId::kRuntimeNetworkFetch},
       {"runtime.native.build", PermissionId::kRuntimeNativeBuild},
       {"plugin.install", PermissionId::kPluginInstall},
       {"plugin.upgrade", PermissionId::kPluginUpgrade},
@@ -2485,6 +2540,284 @@ bool operator==(const Transaction& lhs, const Transaction& rhs) {
       && lhs.committed_revision_id == rhs.committed_revision_id
       && lhs.created_at == rhs.created_at
       && lhs.resolution_record == rhs.resolution_record;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, CapabilityRpcEnvelope& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for CapabilityRpcEnvelope";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "generation",
+      "sessionId",
+      "pluginId",
+      "requestId",
+      "deadlineMs",
+      "capability",
+      "operation",
+      "payload",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "CapabilityRpcEnvelope: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "CapabilityRpcEnvelope");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.capability-rpc/v1") {
+        error = std::string("CapabilityRpcEnvelope.schema") + ": expected constant " + "logicpilot.capability-rpc/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "CapabilityRpcEnvelope");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("CapabilityRpcEnvelope.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "generation", "CapabilityRpcEnvelope");
+      if (!value.is_number_integer()) {
+        error = std::string("CapabilityRpcEnvelope.generation") + ": expected integer";
+        return false;
+      }
+      out.generation = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sessionId", "CapabilityRpcEnvelope");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcEnvelope.sessionId") + ": expected string";
+        return false;
+      }
+      out.session_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "pluginId", "CapabilityRpcEnvelope");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcEnvelope.pluginId") + ": expected string";
+        return false;
+      }
+      out.plugin_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "requestId", "CapabilityRpcEnvelope");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcEnvelope.requestId") + ": expected string";
+        return false;
+      }
+      out.request_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "deadlineMs", "CapabilityRpcEnvelope");
+      if (!value.is_number_integer()) {
+        error = std::string("CapabilityRpcEnvelope.deadlineMs") + ": expected integer";
+        return false;
+      }
+      out.deadline_ms = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "capability", "CapabilityRpcEnvelope");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcEnvelope.capability") + ": expected string";
+        return false;
+      }
+      out.capability = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "operation", "CapabilityRpcEnvelope");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcEnvelope.operation") + ": expected string";
+        return false;
+      }
+      out.operation = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "payload", "CapabilityRpcEnvelope");
+      out.payload = value;
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, CapabilityRpcEnvelope& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const CapabilityRpcEnvelope& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["generation"] = to_json_value(value.generation);
+    j["sessionId"] = to_json_value(value.session_id);
+    j["pluginId"] = to_json_value(value.plugin_id);
+    j["requestId"] = to_json_value(value.request_id);
+    j["deadlineMs"] = to_json_value(value.deadline_ms);
+    j["capability"] = to_json_value(value.capability);
+    j["operation"] = to_json_value(value.operation);
+    j["payload"] = to_json_value(value.payload);
+  return j;
+}
+
+std::string dump(const CapabilityRpcEnvelope& value) { return to_json(value).dump(2); }
+
+bool operator==(const CapabilityRpcEnvelope& lhs, const CapabilityRpcEnvelope& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.generation == rhs.generation
+      && lhs.session_id == rhs.session_id
+      && lhs.plugin_id == rhs.plugin_id
+      && lhs.request_id == rhs.request_id
+      && lhs.deadline_ms == rhs.deadline_ms
+      && lhs.capability == rhs.capability
+      && lhs.operation == rhs.operation
+      && lhs.payload.dump() == rhs.payload.dump();
+}
+
+bool parse_json(const nlohmann::ordered_json& j, CapabilityRpcResponse& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for CapabilityRpcResponse";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "generation",
+      "sessionId",
+      "requestId",
+      "status",
+      "errorCode",
+      "payload",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "CapabilityRpcResponse: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "CapabilityRpcResponse");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.capability-rpc/v1") {
+        error = std::string("CapabilityRpcResponse.schema") + ": expected constant " + "logicpilot.capability-rpc/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "CapabilityRpcResponse");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("CapabilityRpcResponse.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "generation", "CapabilityRpcResponse");
+      if (!value.is_number_integer()) {
+        error = std::string("CapabilityRpcResponse.generation") + ": expected integer";
+        return false;
+      }
+      out.generation = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sessionId", "CapabilityRpcResponse");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcResponse.sessionId") + ": expected string";
+        return false;
+      }
+      out.session_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "requestId", "CapabilityRpcResponse");
+      if (!value.is_string()) {
+        error = std::string("CapabilityRpcResponse.requestId") + ": expected string";
+        return false;
+      }
+      out.request_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "status", "CapabilityRpcResponse");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.status, enum_error)) {
+        error = std::string("CapabilityRpcResponse.status") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    auto field_it = j.find("errorCode");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("CapabilityRpcResponse.errorCode") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.error_code = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "payload", "CapabilityRpcResponse");
+      out.payload = value;
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, CapabilityRpcResponse& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const CapabilityRpcResponse& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["generation"] = to_json_value(value.generation);
+    j["sessionId"] = to_json_value(value.session_id);
+    j["requestId"] = to_json_value(value.request_id);
+    j["status"] = to_json(value.status);
+  if (value.error_code.has_value()) {
+    j["errorCode"] = to_json_value(*value.error_code);
+  }
+    j["payload"] = to_json_value(value.payload);
+  return j;
+}
+
+std::string dump(const CapabilityRpcResponse& value) { return to_json(value).dump(2); }
+
+bool operator==(const CapabilityRpcResponse& lhs, const CapabilityRpcResponse& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.generation == rhs.generation
+      && lhs.session_id == rhs.session_id
+      && lhs.request_id == rhs.request_id
+      && lhs.status == rhs.status
+      && lhs.error_code == rhs.error_code
+      && lhs.payload.dump() == rhs.payload.dump();
 }
 
 bool parse_json(const nlohmann::ordered_json& j, Provenance& out, std::string& error) {
@@ -6597,6 +6930,151 @@ bool operator==(const PluginLockfile& lhs, const PluginLockfile& rhs) {
   return lhs.schema == rhs.schema
       && lhs.contract_version == rhs.contract_version
       && lhs.plugins == rhs.plugins;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginRuntimeSession& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginRuntimeSession";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "sessionId",
+      "pluginId",
+      "generation",
+      "sha256",
+      "trust",
+      "grants",
+      "expiresAt",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginRuntimeSession: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "PluginRuntimeSession");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.plugin-runtime-session/v1") {
+        error = std::string("PluginRuntimeSession.schema") + ": expected constant " + "logicpilot.plugin-runtime-session/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "PluginRuntimeSession");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("PluginRuntimeSession.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sessionId", "PluginRuntimeSession");
+      if (!value.is_string()) {
+        error = std::string("PluginRuntimeSession.sessionId") + ": expected string";
+        return false;
+      }
+      out.session_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "pluginId", "PluginRuntimeSession");
+      if (!value.is_string()) {
+        error = std::string("PluginRuntimeSession.pluginId") + ": expected string";
+        return false;
+      }
+      out.plugin_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "generation", "PluginRuntimeSession");
+      if (!value.is_number_integer()) {
+        error = std::string("PluginRuntimeSession.generation") + ": expected integer";
+        return false;
+      }
+      out.generation = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "sha256", "PluginRuntimeSession");
+      if (!value.is_string()) {
+        error = std::string("PluginRuntimeSession.sha256") + ": expected string";
+        return false;
+      }
+      out.sha256 = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "trust", "PluginRuntimeSession");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.trust, enum_error)) {
+        error = std::string("PluginRuntimeSession.trust") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "grants", "PluginRuntimeSession");
+      if (!value.is_array()) {
+        error = std::string("PluginRuntimeSession.grants") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.grants.emplace_back(), error)) {
+          error = std::string("PluginRuntimeSession.grants") + ": " + error;
+          return false;
+        }
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "expiresAt", "PluginRuntimeSession");
+      if (!value.is_string()) {
+        error = std::string("PluginRuntimeSession.expiresAt") + ": expected string";
+        return false;
+      }
+      out.expires_at = value.get<std::string>();
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginRuntimeSession& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginRuntimeSession& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["sessionId"] = to_json_value(value.session_id);
+    j["pluginId"] = to_json_value(value.plugin_id);
+    j["generation"] = to_json_value(value.generation);
+    j["sha256"] = to_json_value(value.sha256);
+    j["trust"] = to_json(value.trust);
+    j["grants"] = to_json_value(value.grants);
+    j["expiresAt"] = to_json_value(value.expires_at);
+  return j;
+}
+
+std::string dump(const PluginRuntimeSession& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginRuntimeSession& lhs, const PluginRuntimeSession& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.session_id == rhs.session_id
+      && lhs.plugin_id == rhs.plugin_id
+      && lhs.generation == rhs.generation
+      && lhs.sha256 == rhs.sha256
+      && lhs.trust == rhs.trust
+      && lhs.grants == rhs.grants
+      && lhs.expires_at == rhs.expires_at;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, ViewQuery& out, std::string& error) {

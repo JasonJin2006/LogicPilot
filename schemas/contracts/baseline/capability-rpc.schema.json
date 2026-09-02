@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/capability-rpc.schema.json",
+  "title": "LogicPilot capability RPC contracts",
+  "description": "Generation-bound request and response envelopes exchanged between PluginHost and isolated plugin runtimes.",
+  "$defs": {
+    "CapabilityRpcStatus": {
+      "type": "string",
+      "enum": ["ok", "denied", "invalid", "timeout", "failed"]
+    },
+    "CapabilityRpcEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "generation",
+        "sessionId",
+        "pluginId",
+        "requestId",
+        "deadlineMs",
+        "capability",
+        "operation",
+        "payload"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.capability-rpc/v1" },
+        "contractVersion": { "const": 1 },
+        "generation": { "type": "integer", "minimum": 1 },
+        "sessionId": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "pluginId": { "$ref": "common.schema.json#/$defs/PluginId" },
+        "requestId": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "deadlineMs": { "type": "integer", "minimum": 1 },
+        "capability": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "operation": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "payload": { "x-freeform-json": true }
+      }
+    },
+    "CapabilityRpcResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "generation",
+        "sessionId",
+        "requestId",
+        "status",
+        "payload"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.capability-rpc/v1" },
+        "contractVersion": { "const": 1 },
+        "generation": { "type": "integer", "minimum": 1 },
+        "sessionId": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "requestId": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "status": { "$ref": "#/$defs/CapabilityRpcStatus" },
+        "errorCode": { "type": "string", "maxLength": 128 },
+        "payload": { "x-freeform-json": true }
+      }
+    }
+  }
+}

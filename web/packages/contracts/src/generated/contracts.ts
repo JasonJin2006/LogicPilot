@@ -175,6 +175,35 @@ export interface Transaction {
   readonly resolutionRecord?: string;
 }
 
+// --- CapabilityRpcStatus (capability-rpc.schema.json) ---
+export type CapabilityRpcStatus = "ok" | "denied" | "invalid" | "timeout" | "failed";
+
+// --- CapabilityRpcEnvelope (capability-rpc.schema.json) ---
+export interface CapabilityRpcEnvelope {
+  readonly schema: "logicpilot.capability-rpc/v1";
+  readonly contractVersion: 1;
+  readonly generation: number;
+  readonly sessionId: string;
+  readonly pluginId: PluginId;
+  readonly requestId: string;
+  readonly deadlineMs: number;
+  readonly capability: CapabilityId;
+  readonly operation: string;
+  readonly payload: JsonValue;
+}
+
+// --- CapabilityRpcResponse (capability-rpc.schema.json) ---
+export interface CapabilityRpcResponse {
+  readonly schema: "logicpilot.capability-rpc/v1";
+  readonly contractVersion: 1;
+  readonly generation: number;
+  readonly sessionId: string;
+  readonly requestId: string;
+  readonly status: CapabilityRpcStatus;
+  readonly errorCode?: string;
+  readonly payload: JsonValue;
+}
+
 // --- PluginId (common.schema.json) ---
 export type PluginId = string;
 
@@ -426,7 +455,7 @@ export interface KnowledgePack {
 }
 
 // --- PermissionId (permission-trust.schema.json) ---
-export type PermissionId = "knowledge.draft.write" | "skill.draft.write" | "instruction.draft.write" | "view.draft.write" | "notation.draft.write" | "theme.draft.write" | "validator.draft.write" | "runtime.wasm.build" | "runtime.native.build" | "plugin.install" | "plugin.upgrade" | "plugin.publish";
+export type PermissionId = "knowledge.draft.write" | "skill.draft.write" | "instruction.draft.write" | "view.draft.write" | "notation.draft.write" | "theme.draft.write" | "validator.draft.write" | "runtime.wasm.build" | "runtime.log.write" | "runtime.random.read" | "runtime.clock.read" | "runtime.event.emit" | "runtime.event.subscribe" | "runtime.service.provide" | "runtime.service.call" | "runtime.storage.read" | "runtime.storage.write" | "runtime.network.fetch" | "runtime.native.build" | "plugin.install" | "plugin.upgrade" | "plugin.publish";
 
 // --- TrustLevel (permission-trust.schema.json) ---
 export type TrustLevel = "t0" | "t1" | "t2" | "t3" | "t4" | "t5";
@@ -578,6 +607,19 @@ export interface PluginLockfile {
   readonly schema: "logicpilot.plugin-lock/v1";
   readonly contractVersion: 1;
   readonly plugins: ReadonlyArray<PluginLockEntry>;
+}
+
+// --- PluginRuntimeSession (plugin-runtime-session.schema.json) ---
+export interface PluginRuntimeSession {
+  readonly schema: "logicpilot.plugin-runtime-session/v1";
+  readonly contractVersion: 1;
+  readonly sessionId: string;
+  readonly pluginId: PluginId;
+  readonly generation: number;
+  readonly sha256: Sha256Hex;
+  readonly trust: TrustLevel;
+  readonly grants: ReadonlyArray<PermissionGrant>;
+  readonly expiresAt: Iso8601Timestamp;
 }
 
 // --- CanvasEngineId (view-notation.schema.json) ---

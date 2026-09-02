@@ -75,6 +75,18 @@ enum class TransactionStatus : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, TransactionStatus& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(TransactionStatus value);
 
+enum class CapabilityRpcStatus : std::uint8_t {
+  kOk,
+  kDenied,
+  kInvalid,
+  kTimeout,
+  kFailed,
+};
+
+[[nodiscard]] std::string dump(CapabilityRpcStatus value);
+[[nodiscard]] bool parse(std::string_view text, CapabilityRpcStatus& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(CapabilityRpcStatus value);
+
 enum class Severity : std::uint8_t {
   kInfo,
   kWarning,
@@ -172,6 +184,16 @@ enum class PermissionId : std::uint8_t {
   kThemeDraftWrite,
   kValidatorDraftWrite,
   kRuntimeWasmBuild,
+  kRuntimeLogWrite,
+  kRuntimeRandomRead,
+  kRuntimeClockRead,
+  kRuntimeEventEmit,
+  kRuntimeEventSubscribe,
+  kRuntimeServiceProvide,
+  kRuntimeServiceCall,
+  kRuntimeStorageRead,
+  kRuntimeStorageWrite,
+  kRuntimeNetworkFetch,
   kRuntimeNativeBuild,
   kPluginInstall,
   kPluginUpgrade,
@@ -311,6 +333,8 @@ struct TypedOperation;
 struct Revision;
 struct Relation;
 struct Transaction;
+struct CapabilityRpcEnvelope;
+struct CapabilityRpcResponse;
 struct Provenance;
 struct DiagnosticDefinition;
 struct FixDefinition;
@@ -343,6 +367,7 @@ struct PluginMigration;
 struct PluginIntegrity;
 struct PluginLockEntry;
 struct PluginLockfile;
+struct PluginRuntimeSession;
 struct ViewQuery;
 struct ViewDefinition;
 struct ViewContributions;
@@ -429,6 +454,44 @@ struct ArtifactRef {
 [[nodiscard]] bool parse(std::string_view text, ArtifactRef& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const ArtifactRef& value);
 [[nodiscard]] std::string dump(const ArtifactRef& value);
+
+// capability-rpc.schema.json
+struct CapabilityRpcEnvelope {
+  std::string schema;
+  std::int64_t contract_version;
+  std::int64_t generation;
+  std::string session_id;
+  std::string plugin_id;
+  std::string request_id;
+  std::int64_t deadline_ms;
+  std::string capability;
+  std::string operation;
+  nlohmann::ordered_json payload;
+};
+
+[[nodiscard]] bool operator==(const CapabilityRpcEnvelope& lhs, const CapabilityRpcEnvelope& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, CapabilityRpcEnvelope& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, CapabilityRpcEnvelope& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const CapabilityRpcEnvelope& value);
+[[nodiscard]] std::string dump(const CapabilityRpcEnvelope& value);
+
+// capability-rpc.schema.json
+struct CapabilityRpcResponse {
+  std::string schema;
+  std::int64_t contract_version;
+  std::int64_t generation;
+  std::string session_id;
+  std::string request_id;
+  CapabilityRpcStatus status;
+  std::optional<std::string> error_code;
+  nlohmann::ordered_json payload;
+};
+
+[[nodiscard]] bool operator==(const CapabilityRpcResponse& lhs, const CapabilityRpcResponse& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, CapabilityRpcResponse& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, CapabilityRpcResponse& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const CapabilityRpcResponse& value);
+[[nodiscard]] std::string dump(const CapabilityRpcResponse& value);
 
 // view-notation.schema.json
 struct CreateAction {
@@ -759,6 +822,25 @@ struct PluginMigration {
 [[nodiscard]] bool parse(std::string_view text, PluginMigration& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginMigration& value);
 [[nodiscard]] std::string dump(const PluginMigration& value);
+
+// plugin-runtime-session.schema.json
+struct PluginRuntimeSession {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string session_id;
+  std::string plugin_id;
+  std::int64_t generation;
+  std::string sha256;
+  TrustLevel trust;
+  std::vector<PermissionGrant> grants;
+  std::string expires_at;
+};
+
+[[nodiscard]] bool operator==(const PluginRuntimeSession& lhs, const PluginRuntimeSession& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRuntimeSession& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginRuntimeSession& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginRuntimeSession& value);
+[[nodiscard]] std::string dump(const PluginRuntimeSession& value);
 
 // view-notation.schema.json
 struct PortRule {

@@ -24,6 +24,9 @@ export interface ContractTypes {
   Relation: C.Relation;
   TransactionStatus: C.TransactionStatus;
   Transaction: C.Transaction;
+  CapabilityRpcStatus: C.CapabilityRpcStatus;
+  CapabilityRpcEnvelope: C.CapabilityRpcEnvelope;
+  CapabilityRpcResponse: C.CapabilityRpcResponse;
   PluginId: string;
   CapabilityId: string;
   SemanticVersion: string;
@@ -84,6 +87,7 @@ export interface ContractTypes {
   PluginIntegrity: C.PluginIntegrity;
   PluginLockEntry: C.PluginLockEntry;
   PluginLockfile: C.PluginLockfile;
+  PluginRuntimeSession: C.PluginRuntimeSession;
   CanvasEngineId: C.CanvasEngineId;
   LayoutPersistence: C.LayoutPersistence;
   ViewQuery: C.ViewQuery;
