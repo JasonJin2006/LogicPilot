@@ -8,3 +8,4 @@ export * from './agent-engine-registry.js';
 export * from './plugin-draft-registry.js';
 export * from './plugin-draft-validator.js';
 export * from './sdk-agent-engine.js';
+export * from './agent-engine-parity.js';

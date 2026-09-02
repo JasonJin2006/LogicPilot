@@ -128,3 +128,4 @@
 - [0097 Builtin Semantics Composition Seam](0097-builtin-semantics-composition-seam)
 - [0098 Builtin Canvas and Model Composition Seams](0098-builtin-canvas-composition-seams)
 - [0099 Bounded Draft Resource Files](0099-draft-resource-files)
+- [0100 AgentEngine Contract Parity Harness](0100-agent-engine-parity-harness)
