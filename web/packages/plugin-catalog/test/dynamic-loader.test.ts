@@ -134,6 +134,27 @@ describe('dynamic ESM loader', () => {
     await module.deactivate?.();
   });
 
+  it('terminates a Worker running a synchronous infinite loop', async () => {
+    const { root, entry, manifest } = fixture();
+    writeFileSync(
+      join(root, 'pkg', 'activate.mjs'),
+      'export function activate() { while (true) {} }',
+    );
+    const loopEntry = {
+      ...entry,
+      sha256: computePackageDigest(join(root, 'pkg'), manifest),
+    };
+    const thunk = createDynamicEsmLoader({
+      roots: [{ scope: 'workspace', path: root }],
+      scope: 'workspace',
+      defaultTrustLevel: 't4',
+      isolate: true,
+      activationTimeoutMs: 25,
+    })(loopEntry);
+    const module = await thunk!();
+    await expect(module.activate({} as never)).rejects.toMatchObject({ code: 'module' });
+  });
+
   it('instantiates a capability-free WASM module with lifecycle exports', async () => {
     const root = mkdtempSync(join(process.cwd(), '.dynamic-wasm-'));
     cleanups.push(root);
