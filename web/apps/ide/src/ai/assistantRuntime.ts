@@ -33,10 +33,7 @@ import {
   decodeBuiltinAgentResult,
   toolDescriptors,
 } from './builtinAgentEngine';
-import {
-  findLogicPilotTool,
-  type AssistantTool,
-} from './capabilities/logicpilot-modeling/registry';
+import { findProcessTool, type AssistantTool } from './capabilities/logicpilot-process/registry';
 import { useModelStore } from '../state/modelStore';
 import type { ModelPatch } from '@logicpilot/editor';
 import type { AgentCheckpoint, JsonValue, ToolResult } from '@logicpilot/contracts';
@@ -750,7 +747,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
 
         const executeKnownTool = async (
           call: (typeof response.toolCalls)[number],
-          tool: NonNullable<ReturnType<typeof findLogicPilotTool>>,
+          tool: NonNullable<ReturnType<typeof findProcessTool>>,
           toolStepIndex: number,
           allowApproval: boolean,
           recordResult: boolean,
@@ -913,7 +910,7 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
             break;
           }
           const call = response.toolCalls[callIndex]!;
-          const tool = findLogicPilotTool(call.name, availableTools);
+          const tool = findProcessTool(call.name, availableTools);
           const fingerprint = `${toolStateRevision}:${toolCallFingerprint(call)}`;
           if (executedToolFingerprints.has(fingerprint)) {
             kernel.recordToolCall(call);
@@ -950,12 +947,12 @@ export async function runAssistantTurn(options: RunAssistantOptions): Promise<As
           if (tool.executionMode === 'parallel') {
             const group: Array<{
               call: (typeof response.toolCalls)[number];
-              tool: NonNullable<ReturnType<typeof findLogicPilotTool>>;
+              tool: NonNullable<ReturnType<typeof findProcessTool>>;
             }> = [{ call, tool }];
             let scan = callIndex + 1;
             while (scan < response.toolCalls.length) {
               const candidate = response.toolCalls[scan]!;
-              const candidateTool = findLogicPilotTool(candidate.name, availableTools);
+              const candidateTool = findProcessTool(candidate.name, availableTools);
               const candidateFingerprint = `${toolStateRevision}:${toolCallFingerprint(candidate)}`;
               if (
                 candidateTool?.executionMode !== 'parallel' ||

@@ -14,7 +14,7 @@ export const AGENT_SKILLS = Object.freeze({
       'For a new model, prefer one complete atomic patch with blocks and connections.',
       'After a failed compile, use the returned diagnostics to make a targeted repair.',
     ].join('\n'),
-    capabilityIds: Object.freeze(['logicpilot-modeling']),
+    capabilityIds: Object.freeze(['logicpilot-process', 'logicpilot-sysml']),
     userInvocable: true,
     modelInvocable: true,
   }),
@@ -118,9 +118,7 @@ export async function loadAgentSkills(value, { workspaceRoot } = {}) {
   const ids = selected.includes('__workspace__')
     ? [...selected.filter((id) => id !== '__workspace__'), ...discovered.map((skill) => skill.id)]
     : selected;
-  return ids
-    .map((id) => builtins.find((skill) => skill.id === id) ?? byId.get(id))
-    .filter(Boolean);
+  return ids.map((id) => builtins.find((skill) => skill.id === id) ?? byId.get(id)).filter(Boolean);
 }
 
 export async function loadAgentSkillInstructions(value, options = {}) {

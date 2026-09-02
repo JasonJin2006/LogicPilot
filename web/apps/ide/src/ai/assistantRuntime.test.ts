@@ -10,7 +10,7 @@ import { createProject } from '../project/project';
 import { runAssistantTurn } from './assistantRuntime';
 import { createAssistantKernel } from './assistantKernel';
 import { createAssistantSession, type AssistantContext } from './assistantTypes';
-import { findLogicPilotTool } from './capabilities/logicpilot-modeling/registry';
+import { findProcessTool } from './capabilities/logicpilot-process/registry';
 import { undoAssistantChange } from './capabilities/logicpilot-modeling/runtime';
 import { buildAssistantContext } from './contextBuilder';
 import { useModelStore } from '../state/modelStore';
@@ -284,7 +284,7 @@ describe('assistant runtime: control flow', () => {
       message: 'inspect SysML',
       context: baseContext(),
       session: createAssistantSession(),
-      capabilities: ['logicpilot-modeling'],
+      capabilities: ['logicpilot-sysml'],
       toolScope: { documentType: 'sysml' },
     });
     const names = calls[0]!.body.toolNames as string[];
@@ -890,7 +890,7 @@ describe('assistant tools: validation', () => {
   });
 
   it('rejects non-finite numeric params', () => {
-    const tool = findLogicPilotTool('apply_model_patch')!;
+    const tool = findProcessTool('apply_model_patch')!;
     const problem = tool.validate({
       patch: {
         version: 1,
@@ -904,7 +904,7 @@ describe('assistant tools: validation', () => {
   });
 
   it('rejects a missing summary for apply_model_patch', () => {
-    const tool = findLogicPilotTool('apply_model_patch')!;
+    const tool = findProcessTool('apply_model_patch')!;
     expect(tool.validate({ patch: { version: 1, operations: [] }, summary: 42 })).toContain(
       'summary must be a string',
     );
@@ -915,7 +915,7 @@ describe('assistant tools: model editing', () => {
   it('refuses model mutations when no project is open', async () => {
     useProjectStore.getState().clearProject();
     useWorkspaceStore.getState().closeWorkspace();
-    const tool = findLogicPilotTool('apply_model_patch')!;
+    const tool = findProcessTool('apply_model_patch')!;
     const result = await tool.execute(
       {
         patch: {
@@ -984,7 +984,7 @@ describe('assistant tools: model editing', () => {
     const document = documentWithQueue();
     useModelStore.setState({ document });
     queueAssistant([{ message: 'done', plan: [], toolCalls: [], done: true }]);
-    const tool = findLogicPilotTool('apply_model_patch')!;
+    const tool = findProcessTool('apply_model_patch')!;
     const result = await tool.execute(
       {
         patch: {
@@ -1024,7 +1024,7 @@ describe('assistant tools: model editing', () => {
       ],
     } as ModelDocument;
     useModelStore.setState({ document });
-    const tool = findLogicPilotTool('apply_model_patch')!;
+    const tool = findProcessTool('apply_model_patch')!;
     const problem = tool.validate({
       patch: {
         version: 1,
@@ -1415,7 +1415,7 @@ describe('assistant tools: runs and metrics', () => {
   });
 
   it('explain-without-metrics fails cleanly instead of inventing numbers', async () => {
-    const tool = findLogicPilotTool('inspect_run_metrics')!;
+    const tool = findProcessTool('inspect_run_metrics')!;
     const result = await tool.execute(
       {},
       { session: createAssistantSession(), experiment: { seed: 1 } as never },
@@ -1432,7 +1432,7 @@ describe('assistant tools: runs and metrics', () => {
       },
       blocks: [],
     };
-    const tool = findLogicPilotTool('inspect_run_metrics')!;
+    const tool = findProcessTool('inspect_run_metrics')!;
     const result = await tool.execute({}, { session, experiment: { seed: 1 } as never });
     expect(result.ok).toBe(true);
     const metrics = result.metrics as { summary: Record<string, { mean: number }> };
@@ -1496,7 +1496,7 @@ describe('assistant tools: runs and metrics', () => {
         throw new Error(`unexpected fetch to ${url}`);
       }),
     );
-    const study = await findLogicPilotTool('run_parameter_study')!.execute(
+    const study = await findProcessTool('run_parameter_study')!.execute(
       {},
       {
         session,
@@ -1504,7 +1504,7 @@ describe('assistant tools: runs and metrics', () => {
       },
     );
     expect(study.pointCount).toBe(2);
-    const explanation = await findLogicPilotTool('explain_results')!.execute(
+    const explanation = await findProcessTool('explain_results')!.execute(
       { question: 'why?' },
       {
         session,
@@ -1512,12 +1512,12 @@ describe('assistant tools: runs and metrics', () => {
       },
     );
     expect(explanation.findings).toEqual(['Wq is grounded']);
-    const optimized = await findLogicPilotTool('optimize_model')!.execute(
+    const optimized = await findProcessTool('optimize_model')!.execute(
       { prompt: 'minimize Wq' },
       { session, experiment: { arrivals: 100, warmup: 10 } as never },
     );
     expect(optimized.evaluations).toHaveLength(1);
-    const comparison = await findLogicPilotTool('compare_runs')!.execute(
+    const comparison = await findProcessTool('compare_runs')!.execute(
       {},
       { session, experiment: { arrivals: 100, warmup: 10 } as never },
     );
@@ -1565,7 +1565,7 @@ describe('assistant tools: runs and metrics', () => {
       throw new Error(`unexpected fetch to ${url}`);
     });
     const session = createAssistantSession();
-    const tool = findLogicPilotTool('run_simulation')!;
+    const tool = findProcessTool('run_simulation')!;
 
     const result = await tool.execute({}, { session, experiment: { seed: 1 } as never });
 

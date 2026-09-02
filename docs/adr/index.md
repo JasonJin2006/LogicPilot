@@ -145,3 +145,4 @@
 - [0114 Browser Registry Signature Verification](0114-browser-registry-signature-verification)
 - [0115 Artifact Store Cross-Process Concurrency](0115-artifact-store-cross-process-concurrency)
 - [0116 Server Durable Artifact Outbox](0116-server-artifact-outbox)
+- [0117 Process/SysML Agent Capability Split](0117-process-sysml-capability-split)

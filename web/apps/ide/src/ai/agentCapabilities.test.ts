@@ -7,7 +7,7 @@ import {
 } from './agentContracts';
 import {
   AGENT_CAPABILITY_REGISTRY,
-  LOGICPILOT_MODELING_CAPABILITY,
+  LOGICPILOT_PROCESS_CAPABILITY,
   resolveAgentTools,
 } from './agentCapabilities';
 import { GENERAL_AGENT_PROFILE, LOGICPILOT_MODELING_PROFILE } from './agentProfiles';
@@ -16,7 +16,10 @@ import { AgentOrchestrator } from './agentOrchestrator';
 describe('agent capability contracts', () => {
   it('keeps the general profile tool-free and mounts modeling explicitly', () => {
     expect(GENERAL_AGENT_PROFILE.capabilityIds).toEqual([]);
-    expect(LOGICPILOT_MODELING_PROFILE.capabilityIds).toEqual(['logicpilot-modeling']);
+    expect(LOGICPILOT_MODELING_PROFILE.capabilityIds).toEqual([
+      'logicpilot-process',
+      'logicpilot-sysml',
+    ]);
     expect(resolveAgentTools(GENERAL_AGENT_PROFILE.capabilityIds)).toEqual([]);
     expect(resolveAgentTools(LOGICPILOT_MODELING_PROFILE.capabilityIds).length).toBeGreaterThan(0);
   });
@@ -24,7 +27,7 @@ describe('agent capability contracts', () => {
   it('registers and removes capability packages without coupling the registry to a host', () => {
     const registry = new AgentCapabilityRegistry();
     const capability = {
-      ...LOGICPILOT_MODELING_CAPABILITY,
+      ...LOGICPILOT_PROCESS_CAPABILITY,
       id: 'test-capability',
       tools: [],
     };
@@ -36,9 +39,8 @@ describe('agent capability contracts', () => {
   });
 
   it('exposes the mounted LogicPilot capability through a stable registry', () => {
-    expect(AGENT_CAPABILITY_REGISTRY.get('logicpilot-modeling')).toBe(
-      LOGICPILOT_MODELING_CAPABILITY,
-    );
+    expect(AGENT_CAPABILITY_REGISTRY.get('logicpilot-process')).toBe(LOGICPILOT_PROCESS_CAPABILITY);
+    expect(AGENT_CAPABILITY_REGISTRY.get('logicpilot-sysml')).toBeDefined();
   });
 
   it('keeps Skill and MCP registration as separate host-owned seams', () => {

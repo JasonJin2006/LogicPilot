@@ -57,7 +57,10 @@ import { OptimizeChart, TrajectoryChart } from './charts';
 import { aiSessionScope, useAiConversationStore } from './conversationStore';
 import type { AiSession } from './conversationStore';
 import { LOGICPILOT_MODELING_PROFILE } from './agentProfiles';
-import { LOGICPILOT_MODELING_READONLY_CAPABILITY } from './agentCapabilities';
+import {
+  LOGICPILOT_PROCESS_READONLY_CAPABILITY,
+  LOGICPILOT_SYSML_READONLY_CAPABILITY,
+} from './agentCapabilities';
 import { createMcpTools, discoverMcpCapabilities } from './mcpClient';
 import type { AssistantTool } from './toolTypes';
 import { createAssistantKernel } from './assistantKernel';
@@ -916,7 +919,12 @@ export function AIPanel() {
       capabilities: [
         ...(workspaceOpen && workspacePermissionAllowed && toolsEnabled
           ? permissionMode === 'Read only'
-            ? [LOGICPILOT_MODELING_READONLY_CAPABILITY.id]
+            ? [
+                (documentContributionFor(useUiStore.getState().activeFile)?.id === 'sysml'
+                  ? LOGICPILOT_SYSML_READONLY_CAPABILITY
+                  : LOGICPILOT_PROCESS_READONLY_CAPABILITY
+                ).id,
+              ]
             : LOGICPILOT_MODELING_PROFILE.capabilityIds
           : []),
         ...(workspaceOpen &&

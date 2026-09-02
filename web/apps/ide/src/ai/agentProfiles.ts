@@ -18,7 +18,7 @@ export const LOGICPILOT_MODELING_PROFILE: AgentProfile = Object.freeze({
   id: 'logicpilot-modeling',
   label: 'LogicPilot modeling agent',
   description: 'General Agent with the LogicPilot modeling capability mounted by the IDE.',
-  capabilityIds: ['logicpilot-modeling'],
+  capabilityIds: ['logicpilot-process', 'logicpilot-sysml'],
   skillIds: ['logicpilot-modeling-basics'],
 });
 

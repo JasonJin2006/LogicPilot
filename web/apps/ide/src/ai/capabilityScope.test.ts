@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_CAPABILITY_REGISTRY, LOGICPILOT_MODELING_CAPABILITY } from './agentCapabilities';
+import { AGENT_CAPABILITY_REGISTRY, LOGICPILOT_PROCESS_CAPABILITY } from './agentCapabilities';
 
 const toolNames = (tools: readonly { name: string }[]) => tools.map((tool) => tool.name);
 
 describe('agent capability scoped tool discovery', () => {
-  it('keeps the full mounted set when no scope is given (legacy behavior)', () => {
-    const names = toolNames(AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-modeling']));
+  it('combines independent Process and SysML capabilities when no scope is given', () => {
+    const names = toolNames(
+      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-process', 'logicpilot-sysml']),
+    );
     expect(names).toContain('inspect_model');
     expect(names).toContain('apply_model_patch');
     expect(names).toContain('inspect_sysml_projection');
@@ -13,7 +15,7 @@ describe('agent capability scoped tool discovery', () => {
 
   it('mounts only SysML projection tools for an active .sysml document', () => {
     const names = toolNames(
-      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-modeling'], { documentType: 'sysml' }),
+      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-sysml'], { documentType: 'sysml' }),
     );
     expect(names).toContain('inspect_sysml_projection');
     expect(names).toContain('move_sysml_element');
@@ -24,24 +26,30 @@ describe('agent capability scoped tool discovery', () => {
 
   it('mounts DSL modeling tools without projection tools for DSL documents', () => {
     const dslNames = toolNames(
-      LOGICPILOT_MODELING_CAPABILITY.toolsForScope!({ documentType: 'dsl' }),
+      LOGICPILOT_PROCESS_CAPABILITY.toolsForScope!({ documentType: 'dsl' }),
     );
     expect(dslNames).toContain('apply_model_patch');
     expect(dslNames).not.toContain('inspect_sysml_projection');
     // No contribution-backed active document behaves like the DSL canvas.
     const nullNames = toolNames(
-      LOGICPILOT_MODELING_CAPABILITY.toolsForScope!({ documentType: null }),
+      LOGICPILOT_PROCESS_CAPABILITY.toolsForScope!({ documentType: null }),
     );
     expect(nullNames).toEqual(dslNames);
   });
 
   it('applies the read-only whitelist inside scoped discovery too', () => {
     const names = toolNames(
-      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-modeling-readonly'], { documentType: 'sysml' }),
+      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-sysml-readonly'], { documentType: 'sysml' }),
     );
-    expect(names).toEqual(['inspect_sysml_projection']);
+    expect(names).toEqual([
+      'inspect_sysml_projection',
+      'find_sysml_definition',
+      'find_sysml_references',
+      'query_sysml_evidence',
+      'explain_sysml_run',
+    ]);
     const dslNames = toolNames(
-      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-modeling-readonly'], { documentType: 'dsl' }),
+      AGENT_CAPABILITY_REGISTRY.tools(['logicpilot-process-readonly'], { documentType: 'dsl' }),
     );
     expect(dslNames).toContain('inspect_model');
     expect(dslNames).not.toContain('apply_model_patch');

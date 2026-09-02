@@ -10,10 +10,11 @@ export const AGENT_CAPABILITIES = Object.freeze({
     description: 'Tools, resources and prompts supplied by configured MCP servers.',
     toolNames: Object.freeze([]),
   }),
-  'logicpilot-modeling': Object.freeze({
-    id: 'logicpilot-modeling',
-    label: 'LogicPilot modeling',
-    description: 'Model inspection, structured edits, compilation and simulation tools.',
+  'logicpilot-process': Object.freeze({
+    id: 'logicpilot-process',
+    label: 'LogicPilot Process',
+    description:
+      'Process/DSL model inspection, structured edits, compilation and simulation tools.',
     toolNames: Object.freeze([
       'inspect_model',
       'inspect_selection',
@@ -28,6 +29,27 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'run_simulation',
       'wait_for_run',
       'undo_last_ai_change',
+    ]),
+  }),
+  'logicpilot-process-readonly': Object.freeze({
+    id: 'logicpilot-process-readonly',
+    label: 'LogicPilot Process (read only)',
+    description: 'Inspect Process/DSL models and explain grounded results without mutations.',
+    toolNames: Object.freeze([
+      'inspect_model',
+      'inspect_selection',
+      'inspect_diagnostics',
+      'inspect_run_metrics',
+      'explain_results',
+      'compare_runs',
+      'wait_for_run',
+    ]),
+  }),
+  'logicpilot-sysml': Object.freeze({
+    id: 'logicpilot-sysml',
+    label: 'LogicPilot SysML',
+    description: 'Project, inspect and edit SysML semantic models.',
+    toolNames: Object.freeze([
       'inspect_sysml_projection',
       'auto_layout_sysml_projection',
       'set_sysml_projection_view',
@@ -43,18 +65,11 @@ export const AGENT_CAPABILITIES = Object.freeze({
       'lower_sysml_state_machine',
     ]),
   }),
-  'logicpilot-modeling-readonly': Object.freeze({
-    id: 'logicpilot-modeling-readonly',
-    label: 'LogicPilot modeling (read only)',
-    description: 'Inspect the current model and explain grounded results without mutations.',
+  'logicpilot-sysml-readonly': Object.freeze({
+    id: 'logicpilot-sysml-readonly',
+    label: 'LogicPilot SysML (read only)',
+    description: 'Inspect SysML projections and evidence without mutations.',
     toolNames: Object.freeze([
-      'inspect_model',
-      'inspect_selection',
-      'inspect_diagnostics',
-      'inspect_run_metrics',
-      'explain_results',
-      'compare_runs',
-      'wait_for_run',
       'inspect_sysml_projection',
       'find_sysml_definition',
       'find_sysml_references',
@@ -99,7 +114,7 @@ export const AGENT_PROFILES = Object.freeze({
     id: 'logicpilot-modeling',
     label: 'LogicPilot modeling agent',
     description: 'General agent with the LogicPilot modeling capability mounted.',
-    capabilities: Object.freeze(['logicpilot-modeling']),
+    capabilities: Object.freeze(['logicpilot-process', 'logicpilot-sysml']),
   }),
 });
 
@@ -107,7 +122,10 @@ export function resolveAgentProfile(id = 'general') {
   return AGENT_PROFILES[id] ?? GENERAL_AGENT_PROFILE;
 }
 
-export function normalizeAgentCapabilities(value, fallback = ['logicpilot-modeling']) {
+export function normalizeAgentCapabilities(
+  value,
+  fallback = ['logicpilot-process', 'logicpilot-sysml'],
+) {
   if (value === undefined) return [...fallback];
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((item) => typeof item === 'string' && item.trim() !== ''))];

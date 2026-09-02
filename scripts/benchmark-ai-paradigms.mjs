@@ -19,7 +19,7 @@ import { findLpcli, logicPilotRoot } from './tool-paths.mjs';
 
 const ROOT = logicPilotRoot();
 const INITIAL_SOURCE = 'model Benchmark {\n}\n';
-const CAPABILITIES = ['logicpilot-modeling', 'logicpilot-source-editing'];
+const CAPABILITIES = ['logicpilot-process', 'logicpilot-sysml', 'logicpilot-source-editing'];
 
 function compact(value) {
   return String(value ?? '')
@@ -288,9 +288,7 @@ function executeTool(call, state, lpcli) {
       state.source = source;
       state.structuredPatchCount += 1;
       const compiled = compileCandidate(state, lpcli);
-      return compiled.ok
-        ? { ok: true, applied: args.patch.operations.length, compiled }
-        : compiled;
+      return compiled.ok ? { ok: true, applied: args.patch.operations.length, compiled } : compiled;
     }
     case 'compile_model':
       return compileCandidate(state, lpcli);

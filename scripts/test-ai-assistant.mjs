@@ -111,21 +111,21 @@ assert.match(generalPrompt, /general-purpose AI agent/);
 assert.doesNotMatch(generalPrompt, /inspect_model/);
 assert.match(
   buildSystemPrompt({
-    capabilities: ['logicpilot-modeling'],
+    capabilities: ['logicpilot-process', 'logicpilot-sysml'],
     skills: ['logicpilot-modeling-basics'],
     toolCatalog: ASSISTANT_TOOLS,
   }),
   /Skill: logicpilot-modeling-basics/,
 );
 const readonlyPrompt = buildSystemPrompt({
-  capabilities: ['logicpilot-modeling-readonly'],
+  capabilities: ['logicpilot-process-readonly', 'logicpilot-sysml-readonly'],
   toolCatalog: ASSISTANT_TOOLS,
 });
 assert.match(readonlyPrompt, /read-only/);
 assert.match(readonlyPrompt, /inspect_model/);
 assert.doesNotMatch(readonlyPrompt, /apply_model_patch/);
 const sysmlPrompt = buildSystemPrompt({
-  capabilities: ['logicpilot-modeling'],
+  capabilities: ['logicpilot-sysml'],
   toolNames: ['inspect_sysml_projection', 'add_sysml_element', 'connect_sysml_elements'],
   toolCatalog: ASSISTANT_TOOLS,
 });
@@ -135,7 +135,7 @@ assert.match(sysmlPrompt, /add_sysml_element/);
 assert.doesNotMatch(sysmlPrompt, /apply_model_patch/);
 assert.doesNotMatch(sysmlPrompt, /Canonical DES/);
 const sourceEditingPrompt = buildSystemPrompt({
-  capabilities: ['logicpilot-modeling', 'logicpilot-source-editing'],
+  capabilities: ['logicpilot-process', 'logicpilot-sysml', 'logicpilot-source-editing'],
   toolCatalog: ASSISTANT_TOOLS,
 });
 const pluginAuthoringPrompt = buildSystemPrompt({
