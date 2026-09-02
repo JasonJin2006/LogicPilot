@@ -26,6 +26,7 @@ registry never mutates an installed plugin or lockfile by itself.
 
 Knowledge, skill, instruction, diagnostic, view and notation changes can now
 be reviewed as structured plugin diffs rather than natural-language patches.
-The next slice will persist drafts in a workspace, run schema/lint/conformance
-checks, then hand an approved draft to the existing content-addressed package
-manager for signing and installation.
+`FileSystemPluginDraftStore` persists those drafts atomically in a workspace;
+the next slice runs schema/lint/conformance checks, then hands an approved
+draft to the existing content-addressed package manager for signing and
+installation.

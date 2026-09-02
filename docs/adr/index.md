@@ -118,3 +118,4 @@
 - [0087 Structured Agent Context Compiler](0087-structured-agent-context-compiler)
 - [0088 Artifact Graph Cross-Surface Migration](0088-artifact-graph-cross-surface-migration)
 - [0089 Structured AI Plugin Draft Approval](0089-plugin-draft-approval-pipeline)
+- [0090 Filesystem Plugin Draft Store](0090-filesystem-plugin-draft-store)
