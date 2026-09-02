@@ -296,14 +296,17 @@ async function main() {
     );
   });
 
-  const shutdown = () => {
-    void stopNodePluginRuntime();
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    await stopNodePluginRuntime().catch(() => undefined);
     gateway.child.kill();
     server.close();
     process.exit(0);
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
   // Watch the parent: the Tauri shell can be killed hard (crash / force
   // quit), which never runs its tree-kill; shut down then so the gateway is
   // not left orphaned next to the dead app.
@@ -317,12 +320,12 @@ async function main() {
     }
     if (!alive) {
       clearInterval(parentWatchdog);
-      shutdown();
+      void shutdown();
     }
   }, 2000);
   // The Tauri parent exits -> its stdout pipe closes -> shut the gateway.
-  process.stdout.on('end', shutdown);
-  process.stdout.on('close', shutdown);
+  process.stdout.on('end', () => void shutdown());
+  process.stdout.on('close', () => void shutdown());
 }
 
 main().catch((error) => {

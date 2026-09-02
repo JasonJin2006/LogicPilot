@@ -60,5 +60,28 @@ describe('NodePluginRuntime', () => {
     expect(changes).toBeGreaterThanOrEqual(1);
     await runtime.stop();
     expect(host.phaseValue).toBe('stopped');
+
+    const lockedOut = new NodePluginRuntime({
+      roots: [{ scope: 'workspace', path: root }],
+      defaultTrustLevel: 't4',
+      requireLockfile: true,
+      lockfile: {
+        schema: 'logicpilot.plugin-lock/v1',
+        contractVersion: 1,
+        plugins: [
+          {
+            id: manifest.id,
+            version: manifest.version,
+            apiVersion: manifest.apiVersion,
+            sha256: 'a'.repeat(64),
+            trust: 't4',
+            permissions: [],
+          },
+        ],
+      },
+    });
+    const deniedHost = await lockedOut.start();
+    expect(deniedHost.isActive(manifest.id)).toBe(false);
+    await lockedOut.stop();
   });
 });

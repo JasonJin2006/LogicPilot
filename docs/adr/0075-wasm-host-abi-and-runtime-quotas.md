@@ -8,7 +8,9 @@ Implements: Phase 2B-3 WASM/runtime hardening
 
 The WASM module is instantiated with the `logicpilot` import namespace. Every
 import is deny-by-default and is available only when both the host provides an
-implementation and the plugin has an explicit matching grant:
+implementation and the plugin has an explicit `runtime.wasm.build` grant.
+That permission is the current coarse-grained parent capability; it will be
+split into per-import permissions when the frozen permission contract grows:
 
 | Import                  | Capability       | Signature                          |
 | ----------------------- | ---------------- | ---------------------------------- |

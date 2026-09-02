@@ -4,8 +4,18 @@
 export const WASM_HOST_ABI_VERSION = 1 as const;
 
 export const WASM_CAPABILITY_IMPORTS = {
-  log: { capability: 'runtime.log', params: ['i32', 'i32'], result: 'void' },
-  random_u32: { capability: 'runtime.random', params: [], result: 'i32' },
+  log: {
+    capability: 'runtime.log',
+    permissionId: 'runtime.wasm.build',
+    params: ['i32', 'i32'],
+    result: 'void',
+  },
+  random_u32: {
+    capability: 'runtime.random',
+    permissionId: 'runtime.wasm.build',
+    params: [],
+    result: 'i32',
+  },
 } as const;
 
 export type WasmImportName = keyof typeof WASM_CAPABILITY_IMPORTS;

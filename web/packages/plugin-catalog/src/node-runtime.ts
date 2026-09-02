@@ -5,6 +5,7 @@
 import type {
   PermissionGrant,
   PluginCatalogEntry,
+  PluginLockfile,
   PluginManifest,
   PluginScope,
   TrustLevel,
@@ -27,6 +28,11 @@ export interface NodePluginRuntimeOptions {
   readonly grants?: ReadonlyMap<string, readonly PermissionGrant[]>;
   readonly defaultTrustLevel?: TrustLevel;
   readonly trustOverrides?: ReadonlyMap<string, TrustLevel>;
+  /** When true, only entries present in this lockfile with matching digest
+   * and source scope are eligible for activation. */
+  readonly lockfile?: PluginLockfile | null;
+  readonly requireLockfile?: boolean;
+  readonly readLockfile?: () => PluginLockfile | null | Promise<PluginLockfile | null>;
   readonly maxModuleBytes?: number;
   readonly maxWasmBytes?: number;
   readonly maxWasmMemoryBytes?: number;
@@ -51,8 +57,12 @@ export class NodePluginRuntime {
   private revisionValue = 0;
   private watchTimer: unknown = null;
   private readonly listeners = new Set<(change: NodePluginRuntimeChange) => void>();
+  private watchStop: (() => void) | null = null;
+  private lockfileValue: PluginLockfile | null | undefined;
 
-  constructor(private readonly options: NodePluginRuntimeOptions) {}
+  constructor(private readonly options: NodePluginRuntimeOptions) {
+    this.lockfileValue = options.lockfile;
+  }
 
   async start(): Promise<PluginHost> {
     if (this.host?.phaseValue === 'active') return this.host;
@@ -67,6 +77,8 @@ export class NodePluginRuntime {
   }
 
   async stop(): Promise<void> {
+    this.watchStop?.();
+    this.watchStop = null;
     if (this.host && this.host.phaseValue === 'active') await this.host.stopAll();
     this.host = null;
   }
@@ -95,13 +107,22 @@ export class NodePluginRuntime {
     if (!Number.isSafeInteger(intervalMs) || intervalMs < 100) {
       throw new Error('registry watch interval must be at least 100ms');
     }
+    this.watchStop?.();
     let stopped = false;
     const tick = async (): Promise<void> => {
       if (stopped) return;
       try {
         const previous = this.catalogValue;
+        const previousLockfile = this.lockfileValue;
         const next = await scanPluginCatalog({ roots: this.options.roots, ...this.options.scan });
-        if (previous && catalogFingerprint(previous) !== catalogFingerprint(next)) {
+        const nextLockfile = this.options.readLockfile
+          ? await this.options.readLockfile()
+          : this.lockfileValue;
+        if (
+          previous &&
+          (catalogFingerprint(previous) !== catalogFingerprint(next) ||
+            lockfileFingerprint(previousLockfile) !== lockfileFingerprint(nextLockfile))
+        ) {
           await this.refresh();
         }
       } catch (error) {
@@ -115,23 +136,36 @@ export class NodePluginRuntime {
       if (!stopped) this.watchTimer = setTimeout(() => void tick(), intervalMs);
     };
     this.watchTimer = setTimeout(() => void tick(), intervalMs);
-    return () => {
+    const stop = () => {
       stopped = true;
       if (this.watchTimer !== null) clearTimeout(this.watchTimer);
       this.watchTimer = null;
+      if (this.watchStop === stop) this.watchStop = null;
     };
+    this.watchStop = stop;
+    return stop;
   }
 
   private async refreshFresh(): Promise<PluginHost> {
     const previous = this.host;
-    const next = await this.createHost();
+    const previousCatalog = this.catalogValue;
+    let next: PluginHost;
     try {
+      next = await this.createHost();
       await next.start();
     } catch (error) {
-      await next.stopAll().catch(() => undefined);
+      this.catalogValue = previousCatalog;
       throw error;
     }
-    if (previous?.phaseValue === 'active') await previous.stopAll();
+    if (previous?.phaseValue === 'active') {
+      try {
+        await previous.stopAll();
+      } catch (error) {
+        await next.stopAll().catch(() => undefined);
+        this.catalogValue = previousCatalog;
+        throw error;
+      }
+    }
     this.host = next;
     this.revisionValue += 1;
     const change = { revision: this.revisionValue, host: next, catalog: this.catalogValue! };
@@ -156,8 +190,10 @@ export class NodePluginRuntime {
   }
 
   private async createHost(): Promise<PluginHost> {
+    if (this.options.readLockfile) this.lockfileValue = await this.options.readLockfile();
     const catalog = await scanPluginCatalog({ roots: this.options.roots, ...this.options.scan });
-    this.catalogValue = catalog;
+    const approved = this.approvedEntries(catalog.entries, this.lockfileValue);
+    this.catalogValue = { ...catalog, entries: approved };
     const loaders = new Map<string, () => Promise<PluginModule>>();
     const errors = (error: unknown): void => {
       // Keep diagnostics structured and path-free; the catalog scanner already
@@ -171,12 +207,17 @@ export class NodePluginRuntime {
         });
       }
     };
-    for (const entry of catalog.entries) {
+    const lockPlugins = this.lockfileValue?.plugins ?? [];
+    const lockGrants = new Map(lockPlugins.map((entry) => [entry.id, entry.permissions]));
+    const lockTrust = new Map(lockPlugins.map((entry) => [entry.id, entry.trust]));
+    const grants = this.options.grants ?? lockGrants;
+    const trustOverrides = this.options.trustOverrides ?? lockTrust;
+    for (const entry of approved) {
       const esm = createDynamicEsmLoader({
         roots: this.options.roots,
         scope: entry.scope,
         defaultTrustLevel: this.options.defaultTrustLevel,
-        trustOverrides: this.options.trustOverrides,
+        trustOverrides,
         maxModuleBytes: this.options.maxModuleBytes,
         activationTimeoutMs: this.options.activationTimeoutMs,
         onError: errors,
@@ -185,11 +226,11 @@ export class NodePluginRuntime {
         roots: this.options.roots,
         scope: entry.scope,
         defaultTrustLevel: this.options.defaultTrustLevel,
-        trustOverrides: this.options.trustOverrides,
+        trustOverrides,
         maxWasmBytes: this.options.maxWasmBytes,
         maxMemoryBytes: this.options.maxWasmMemoryBytes,
         activationTimeoutMs: this.options.activationTimeoutMs,
-        capabilities: this.options.wasmCapabilities,
+        capabilities: this.wasmCapabilitiesFor(entry, grants),
         imports: this.options.wasmImports,
         onError: errors,
       })(entry);
@@ -203,13 +244,13 @@ export class NodePluginRuntime {
     }
     const sources = (['system', 'user', 'workspace'] as const).map((scope): DiscoverySource => ({
       scope,
-      discover: () => this.discoverScope(catalog.entries, scope, loaders),
+      discover: () => this.discoverScope(approved, scope, loaders),
     }));
     return new PluginHost({
       sources,
-      grants: this.options.grants,
+      grants,
       defaultTrustLevel: this.options.defaultTrustLevel,
-      trustOverrides: this.options.trustOverrides,
+      trustOverrides,
       onAudit: this.options.onAudit,
     });
   }
@@ -228,11 +269,43 @@ export class NodePluginRuntime {
         load: () => loaders.get(entry.id)!(),
       }));
   }
+
+  private approvedEntries(
+    entries: readonly PluginCatalogEntry[],
+    lockfile: PluginLockfile | null | undefined,
+  ): readonly PluginCatalogEntry[] {
+    if (lockfile === undefined) return this.options.requireLockfile ? [] : entries;
+    if (lockfile === null) return [];
+    const approved = new Map(lockfile.plugins.map((entry) => [entry.id, entry]));
+    return entries.filter((entry) => {
+      const locked = approved.get(entry.id);
+      if (!locked || locked.sha256.toLowerCase() !== entry.sha256.toLowerCase()) return false;
+      return locked.source === undefined || locked.source === entry.scope;
+    });
+  }
+
+  private wasmCapabilitiesFor(
+    entry: PluginCatalogEntry,
+    grants: ReadonlyMap<string, readonly PermissionGrant[]>,
+  ): ReadonlySet<string> {
+    const allowed = grants
+      .get(entry.id)
+      ?.some((grant) => grant.permissionId === 'runtime.wasm.build' && grant.granted);
+    return allowed ? new Set(['runtime.log', 'runtime.random']) : new Set();
+  }
 }
 
 function catalogFingerprint(catalog: Awaited<ReturnType<typeof scanPluginCatalog>>): string {
   return catalog.entries
     .map((entry) => `${entry.scope}:${entry.id}@${entry.sha256.toLowerCase()}`)
+    .sort()
+    .join('|');
+}
+
+function lockfileFingerprint(lockfile: PluginLockfile | null | undefined): string {
+  if (!lockfile) return '';
+  return lockfile.plugins
+    .map((entry) => `${entry.id}@${entry.version}:${entry.sha256.toLowerCase()}:${entry.trust}`)
     .sort()
     .join('|');
 }

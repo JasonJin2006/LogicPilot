@@ -47,9 +47,16 @@ export async function startNodePluginRuntime() {
   if (!['t0', 't1', 't2', 't3', 't4', 't5'].includes(trust)) {
     throw new Error(`LOGICPILOT_NODE_PLUGIN_TRUST is invalid: ${trust}`);
   }
+  const storeRoot = process.env.LOGICPILOT_PLUGIN_STORE_ROOT;
+  if (!storeRoot) {
+    throw new Error('LOGICPILOT_PLUGIN_STORE_ROOT is required when Node plugins are enabled');
+  }
+  const store = new FileSystemPackageStore({ rootDir: storeRoot });
   nodePluginRuntime = new NodePluginRuntime({
     roots: pluginRootsFromEnv(process.env),
     defaultTrustLevel: trust,
+    readLockfile: () => store.readLockfile(),
+    requireLockfile: true,
     activationTimeoutMs: 10_000,
     maxModuleBytes: 16 * 1024 * 1024,
     maxWasmBytes: 16 * 1024 * 1024,
