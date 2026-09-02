@@ -23,6 +23,7 @@ import {
 } from '../sysml/sysmlEvidence';
 import { autoLayoutChunkedWithElk, autoLayoutWithElk } from '../sysml/sysmlAutoLayoutElk';
 import { buildLinkedSysMLModel, type SysMLFileUnit } from '../sysml/sysmlLinkedModel';
+import { persistEvidenceArtifact } from '../artifacts/artifactGraphClient';
 
 export type SysMLViewMode =
   | 'all'
@@ -422,6 +423,19 @@ export const useSysMLStore = create<SysMLState>((set, get) => ({
     };
     const evidence = appendEvidence(state.evidence, record);
     persistEvidence(state.path, evidence);
+    void persistEvidenceArtifact(state.path, record).catch((error) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('logicpilot:artifact-sync-error', {
+            detail: {
+              artifactKind: 'evidence',
+              path: state.path,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        );
+      }
+    });
     if (!result.ok || !result.steps) {
       set({ runError: result.error ?? 'execution failed', execution: null, evidence });
       return;

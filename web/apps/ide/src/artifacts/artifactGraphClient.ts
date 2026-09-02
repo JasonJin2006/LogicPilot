@@ -25,7 +25,7 @@ export interface PendingArtifactTransaction {
 
 export interface ArtifactTransactionInput {
   readonly artifactId: string;
-  readonly artifactKind: 'semantic-model' | 'source-document' | 'view-layout';
+  readonly artifactKind: 'semantic-model' | 'source-document' | 'view-layout' | 'evidence' | 'run';
   readonly operationType: string;
   readonly payload: unknown;
   readonly actor?: string;
@@ -210,6 +210,29 @@ export async function rollbackModelPatchTransaction(
   reason: string,
 ): Promise<void> {
   return rollbackArtifactTransaction(pending, reason);
+}
+
+export async function persistEvidenceArtifact(
+  path: string,
+  record: unknown,
+): Promise<string | undefined> {
+  const pending = await beginArtifactTransaction({
+    artifactId: `evidence:${path}:${
+      typeof record === 'object' && record !== null && 'id' in record
+        ? String((record as { id: unknown }).id)
+        : 'unknown'
+    }`,
+    artifactKind: 'evidence',
+    operationType: 'execution-evidence',
+    payload: record,
+    actor: 'runtime',
+  });
+  try {
+    return await commitArtifactTransaction(pending, 'runtime');
+  } catch (error) {
+    await rollbackArtifactTransaction(pending, 'evidence-commit-failed').catch(() => undefined);
+    throw error;
+  }
 }
 
 export { MODEL_ARTIFACT_ID, canonicalize, sha256Hex };

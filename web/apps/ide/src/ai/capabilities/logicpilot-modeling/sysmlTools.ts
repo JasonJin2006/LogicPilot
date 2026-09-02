@@ -8,6 +8,7 @@ import { useSysMLStore, type SysMLViewMode } from '../../../state/sysmlStore';
 import { useProjectStore } from '../../../state/projectStore';
 import { useUiStore } from '../../../state/uiStore';
 import { projectSysML } from '../../../sysml/sysmlProjection';
+import type { SysMLLayout } from '../../../sysml/sysmlProjection';
 import {
   addRelationStatement,
   insertElement,
@@ -56,6 +57,43 @@ function currentSysMLSource(): string | null {
   const bundled = bundle?.files[activeFile];
   if (bundled !== undefined) return bundled;
   return useUiStore.getState().diskFiles[activeFile] ?? null;
+}
+
+function persistLayoutEdit(
+  path: string,
+  before: SysMLLayout,
+  after: SysMLLayout,
+  operationType: string,
+  restore: () => void,
+): Record<string, unknown> | Promise<Record<string, unknown>> {
+  const success = { ok: true, persisted: true };
+  if (typeof window === 'undefined') return success;
+  return (async () => {
+    let pending;
+    try {
+      pending = await beginArtifactTransaction({
+        artifactId: `layout:${path}`,
+        artifactKind: 'view-layout',
+        operationType,
+        payload: { path, before, after },
+      });
+      await commitArtifactTransaction(pending);
+      return success;
+    } catch (error) {
+      restore();
+      if (pending) {
+        await rollbackArtifactTransaction(pending, 'sysml-layout-commit-failed').catch(
+          () => undefined,
+        );
+      }
+      return {
+        ok: false,
+        error: `artifact transaction could not be committed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  })();
 }
 
 /** Persist edited source to whichever store owns the open document. The
@@ -241,9 +279,23 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
     execute: () => {
       const state = useSysMLStore.getState();
       if (!state.projection) return { ok: false, error: 'no SysML projection is open' };
+      const before = state.layout;
       state.autoLayout();
+      const after = useSysMLStore.getState().layout;
+      const persisted =
+        before && after && state.path
+          ? persistLayoutEdit(state.path, before, after, 'sysml-layout-auto', () => {
+              if (useSysMLStore.getState().layout === after) useSysMLStore.getState().undo();
+            })
+          : { ok: true, persisted: false };
+      if (persisted instanceof Promise)
+        return persisted.then((result) => ({
+          ...result,
+          message: 'SysML projection layout updated',
+          elementCount: state.projection!.elements.length,
+        }));
       return {
-        ok: true,
+        ...persisted,
         message: 'SysML projection layout updated',
         elementCount: state.projection.elements.length,
       };
@@ -336,9 +388,18 @@ export const SYSML_TOOLS: readonly AssistantTool[] = [
       const id = args.elementId as string;
       const x = numberArg(args, 'x')!;
       const y = numberArg(args, 'y')!;
-      useSysMLStore.getState().checkpoint();
-      useSysMLStore.getState().move(id, { x, y });
-      return { ok: true, elementId: id, position: { x, y } };
+      const state = useSysMLStore.getState();
+      const before = state.layout;
+      state.checkpoint();
+      state.move(id, { x, y });
+      const after = useSysMLStore.getState().layout;
+      if (!before || !after || !state.path) return { ok: true, elementId: id, position: { x, y } };
+      const persisted = persistLayoutEdit(state.path, before, after, 'sysml-layout-move', () => {
+        if (useSysMLStore.getState().layout === after) useSysMLStore.getState().undo();
+      });
+      if (persisted instanceof Promise)
+        return persisted.then((result) => ({ ...result, elementId: id, position: { x, y } }));
+      return { ...persisted, elementId: id, position: { x, y } };
     },
   },
   {
