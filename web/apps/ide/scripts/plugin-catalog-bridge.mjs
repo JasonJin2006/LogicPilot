@@ -55,6 +55,57 @@ export function handlePluginRegistry(req, res) {
   res.end(JSON.stringify(registryPayload()));
 }
 
+/** GET /api/artifact-graph: the persistent revision graph owned by the Node
+ * app-server. The browser receives validated entities only; filesystem errors
+ * remain server-side. */
+export function handleArtifactGraph(req, res) {
+  if (req.method !== 'GET') {
+    res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'method not allowed' }));
+    return;
+  }
+  const root = process.env.LOGICPILOT_ARTIFACT_STORE_ROOT;
+  if (!root) {
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    res.end(
+      JSON.stringify({
+        schema: 'logicpilot.artifact-graph-view/v1',
+        contractVersion: 1,
+        configured: false,
+        artifacts: [],
+        revisions: [],
+        transactions: [],
+      }),
+    );
+    return;
+  }
+  try {
+    const state = new FileSystemArtifactStore({ rootDir: root }).read();
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(
+      JSON.stringify({
+        schema: 'logicpilot.artifact-graph-view/v1',
+        contractVersion: 1,
+        configured: true,
+        ...state,
+      }),
+    );
+  } catch {
+    res.writeHead(500, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    });
+    res.end(JSON.stringify({ ok: false, error: 'artifact graph unavailable' }));
+  }
+}
+
 /** GET /api/plugin-registry/stream: SSE snapshots on every committed
  * generation. The stream is read-only and inherits the app-server session and
  * local-origin policy. */

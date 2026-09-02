@@ -18,7 +18,8 @@
   },
   "dependencies": {
     "@logicpilot/contracts": "workspace:*",
-    "@logicpilot/plugin-host": "workspace:*"
+    "@logicpilot/plugin-host": "workspace:*",
+    "@logicpilot/artifact-store": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "^0.25.12",

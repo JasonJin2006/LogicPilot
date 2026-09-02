@@ -151,6 +151,9 @@ importers:
 
   web/packages/plugin-catalog:
     dependencies:
+      '@logicpilot/artifact-store':
+        specifier: workspace:*
+        version: link:../artifact-store
       '@logicpilot/contracts':
         specifier: workspace:*
         version: link:../contracts

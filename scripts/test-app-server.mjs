@@ -129,6 +129,11 @@ try {
   assert.equal(firstEvent.done, false);
   assert.match(new TextDecoder().decode(firstEvent.value), /logicpilot\.plugin-registry\/v1/);
   await streamReader.cancel();
+  const artifactResponse = await apiFetch(`${baseUrl}/api/artifact-graph`);
+  assert.equal(artifactResponse.status, 200);
+  const artifactView = await artifactResponse.json();
+  assert.equal(artifactView.schema, 'logicpilot.artifact-graph-view/v1');
+  assert.equal(artifactView.configured, false);
   const unauthorized = await fetch(`${baseUrl}/api/ai-providers`);
   assert.equal(unauthorized.status, 401);
   const rebinding = await fetch(`${baseUrl}/api/config`, {

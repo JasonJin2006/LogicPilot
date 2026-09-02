@@ -14,6 +14,7 @@ import {
   handlePluginCatalog,
   handlePluginRegistry,
   handlePluginRegistryStream,
+  handleArtifactGraph,
   handlePlugins,
 } from './scripts/plugin-catalog-bridge.mjs';
 
@@ -105,6 +106,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/plugin-registry', (req, res) => {
       void runWithApiPolicy(req, res, () => handlePluginRegistry(req, res));
+    });
+    server.middlewares.use('/api/artifact-graph', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleArtifactGraph(req, res));
     });
   },
 });

@@ -36,6 +36,7 @@ import {
   handlePluginCatalog,
   handlePluginRegistry,
   handlePluginRegistryStream,
+  handleArtifactGraph,
   handlePlugins,
   startNodePluginRuntime,
   stopNodePluginRuntime,
@@ -279,6 +280,11 @@ async function main() {
     if (pathname === '/api/plugin-registry/stream') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handlePluginRegistryStream(req, res));
+      return;
+    }
+    if (pathname === '/api/artifact-graph') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handleArtifactGraph(req, res));
       return;
     }
     if (isApi) {
