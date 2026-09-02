@@ -14,6 +14,7 @@ import { OUTLINE_CONTRIBUTIONS } from '../workbench/outline';
 import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import { contributedProblemStores } from '../workbench/problems';
 import { PANELS } from '../layout/panels';
+import { PLUGIN_REGISTRY } from './registry';
 
 afterEach(async () => {
   await stopIdePluginHost();
@@ -46,6 +47,10 @@ describe('IDE plugin host', () => {
     const host = await startIdePluginHost();
     expect([...host.ids()].sort()).toEqual(['logicpilot.des', 'logicpilot.sysml']);
     expect(host.phaseValue).toBe('active');
+    expect(PLUGIN_REGISTRY.snapshot().contributions.map((set) => set.pluginId)).toEqual([
+      'logicpilot.des',
+      'logicpilot.sysml',
+    ]);
   });
 
   it('boots a ZERO-paradigm host (Phase 2 gate: empty discovery table)', async () => {
@@ -59,6 +64,7 @@ describe('IDE plugin host', () => {
     expect(PALETTE_CONTRIBUTIONS.allItems()).toEqual([]);
     expect(contributedProblemStores()).toEqual([]);
     expect(PANELS.sysml).toBeUndefined();
+    expect(PLUGIN_REGISTRY.snapshot().contributions).toEqual([]);
   });
 
   it('writes a contracts-shaped lockfile of the discovered set', async () => {

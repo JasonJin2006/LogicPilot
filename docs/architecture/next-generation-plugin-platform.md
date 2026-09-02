@@ -111,7 +111,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    注册/撤销，Statechart/Agent/
    Continuous/DEVS/C4 迁移和默认 provider 的最终插件化仍待完成；SysML semantic、model
    semantic 与 panel provider seams 已集中到 `plugins/registries`，并具备 lifecycle disposer，
-   lint 直接范式 import 已清零；
+   lint 直接范式 import 已清零；DES/SysML 已携带并注册结构化 View/Notation/CreateAction
+   contribution 文件；
 5. 完成插件 registry delta/replay 的长期存储、签名密钥轮换和外部 registry 发布；当前
    已将经契约校验的 replay history 原子持久化到 PackageStore 旁，并支持可选的 canonical
    snapshot 签名/轮换 keyring，并通过 authenticated `/api/config` 在 IDE 使用 WebCrypto

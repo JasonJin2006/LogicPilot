@@ -19,6 +19,8 @@ import {
   PROCESS_MODEL_SEMANTIC_PROVIDER,
   registerModelSemanticProvider,
 } from '../../registries/modelSemantics';
+import desContributionsJson from './contributions.json';
+import { registerLocalPluginContribution } from '../../registry';
 
 export function activateDesPlugin(): PluginModule {
   return {
@@ -37,6 +39,7 @@ export function activateDesPlugin(): PluginModule {
       ctx.effect(registerDesModelValidation());
       ctx.effect(registerDslOutlineContribution());
       ctx.effect(registerModelSemanticProvider(PROCESS_MODEL_SEMANTIC_PROVIDER));
+      ctx.effect(registerLocalPluginContribution(desContributionsJson));
       ctx.effect(
         replacePanel('model', { title: 'Model', area: 'center', component: ModelWorkspace }),
       );

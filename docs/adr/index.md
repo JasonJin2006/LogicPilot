@@ -153,3 +153,4 @@
 - [0122 Model Provider Lifecycle](0122-model-provider-lifecycle)
 - [0123 SysML Semantic Provider Lifecycle](0123-sysml-semantic-provider-lifecycle)
 - [0124 Panel Provider Lifecycle](0124-panel-provider-lifecycle)
+- [0125 Built-in Structured Contributions](0125-builtin-structured-contributions)

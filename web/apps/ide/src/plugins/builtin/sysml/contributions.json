@@ -1,0 +1,85 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.sysml",
+  "version": "1.0.0",
+  "knowledge": [],
+  "skills": [],
+  "instructions": [],
+  "diagnostics": [],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.graph-view",
+      "owner": "logicpilot.sysml",
+      "titleKey": "view.logicpilot.sysml.graph",
+      "canvas": "graph2d",
+      "query": {
+        "artifactKinds": ["semantic-model"],
+        "relationKinds": ["projects", "provides", "validates", "derives-from"]
+      },
+      "projection": { "semantic": "sysml-v2", "layout": "elk" },
+      "interactions": ["select", "create", "connect", "inline-edit"],
+      "supportsInverseEdit": true,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.graph-notation",
+      "owner": "logicpilot.sysml",
+      "glyphs": [
+        { "semanticKind": "part", "glyph": "sysml-part" },
+        { "semanticKind": "requirement", "glyph": "sysml-requirement" },
+        { "semanticKind": "action", "glyph": "sysml-action" },
+        { "semanticKind": "state", "glyph": "sysml-state" }
+      ],
+      "edges": [
+        { "relationKind": "contains", "edgeStyle": "containment", "directed": true },
+        { "relationKind": "traces", "edgeStyle": "dashed", "directed": true }
+      ],
+      "createActions": [
+        { "id": "logicpilot.sysml.create.part", "order": 10 },
+        { "id": "logicpilot.sysml.create.requirement", "order": 20 },
+        { "id": "logicpilot.sysml.create.action", "order": 30 }
+      ]
+    }
+  ],
+  "createActions": [
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.create.part",
+      "owner": "logicpilot.sysml",
+      "titleKey": "create.sysml.part",
+      "notationId": "logicpilot.sysml.graph-notation",
+      "targetSemanticKind": "part",
+      "order": 10
+    },
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.create.requirement",
+      "owner": "logicpilot.sysml",
+      "titleKey": "create.sysml.requirement",
+      "notationId": "logicpilot.sysml.graph-notation",
+      "targetSemanticKind": "requirement",
+      "order": 20
+    },
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.create.action",
+      "owner": "logicpilot.sysml",
+      "titleKey": "create.sysml.action",
+      "notationId": "logicpilot.sysml.graph-notation",
+      "targetSemanticKind": "action",
+      "order": 30
+    }
+  ],
+  "palettes": [],
+  "tools": []
+}

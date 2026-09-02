@@ -1,0 +1,104 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.des",
+  "version": "1.0.0",
+  "knowledge": [],
+  "skills": [],
+  "instructions": [],
+  "diagnostics": [],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.flow-view",
+      "owner": "logicpilot.des",
+      "titleKey": "view.logicpilot.des.flow",
+      "canvas": "flow",
+      "query": { "artifactKinds": ["semantic-model"], "relationKinds": ["projects", "provides"] },
+      "projection": { "semantic": "process-flow", "layout": "orthogonal" },
+      "interactions": ["select", "create", "connect", "inline-edit"],
+      "supportsInverseEdit": true,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.flow-notation",
+      "owner": "logicpilot.des",
+      "glyphs": [
+        { "semanticKind": "source", "glyph": "source" },
+        { "semanticKind": "queue", "glyph": "queue" },
+        { "semanticKind": "service", "glyph": "service" },
+        { "semanticKind": "sink", "glyph": "sink" }
+      ],
+      "edges": [{ "relationKind": "projects", "edgeStyle": "orthogonal", "directed": true }],
+      "createActions": [
+        { "id": "logicpilot.des.create.source", "order": 10 },
+        { "id": "logicpilot.des.create.queue", "order": 20 },
+        { "id": "logicpilot.des.create.service", "order": 30 }
+      ]
+    }
+  ],
+  "createActions": [
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.create.source",
+      "owner": "logicpilot.des",
+      "titleKey": "create.process.source",
+      "notationId": "logicpilot.des.flow-notation",
+      "targetSemanticKind": "source",
+      "order": 10
+    },
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.create.queue",
+      "owner": "logicpilot.des",
+      "titleKey": "create.process.queue",
+      "notationId": "logicpilot.des.flow-notation",
+      "targetSemanticKind": "queue",
+      "order": 20
+    },
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.create.service",
+      "owner": "logicpilot.des",
+      "titleKey": "create.process.service",
+      "notationId": "logicpilot.des.flow-notation",
+      "targetSemanticKind": "service",
+      "order": 30
+    }
+  ],
+  "palettes": [
+    {
+      "id": "logicpilot.des.palette",
+      "canvas": "flow",
+      "itemKind": "source",
+      "label": "Source",
+      "semanticType": "process.source",
+      "defaults": { "type": "object" }
+    },
+    {
+      "id": "logicpilot.des.palette.queue",
+      "canvas": "flow",
+      "itemKind": "queue",
+      "label": "Queue",
+      "semanticType": "process.queue",
+      "defaults": { "type": "object" }
+    },
+    {
+      "id": "logicpilot.des.palette.service",
+      "canvas": "flow",
+      "itemKind": "service",
+      "label": "Service",
+      "semanticType": "process.service",
+      "defaults": { "type": "object" }
+    }
+  ],
+  "tools": []
+}

@@ -56,6 +56,8 @@ export interface StructuredPaletteItem {
  * UI/knowledge contributions. */
 export class PluginRegistryStore {
   private value: PluginRegistrySnapshot = { generation: 0, plugins: [], contributions: [] };
+  private remoteValue: PluginRegistrySnapshot = this.value;
+  private readonly localContributions = new Map<string, PluginContributionSet>();
   private readonly listeners = new Set<() => void>();
   private stopStream: (() => void) | null = null;
 
@@ -75,14 +77,35 @@ export class PluginRegistryStore {
     if (value.generation < this.value.generation)
       throw new Error('stale plugin registry generation');
     if (value.generation === this.value.generation) return this.value;
-    this.value = {
+    this.remoteValue = {
       generation: value.generation,
       plugins: value.plugins,
       contributions: value.contributions,
       ...(value.integrity === undefined ? {} : { integrity: value.integrity }),
     };
+    this.value = this.mergeSnapshot(this.remoteValue);
     for (const listener of this.listeners) listener();
     return this.value;
+  }
+
+  /** Registers a builtin/plugin-local contribution set with lifecycle
+   * disposal. Remote registry refreshes remain authoritative for their own
+   * generation; local sets are merged until this disposer runs. */
+  registerLocalContribution(raw: unknown): () => void {
+    const validated = validateContract('PluginContributionSet', raw);
+    if (!validated.ok)
+      throw new Error(`invalid local plugin contribution: ${validated.errors.join('; ')}`);
+    const contribution = validated.value;
+    if (this.localContributions.has(contribution.pluginId))
+      throw new Error(`local plugin contribution '${contribution.pluginId}' already exists`);
+    this.localContributions.set(contribution.pluginId, contribution);
+    this.value = this.mergeSnapshot(this.remoteValue);
+    for (const listener of this.listeners) listener();
+    return () => {
+      if (!this.localContributions.delete(contribution.pluginId)) return;
+      this.value = this.mergeSnapshot(this.remoteValue);
+      for (const listener of this.listeners) listener();
+    };
   }
 
   /** Applies a structurally valid snapshot only after the optional signature
@@ -197,6 +220,28 @@ export class PluginRegistryStore {
       })),
     );
   }
+
+  private mergeSnapshot(value: PluginRegistry | PluginRegistrySnapshot): PluginRegistrySnapshot {
+    const remotePlugins = [...value.plugins];
+    const remoteContributions = [...value.contributions];
+    const plugins = [...new Set([...remotePlugins, ...this.localContributions.keys()])];
+    const localByPlugin = new Map(
+      [...this.localContributions.values()].map((contribution) => [
+        contribution.pluginId,
+        contribution,
+      ]),
+    );
+    const contributions = [
+      ...remoteContributions.filter((contribution) => !localByPlugin.has(contribution.pluginId)),
+      ...localByPlugin.values(),
+    ];
+    return {
+      generation: value.generation,
+      plugins,
+      contributions,
+      ...(value.integrity === undefined ? {} : { integrity: value.integrity }),
+    };
+  }
 }
 
 function validateRegistryPayload(payload: unknown): PluginRegistry {
@@ -304,6 +349,10 @@ export function structuredPaletteItems(): readonly StructuredPaletteItem[] {
 
 export function subscribePluginRegistry(listener: () => void): () => void {
   return PLUGIN_REGISTRY.subscribe(listener);
+}
+
+export function registerLocalPluginContribution(raw: unknown): () => void {
+  return PLUGIN_REGISTRY.registerLocalContribution(raw);
 }
 
 export function pluginRegistryGeneration(): number {
