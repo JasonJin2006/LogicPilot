@@ -188,8 +188,24 @@ export async function handlePluginDrafts(req, res) {
             grantedAt: current.approvedAt ?? new Date().toISOString(),
           })),
         });
+        let runtimeRefreshError;
+        if (nodePluginRuntime) {
+          try {
+            await nodePluginRuntime.refresh();
+          } catch (error) {
+            // Installation is durable even if an already-running runtime
+            // cannot hot-swap this generation; surface the exact boundary to
+            // the review UI and let the next watch tick retry.
+            runtimeRefreshError = error instanceof Error ? error.message : String(error);
+          }
+        }
         result = store.write({ ...current, status: 'published' });
-        result = { draft: result, lockEntry, packageSha256: built.sha256 };
+        result = {
+          draft: result,
+          lockEntry,
+          packageSha256: built.sha256,
+          ...(runtimeRefreshError === undefined ? {} : { runtimeRefreshError }),
+        };
       } else if (action === 'reject') {
         result = store.write({
           ...current,
