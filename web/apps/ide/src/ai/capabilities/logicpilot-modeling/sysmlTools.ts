@@ -17,6 +17,11 @@ import {
 import { definitionAt, referencesOf } from '../../../sysml/sysmlLanguage';
 import { lowerStateMachine } from '../../../sysml/sysmlLowering';
 import { buildSysMLProjectIndex, resolveInIndex } from '../../../sysml/sysmlProjectIndex';
+import {
+  beginArtifactTransaction,
+  commitArtifactTransaction,
+  rollbackArtifactTransaction,
+} from '../../../artifacts/artifactGraphClient';
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
   return typeof args[key] === 'number' && Number.isFinite(args[key] as number)
@@ -79,10 +84,10 @@ function writeSysMLSource(nextSource: string): { ok: false; error: string } | nu
 
 /** Shared transaction tail: re-parse the candidate source and refuse the
  *  write when it would introduce error-level diagnostics (verified patch). */
-function commitEdit(
-  edit:
-    { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string },
-): Record<string, unknown> {
+type SysmlEdit =
+  { ok: true; source: string; detail: string; elementId?: string } | { ok: false; error: string };
+
+function commitEdit(edit: SysmlEdit): Record<string, unknown> | Promise<Record<string, unknown>> {
   if (!edit.ok) {
     return { ok: false, error: edit.error };
   }
@@ -96,9 +101,75 @@ function commitEdit(
         `${newError.line ? ` line ${newError.line}` : ''}) - source left unchanged`,
     };
   }
+  const activeFile = useUiStore.getState().activeFile;
+  const previousSource = currentSysMLSource();
+  if (!activeFile || previousSource === null) {
+    return { ok: false, error: 'no SysML source is available to edit' };
+  }
+  // Node/unit-test callers have no app server and historically expect this
+  // tool to return synchronously. The browser path below adds persistence
+  // without changing the pure parser/edit contract.
+  if (typeof window === 'undefined') {
+    const written = writeSysMLSource(edit.source);
+    if (written !== null) return written;
+    return {
+      ok: true,
+      detail: edit.detail,
+      elementId: edit.elementId ?? null,
+      warnings: nextProjection.diagnostics.filter((d) => d.severity === 'warning'),
+    };
+  }
+  return commitEditPersisted(edit, nextProjection, activeFile, previousSource);
+}
+
+async function commitEditPersisted(
+  edit: Extract<SysmlEdit, { ok: true }>,
+  nextProjection: ReturnType<typeof projectSysML>,
+  activeFile: string,
+  previousSource: string,
+): Promise<Record<string, unknown>> {
+  let pending;
+  try {
+    pending = await beginArtifactTransaction({
+      artifactId: `sysml:${activeFile}`,
+      artifactKind: 'source-document',
+      operationType: 'sysml-typed-edit',
+      payload: {
+        path: activeFile,
+        beforeSource: previousSource,
+        afterSource: edit.source,
+        detail: edit.detail,
+        elementId: edit.elementId ?? null,
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      error: `artifact transaction could not be prepared: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
+  }
   const written = writeSysMLSource(edit.source);
   if (written !== null) {
+    await rollbackArtifactTransaction(pending, 'sysml-source-write-failed').catch(() => undefined);
     return written;
+  }
+  try {
+    await commitArtifactTransaction(pending);
+  } catch (error) {
+    // Do not overwrite a concurrent user edit made while the server request
+    // was in flight; only restore the exact source this operation wrote.
+    if (currentSysMLSource() === edit.source) writeSysMLSource(previousSource);
+    await rollbackArtifactTransaction(pending, 'sysml-typed-edit-commit-failed').catch(
+      () => undefined,
+    );
+    return {
+      ok: false,
+      error: `artifact transaction could not be committed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    };
   }
   return {
     ok: true,
