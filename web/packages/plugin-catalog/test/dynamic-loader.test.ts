@@ -155,6 +155,29 @@ describe('dynamic ESM loader', () => {
     await expect(module.activate({} as never)).rejects.toMatchObject({ code: 'module' });
   });
 
+  it('round-trips asynchronous service RPC through the worker boundary', async () => {
+    const { root, entry, manifest } = fixture();
+    writeFileSync(
+      join(root, 'pkg', 'activate.mjs'),
+      'export async function activate(ctx) { const result = await ctx.service("svc").call(2); if (result !== 42) throw new Error("bad result"); }',
+    );
+    const rpcEntry = { ...entry, sha256: computePackageDigest(join(root, 'pkg'), manifest) };
+    const thunk = createDynamicEsmLoader({
+      roots: [{ scope: 'workspace', path: root }],
+      scope: 'workspace',
+      defaultTrustLevel: 't4',
+      isolate: true,
+      grants: [{ permissionId: 'runtime.service.call', granted: true }],
+      onCapabilityRequest: (_capability, payload) => {
+        expect(payload).toEqual({ name: 'svc', args: [2] });
+        return 42;
+      },
+    })(rpcEntry);
+    const module = await thunk!();
+    await module.activate({} as never);
+    await module.deactivate?.();
+  });
+
   it('instantiates a capability-free WASM module with lifecycle exports', async () => {
     const root = mkdtempSync(join(process.cwd(), '.dynamic-wasm-'));
     cleanups.push(root);

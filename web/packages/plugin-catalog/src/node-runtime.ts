@@ -83,6 +83,7 @@ export class NodePluginRuntime {
       this.broker.register('runtime.event.emit', () => undefined);
       this.broker.register('runtime.event.subscribe', () => undefined);
       this.broker.register('runtime.service.provide', () => undefined);
+      this.broker.register('runtime.service.call', () => undefined);
     }
   }
 
@@ -284,6 +285,8 @@ export class NodePluginRuntime {
         grants: grants.get(entry.id) ?? [],
         onCapability: (capability, payload) =>
           this.dispatchCapability(entry.id, capability, payload, session),
+        onCapabilityRequest: (capability, payload) =>
+          this.dispatchCapabilityRequest(entry.id, capability, payload, session),
         onError: errors,
       })(entry);
       const wasm = createDynamicWasmLoader({
@@ -396,6 +399,30 @@ export class NodePluginRuntime {
       operation: 'invoke',
       payload,
     });
+  }
+
+  private async dispatchCapabilityRequest(
+    pluginId: string,
+    capability: string,
+    payload: unknown,
+    session = this.sessions.get(pluginId),
+  ): Promise<unknown> {
+    if (!session) throw new Error('runtime session unavailable');
+    const response = await this.broker.invoke({
+      schema: 'logicpilot.capability-rpc/v1',
+      contractVersion: 1,
+      generation: session.generation,
+      sessionId: session.sessionId,
+      pluginId: session.pluginId,
+      requestId: `lp-request-${++this.capabilityRequestSequence}`,
+      deadlineMs: Date.now() + (this.options.activationTimeoutMs ?? 10_000),
+      capability,
+      operation: 'invoke',
+      payload,
+    });
+    if (response.status !== 'ok')
+      throw new Error(response.errorCode ?? 'capability request denied');
+    return response.payload;
   }
 
   private revokeSessions(generation: number): void {

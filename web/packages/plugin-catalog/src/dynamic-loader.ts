@@ -23,6 +23,10 @@ export interface DynamicEsmLoaderOptions {
   readonly activationTimeoutMs?: number;
   readonly isolate?: boolean;
   readonly onCapability?: (capability: string, payload: unknown) => void;
+  readonly onCapabilityRequest?: (
+    capability: string,
+    payload: unknown,
+  ) => unknown | Promise<unknown>;
   readonly grants?: readonly PermissionGrant[];
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
@@ -133,6 +137,7 @@ export function createDynamicEsmLoader(
           const controller = createEsmWorkerController(modulePath, entry, {
             timeoutMs: options.activationTimeoutMs,
             onCapability: options.onCapability,
+            onCapabilityRequest: options.onCapabilityRequest,
             grants: options.grants,
           });
           return {
@@ -179,6 +184,10 @@ function createEsmWorkerController(
   options: {
     readonly timeoutMs?: number;
     readonly onCapability?: (capability: string, payload: unknown) => void;
+    readonly onCapabilityRequest?: (
+      capability: string,
+      payload: unknown,
+    ) => unknown | Promise<unknown>;
     readonly grants?: readonly PermissionGrant[];
   },
 ): {
@@ -190,13 +199,22 @@ function createEsmWorkerController(
     let moduleValue;
     let activationContext;
     let effects = [];
+    let rpcSequence = 0;
+    const pending = new Map();
+    function requestCapability(capability, payload) {
+      const request = ++rpcSequence;
+      return new Promise((resolve, reject) => {
+        pending.set(request, { resolve, reject });
+        parentPort.postMessage({ kind: 'capability-request', capability, payload, request });
+      });
+    }
     function rpcContext() {
       effects = [];
       return {
         pluginId: workerData.pluginId,
         manifest: workerData.manifest,
         grants: workerData.grants,
-        service: (name) => ({ call: (...args) => Promise.reject(new Error('service RPC not enabled in ABI v1: ' + name + ':' + args.length)) }),
+        service: (name) => ({ call: (...args) => requestCapability('runtime.service.call', { name, args }) }),
         emit: (event, payload) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.emit', payload: { event, payload } }),
         on: (event) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.subscribe', payload: { event } }),
         effect: (cleanup) => { if (typeof cleanup === 'function') effects.push(cleanup); },
@@ -215,6 +233,15 @@ function createEsmWorkerController(
     })();
     parentPort.on('message', async (message) => {
       try {
+        if (message.kind === 'capability-response') {
+          const waiting = pending.get(message.request);
+          if (waiting) {
+            pending.delete(message.request);
+            if (message.ok) waiting.resolve(message.payload);
+            else waiting.reject(new Error('capability request failed'));
+          }
+          return;
+        }
         if (!moduleValue) throw new Error('not-ready');
         if (message.kind === 'activate') {
           activationContext = rpcContext();
@@ -245,9 +272,31 @@ function createEsmWorkerController(
       readonly kind?: string;
       readonly capability?: string;
       readonly payload?: unknown;
+      readonly request?: number;
     };
     if (message.kind === 'capability' && message.capability)
       options.onCapability?.(message.capability, message.payload);
+    if (
+      message.kind === 'capability-request' &&
+      message.capability &&
+      message.request !== undefined
+    ) {
+      const response = options.onCapabilityRequest
+        ? Promise.resolve(options.onCapabilityRequest(message.capability, message.payload))
+        : Promise.reject(new Error('capability broker unavailable'));
+      response
+        .then((payload) =>
+          worker.postMessage({
+            kind: 'capability-response',
+            request: message.request,
+            ok: true,
+            payload,
+          }),
+        )
+        .catch(() =>
+          worker.postMessage({ kind: 'capability-response', request: message.request, ok: false }),
+        );
+    }
   });
   let readyResolve: (() => void) | null = null;
   let readyReject: (() => void) | null = null;
@@ -264,7 +313,12 @@ function createEsmWorkerController(
     const id = ++request;
     const result = new Promise<void>((resolveResult, rejectResult) => {
       const onMessage = (value: unknown) => {
-        const message = value as { readonly ok?: boolean; readonly request?: number };
+        const message = value as {
+          readonly ok?: boolean;
+          readonly request?: number;
+          readonly kind?: string;
+        };
+        if (message.kind !== undefined) return;
         if (message.request !== id) return;
         worker.off('message', onMessage);
         if (message.ok) resolveResult();
