@@ -110,8 +110,8 @@ guardrail、session、tracing 等与成熟 Agent SDK 高度重叠。
    注册/撤销 Process provider；SysML semantic dispatch 也已由 SysML plugin lifecycle
    注册/撤销；Statechart、Agent、Continuous、DEVS、C4 已具备独立 data-first pack，实际
    runtime provider 和默认 provider 的最终插件化仍待完成；统一 ExecutionTargetProvider
-   registry 已加入 plugin-host，并已接入 app-server 的真实 Process/lpcli provider；具体
-   C ABI/WASM provider 仍待迁移；SysML semantic、model
+   registry 已加入 plugin-host，并已接入 app-server 的真实 Process/DEVS/Continuous/Agent
+   lpcli provider；具体 C ABI/WASM provider 仍待迁移；SysML semantic、model
    semantic 与 panel provider seams 已集中到 `plugins/registries`，并具备 lifecycle disposer，
    lint 直接范式 import 已清零；DES/SysML 已携带并注册结构化 View/Notation/CreateAction
    contribution 文件；

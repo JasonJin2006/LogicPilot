@@ -4,13 +4,12 @@ import { pathToFileURL } from 'node:url';
 import { ExecutionTargetRegistry } from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
-const PROCESS_TARGET = {
-  schema: 'logicpilot.execution-target/v1',
-  contractVersion: 1,
-  id: 'logicpilot.process.runtime',
-  artifactRef: { artifactId: 'workspace.model' },
-  runtime: { kind: 'interpreter', pluginId: 'logicpilot.des' },
-};
+const EXECUTION_TARGETS = [
+  runtimeTarget('logicpilot.process.runtime', 'logicpilot.des'),
+  runtimeTarget('logicpilot.devs.runtime', 'logicpilot.devs'),
+  runtimeTarget('logicpilot.continuous.runtime', 'logicpilot.continuous'),
+  runtimeTarget('logicpilot.agent.runtime', 'logicpilot.agent'),
+];
 
 let registry;
 let runner;
@@ -18,11 +17,21 @@ let runner;
 function getRegistry() {
   if (registry) return registry;
   registry = new ExecutionTargetRegistry();
-  registry.register({ target: PROCESS_TARGET, execute: runProcess });
+  for (const target of EXECUTION_TARGETS) registry.register({ target, execute: runKernelModel });
   return registry;
 }
 
-async function runProcess(request) {
+function runtimeTarget(id, pluginId) {
+  return {
+    schema: 'logicpilot.execution-target/v1',
+    contractVersion: 1,
+    id,
+    artifactRef: { artifactId: 'workspace.model' },
+    runtime: { kind: 'interpreter', pluginId },
+  };
+}
+
+async function runKernelModel(request) {
   runner ??= import(pathToFileURL(join(process.cwd(), 'scripts', 'ai-build.mjs')).href).then(
     (module) => module.runModelDsl,
   );
@@ -47,7 +56,7 @@ async function runProcess(request) {
     runId,
     requestId: request.requestId,
     targetId: request.targetId,
-    artifactRef: PROCESS_TARGET.artifactRef,
+    artifactRef: EXECUTION_TARGETS.find((target) => target.id === request.targetId).artifactRef,
     status: result.ok ? 'completed' : 'failed',
     ...(request.seed === undefined ? {} : { seed: request.seed }),
     ...(result.ok ? {} : { error: 'process runtime failed' }),

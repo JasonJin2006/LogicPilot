@@ -110,7 +110,17 @@ try {
   });
   assert.equal(targets.status, 200);
   const targetPayload = await targets.json();
-  assert.ok(targetPayload.targets.some((target) => target.id === 'logicpilot.process.runtime'));
+  for (const id of [
+    'logicpilot.process.runtime',
+    'logicpilot.devs.runtime',
+    'logicpilot.continuous.runtime',
+    'logicpilot.agent.runtime',
+  ]) {
+    assert.ok(
+      targetPayload.targets.some((target) => target.id === id),
+      `missing target ${id}`,
+    );
+  }
   const execution = await fetch(`${base}/api/execution`, {
     method: 'POST',
     headers: {

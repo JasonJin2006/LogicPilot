@@ -160,3 +160,4 @@
 - [0129 Built-in Paradigm Pack Conformance](0129-builtin-paradigm-pack-conformance)
 - [0130 Execution Target Provider Registry](0130-execution-target-provider-registry)
 - [0131 Kernel-Backed Process Execution Provider](0131-process-execution-provider)
+- [0132 Kernel Runtime Target Family](0132-kernel-runtime-target-family)
