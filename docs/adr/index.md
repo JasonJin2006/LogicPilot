@@ -157,3 +157,4 @@
 - [0126 Structured Paradigm Context Selection](0126-structured-paradigm-context-selection)
 - [0127 Statechart Paradigm Pack](0127-statechart-paradigm-pack)
 - [0128 Multi-Paradigm Data Pack Template](0128-multi-paradigm-data-pack-template)
+- [0129 Built-in Paradigm Pack Conformance](0129-builtin-paradigm-pack-conformance)
