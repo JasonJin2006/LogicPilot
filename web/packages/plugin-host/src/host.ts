@@ -234,6 +234,8 @@ export interface PluginHostOptions {
   readonly trustOverrides?: ReadonlyMap<string, TrustLevel>;
   /** Called for every audit entry (shells persist this). */
   readonly onAudit?: (entry: AuditEntry) => void;
+  /** Host-owned services made available to every plugin activation context. */
+  readonly services?: ReadonlyMap<string, unknown>;
 }
 
 export type HostPhase = 'idle' | 'starting' | 'active' | 'stopped';
@@ -467,7 +469,7 @@ export class PluginHost {
     const module = await discovered.load();
     const cleanups: EffectCleanup[] = [];
     const unsubscribe: EffectCleanup[] = [];
-    const services = new Map<string, unknown>();
+    const services = new Map(this.options.services ?? []);
 
     const ctx: ActivationContext = {
       pluginId: id,
