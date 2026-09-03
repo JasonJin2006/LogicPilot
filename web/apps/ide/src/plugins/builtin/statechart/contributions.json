@@ -1,0 +1,133 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.statechart",
+  "version": "1.0.0",
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.statechart.lifecycle",
+      "version": "1.0.0",
+      "owner": "logicpilot.statechart",
+      "type": "concept",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-statechart"] },
+      "provenance": {
+        "source": "logicpilot.statechart",
+        "reference": "statechart-conformance",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["statechart-basic"] },
+      "content": {
+        "initialState": "exactly one initial state",
+        "transition": "event/guard/action determines a state change",
+        "unknownEvent": "leaves active state unchanged"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.statechart.skill.lifecycle",
+      "name": "Model a state lifecycle",
+      "trigger": "user asks to model or inspect a lifecycle state machine",
+      "inputs": ["states", "events", "guards"],
+      "steps": [
+        { "id": "logicpilot.statechart.skill.inspect", "action": "inspect_model" },
+        { "id": "logicpilot.statechart.skill.transition", "action": "apply_model_patch" },
+        { "id": "logicpilot.statechart.skill.validate", "action": "compile_model" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.statechart.instruction.determinism",
+      "scope": "logicpilot-statechart",
+      "priority": 100,
+      "rules": [
+        "Keep transition ordering deterministic.",
+        "Validate guards and action identifiers before execution."
+      ],
+      "forbidden": [
+        "Do not invent transitions for unknown events.",
+        "Do not hide event-budget failures."
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "SC0001",
+      "pluginId": "logicpilot.statechart",
+      "titleKey": "diagnostic.logicpilot.statechart.invalid-transition",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-statechart"],
+      "conformanceCases": ["statechart-invalid-transition"]
+    }
+  ],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.statechart.view",
+      "owner": "logicpilot.statechart",
+      "titleKey": "view.logicpilot.statechart",
+      "canvas": "statechart",
+      "query": {
+        "artifactKinds": ["semantic-model"],
+        "relationKinds": ["validates", "derives-from"]
+      },
+      "projection": { "semantic": "statechart", "layout": "hierarchical" },
+      "interactions": ["select", "create", "connect", "inline-edit"],
+      "supportsInverseEdit": true,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.statechart.notation",
+      "owner": "logicpilot.statechart",
+      "glyphs": [
+        { "semanticKind": "state", "glyph": "rounded-state" },
+        { "semanticKind": "initial-state", "glyph": "filled-circle" },
+        { "semanticKind": "final-state", "glyph": "bullseye" },
+        { "semanticKind": "transition", "glyph": "directed-arrow" }
+      ],
+      "edges": [{ "relationKind": "derives-from", "edgeStyle": "directed", "directed": true }],
+      "createActions": [
+        { "id": "logicpilot.statechart.create.state", "order": 10 },
+        { "id": "logicpilot.statechart.create.transition", "order": 20 }
+      ]
+    }
+  ],
+  "createActions": [
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.statechart.create.state",
+      "owner": "logicpilot.statechart",
+      "titleKey": "create.statechart.state",
+      "notationId": "logicpilot.statechart.notation",
+      "targetSemanticKind": "state",
+      "order": 10
+    },
+    {
+      "schema": "logicpilot.create-action/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.statechart.create.transition",
+      "owner": "logicpilot.statechart",
+      "titleKey": "create.statechart.transition",
+      "notationId": "logicpilot.statechart.notation",
+      "targetSemanticKind": "transition",
+      "order": 20
+    }
+  ],
+  "palettes": [],
+  "tools": []
+}

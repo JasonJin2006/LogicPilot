@@ -43,6 +43,8 @@ import { activateDesPlugin } from './builtin/des/activate';
 import desManifestJson from './builtin/des/plugin.json';
 import { activateSysmlPlugin } from './builtin/sysml/activate';
 import sysmlManifestJson from './builtin/sysml/plugin.json';
+import { activateStatechartPlugin } from './builtin/statechart/activate';
+import statechartManifestJson from './builtin/statechart/plugin.json';
 
 interface BuiltinPlugin {
   readonly manifestJson: unknown;
@@ -52,6 +54,7 @@ interface BuiltinPlugin {
 const BUILTIN_PLUGINS: readonly BuiltinPlugin[] = [
   { manifestJson: desManifestJson, load: activateDesPlugin },
   { manifestJson: sysmlManifestJson, load: activateSysmlPlugin },
+  { manifestJson: statechartManifestJson, load: activateStatechartPlugin },
 ];
 
 /** Validates a bundled manifest against the frozen Phase 1 contract and

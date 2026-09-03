@@ -46,10 +46,15 @@ describe('builtin plugin manifests', () => {
 describe('IDE plugin host', () => {
   it('activates both builtin plugins in dependency order', async () => {
     const host = await startIdePluginHost();
-    expect([...host.ids()].sort()).toEqual(['logicpilot.des', 'logicpilot.sysml']);
+    expect([...host.ids()].sort()).toEqual([
+      'logicpilot.des',
+      'logicpilot.statechart',
+      'logicpilot.sysml',
+    ]);
     expect(host.phaseValue).toBe('active');
     expect(PLUGIN_REGISTRY.snapshot().contributions.map((set) => set.pluginId)).toEqual([
       'logicpilot.des',
+      'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
     const context = compilePluginContext(PLUGIN_REGISTRY.snapshot(), {
@@ -81,6 +86,7 @@ describe('IDE plugin host', () => {
     expect(lockfile.schema).toBe('logicpilot.plugin-lock/v1');
     expect(lockfile.plugins.map((entry) => entry.id)).toEqual([
       'logicpilot.des',
+      'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
   });
@@ -231,7 +237,11 @@ describe('remote catalog discovery (Phase 2B-1)', () => {
     const host = await startIdePluginHost({
       catalog: { fetch: async () => ({ ok: false, status: 503, json: async () => null }) },
     });
-    expect([...host.ids()].sort()).toEqual(['logicpilot.des', 'logicpilot.sysml']);
+    expect([...host.ids()].sort()).toEqual([
+      'logicpilot.des',
+      'logicpilot.statechart',
+      'logicpilot.sysml',
+    ]);
     expect(host.auditLog.list().some((entry) => entry.detail?.includes('bridge unavailable'))).toBe(
       true,
     );
