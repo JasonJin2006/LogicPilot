@@ -12,6 +12,7 @@ export {
   PackageManager,
   PluginDraftRegistry,
   PluginDraftValidationRunner,
+  ExecutionTargetRegistry,
 } from '@logicpilot/plugin-host';
 export { FileSystemPluginDraftStore } from '@logicpilot/plugin-host/node';
 export * from './plugin-draft-builder.js';

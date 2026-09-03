@@ -39,6 +39,7 @@ import {
   handleConfig,
 } from './scripts/ai-endpoint.mjs';
 import { handleAgentStep } from './scripts/agent-endpoint.mjs';
+import { handleExecution } from './scripts/execution-endpoint.mjs';
 
 // Exposes the AI model build loop (scripts/ai-build.mjs) to the IDE at
 // POST /api/ai-build during development.
@@ -96,6 +97,9 @@ const aiBuildPlugin = (): Plugin => ({
     });
     server.middlewares.use('/api/agent-step', (req, res) => {
       void runWithApiPolicy(req, res, () => handleAgentStep(req, res));
+    });
+    server.middlewares.use('/api/execution', (req, res) => {
+      void runWithApiPolicy(req, res, () => handleExecution(req, res));
     });
     server.middlewares.use('/api/config', (req, res) => {
       void runWithApiPolicy(req, res, () => handleConfig(req, res));

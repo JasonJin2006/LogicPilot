@@ -159,3 +159,4 @@
 - [0128 Multi-Paradigm Data Pack Template](0128-multi-paradigm-data-pack-template)
 - [0129 Built-in Paradigm Pack Conformance](0129-builtin-paradigm-pack-conformance)
 - [0130 Execution Target Provider Registry](0130-execution-target-provider-registry)
+- [0131 Kernel-Backed Process Execution Provider](0131-process-execution-provider)
