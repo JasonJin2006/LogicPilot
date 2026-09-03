@@ -153,6 +153,45 @@ try {
   assert.equal(executionResult.run.targetId, 'logicpilot.process.runtime');
   assert.equal(executionResult.run.status, 'completed');
   assert.ok(executionResult.evidence?.runId === executionResult.run.runId);
+  for (const [index, targetId] of [
+    'logicpilot.devs.runtime',
+    'logicpilot.continuous.runtime',
+    'logicpilot.agent.runtime',
+  ].entries()) {
+    const familyExecution = await fetch(`${base}/api/execution`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-logicpilot-session': port.sessionToken,
+      },
+      body: JSON.stringify({
+        action: 'execute',
+        targetId,
+        requestId: `staged-${index + 2}`,
+        inputs: {
+          dsl: `model MM1Family {
+            use process
+            param arrival_rate: float = 0.2
+            param service_rate: float = 1.0
+            resource Server { capacity = 1 }
+            source Arrivals { arrival = rate(arrival_rate) }
+            queue WaitLine { capacity = 100 }
+            service Handle { resource = Server time = exponential(service_rate) }
+            sink Done { }
+            couple Arrivals.out -> WaitLine.in
+            couple WaitLine.out -> Handle.in
+            couple Handle.out -> Done.in
+          }`,
+          runParams: { arrivals: 10, warmup: 0 },
+        },
+      }),
+    });
+    assert.equal(familyExecution.status, 200);
+    const familyResult = await familyExecution.json();
+    assert.equal(familyResult.run.targetId, targetId);
+    assert.equal(familyResult.run.status, 'completed');
+    assert.equal(familyResult.evidence?.runId, familyResult.run.runId);
+  }
   console.log('STAGED-DESKTOP-RUNTIME TEST: PASS');
 } finally {
   child.kill();
