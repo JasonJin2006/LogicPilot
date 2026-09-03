@@ -105,6 +105,44 @@ try {
   const result = await build.json();
   assert.equal(result.ok, true, JSON.stringify(result.diagnostics));
   assert.ok(result.metrics.blocks.some((block) => block.kind === 'queue'));
+  const targets = await fetch(`${base}/api/execution`, {
+    headers: { 'x-logicpilot-session': port.sessionToken },
+  });
+  assert.equal(targets.status, 200);
+  const targetPayload = await targets.json();
+  assert.ok(targetPayload.targets.some((target) => target.id === 'logicpilot.process.runtime'));
+  const execution = await fetch(`${base}/api/execution`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-logicpilot-session': port.sessionToken,
+    },
+    body: JSON.stringify({
+      action: 'execute',
+      targetId: 'logicpilot.process.runtime',
+      requestId: 'staged-execution',
+      inputs: {
+        dsl: `model MM1 {
+          use process
+          param arrival_rate: float = 0.8
+          param service_rate: float = 1.0
+          resource Server { capacity = 1 }
+          source Arrivals { arrival = rate(arrival_rate) }
+          queue WaitLine { capacity = 1000000 }
+          service Handle { resource = Server time = exponential(service_rate) }
+          sink Done { }
+          couple Arrivals.out -> WaitLine.in
+          couple WaitLine.out -> Handle.in
+          couple Handle.out -> Done.in
+        }`,
+      },
+    }),
+  });
+  assert.equal(execution.status, 200);
+  const executionResult = await execution.json();
+  assert.equal(executionResult.run.targetId, 'logicpilot.process.runtime');
+  assert.equal(executionResult.run.status, 'completed');
+  assert.ok(executionResult.evidence?.runId === executionResult.run.runId);
   console.log('STAGED-DESKTOP-RUNTIME TEST: PASS');
 } finally {
   child.kill();

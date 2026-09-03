@@ -33,6 +33,7 @@ import {
   handleConfig,
 } from '../web/apps/ide/scripts/ai-endpoint.mjs';
 import { handleAgentStep } from '../web/apps/ide/scripts/agent-endpoint.mjs';
+import { handleExecution } from '../web/apps/ide/scripts/execution-endpoint.mjs';
 import {
   handlePluginCatalog,
   handlePluginRegistry,
@@ -262,6 +263,11 @@ async function main() {
     if (pathname === '/api/agent-step') {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handleAgentStep(req, res));
+      return;
+    }
+    if (pathname === '/api/execution') {
+      setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
+      await runWithApiPolicy(req, res, () => handleExecution(req, res));
       return;
     }
     if (pathname === '/api/config') {

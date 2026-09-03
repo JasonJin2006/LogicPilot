@@ -97,6 +97,7 @@ const requiredFiles = [
   'scripts/verify-run.mjs',
   'web/apps/ide/scripts/ai-endpoint.mjs',
   'web/apps/ide/scripts/agent-endpoint.mjs',
+  'web/apps/ide/scripts/execution-endpoint.mjs',
   'web/apps/ide/scripts/plugin-catalog-bridge.mjs',
   'LICENSE',
 ];
