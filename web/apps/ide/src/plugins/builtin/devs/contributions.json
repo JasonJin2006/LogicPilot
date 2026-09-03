@@ -1,0 +1,103 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.devs",
+  "version": "1.0.0",
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.devs.atomic-coupling",
+      "version": "1.0.0",
+      "owner": "logicpilot.devs",
+      "type": "constraint",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-devs"] },
+      "provenance": {
+        "source": "logicpilot.devs",
+        "reference": "devs-conformance",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["devs-coupled"] },
+      "content": {
+        "coupling": "ports must have compatible types",
+        "time": "events are ordered by timestamp then stable sequence"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.devs.skill.coupled",
+      "name": "Build a coupled DEVS model",
+      "trigger": "user asks to construct an atomic or coupled DEVS model",
+      "inputs": ["atomic-models", "couplings"],
+      "steps": [
+        { "id": "inspect", "action": "inspect_model" },
+        { "id": "patch", "action": "apply_model_patch" },
+        { "id": "run", "action": "run_simulation" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.devs.instruction.time",
+      "scope": "logicpilot-devs",
+      "priority": 100,
+      "rules": [
+        "Preserve timestamp ordering and confluent transition semantics.",
+        "Archive causal evidence for emitted events."
+      ],
+      "forbidden": ["Do not merge simultaneous bags by presentation order."]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "DV0001",
+      "pluginId": "logicpilot.devs",
+      "titleKey": "diagnostic.logicpilot.devs.port-type",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-devs"],
+      "conformanceCases": ["devs-incompatible-port"]
+    }
+  ],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.devs.flow-view",
+      "owner": "logicpilot.devs",
+      "titleKey": "view.logicpilot.devs.flow",
+      "canvas": "flow",
+      "query": {
+        "artifactKinds": ["semantic-model", "evidence"],
+        "relationKinds": ["derives-from", "produced-by"]
+      },
+      "projection": { "semantic": "devs-coupled", "layout": "orthogonal" },
+      "interactions": ["select", "connect", "inspect"],
+      "supportsInverseEdit": true,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.devs.flow-notation",
+      "owner": "logicpilot.devs",
+      "glyphs": [
+        { "semanticKind": "atomic", "glyph": "state-box" },
+        { "semanticKind": "coupling", "glyph": "directed-edge" }
+      ],
+      "edges": [{ "relationKind": "derives-from", "edgeStyle": "directed", "directed": true }],
+      "createActions": []
+    }
+  ],
+  "createActions": [],
+  "palettes": [],
+  "tools": []
+}

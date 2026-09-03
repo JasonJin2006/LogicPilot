@@ -1,0 +1,99 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.c4",
+  "version": "1.0.0",
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.c4.levels",
+      "version": "1.0.0",
+      "owner": "logicpilot.c4",
+      "type": "concept",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-c4"] },
+      "provenance": { "source": "logicpilot.c4", "reference": "c4-notation", "confidence": 1 },
+      "verification": { "method": "unit-test", "cases": ["c4-container-boundary"] },
+      "content": {
+        "levels": ["system-context", "container", "component", "code"],
+        "rule": "relationships are directional and labeled"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.c4.skill.architecture",
+      "name": "Sketch a C4 architecture",
+      "trigger": "user asks to map system context, containers or components",
+      "inputs": ["systems", "containers", "relationships"],
+      "steps": [
+        { "id": "inspect", "action": "inspect_model" },
+        { "id": "view", "action": "plan_view" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.c4.instruction.level",
+      "scope": "logicpilot-c4",
+      "priority": 100,
+      "rules": [
+        "Keep each element at exactly one C4 level per view.",
+        "Label every relationship with its protocol or purpose."
+      ],
+      "forbidden": ["Do not mix deployment and logical boundaries without declaring a view."]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "CF0001",
+      "pluginId": "logicpilot.c4",
+      "titleKey": "diagnostic.logicpilot.c4.unlabeled",
+      "defaultSeverity": "warning",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-c4"],
+      "conformanceCases": ["c4-unlabeled-relationship"]
+    }
+  ],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.c4.graph-view",
+      "owner": "logicpilot.c4",
+      "titleKey": "view.logicpilot.c4.graph",
+      "canvas": "graph2d",
+      "query": {
+        "artifactKinds": ["semantic-model"],
+        "relationKinds": ["projects", "provides", "derives-from"]
+      },
+      "projection": { "semantic": "c4", "layout": "hierarchical" },
+      "interactions": ["select", "create", "connect", "inline-edit"],
+      "supportsInverseEdit": true,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.c4.graph-notation",
+      "owner": "logicpilot.c4",
+      "glyphs": [
+        { "semanticKind": "system", "glyph": "system-box" },
+        { "semanticKind": "container", "glyph": "container-box" },
+        { "semanticKind": "component", "glyph": "component-box" }
+      ],
+      "edges": [{ "relationKind": "provides", "edgeStyle": "labeled-arrow", "directed": true }],
+      "createActions": []
+    }
+  ],
+  "createActions": [],
+  "palettes": [],
+  "tools": []
+}

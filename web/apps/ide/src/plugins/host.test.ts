@@ -47,13 +47,21 @@ describe('IDE plugin host', () => {
   it('activates both builtin plugins in dependency order', async () => {
     const host = await startIdePluginHost();
     expect([...host.ids()].sort()).toEqual([
+      'logicpilot.agent',
+      'logicpilot.c4',
+      'logicpilot.continuous',
       'logicpilot.des',
+      'logicpilot.devs',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
     expect(host.phaseValue).toBe('active');
     expect(PLUGIN_REGISTRY.snapshot().contributions.map((set) => set.pluginId)).toEqual([
+      'logicpilot.agent',
+      'logicpilot.c4',
+      'logicpilot.continuous',
       'logicpilot.des',
+      'logicpilot.devs',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
@@ -85,7 +93,11 @@ describe('IDE plugin host', () => {
     const lockfile = host.toLockfile();
     expect(lockfile.schema).toBe('logicpilot.plugin-lock/v1');
     expect(lockfile.plugins.map((entry) => entry.id)).toEqual([
+      'logicpilot.agent',
+      'logicpilot.c4',
+      'logicpilot.continuous',
       'logicpilot.des',
+      'logicpilot.devs',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
@@ -238,7 +250,11 @@ describe('remote catalog discovery (Phase 2B-1)', () => {
       catalog: { fetch: async () => ({ ok: false, status: 503, json: async () => null }) },
     });
     expect([...host.ids()].sort()).toEqual([
+      'logicpilot.agent',
+      'logicpilot.c4',
+      'logicpilot.continuous',
       'logicpilot.des',
+      'logicpilot.devs',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);

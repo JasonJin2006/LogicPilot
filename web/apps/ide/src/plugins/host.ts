@@ -45,6 +45,14 @@ import { activateSysmlPlugin } from './builtin/sysml/activate';
 import sysmlManifestJson from './builtin/sysml/plugin.json';
 import { activateStatechartPlugin } from './builtin/statechart/activate';
 import statechartManifestJson from './builtin/statechart/plugin.json';
+import { activateAgentPlugin } from './builtin/agent/activate';
+import agentManifestJson from './builtin/agent/plugin.json';
+import { activateContinuousPlugin } from './builtin/continuous/activate';
+import continuousManifestJson from './builtin/continuous/plugin.json';
+import { activateDevsPlugin } from './builtin/devs/activate';
+import devsManifestJson from './builtin/devs/plugin.json';
+import { activateC4Plugin } from './builtin/c4/activate';
+import c4ManifestJson from './builtin/c4/plugin.json';
 
 interface BuiltinPlugin {
   readonly manifestJson: unknown;
@@ -55,6 +63,10 @@ const BUILTIN_PLUGINS: readonly BuiltinPlugin[] = [
   { manifestJson: desManifestJson, load: activateDesPlugin },
   { manifestJson: sysmlManifestJson, load: activateSysmlPlugin },
   { manifestJson: statechartManifestJson, load: activateStatechartPlugin },
+  { manifestJson: agentManifestJson, load: activateAgentPlugin },
+  { manifestJson: continuousManifestJson, load: activateContinuousPlugin },
+  { manifestJson: devsManifestJson, load: activateDevsPlugin },
+  { manifestJson: c4ManifestJson, load: activateC4Plugin },
 ];
 
 /** Validates a bundled manifest against the frozen Phase 1 contract and

@@ -1,0 +1,98 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.continuous",
+  "version": "1.0.0",
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.continuous.ode",
+      "version": "1.0.0",
+      "owner": "logicpilot.continuous",
+      "type": "formula",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-continuous"] },
+      "provenance": {
+        "source": "logicpilot.continuous",
+        "reference": "continuous-conformance",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["continuous-decay"] },
+      "formula": {
+        "expressionAst": { "operator": "derivative", "variable": "x" },
+        "recommendedSolver": "adaptive-rk4",
+        "assumptions": ["finite derivatives"]
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.continuous.skill.solve",
+      "name": "Solve continuous dynamics",
+      "trigger": "user asks to simulate an ODE or continuous model",
+      "inputs": ["equations", "initial-conditions"],
+      "steps": [
+        { "id": "inspect", "action": "inspect_model" },
+        { "id": "compile", "action": "compile_model" },
+        { "id": "run", "action": "run_simulation" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.continuous.instruction.numerics",
+      "scope": "logicpilot-continuous",
+      "priority": 100,
+      "rules": [
+        "Record solver, tolerances and initial conditions.",
+        "Stop at non-finite derivatives and report the first divergence."
+      ],
+      "forbidden": ["Do not silently clamp numerical instability."]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "CT0001",
+      "pluginId": "logicpilot.continuous",
+      "titleKey": "diagnostic.logicpilot.continuous.nonfinite",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-continuous"],
+      "conformanceCases": ["continuous-nonfinite"]
+    }
+  ],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.continuous.chart-view",
+      "owner": "logicpilot.continuous",
+      "titleKey": "view.logicpilot.continuous.chart",
+      "canvas": "chart",
+      "query": { "artifactKinds": ["run", "evidence"] },
+      "projection": { "semantic": "continuous-timeseries", "layout": "time-series" },
+      "interactions": ["select", "zoom", "inspect"],
+      "supportsInverseEdit": false,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.continuous.chart-notation",
+      "owner": "logicpilot.continuous",
+      "glyphs": [{ "semanticKind": "state-variable", "glyph": "line-series" }],
+      "edges": [],
+      "createActions": []
+    }
+  ],
+  "createActions": [],
+  "palettes": [],
+  "tools": []
+}

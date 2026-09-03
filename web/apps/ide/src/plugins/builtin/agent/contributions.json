@@ -1,0 +1,104 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.agent",
+  "version": "1.0.0",
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.agent.population",
+      "version": "1.0.0",
+      "owner": "logicpilot.agent",
+      "type": "concept",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-agent"] },
+      "provenance": {
+        "source": "logicpilot.agent",
+        "reference": "agent-conformance",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["agent-basic"] },
+      "content": {
+        "state": "per-agent",
+        "population": "structure-of-arrays",
+        "randomness": "seeded-and-replayable"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.agent.skill.population",
+      "name": "Model an agent population",
+      "trigger": "user asks to model agent behavior or population dynamics",
+      "inputs": ["population", "behavior"],
+      "steps": [
+        { "id": "inspect", "action": "inspect_model" },
+        { "id": "patch", "action": "apply_model_patch" },
+        { "id": "run", "action": "run_simulation" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.agent.instruction.replay",
+      "scope": "logicpilot-agent",
+      "priority": 100,
+      "rules": [
+        "Record the seed and budget for every population run.",
+        "Keep per-agent state separate from aggregate metrics."
+      ],
+      "forbidden": [
+        "Do not claim deterministic replay without a recorded seed.",
+        "Do not exceed the shared event budget."
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "AG0001",
+      "pluginId": "logicpilot.agent",
+      "titleKey": "diagnostic.logicpilot.agent.budget",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-agent"],
+      "conformanceCases": ["agent-budget"]
+    }
+  ],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.agent.sequence-view",
+      "owner": "logicpilot.agent",
+      "titleKey": "view.logicpilot.agent.sequence",
+      "canvas": "sequence",
+      "query": { "artifactKinds": ["run", "evidence"] },
+      "projection": { "semantic": "agent-interaction", "layout": "sequence" },
+      "interactions": ["select", "filter"],
+      "supportsInverseEdit": false,
+      "layoutPersistence": "artifact"
+    }
+  ],
+  "notations": [
+    {
+      "schema": "logicpilot.notation-pack/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.agent.sequence-notation",
+      "owner": "logicpilot.agent",
+      "glyphs": [
+        { "semanticKind": "agent", "glyph": "lifeline" },
+        { "semanticKind": "message", "glyph": "arrow" }
+      ],
+      "edges": [{ "relationKind": "produced-by", "edgeStyle": "message", "directed": true }],
+      "createActions": []
+    }
+  ],
+  "createActions": [],
+  "palettes": [],
+  "tools": []
+}
