@@ -3,10 +3,72 @@
   "contractVersion": 1,
   "pluginId": "logicpilot.sysml",
   "version": "1.0.0",
-  "knowledge": [],
-  "skills": [],
-  "instructions": [],
-  "diagnostics": [],
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.sysml.v2.projection",
+      "version": "1.0.0",
+      "owner": "logicpilot.sysml",
+      "type": "concept",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-sysml"] },
+      "provenance": {
+        "source": "logicpilot.sysml",
+        "reference": "sysml-v2-projection",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["sysml-comprehensive"] },
+      "content": {
+        "sourceAuthority": "SysML text",
+        "projection": "derived",
+        "editRule": "inverse edits must be re-parsed and verified"
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.sysml.skill.traceability",
+      "name": "Inspect SysML traceability",
+      "trigger": "user asks to inspect SysML structure, references or evidence",
+      "inputs": ["sysml-source", "selection", "diagnostics"],
+      "steps": [
+        { "id": "logicpilot.sysml.skill.project", "action": "inspect_sysml_projection" },
+        { "id": "logicpilot.sysml.skill.find", "action": "find_sysml_references" },
+        { "id": "logicpilot.sysml.skill.evidence", "action": "query_sysml_evidence" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.sysml.instruction.authority",
+      "scope": "logicpilot-sysml",
+      "priority": 100,
+      "rules": [
+        "Treat SysML source text as authoritative.",
+        "Re-project after every accepted typed edit."
+      ],
+      "forbidden": [
+        "Do not edit a derived canvas snapshot as if it were source text.",
+        "Do not hide parse diagnostics."
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "SY0001",
+      "pluginId": "logicpilot.sysml",
+      "titleKey": "diagnostic.logicpilot.sysml.parse-dirty",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-sysml"],
+      "conformanceCases": ["sysml-parse-error"]
+    }
+  ],
   "views": [
     {
       "schema": "logicpilot.view-definition/v1",

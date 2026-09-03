@@ -15,6 +15,7 @@ import { PALETTE_CONTRIBUTIONS } from '../workbench/palette';
 import { contributedProblemStores } from '../workbench/problems';
 import { PANELS } from '../layout/panels';
 import { PLUGIN_REGISTRY } from './registry';
+import { compilePluginContext } from '../ai/contextCompiler';
 
 afterEach(async () => {
   await stopIdePluginHost();
@@ -51,6 +52,13 @@ describe('IDE plugin host', () => {
       'logicpilot.des',
       'logicpilot.sysml',
     ]);
+    const context = compilePluginContext(PLUGIN_REGISTRY.snapshot(), {
+      documentType: 'dsl',
+      paradigm: 'logicpilot-process',
+    });
+    expect(context.knowledge).toContain('logicpilot.des.queueing.core');
+    expect(context.instructions).toContain('logicpilot.des.instruction.safety');
+    expect(context.diagnosticDefinitions).toContain('LP2004');
   });
 
   it('boots a ZERO-paradigm host (Phase 2 gate: empty discovery table)', async () => {

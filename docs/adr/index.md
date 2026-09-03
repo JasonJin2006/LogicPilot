@@ -154,3 +154,4 @@
 - [0123 SysML Semantic Provider Lifecycle](0123-sysml-semantic-provider-lifecycle)
 - [0124 Panel Provider Lifecycle](0124-panel-provider-lifecycle)
 - [0125 Built-in Structured Contributions](0125-builtin-structured-contributions)
+- [0126 Structured Paradigm Context Selection](0126-structured-paradigm-context-selection)

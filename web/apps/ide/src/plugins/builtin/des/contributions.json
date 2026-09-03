@@ -3,10 +3,72 @@
   "contractVersion": 1,
   "pluginId": "logicpilot.des",
   "version": "1.0.0",
-  "knowledge": [],
-  "skills": [],
-  "instructions": [],
-  "diagnostics": [],
+  "knowledge": [
+    {
+      "schema": "logicpilot.knowledge-block/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.des.queueing.core",
+      "version": "1.0.0",
+      "owner": "logicpilot.des",
+      "type": "concept",
+      "classification": "plugin",
+      "status": "trusted",
+      "scope": { "paradigms": ["logicpilot-process"] },
+      "provenance": {
+        "source": "logicpilot.des",
+        "reference": "builtin-conformance",
+        "confidence": 1
+      },
+      "verification": { "method": "conformance-case", "cases": ["mm1"] },
+      "content": {
+        "model": "discrete-event-process",
+        "semanticKinds": ["source", "queue", "service", "sink"],
+        "invariants": ["connections are explicit", "queue capacity is non-negative"]
+      }
+    }
+  ],
+  "skills": [
+    {
+      "id": "logicpilot.des.skill.build-flow",
+      "name": "Build a Process flow",
+      "trigger": "user asks to construct or repair a Process/DSL flow",
+      "inputs": ["model", "diagnostics"],
+      "steps": [
+        { "id": "logicpilot.des.skill.inspect", "action": "inspect_model" },
+        { "id": "logicpilot.des.skill.patch", "action": "apply_model_patch" },
+        { "id": "logicpilot.des.skill.compile", "action": "compile_model" }
+      ],
+      "permissions": []
+    }
+  ],
+  "instructions": [
+    {
+      "id": "logicpilot.des.instruction.safety",
+      "scope": "logicpilot-process",
+      "priority": 100,
+      "rules": [
+        "Use explicit typed patches for model changes.",
+        "After mutation, compile and use returned diagnostics for repair."
+      ],
+      "forbidden": [
+        "Do not invent simulation metrics.",
+        "Do not silently clamp invalid capacity values."
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "schema": "logicpilot.diagnostic-definition/v1",
+      "contractVersion": 1,
+      "id": "LP2004",
+      "pluginId": "logicpilot.des",
+      "titleKey": "diagnostic.logicpilot.des.unknown-block",
+      "defaultSeverity": "error",
+      "fixIds": [],
+      "appliesToParadigms": ["logicpilot-process"],
+      "conformanceCases": ["unknown-block"]
+    }
+  ],
   "views": [
     {
       "schema": "logicpilot.view-definition/v1",

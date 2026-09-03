@@ -122,7 +122,13 @@ export function buildAssistantContext(input: ContextInput): AssistantContext {
   const dsl = session.dsl && document === session.documentSnapshot ? session.dsl : '';
   const compiled = compilePluginContext(PLUGIN_REGISTRY.snapshot(), {
     documentType: input.documentType,
-    paradigm: input.paradigm,
+    paradigm:
+      input.paradigm ??
+      (input.documentType === 'sysml'
+        ? 'logicpilot-sysml'
+        : input.documentType === 'dsl'
+          ? 'logicpilot-process'
+          : undefined),
     domain: input.domain,
   });
   return {

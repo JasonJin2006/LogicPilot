@@ -82,7 +82,8 @@ export function compilePluginContext(
         instruction.scope === '*' ||
         scope.documentType === undefined ||
         scope.documentType === null ||
-        instruction.scope === scope.documentType,
+        instruction.scope === scope.documentType ||
+        instruction.scope === scope.paradigm,
     )
     .sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id));
   const diagnosticDefinitions = contributions
