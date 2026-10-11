@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ArtifactStoreError, FileSystemArtifactStore } from '../src/index.js';
+import { recoverAtomicFile } from '../src/atomic-file.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -207,5 +217,94 @@ describe('FileSystemArtifactStore', () => {
     expect(rolledBack.status).toBe('rolled-back');
     expect(rolledBack.resolutionRecord).toBe('local-apply-failed');
     expect(() => store.rollbackTransaction('tx-rollback')).not.toThrow();
+  });
+
+  it('restores the atomic backup when the target file is missing after a crash', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-recover-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root });
+    store.write(stateFixture());
+    const statePath = join(root, 'artifact-graph.json');
+    const backupPath = `${statePath}.bak`;
+    // Simulate a crash between the fallback's two renames: the target is gone
+    // but the complete backup still exists.
+    copyFileSync(statePath, backupPath);
+    unlinkSync(statePath);
+    expect(store.read().artifacts[0]?.id).toBe('model.main');
+    expect(existsSync(statePath)).toBe(true);
+    expect(existsSync(backupPath)).toBe(false);
+  });
+
+  it('recovers both graph and snapshot backups during store startup', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-startup-recover-'));
+    roots.push(root);
+    const statePath = join(root, 'artifact-graph.json');
+    const snapshotPath = join(root, 'artifact-graph.snapshot.json');
+    writeFileSync(statePath, JSON.stringify(stateFixture()), 'utf8');
+    writeFileSync(snapshotPath, JSON.stringify(stateFixture()), 'utf8');
+    copyFileSync(statePath, `${statePath}.bak`);
+    copyFileSync(snapshotPath, `${snapshotPath}.bak`);
+    unlinkSync(statePath);
+    unlinkSync(snapshotPath);
+    const reopened = new FileSystemArtifactStore({ rootDir: root });
+    expect(reopened.read().artifacts[0]?.id).toBe('model.main');
+    expect(reopened.rollback().artifacts[0]?.id).toBe('model.main');
+  });
+
+  it('cleans crash-leftover temp files when recovering', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-tmp-'));
+    roots.push(root);
+    const statePath = join(root, 'artifact-graph.json');
+    const leftover = `${statePath}.tmp-1-1-abc`;
+    writeFileSync(leftover, 'junk', 'utf8');
+    // Force the leftover to look stale (Windows mtimes can be a few ms ahead
+    // of Date.now(), which would make a fresh file look "not yet stale").
+    const past = new Date(Date.now() - 5_000);
+    utimesSync(leftover, past, past);
+    recoverAtomicFile(statePath, 0);
+    expect(existsSync(leftover)).toBe(false);
+  });
+
+  it('does not reclaim a lock still held by a live process', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-live-lock-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root, mutexStaleMs: 1_000 });
+    const mutex = join(root, 'artifact-graph.json.mutex');
+    writeFileSync(mutex, JSON.stringify({ pid: process.pid, createdAt: 0, token: 'live' }));
+    expect(() => store.write(stateFixture())).toThrow(/another process/);
+  });
+
+  it('reclaims a stale lock whose recorded owner is dead', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-dead-lock-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root, mutexStaleMs: 1_000 });
+    const mutex = join(root, 'artifact-graph.json.mutex');
+    // A dead pid (no process with that id) and an old timestamp.
+    writeFileSync(mutex, JSON.stringify({ pid: 2147483647, createdAt: 0, token: 'dead' }));
+    store.write(stateFixture());
+    expect(store.read().artifacts[0]?.id).toBe('model.main');
+  });
+
+  it('leaves a complete snapshot even across concurrent graph rewrites', () => {
+    const root = mkdtempSync(join(tmpdir(), 'logicpilot-artifact-snapshot-'));
+    roots.push(root);
+    const store = new FileSystemArtifactStore({ rootDir: root });
+    store.write(stateFixture());
+    store.snapshot();
+    const firstSnapshot = JSON.parse(
+      readFileSync(join(root, 'artifact-graph.snapshot.json'), 'utf8'),
+    ) as { artifacts?: { id?: string }[] };
+    expect(firstSnapshot.artifacts?.[0]?.id).toBe('model.main');
+    // A concurrent rewrite produces its own complete snapshot, never a
+    // truncated or partially-serialized state.
+    store.write({ ...stateFixture(), artifacts: [] });
+    store.snapshot();
+    const secondSnapshot = JSON.parse(
+      readFileSync(join(root, 'artifact-graph.snapshot.json'), 'utf8'),
+    ) as { artifacts?: unknown[]; revisions?: unknown[]; transactions?: unknown[] };
+    expect(secondSnapshot.artifacts).toEqual([]);
+    expect(secondSnapshot.revisions).toEqual([]);
+    expect(secondSnapshot.transactions).toEqual([]);
+    expect(store.read().artifacts).toEqual([]);
   });
 });

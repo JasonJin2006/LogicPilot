@@ -1,11 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {
   Artifact,
@@ -17,6 +10,10 @@ import type {
 } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 export * from './outbox.js';
+export { atomicWriteFileSync, recoverAtomicFile } from './atomic-file.js';
+export { acquireSharedLock, releaseSharedLock } from './lock.js';
+import { atomicWriteFileSync, recoverAtomicFile } from './atomic-file.js';
+import { acquireSharedLock, releaseSharedLock } from './lock.js';
 
 export interface ArtifactGraphState {
   readonly artifacts: readonly Artifact[];
@@ -43,6 +40,7 @@ export class FileSystemArtifactStore {
   private readonly snapshotPath: string;
   private readonly mutexPath: string;
   private readonly mutexStaleMs: number;
+  private readonly lockRetryBudgetMs: number;
   private readonly now: () => string;
   private readonly validateOperation?: (operation: TypedOperation) => readonly string[];
 
@@ -51,6 +49,7 @@ export class FileSystemArtifactStore {
     readonly stateName?: string;
     readonly snapshotName?: string;
     readonly mutexStaleMs?: number;
+    readonly lockRetryBudgetMs?: number;
     readonly now?: () => string;
     readonly validateOperation?: (operation: TypedOperation) => readonly string[];
   }) {
@@ -59,13 +58,20 @@ export class FileSystemArtifactStore {
     this.snapshotPath = join(this.rootDir, options.snapshotName ?? 'artifact-graph.snapshot.json');
     this.mutexPath = join(this.rootDir, `${options.stateName ?? 'artifact-graph.json'}.mutex`);
     this.mutexStaleMs = options.mutexStaleMs ?? 30 * 60 * 1000;
+    this.lockRetryBudgetMs = options.lockRetryBudgetMs ?? 250;
     if (!Number.isSafeInteger(this.mutexStaleMs) || this.mutexStaleMs < 1_000)
       throw new ArtifactStoreError('mutexStaleMs must be at least one second', 'invalid');
     this.now = options.now ?? (() => new Date().toISOString());
     this.validateOperation = options.validateOperation;
+    // Recover both durable state files as soon as a store instance opens. A
+    // crash can leave either replacement in its fallback `.bak` phase; waiting
+    // for an explicit read/snapshot call would expose a transient empty store.
+    recoverAtomicFile(this.statePath);
+    recoverAtomicFile(this.snapshotPath);
   }
 
   read(): ArtifactGraphState {
+    recoverAtomicFile(this.statePath);
     if (!existsSync(this.statePath)) return { artifacts: [], revisions: [], transactions: [] };
     let parsed: unknown;
     try {
@@ -85,7 +91,11 @@ export class FileSystemArtifactStore {
   write(state: ArtifactGraphState, expectedVersion?: string): void {
     const validated = validateState(state);
     mkdirSync(this.rootDir, { recursive: true });
-    if (!this.acquireMutex())
+    const token = acquireSharedLock(this.mutexPath, {
+      staleMs: this.mutexStaleMs,
+      retryBudgetMs: this.lockRetryBudgetMs,
+    });
+    if (token === null)
       throw new ArtifactStoreError(
         'artifact graph is being written by another process',
         'conflict',
@@ -95,27 +105,31 @@ export class FileSystemArtifactStore {
       if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
         throw new ArtifactStoreError('artifact graph changed concurrently', 'conflict');
       }
-      const temporary = `${this.statePath}.tmp-${process.pid}-${Date.now()}`;
-      try {
-        writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, 'utf8');
-        try {
-          renameSync(temporary, this.statePath);
-        } catch {
-          if (existsSync(this.statePath)) unlinkSync(this.statePath);
-          renameSync(temporary, this.statePath);
-        }
-      } catch {
-        if (existsSync(temporary)) unlinkSync(temporary);
-        throw new ArtifactStoreError('cannot atomically write artifact graph', 'io');
-      }
+      atomicWriteFileSync(this.statePath, `${JSON.stringify(validated, null, 2)}\n`);
+    } catch (error) {
+      if (error instanceof ArtifactStoreError) throw error;
+      throw new ArtifactStoreError('cannot atomically write artifact graph', 'io');
     } finally {
-      if (existsSync(this.mutexPath)) unlinkSync(this.mutexPath);
+      releaseSharedLock(this.mutexPath, token);
     }
   }
 
   snapshot(): void {
-    const state = this.read();
-    this.writeFile(this.snapshotPath, state);
+    const token = acquireSharedLock(this.mutexPath, {
+      staleMs: this.mutexStaleMs,
+      retryBudgetMs: this.lockRetryBudgetMs,
+    });
+    if (token === null)
+      throw new ArtifactStoreError(
+        'artifact graph is being written by another process',
+        'conflict',
+      );
+    try {
+      const state = this.read();
+      atomicWriteFileSync(this.snapshotPath, `${JSON.stringify(validateState(state), null, 2)}\n`);
+    } finally {
+      releaseSharedLock(this.mutexPath, token);
+    }
   }
 
   rollback(): ArtifactGraphState {
@@ -419,37 +433,8 @@ export class FileSystemArtifactStore {
     return next;
   }
 
-  private writeFile(path: string, state: ArtifactGraphState): void {
-    mkdirSync(this.rootDir, { recursive: true });
-    writeFileSync(path, `${JSON.stringify(validateState(state), null, 2)}\n`, 'utf8');
-  }
-
   private versionOf(state: ArtifactGraphState): string {
     return existsSync(this.statePath) ? canonicalize(state) : '';
-  }
-
-  private acquireMutex(): boolean {
-    const marker = JSON.stringify({ pid: process.pid, createdAt: Date.now() });
-    try {
-      writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
-      return true;
-    } catch {
-      if (!existsSync(this.mutexPath)) return false;
-      try {
-        const raw = JSON.parse(readFileSync(this.mutexPath, 'utf8')) as { createdAt?: unknown };
-        if (typeof raw.createdAt !== 'number' || Date.now() - raw.createdAt < this.mutexStaleMs)
-          return false;
-      } catch {
-        return false;
-      }
-      try {
-        unlinkSync(this.mutexPath);
-        writeFileSync(this.mutexPath, marker, { encoding: 'utf8', flag: 'wx' });
-        return true;
-      } catch {
-        return false;
-      }
-    }
   }
 }
 
