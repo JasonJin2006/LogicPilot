@@ -11,7 +11,13 @@ export interface RunOptions {
   minReps: number;
   maxReps: number;
   errorPercent: number;
-  precisionMetric: 'throughput' | 'L' | 'Lq' | 'W' | 'Wq' | 'utilization' | 'availability';
+  // The metric a precision-driven replication count stops on. The name is the
+  // model's (`metric = Wq` inside an experiment block), so the shell must not
+  // enumerate it: a name it does not recognise still has to survive the round
+  // trip to the backend. Empty means "nothing has declared one yet"; the run
+  // dialog resolves it against the pack's declared choices rather than the
+  // shell inventing a name (see docs/specs/ide-layout.md section 7).
+  precisionMetric: string;
   // "fast" (default) runs without wall-clock pacing; "animated" paces by
   // speed and keeps pause/step meaningful.
   executionMode: 'fast' | 'animated';
@@ -76,7 +82,9 @@ export const useRunStore = create<RunStore>((set) => ({
     minReps: 5,
     maxReps: 100,
     errorPercent: 5,
-    precisionMetric: 'Wq',
+    // Not a metric name: the shell names no metric of its own. The dialog
+    // substitutes the pack's first declared choice when nothing declares one.
+    precisionMetric: '',
     executionMode: 'fast',
     arrivals: 4000,
     warmup: 400,

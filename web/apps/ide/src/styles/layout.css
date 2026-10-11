@@ -5,9 +5,9 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: calc(var(--status-h) * 4 / 3);
+  height: 35px;
   padding: 0 14px;
-  background: var(--surface-1);
+  background: var(--titlebar-bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -24,12 +24,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
+  width: 46px;
   padding: 0;
   background: transparent;
   border: none;
   border-radius: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 .win-glyph {
@@ -227,40 +227,51 @@
 }
 
 .activity-bar {
-  width: 46px;
+  width: 48px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 0;
-  background: var(--surface-1);
-  border-right: 1px solid var(--border);
+  gap: 0;
+  padding: 0;
+  background: var(--activitybar-bg);
+  border-right: none;
 }
 
 .activity-item {
-  width: 34px;
-  height: 34px;
+  position: relative;
+  width: 48px;
+  height: 48px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  color: var(--text-muted);
+  border: none;
+  border-radius: 0;
+  color: var(--activitybar-fg);
   font-size: 15px;
 }
 
 .activity-item:hover:not(:disabled) {
-  background: var(--surface-2);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--activitybar-fg-active);
 }
 
+/* Active view: bright glyph plus the 2px accent rail on the leading edge. */
 .activity-item.active {
-  color: var(--accent);
-  background: var(--accent-dim);
-  border-color: var(--border);
+  color: var(--activitybar-fg-active);
+  background: transparent;
+}
+
+.activity-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
 }
 
 .activity-glyph {
@@ -317,12 +328,54 @@
   border-right: 1px solid var(--border);
 }
 
-.panel-title {
-  flex-shrink: 0;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 600;
+/* --- stacked side-bar sections (left area) ------------------------------ */
+/* The activity bar selects a view *container*; the container stacks every
+   view that names it as collapsible sections, the way VS Code does. A panel
+   that declares no container is its own container and renders as a single
+   section, so single-view panels look exactly as they did before. */
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-section-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  height: 35px;
+  padding: 0 8px 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   color: var(--text-secondary);
+  text-align: left;
+}
+
+.panel-section-header:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.panel-section-header svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+/* Section label; the button above owns the layout. */
+.panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: inherit;
+}
+
+.panel-section-body {
+  padding: 2px 12px 12px;
 }
 
 .navigator-header {
@@ -332,14 +385,6 @@
   gap: 8px;
   padding: 10px 10px 6px;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.navigator-title {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .navigator-summary {
@@ -364,6 +409,37 @@
   grid-area: bottom;
   position: relative;
   --body-bg: var(--surface-1);
+}
+
+/* --- editor breadcrumb (centre area) ------------------------------------ */
+/* Sits between the tab strip and the document, describing the same document
+   the front tab shows. Hidden entirely (renders nothing) without one. */
+
+.breadcrumb-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 20px;
+  overflow: hidden;
+  background: var(--bg);
+  white-space: nowrap;
+}
+
+.breadcrumb-chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.breadcrumb-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.breadcrumb-label.current {
+  color: var(--text);
 }
 
 .area-center .tab-bar,
@@ -613,8 +689,12 @@
   display: flex;
 }
 
-.area-left .panel-pane {
-  padding: 12px;
+/* Left side bar stacks views: sections flow inside one scroll region instead
+   of the absolute, one-pane-at-a-time model the tabbed areas use. */
+.area-left .panel-area-body {
+  position: static;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
 }
 

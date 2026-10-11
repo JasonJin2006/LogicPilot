@@ -18,7 +18,6 @@ import {
   ChevronRight,
   FileX2,
   FlaskConical,
-  FolderOpen,
   Hourglass,
   Inbox,
   Layers,
@@ -449,28 +448,29 @@ function DslOutline() {
   const semanticMembers = entries
     .filter((entry): entry is Extract<PanelEntry, { type: 'model' }> => entry.type === 'model')
     .flatMap((entry) => flattenMembers(entry.members.map((item) => item.member)));
-  const processKinds = ['source', 'queue', 'service', 'sink', 'delay'];
-  const processCount = processKinds.reduce(
-    (total, kind) => total + countBlocks(semanticMembers, kind),
-    0,
-  );
-  const resourceCount = countBlocks(semanticMembers, 'resource');
-  const experimentCount = countBlocks(semanticMembers, 'experiment');
 
   return (
     <div className="side-panel-body">
-      <div className="navigator-header">
-        <span className="navigator-title">Process Navigator</span>
-        <span className="navigator-summary" title="Process model elements">
-          {processCount} flow · {resourceCount} resources · {experimentCount} experiments
-        </span>
-      </div>
-      <div className="tree-row tree-root">
-        <span className="tree-glyph">
-          <FolderOpen size={13} />
-        </span>
-        <span className="tree-label">{bundle.manifest.name}</span>
-      </div>
+      {/* The hosting view section already carries the title ("Outline"), so the
+          contribution only supplies a subtitle, and that subtitle counts
+          *elements* without naming a paradigm. Grouping them as "flow" is the
+          des pack's vocabulary, not the shell's: the pack already declares it
+          (plugins/builtin/des/contributions.json), and hard-coding it here both
+          leaks one paradigm into a language-level outline and reports "0 flow"
+          for a model built on any other pack. Hidden while the model is empty,
+          so a fresh project shows no "0 ..." noise. */}
+      {semanticMembers.length > 0 && (
+        <div className="navigator-header">
+          <span className="navigator-summary" title="Model elements">
+            {semanticMembers.length} {semanticMembers.length === 1 ? 'element' : 'elements'}
+          </span>
+        </div>
+      )}
+      {/* No project-root row here. The Explorer already draws the project (and
+          its files); this outline is the model's element hierarchy, whose top
+          level is the model row itself (renderModel). A second project row
+          both duplicated the Explorer root and, because a new project names
+          its model after the project, rendered the same string twice. */}
       {entries.map((entry) => (entry.type === 'model' ? renderModel(entry) : renderFileRow(entry)))}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} actions={menu.actions} onClose={() => setMenu(null)} />

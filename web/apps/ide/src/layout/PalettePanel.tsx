@@ -88,16 +88,17 @@ interface DragSession {
 
 const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
 
-/** The icon renderer a library contribution provides, if any. */
+/** The icon renderer a library contribution provides, if any. An item with no
+ *  owning library (an ad-hoc block, or a custom library import) gets no
+ *  contributed icon: the shell must not fill the gap in as some default
+ *  library. */
 function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | undefined {
+  const library = item.library;
+  if (library === undefined) return undefined;
   const contribution = PALETTE_CONTRIBUTIONS.list().find(
-    (entry) => entry.library.id === item.library,
+    (entry) => entry.library.id === library,
   );
-  return contribution?.iconFor?.({
-    kind: item.kind,
-    library: item.library ?? 'process',
-    name: item.name,
-  });
+  return contribution?.iconFor?.({ kind: item.kind, library, name: item.name });
 }
 
 function contributionForItem(item: PaletteBlock) {
@@ -330,7 +331,10 @@ export function PalettePanel() {
                     if (event.button !== 0) return;
                     dragRef.current = {
                       kind: block.kind,
-                      library: block.library ?? 'process',
+                      // No fallback library: a block with no owner must not be
+                      // dropped in as some default library's element (that
+                      // would insert the wrong kind for a custom block).
+                      library: block.library,
                       pointerId: event.pointerId,
                       startX: event.clientX,
                       startY: event.clientY,
@@ -434,7 +438,7 @@ export function PalettePanel() {
           {(() => {
             const GhostIcon = iconForItem({
               kind: ghost.kind,
-              library: ghost.library ?? 'process',
+              library: ghost.library,
               name: ghost.kind,
             });
             return GhostIcon !== undefined ? <GhostIcon size={26} /> : <GenericPaletteIcon />;

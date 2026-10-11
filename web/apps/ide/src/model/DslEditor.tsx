@@ -20,6 +20,7 @@ import { useUiStore } from '../state/uiStore';
 import { refreshCanvasDocument } from '../state/projectSync';
 import { documentContributionFor, type DocumentCompletionItem } from '../workbench/documentTypes';
 import { ScrollArea } from '../components/ScrollArea';
+import { caretPosition } from './caret';
 
 const REFRESH_DEBOUNCE_MS = 300;
 
@@ -89,6 +90,21 @@ export function DslEditor() {
     scheduleCanvasRefresh();
   };
 
+  // The editor is the only thing that knows where the caret is, so it
+  // publishes the position instead of the status bar reaching into the
+  // textarea. Reported imperatively (never through a subscription) so moving
+  // the caret cannot re-render the editor itself.
+  const publishCaret = (el: HTMLTextAreaElement | null) => {
+    if (el === null || activeFile === null) {
+      useUiStore.getState().setEditorCaret(null);
+      return;
+    }
+    useUiStore.getState().setEditorCaret({
+      path: activeFile,
+      ...caretPosition(el.value, el.selectionStart),
+    });
+  };
+
   // Language-service handoff: focus the editor and select the requested
   // span (go-to-definition / reveal from the SysML projection). The caret
   // selection makes browsers scroll it into view.
@@ -98,7 +114,15 @@ export function DslEditor() {
     el.focus();
     el.setSelectionRange(reveal.start, reveal.end);
     useUiStore.getState().clearSourceReveal();
+    publishCaret(el);
   }, [reveal, activeFile]);
+
+  // A file switch reuses the same textarea element, so the selection event
+  // alone would leave the previous file's position behind: republish whenever
+  // the front file or its text changes.
+  useEffect(() => {
+    publishCaret(editorRef.current);
+  }, [activeFile, fileSource, diskContent]);
 
   const openOrRefreshCompletion = () => {
     const el = editorRef.current;
@@ -176,6 +200,9 @@ export function DslEditor() {
     onKeyDown: handleKeyDown,
     onBlur: () => setCompletion(null),
     onChange: handleChange,
+    // Every caret move (typing, arrows, clicks) reports its position.
+    onSelect: (event: React.SyntheticEvent<HTMLTextAreaElement>) =>
+      publishCaret(event.currentTarget),
   } as const;
 
   return (

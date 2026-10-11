@@ -405,19 +405,99 @@
   flex-wrap: wrap;
 }
 
+/* Ownership groups inside the run form: what the model's experiment block
+   declares, and what belongs to this single run. The split is the point - it
+   shows which values come from the revision and which from the run
+   (docs/specs/dsl-freeze.md section 3). */
+.run-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.run-field-group-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .status-bar {
   display: flex;
   gap: 12px;
   align-items: center;
-  padding: 2px 10px;
+  padding: 0 10px;
   min-height: var(--status-h);
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--statusbar-bg);
+  border: none;
   border-radius: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--muted);
-  flex-wrap: wrap;
+  color: var(--statusbar-fg);
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/* Two segments, split by .status-spacer: the left reports the workspace
+   (connection, problems, unsaved/external state), the right the document in
+   front (caret, language mode) closed by the bell. The bar never wraps - a
+   long gateway error truncates instead of pushing the bar to two rows. */
+.status-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-group-left {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.status-group-left > .error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-group-right {
+  flex-shrink: 0;
+}
+
+/* One status slot. Buttons among them (the problem counters) open their
+   panel; plain spans are read-only readings. */
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+button.status-item {
+  cursor: pointer;
+}
+
+button.status-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* The bar is an accent surface in this theme, so every indicator that sits on
+   it switches to an on-accent colour instead of the domain palette. */
+.status-bar .bell-btn {
+  color: var(--statusbar-fg);
+}
+
+.status-bar .bell-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--statusbar-fg);
 }
 
 .conn-dot {
@@ -439,6 +519,29 @@
 
 .conn-dot.conn-disconnected {
   background: var(--text-muted);
+}
+
+/* On-accent variants: the status bar is a solid accent surface, so the state
+   dots and the problem counters need light colours to stay readable. */
+/* A live native execution session reports a run state (queued, preparing,
+   running, ...) rather than a transport state, and none of those has a rule
+   below - without this fallback the dot is invisible for as long as a session
+   exists. */
+.status-bar .conn-dot {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.status-bar .conn-dot.conn-connected {
+  background: var(--statusbar-fg);
+  box-shadow: none;
+}
+
+.status-bar .conn-dot.conn-connecting {
+  background: #ffd166;
+}
+
+.status-bar .conn-dot.conn-disconnected {
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .status-spacer {
@@ -523,10 +626,9 @@
   color: var(--text-muted);
 }
 
-.status-bar .error {
-  color: var(--error);
-}
-
+/* Problem counters render in the on-accent colour, as they do on VS Code's
+   blue bar; the Problems panel keeps the full error/warning palette. */
+.status-bar .error,
 .status-bar .warn {
-  color: var(--warn);
+  color: var(--statusbar-fg);
 }

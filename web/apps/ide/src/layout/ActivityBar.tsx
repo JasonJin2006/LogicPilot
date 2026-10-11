@@ -1,9 +1,9 @@
-// Activity bar (VS Code style): switches which side panel the left sidebar
-// shows. Clicking the active view again collapses the sidebar.
+// Activity bar (VS Code style): selects which side panel *container* the left
+// sidebar reveals. Clicking the active view again collapses the sidebar.
 
 import { useLayoutStore } from '../state/layoutStore';
 import { useUiStore } from '../state/uiStore';
-import { ACTIVITY_VIEWS } from './panels';
+import { ACTIVITY_VIEWS, containerOf } from './panels';
 import { Settings } from 'lucide-react';
 
 export function ActivityBar() {
@@ -13,7 +13,10 @@ export function ActivityBar() {
   return (
     <nav className="activity-bar">
       {ACTIVITY_VIEWS.map((view) => {
-        const active = left.activePanel === view.panel && !left.collapsed;
+        // Compare containers, not panels: a view hosted inside another
+        // container (Outline -> Explorer) must still light up its container's
+        // entry rather than leaving the bar with nothing selected.
+        const active = containerOf(left.activePanel) === view.panel && !left.collapsed;
         const Icon = view.icon;
         return (
           <button

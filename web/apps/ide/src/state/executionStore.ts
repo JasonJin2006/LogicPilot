@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ExecutionEvent, ExecutionSession } from '@logicpilot/contracts';
+import type { ExecutionEvent, ExecutionSession, ExecutionTarget } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
 import type { ExecutionSessionQuery } from '../client/executionClient';
 
@@ -7,10 +7,15 @@ const MAX_EVENTS = 256;
 
 interface ExecutionStore {
   session: ExecutionSession | null;
+  /** Execution targets the app server offers. Empty in browser-only mode (no
+   *  server), which is why the status bar hides the backend slot there. Kept
+   *  app-level, not run-level: it outlives reset(). */
+  targets: readonly ExecutionTarget[];
   events: ExecutionEvent[];
   lastSeq: number;
   gap: boolean;
   begin: (session: ExecutionSession) => void;
+  setTargets: (targets: readonly ExecutionTarget[]) => void;
   applyQuery: (query: ExecutionSessionQuery) => void;
   applyEvent: (event: ExecutionEvent) => void;
   reset: () => void;
@@ -23,10 +28,12 @@ function sessionFromPayload(payload: unknown): ExecutionSession | undefined {
 
 export const useExecutionStore = create<ExecutionStore>((set) => ({
   session: null,
+  targets: [],
   events: [],
   lastSeq: -1,
   gap: false,
   begin: (session) => set({ session, events: [], lastSeq: -1, gap: false }),
+  setTargets: (targets) => set({ targets: [...targets] }),
   applyQuery: (query) =>
     set((state) => {
       const sorted = [...query.events].sort((left, right) => left.seq - right.seq);

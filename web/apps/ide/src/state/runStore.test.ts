@@ -52,4 +52,11 @@ describe('run lifecycle', () => {
     useRunStore.getState().finished({} as never);
     expect(useRunStore.getState().running).toBe(false);
   });
+
+  it('names no precision metric of its own', () => {
+    // The shell must not know a single paradigm: a metric name belongs to the
+    // model's `metric = ...` or to the pack's declared choices. The default is
+    // therefore empty, and the run dialog substitutes the pack's first choice.
+    expect(useRunStore.getState().runOptions.precisionMetric).toBe('');
+  });
 });

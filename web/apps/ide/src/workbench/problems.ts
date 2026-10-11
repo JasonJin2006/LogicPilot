@@ -151,3 +151,21 @@ export function collectProblems(model: { document: ModelDocument }): ProblemEntr
   }
   return entries.sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 }
+
+export interface ProblemCounts {
+  errors: number;
+  warnings: number;
+  infos: number;
+}
+
+/** Severity totals for summary surfaces (the status bar). Counted from the
+ *  same entries the Problems panel lists, so the two can never disagree. */
+export function countProblems(entries: readonly ProblemEntry[]): ProblemCounts {
+  const counts: ProblemCounts = { errors: 0, warnings: 0, infos: 0 };
+  for (const entry of entries) {
+    if (entry.severity === 'error') counts.errors += 1;
+    else if (entry.severity === 'warning') counts.warnings += 1;
+    else counts.infos += 1;
+  }
+  return counts;
+}

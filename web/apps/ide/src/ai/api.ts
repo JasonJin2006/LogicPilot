@@ -22,7 +22,12 @@ export type ExperimentSettings = Pick<
   | 'confidence'
 >;
 
-export type AiRuntimeKind = 'process' | 'devs' | 'continuous' | 'agent' | 'generic';
+/** The runtime family an AI run targets. The name belongs to the caller (a pack
+ *  or the model), so the client must not enumerate families - the same reason
+ *  ADR-0139 opened the evidence method ids. The endpoint maps the name onto the
+ *  targets this deployment installs and falls back to the compatibility runner
+ *  for a family it does not know (scripts/ai-endpoint.mjs). */
+export type AiRuntimeKind = string;
 
 export interface AiDiagnostic {
   code: string;

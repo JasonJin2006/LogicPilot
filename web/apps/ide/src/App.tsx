@@ -21,6 +21,7 @@ import { useLayoutStore } from './state/layoutStore';
 import { useProjectStore } from './state/projectStore';
 import { useCanvasView, syncCanvasViewsWithDocument } from './state/canvasView';
 import { useLegacyGatewayStore } from './state/legacyGateway';
+import { useExecutionStore } from './state/executionStore';
 import { useUiStore } from './state/uiStore';
 import { ThemeManager } from './theme/ThemeManager';
 import { editorPanelFor } from './workbench/documentTypes';
@@ -36,12 +37,15 @@ export default function App() {
   // The gateway should just work: auto-connect on startup (the desktop
   // client launches lp-server itself; the browser dev server can connect to
   // the default ws://127.0.0.1:8089/sim). Retries stop when connected.
+  // The same call also publishes the execution targets, so the status bar can
+  // report which backend serves this workspace instead of fetching again.
   useEffect(() => {
     let cancelled = false;
     void createExecutionClient()
       .listTargets()
       .then((targets) => {
         if (cancelled) return;
+        useExecutionStore.getState().setTargets(targets);
         if (!targets.some((target) => target.id === 'logicpilot.native.session')) {
           useLegacyGatewayStore.getState().autoConnect();
         }

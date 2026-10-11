@@ -3,9 +3,9 @@
 // visibility toggling keeps live data alive); splitters resize areas by
 // writing size values into the store. See docs/specs/ide-layout.md.
 
-import { useEffect, useReducer } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { Box, Hammer, Play, Save, X } from 'lucide-react';
+import { useEffect, useReducer, useState } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import { Box, ChevronDown, ChevronRight, Hammer, Play, Save, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
 import { logConsoleEvent, useLegacyGatewayStore } from '../state/legacyGateway';
 import { useModelStore } from '../state/modelStore';
@@ -15,7 +15,8 @@ import { useCanvasView } from '../state/canvasView';
 import { mergeModelSource } from '../project/project';
 import { generateDsl, parseDsl } from '@logicpilot/editor';
 import { writeProjectFile } from '../state/tauriFs';
-import { PANELS, focusedPanelId, type AreaId, type PanelId } from './panels';
+import { PANELS, containerViews, focusedPanelId, type AreaId, type PanelId } from './panels';
+import { BreadcrumbBar } from './BreadcrumbBar';
 import { useProblemCount } from './ProblemsPanel';
 import { ScrollArea } from '../components/ScrollArea';
 import { editorPanelFor } from '../workbench/documentTypes';
@@ -406,6 +407,32 @@ function TabBar({ area }: { area: AreaId }) {
   );
 }
 
+/** One stacked side-bar view: a VS Code section header over a collapsible
+ *  body. Collapse state is local - it is pure view chrome and never needs to
+ *  reach the layout store. The body stays mounted while collapsed (hidden
+ *  rather than unmounted) so a hosted view keeps its scroll position and live
+ *  subscriptions, matching how the pane areas keep their tabs alive. */
+function PanelSection({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section className="panel-section">
+      <button
+        type="button"
+        className="panel-section-header"
+        aria-expanded={open}
+        title={open ? `Collapse ${title}` : `Expand ${title}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <span className="panel-title">{title}</span>
+      </button>
+      <div className="panel-section-body" hidden={!open}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
 function PanelArea({ area }: { area: AreaId }) {
   const state = useLayoutStore((s) => s.areas[area]);
   const centerPanels = useLayoutStore((s) => s.areas.center.panels);
@@ -418,23 +445,31 @@ function PanelArea({ area }: { area: AreaId }) {
   // Blank until a tab is opened: the welcome page is a closable tab too.
   const centerEmpty =
     area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen && !sceneOpen;
+  // The left side bar stacks views instead of paging them: the activity bar
+  // picks a *container*, and every view that names it is rendered at once.
+  // Other areas stay tabbed (one pane at a time).
+  const stacked = area === 'left';
+  const visiblePanels = stacked ? containerViews(state.panels, state.activePanel) : state.panels;
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
-      {!state.collapsed &&
-        (area === 'left' ? (
-          <div className="panel-title">{PANELS[state.activePanel]?.title ?? state.activePanel}</div>
-        ) : !centerEmpty ? (
-          <TabBar area={area} />
-        ) : null)}
+      {!state.collapsed && !stacked && !centerEmpty && <TabBar area={area} />}
+      {!state.collapsed && area === 'center' && !centerEmpty && <BreadcrumbBar />}
       {!state.collapsed && (
         <div className="panel-area-body">
           {!centerEmpty &&
-            state.panels.map((panel) => {
+            visiblePanels.map((panel) => {
               const definition = PANELS[panel];
               if (definition === undefined) {
                 return null; // stale persisted panel: skipped defensively
               }
               const PanelComponent = definition.component;
+              if (stacked) {
+                return (
+                  <PanelSection key={panel} title={definition.title}>
+                    <PanelComponent />
+                  </PanelSection>
+                );
+              }
               return (
                 <div
                   key={panel}

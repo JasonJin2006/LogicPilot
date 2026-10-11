@@ -29,6 +29,13 @@ export type PanelId = string;
 export interface PanelDef {
   title: string;
   area: AreaId;
+  /** View container this panel stacks inside, for areas that stack views (the
+   *  left side bar). The activity bar lists *containers*; a container renders
+   *  every view that names it as stacked, collapsible sections. Omit it and
+   *  the panel *is* its own container - which is what every existing
+   *  registration (built-in and plugin) already does, so the field is purely
+   *  additive. */
+  container?: PanelId;
   component: ComponentType;
   /** VS Code-style panel glyph shown before the tab label. */
   icon?: ComponentType<{ size?: number }>;
@@ -77,9 +84,17 @@ const registry: Record<PanelId, PanelDef> = {
   console: { title: 'Console', area: 'bottom', component: ConsolePanel, icon: ScrollText },
   // bottom: aggregated, navigable problems across document kinds.
   problems: { title: 'Problems', area: 'bottom', component: ProblemsPanel, icon: CircleAlert },
-  // left: side panels switched by the activity bar (VS Code style).
+  // left: side panels switched by the activity bar (VS Code style). The
+  // Explorer is a *container*; the outline is a view inside it, so it renders
+  // as a stacked section instead of owning an activity-bar entry of its own.
   explorer: { title: 'Explorer', area: 'left', component: ExplorerPanel },
-  navigator: { title: 'Navigator', area: 'left', component: ModelInfoPanel, icon: ListTree },
+  navigator: {
+    title: 'Outline',
+    area: 'left',
+    component: ModelInfoPanel,
+    icon: ListTree,
+    container: 'explorer',
+  },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
 };
 
@@ -111,6 +126,37 @@ export function replacePanel(id: PanelId, definition: PanelDef): () => void {
 /** The visible panel table (built-ins + registered contributions). */
 export const PANELS = registry as Readonly<Record<PanelId, PanelDef>>;
 
+/** The view container a panel belongs to. A panel that declares no container
+ *  is its own container, so single-view panels - and every pre-container
+ *  registration - keep behaving exactly as before. */
+export function containerOf(panel: PanelId): PanelId {
+  return PANELS[panel]?.container ?? panel;
+}
+
+/** The views a stacking area renders for `anchor`'s container.
+ *
+ *  Two sources, in this order:
+ *  1. the area's own panel list, filtered to this container - so a reordered
+ *     or persisted layout keeps its order;
+ *  2. any registered panel that *declares* this container without being in
+ *     the area list yet.
+ *
+ *  Source 2 is what makes `container` a real contribution seam: declaring the
+ *  container is enough to be mounted, so an extension can add a section to a
+ *  container it does not own - no `openPanel()`, no shell edit, no entry in
+ *  `DEFAULT_LAYOUT`. Panels without a container are unaffected (they are their
+ *  own container and still need an explicit open, which is what keeps the
+ *  tabbed areas from filling up with every registered panel). */
+export function containerViews(panels: readonly PanelId[], anchor: PanelId): PanelId[] {
+  const container = containerOf(anchor);
+  const area = PANELS[container]?.area;
+  const ordered = panels.filter((panel) => containerOf(panel) === container);
+  const declared = Object.keys(PANELS).filter(
+    (id) => PANELS[id]?.container === container && PANELS[id]?.area === area,
+  );
+  return [...ordered, ...declared.filter((id) => !ordered.includes(id))];
+}
+
 /** First panel in `area` whose focus probe fires (panel probes plus any
  *  plugin-contributed probes), or null when nothing claims focus (the
  *  workspace then falls back to its default tab). */
@@ -128,7 +174,10 @@ export function focusedPanelId(area: AreaId): PanelId | null {
   return null;
 }
 
-/** Activity-bar views map 1:1 onto the left side panels. */
+/** Activity-bar entries select a view *container* in the left side bar, not an
+ *  individual panel: clicking one reveals the container, which stacks all of
+ *  its views. A view hosted inside another container (Outline -> Explorer) has
+ *  no entry of its own - it is already on screen with its container. */
 export const ACTIVITY_VIEWS: Array<{
   id: string;
   label: string;
@@ -136,7 +185,6 @@ export const ACTIVITY_VIEWS: Array<{
   panel: PanelId;
 }> = [
   { id: 'explorer', label: 'Explorer', icon: Files, panel: 'explorer' },
-  { id: 'navigator', label: 'Navigator', icon: ListTree, panel: 'navigator' },
   { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
 ];
 

@@ -3,6 +3,8 @@ import {
   ACTIVITY_VIEWS,
   DEFAULT_LAYOUT,
   PANELS,
+  containerOf,
+  containerViews,
   focusedPanelId,
   registerPanel,
   replacePanel,
@@ -26,10 +28,61 @@ describe('panel registry', () => {
     }
   });
 
-  it('uses Navigator for semantic structure instead of the old Project panel', () => {
-    expect(PANELS.navigator?.title).toBe('Navigator');
+  it('hosts the semantic outline as a section of the Explorer container', () => {
+    // The old generic "Project" panel is gone for good, and the outline that
+    // replaced it now stacks inside Explorer instead of owning an activity-bar
+    // entry: the activity bar lists view *containers*, not individual views.
     expect(PANELS.modelInfo).toBeUndefined();
-    expect(ACTIVITY_VIEWS.find((view) => view.id === 'navigator')?.panel).toBe('navigator');
+    expect(PANELS.navigator?.title).toBe('Outline');
+    expect(containerOf('navigator')).toBe('explorer');
+    expect(ACTIVITY_VIEWS.some((view) => view.id === 'navigator')).toBe(false);
+    expect(ACTIVITY_VIEWS.some((view) => view.panel === 'explorer')).toBe(true);
+  });
+
+  it('resolves a container to its ordered views', () => {
+    const left = DEFAULT_LAYOUT.left.panels;
+    // Anchoring on either member yields the same stack, in layout order.
+    expect(containerViews(left, 'explorer')).toEqual(['explorer', 'navigator']);
+    expect(containerViews(left, 'navigator')).toEqual(['explorer', 'navigator']);
+    // A panel that declares no container is its own container, so single-view
+    // panels (and every pre-container registration) keep their old rendering.
+    expect(containerOf('palette')).toBe('palette');
+    expect(containerViews(left, 'palette')).toEqual(['palette']);
+    expect(containerOf('no.such.panel')).toBe('no.such.panel');
+  });
+
+  it('mounts a contributed view from its container declaration alone', () => {
+    // The contribution seam: a plugin adds a section to a container it does
+    // not own by declaring that container - no openPanel(), no DEFAULT_LAYOUT
+    // entry, no shell edit.
+    const left = DEFAULT_LAYOUT.left.panels;
+    expect(left).not.toContain('test.view');
+    const dispose = registerPanel('test.view', {
+      title: 'Contributed',
+      area: 'left',
+      container: 'explorer',
+      component: () => null,
+    });
+    expect(containerViews(left, 'explorer')).toEqual(['explorer', 'navigator', 'test.view']);
+    expect(containerViews(left, 'palette')).toEqual(['palette']);
+    dispose();
+    expect(containerViews(left, 'explorer')).toEqual(['explorer', 'navigator']);
+  });
+
+  it('keeps a container-less registration out of a stacking area', () => {
+    // Without a container a panel is its own container, so it must NOT be
+    // auto-mounted into someone else's stack (that is what stops the tabbed
+    // areas from filling up with every registered panel).
+    const dispose = registerPanel('test.detached', {
+      title: 'Detached',
+      area: 'left',
+      component: () => null,
+    });
+    expect(containerViews(DEFAULT_LAYOUT.left.panels, 'explorer')).toEqual([
+      'explorer',
+      'navigator',
+    ]);
+    dispose();
   });
 
   it('keeps plugin draft governance out of the daily activity bar', () => {

@@ -12,8 +12,10 @@ import { AlertTriangle, AlertOctagon, Info } from 'lucide-react';
 import { useModelStore } from '../state/modelStore';
 import {
   collectProblems,
+  countProblems,
   problemSourcesVersion,
   subscribeProblemSources,
+  type ProblemCounts,
   type ProblemEntry,
 } from '../workbench/problems';
 import { requestOpenPanel } from '../workbench/panelCommands';
@@ -34,21 +36,31 @@ function useContributedEpoch(): number {
   );
 }
 
-/** Live problem count for VS Code-style tab badges. Subscribes to the model
- *  document and every contributed problem source, so the badge follows the
- *  diagnostics without the tab bar knowing a paradigm. */
-export function useProblemCount(): number {
+/** Live problems for every summary surface (panel list, tab badge, status
+ *  bar). One subscription to the model document plus every contributed
+ *  problem source, so each summary follows the diagnostics without the
+ *  consumer knowing a paradigm. */
+export function useProblems(): readonly ProblemEntry[] {
   const document = useModelStore((state) => state.document);
   const contributedEpoch = useContributedEpoch();
-  return useMemo(() => collectProblems({ document }).length, [document, contributedEpoch]);
+  return useMemo(() => collectProblems({ document }), [document, contributedEpoch]);
+}
+
+/** Live problem count for VS Code-style tab badges. */
+export function useProblemCount(): number {
+  return useProblems().length;
+}
+
+/** Severity totals for the status bar, derived from the same entries the
+ *  panel lists. */
+export function useProblemCounts(): ProblemCounts {
+  const problems = useProblems();
+  return useMemo(() => countProblems(problems), [problems]);
 }
 
 export function ProblemsPanel() {
-  const document = useModelStore((state) => state.document);
   const selectNode = useModelStore((state) => state.select);
-  const contributedEpoch = useContributedEpoch();
-
-  const problems = useMemo(() => collectProblems({ document }), [document, contributedEpoch]);
+  const problems = useProblems();
 
   if (problems.length === 0) {
     return <p className="console-empty">No problems detected.</p>;

@@ -3,18 +3,28 @@
 // settings (which hold only peripheral preferences). Opened from the canvas
 // Run button.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { X } from 'lucide-react';
 import { generateDsl } from '@logicpilot/editor';
 import type { JsonValue } from '@logicpilot/contracts';
 import type { StartOptions } from '../client/simClient';
 import { createExecutionClient, type ExecutionEventStream } from '../client/executionClient';
+import {
+  pluginRegistryGeneration,
+  runParameterDeclarations,
+  subscribePluginRegistry,
+} from '../plugins/registry';
 import { useLegacyGatewayStore } from '../state/legacyGateway';
 import { useEscapeToClose } from '../components/useEscapeToClose';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
 import { diagnoseDocument } from '../workbench/diagnostics';
+import {
+  applyExperimentFields,
+  experimentSignature,
+  readExperiments,
+} from '../workbench/experiments';
 import { useExecutionStore } from '../state/executionStore';
 import { projectExecutionEvent } from '../state/executionProjector';
 import { resetVizState, vizState } from '../state/vizState';
@@ -24,11 +34,13 @@ interface NumberFieldProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Tooltip, used to surface a pack-declared parameter's hint. */
+  title?: string;
 }
 
-function NumberField({ label, value, onChange, disabled }: NumberFieldProps) {
+function NumberField({ label, value, onChange, disabled, title }: NumberFieldProps) {
   return (
-    <label className="field">
+    <label className="field" title={title}>
       <span>{label}</span>
       <input
         type="number"
@@ -112,6 +124,51 @@ export function RunDialog() {
   const [executionMode, setExecutionMode] = useState(runOptions.executionMode);
   const [speed, setSpeedField] = useState(String(runOptions.speed));
 
+  // The run knobs and the precision-metric vocabulary are declared by the
+  // active packs (docs/specs/dsl-freeze.md section 3), never by the shell.
+  // Read the declarations once here so the draft sync below and the rendered
+  // form share one source, and so an unspecified metric can fall back to the
+  // pack's own first choice instead of a name the shell invented.
+  const declarations = runParameterDeclarations();
+  const metricDeclaration = declarations.find(
+    (entry) => entry.parameter.id === 'metric' && entry.parameter.owner === 'model',
+  );
+  const defaultMetric = metricDeclaration?.parameter.choices?.[0]?.value ?? '';
+
+  // The experiment the model declares (docs/specs/dsl-freeze.md section 3):
+  // seed and the replication/precision settings belong to the revision, not to
+  // this dialog. The dialog presents them and writes them to the model's
+  // owner, it does not invent a second source.
+  const experiments = useMemo(() => readExperiments(document), [document]);
+  const [experimentName, setExperimentName] = useState<string | null>(null);
+  const activeExperiment = useMemo(() => {
+    if (experiments.length === 0) return null;
+    return experiments.find((entry) => entry.name === experimentName) ?? experiments[0]!;
+  }, [experiments, experimentName]);
+  // Signature of the last applied declaration. The document re-parses on every
+  // keystroke, so without this guard the model's values would overwrite what
+  // the user is typing.
+  const appliedExperiment = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeExperiment === null) {
+      appliedExperiment.current = null;
+      return;
+    }
+    const signature = `${activeExperiment.name}|${experimentSignature(activeExperiment)}`;
+    if (signature === appliedExperiment.current) return;
+    appliedExperiment.current = signature;
+    const next = applyExperimentFields(useRunStore.getState().runOptions, activeExperiment);
+    setSeed(String(next.seed));
+    setSeedMode(next.seedMode);
+    setReps(String(next.reps));
+    setReplicationMode(next.replicationMode);
+    setMinReps(String(next.minReps));
+    setMaxReps(String(next.maxReps));
+    setErrorPercent(String(next.errorPercent));
+    setPrecisionMetric(next.precisionMetric);
+    setConfidence(String(next.confidence));
+  }, [activeExperiment]);
+
   useEffect(() => {
     setRunOptions({
       seed: parseNum(seed) ?? initial.current.seed,
@@ -121,7 +178,9 @@ export function RunDialog() {
       minReps: parseNum(minReps) ?? initial.current.minReps,
       maxReps: parseNum(maxReps) ?? initial.current.maxReps,
       errorPercent: parseNum(errorPercent) ?? initial.current.errorPercent,
-      precisionMetric,
+      // An empty draft means nothing has declared one yet, so fall back to the
+      // pack's own first choice: the store never holds a shell-invented name.
+      precisionMetric: precisionMetric !== '' ? precisionMetric : defaultMetric,
       executionMode,
       arrivals: parseNum(arrivals) ?? initial.current.arrivals,
       warmup: parseNum(warmup) ?? initial.current.warmup,
@@ -137,6 +196,7 @@ export function RunDialog() {
     maxReps,
     errorPercent,
     precisionMetric,
+    defaultMetric,
     executionMode,
     arrivals,
     warmup,
@@ -144,6 +204,10 @@ export function RunDialog() {
     speed,
     setRunOptions,
   ]);
+
+  // The run knobs are contributed by the active paradigm packs, so re-render
+  // when the registry changes (a pack activating or unloading).
+  useSyncExternalStore(subscribePluginRegistry, pluginRegistryGeneration);
 
   if (!open) {
     return null;
@@ -171,6 +235,30 @@ export function RunDialog() {
     (diagnostic) => diagnostic.severity === 'error',
   );
   const nodeCount = document.nodes.length;
+
+  // Run knobs come from the active packs (docs/specs/dsl-freeze.md section 3),
+  // never from the shell. The bridge below maps a declared id onto the draft
+  // value the dialog already keeps: `RunOptions` is still a fixed shape, so an
+  // id with no storage here is skipped rather than guessed at (see
+  // ide-layout.md section 7).
+  const runKnobs = declarations.filter((entry) => entry.parameter.owner === 'run');
+  const knobBindings: Record<string, { value: string; onChange: (next: string) => void }> = {
+    arrivals: { value: arrivals, onChange: setArrivals },
+    warmup: { value: warmup, onChange: setWarmup },
+  };
+  // A metric the model declares is always kept, even when the pack does not
+  // list it, so nothing the model says is silently dropped; an empty draft is
+  // dropped instead, so the select never renders a nameless option.
+  const metricChoices = [
+    ...new Set([
+      ...(metricDeclaration?.parameter.choices ?? []).map((choice) => choice.value),
+      precisionMetric,
+    ]),
+  ].filter((metric) => metric !== '');
+  // What the run will actually stop on: the declared/drafted metric, or the
+  // pack's first declared choice while nothing has declared one.
+  const effectiveMetric = precisionMetric !== '' ? precisionMetric : (metricChoices[0] ?? '');
+
   const buildOptions = (): StartOptions => ({
     seed: parseNum(seed),
     seedMode,
@@ -179,7 +267,7 @@ export function RunDialog() {
     minReps: parseNum(minReps),
     maxReps: parseNum(maxReps),
     errorPercent: parseNum(errorPercent),
-    precisionMetric,
+    precisionMetric: effectiveMetric,
     executionMode,
     arrivals: parseNum(arrivals),
     warmup: parseNum(warmup),
@@ -267,109 +355,191 @@ export function RunDialog() {
         </div>
         <div className="dialog-section">
           <span className="dialog-label">Parameters</span>
-          <div className="run-fields">
-            <label className="field">
-              <span>seed mode</span>
-              <select
-                value={seedMode}
-                disabled={!canRun}
-                onChange={(event) => setSeedMode(event.target.value as typeof seedMode)}
-              >
-                <option value="fixed">Fixed (reproducible)</option>
-                <option value="random">Random (unique run)</option>
-              </select>
-            </label>
-            <NumberField
-              label="seed"
-              value={seed}
-              onChange={setSeed}
-              disabled={!canRun || seedMode === 'random'}
-            />
-            <label className="field">
-              <span>replications</span>
-              <select
-                value={replicationMode}
-                disabled={!canRun}
-                onChange={(event) =>
-                  setReplicationMode(event.target.value as typeof replicationMode)
-                }
-              >
-                <option value="fixed">Fixed count</option>
-                <option value="precision">Until confidence target</option>
-              </select>
-            </label>
-            {replicationMode === 'fixed' ? (
-              <NumberField label="reps" value={reps} onChange={setReps} disabled={!canRun} />
-            ) : (
-              <>
-                <NumberField
-                  label="minimum reps"
-                  value={minReps}
-                  onChange={setMinReps}
+          <div className="run-field-group">
+            <span className="run-field-group-label">Experiment (declared by the model)</span>
+            {experiments.length > 0 && (
+              <label className="field">
+                <span>experiment</span>
+                <select
+                  value={activeExperiment?.name ?? ''}
                   disabled={!canRun}
-                />
-                <NumberField
-                  label="maximum reps"
-                  value={maxReps}
-                  onChange={setMaxReps}
+                  onChange={(event) => setExperimentName(event.target.value)}
+                >
+                  {experiments.map((entry) => (
+                    <option key={entry.name} value={entry.name}>
+                      {entry.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="run-fields">
+              <label className="field">
+                <span>seed mode</span>
+                <select
+                  value={seedMode}
                   disabled={!canRun}
-                />
-                <NumberField
-                  label="error percent"
-                  value={errorPercent}
-                  onChange={setErrorPercent}
+                  onChange={(event) => setSeedMode(event.target.value as typeof seedMode)}
+                >
+                  <option value="fixed">Fixed (reproducible)</option>
+                  <option value="random">Random (unique run)</option>
+                </select>
+              </label>
+              <NumberField
+                label="seed"
+                value={seed}
+                onChange={setSeed}
+                disabled={!canRun || seedMode === 'random'}
+              />
+              <label className="field">
+                <span>replications</span>
+                <select
+                  value={replicationMode}
                   disabled={!canRun}
-                />
-                <label className="field">
-                  <span>precision metric</span>
-                  <select
-                    value={precisionMetric}
+                  onChange={(event) =>
+                    setReplicationMode(event.target.value as typeof replicationMode)
+                  }
+                >
+                  <option value="fixed">Fixed count</option>
+                  <option value="precision">Until confidence target</option>
+                </select>
+              </label>
+              {replicationMode === 'fixed' ? (
+                <NumberField label="reps" value={reps} onChange={setReps} disabled={!canRun} />
+              ) : (
+                <>
+                  <NumberField
+                    label="minimum reps"
+                    value={minReps}
+                    onChange={setMinReps}
                     disabled={!canRun}
-                    onChange={(event) =>
-                      setPrecisionMetric(event.target.value as typeof precisionMetric)
-                    }
-                  >
-                    {['throughput', 'L', 'Lq', 'W', 'Wq', 'utilization', 'availability'].map(
-                      (metric) => (
+                  />
+                  <NumberField
+                    label="maximum reps"
+                    value={maxReps}
+                    onChange={setMaxReps}
+                    disabled={!canRun}
+                  />
+                  <NumberField
+                    label="error percent"
+                    value={errorPercent}
+                    onChange={setErrorPercent}
+                    disabled={!canRun}
+                  />
+                  <label className="field" title={metricDeclaration?.parameter.hint ?? undefined}>
+                    <span>{metricDeclaration?.parameter.label ?? 'precision metric'}</span>
+                    <select
+                      value={effectiveMetric}
+                      disabled={!canRun}
+                      onChange={(event) => setPrecisionMetric(event.target.value)}
+                    >
+                      {metricChoices.map((metric) => (
                         <option key={metric} value={metric}>
                           {metric}
                         </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-              </>
-            )}
-            <NumberField
-              label="arrivals"
-              value={arrivals}
-              onChange={setArrivals}
-              disabled={!canRun}
-            />
-            <NumberField label="warmup" value={warmup} onChange={setWarmup} disabled={!canRun} />
-            <NumberField
-              label="confidence"
-              value={confidence}
-              onChange={setConfidence}
-              disabled={!canRun}
-            />
-            <label className="field">
-              <span>execution mode</span>
-              <select
-                value={executionMode}
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+              <NumberField
+                label="confidence"
+                value={confidence}
+                onChange={setConfidence}
                 disabled={!canRun}
-                onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}
-              >
-                <option value="fast">Fast (batch) - run at full speed</option>
-                <option value="animated">Animated (realtime) - pace by speed</option>
-              </select>
-            </label>
-            <NumberField
-              label="speed"
-              value={speed}
-              onChange={setSpeedField}
-              disabled={!canRun || executionMode !== 'animated'}
-            />
+              />
+            </div>
+            <p className="dialog-hint">
+              {activeExperiment !== null
+                ? `Seed, replications and precision come from experiment ${activeExperiment.name} in the model; edit the \`experiment\` block to change them.`
+                : 'The model declares no `experiment` block, so these values are placeholders. Add one to fix reproducibility and precision in the revision.'}
+            </p>
+          </div>
+          <div className="run-field-group">
+            <span className="run-field-group-label">This run</span>
+            <div className="run-fields">
+              {/* Knobs declared by the active paradigm pack for this run. A pack
+                  that declares none contributes nothing here. */}
+              {runKnobs.map(({ pluginId, parameter }) => {
+                const binding = knobBindings[parameter.id];
+                if (binding === undefined) return null;
+                const title = parameter.hint ?? `Declared by ${pluginId}`;
+                if (parameter.choices !== undefined && parameter.choices.length > 0) {
+                  return (
+                    <label className="field" key={parameter.id} title={title}>
+                      <span>{parameter.label}</span>
+                      <select
+                        value={binding.value}
+                        disabled={!canRun}
+                        onChange={(event) => binding.onChange(event.target.value)}
+                      >
+                        {parameter.choices.map((choice) => (
+                          <option key={choice.value} value={choice.value}>
+                            {choice.label ?? choice.value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                }
+                if (parameter.kind === 'boolean') {
+                  return (
+                    <label className="field" key={parameter.id} title={title}>
+                      <span>{parameter.label}</span>
+                      <select
+                        value={binding.value}
+                        disabled={!canRun}
+                        onChange={(event) => binding.onChange(event.target.value)}
+                      >
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                      </select>
+                    </label>
+                  );
+                }
+                if (parameter.kind === 'integer' || parameter.kind === 'number') {
+                  return (
+                    <NumberField
+                      key={parameter.id}
+                      label={parameter.label}
+                      value={binding.value}
+                      onChange={binding.onChange}
+                      disabled={!canRun}
+                      title={title}
+                    />
+                  );
+                }
+                return (
+                  <label className="field" key={parameter.id} title={title}>
+                    <span>{parameter.label}</span>
+                    <input
+                      value={binding.value}
+                      disabled={!canRun}
+                      onChange={(event) => binding.onChange(event.target.value)}
+                    />
+                  </label>
+                );
+              })}
+              {/* Pacing is the shell's own concern: batch vs animated changes
+                  how a run is watched, not what the model means. */}
+              <label className="field">
+                <span>execution mode</span>
+                <select
+                  value={executionMode}
+                  disabled={!canRun}
+                  onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}
+                >
+                  <option value="fast">Fast (batch) - run at full speed</option>
+                  <option value="animated">Animated (realtime) - pace by speed</option>
+                </select>
+              </label>
+              <NumberField
+                label="speed"
+                value={speed}
+                onChange={setSpeedField}
+                disabled={!canRun || executionMode !== 'animated'}
+              />
+            </div>
             {executionMode === 'fast' && (
               <p className="dialog-hint">
                 Fast mode ignores speed and runs without animation pacing; telemetry frames are

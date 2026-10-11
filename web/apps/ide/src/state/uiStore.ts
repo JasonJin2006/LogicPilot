@@ -39,6 +39,11 @@ interface UiState {
   openFile: (path: string) => void;
   openDiskFile: (path: string, content: string) => void;
   updateDiskFile: (path: string, content: string) => void;
+  /** Caret reported by the text editor that is in front, 1-based. Carries the
+   *  path so a consumer can tell a live position from one left behind by
+   *  another file. null while no text editor has reported a position. */
+  editorCaret: { path: string; line: number; column: number } | null;
+  setEditorCaret: (caret: UiState['editorCaret']) => void;
   /** Language-service handoff: select [start,end) in the file's text editor
    *  (SysML go-to-definition / reveal). Consumers clear it after use. */
   sourceReveal: { path: string; start: number; end: number; nonce: number } | null;
@@ -97,6 +102,24 @@ export const useUiStore = create<UiState>((set) => ({
       diskFiles: { ...state.diskFiles, [path]: content },
     })),
   sourceReveal: null,
+  editorCaret: null,
+  // Ignore repeat reports: the editor republishes on every selection change,
+  // and re-rendering the status bar for an unchanged position is pure churn.
+  setEditorCaret: (caret) =>
+    set((state) => {
+      const current = state.editorCaret;
+      if (
+        current === caret ||
+        (current !== null &&
+          caret !== null &&
+          current.path === caret.path &&
+          current.line === caret.line &&
+          current.column === caret.column)
+      ) {
+        return {};
+      }
+      return { editorCaret: caret };
+    }),
   revealInSource: (path, start, end) =>
     set((state) => ({
       sourceReveal: {

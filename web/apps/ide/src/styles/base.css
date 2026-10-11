@@ -3,46 +3,60 @@
    Domain styles live in run.css / ai.css / layout.css.
 --------------------------------------------------------------------------- */
 
+/* Palette: VS Code Dark+ (neutral greys). Every surface below is a chrome
+   slot, not a paradigm: the shell deliberately ships no domain colour. */
 :root {
   color-scheme: dark;
 
   /* surfaces */
-  --bg: #0a0e14;
-  --surface-1: #10151d;
-  --surface-2: #161d27;
-  --surface-3: #1d2733;
-  --border: #222c39;
-  --border-strong: #314050;
-  --bg-strong: #0b1018;
+  --bg: #1e1e1e; /* editor + app background */
+  --bg-strong: #181818; /* recessed: canvas, empty states */
+  --surface-1: #252526; /* side bar, panel, tab strip */
+  --surface-2: #2d2d30; /* inputs, inactive tab, cards */
+  --surface-3: #37373d; /* hover + active list row */
+  --surface-hover: #2a2d2e; /* subtle list hover */
+  --border: #2b2b2b;
+  --border-strong: #3c3c3c;
+  --border-subtle: #242424;
+
+  /* chrome slots (each is themed here so the shell stays swappable) */
+  --titlebar-bg: #3c3c3c;
+  --activitybar-bg: #333333;
+  --activitybar-fg: #868686;
+  --activitybar-fg-active: #ffffff;
+  --statusbar-bg: #007acc;
+  --statusbar-fg: #ffffff;
 
   /* text */
-  --text: #d7e0ea;
-  --text-secondary: #93a1b3;
-  --text-muted: #66768c;
-  --muted: #66768c; /* legacy alias */
+  --text: #cccccc;
+  --text-secondary: #9d9d9d;
+  --text-muted: #6e7681;
+  --muted: #6e7681; /* legacy alias */
 
   /* accents */
-  --accent: #4cc2ff;
-  --accent-dim: rgba(76, 194, 255, 0.14);
-  --accent-text: #79c0ff;
-  --accent-hover: #63ccff;
-  --ok: #3fb950;
-  --ok-dim: rgba(63, 185, 80, 0.14);
-  --ok-text: #7ee787;
-  --warn: #e3b341;
-  --warn-dim: rgba(227, 179, 65, 0.14);
-  --error: #f85149;
-  --error-dim: rgba(248, 81, 73, 0.14);
-  --on-accent: #06121c;
-  --panel: #10151d; /* legacy alias */
-  --canvas-bg: #0b1018;
-  --row-border: rgba(49, 64, 80, 0.5);
+  --accent: #007acc;
+  --accent-dim: rgba(0, 122, 204, 0.28);
+  --accent-text: #4daafc;
+  --accent-hover: #1177bb;
+  --ok: #4ec9b0;
+  --ok-dim: rgba(78, 201, 176, 0.16);
+  --ok-text: #89d185;
+  --warn: #cca700;
+  --warn-dim: rgba(204, 167, 0, 0.16);
+  --error: #f14c4c;
+  --error-dim: rgba(241, 76, 76, 0.16);
+  --danger: #f14c4c; /* alias consumed by run.css / sysml.css */
+  --danger-dim: rgba(241, 76, 76, 0.16);
+  --on-accent: #ffffff;
+  --panel: #252526; /* legacy alias */
+  --canvas-bg: #1e1e1e;
+  --row-border: rgba(60, 60, 60, 0.6);
 
-  /* geometry */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  /* geometry: VS Code chrome is near-square, so radii stay tight */
+  --r-sm: 3px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
   --status-h: 22px;
   --splitter-w: 1px;
@@ -55,31 +69,43 @@
   color-scheme: light;
 
   --bg: #ffffff;
-  --surface-1: #f3f4f6;
+  --bg-strong: #f3f3f3;
+  --surface-1: #f3f3f3;
   --surface-2: #ffffff;
-  --surface-3: #e8eaed;
-  --border: #d4d7dd;
-  --border-strong: #b6bcc6;
-  --bg-strong: #f6f8fa;
+  --surface-3: #e8e8e8;
+  --surface-hover: #e8e8e8;
+  --border: #e5e5e5;
+  --border-strong: #cecece;
+  --border-subtle: #f0f0f0;
 
-  --text: #1f2328;
-  --text-secondary: #59636e;
-  --text-muted: #8b949e;
-  --muted: #8b949e;
+  /* Light+ keeps the dark activity bar and the blue status bar, like VS Code. */
+  --titlebar-bg: #dddddd;
+  --activitybar-bg: #2c2c2c;
+  --activitybar-fg: rgba(255, 255, 255, 0.62);
+  --activitybar-fg-active: #ffffff;
+  --statusbar-bg: #007acc;
+  --statusbar-fg: #ffffff;
 
-  --accent: #0969da;
-  --accent-dim: rgba(9, 105, 218, 0.12);
-  --accent-text: #0969da;
-  --accent-hover: #0550ae;
+  --text: #3b3b3b;
+  --text-secondary: #616161;
+  --text-muted: #8b8b8b;
+  --muted: #8b8b8b;
+
+  --accent: #005fb8;
+  --accent-dim: rgba(0, 95, 184, 0.14);
+  --accent-text: #005fb8;
+  --accent-hover: #0258a8;
   --ok: #1a7f37;
-  --ok-dim: rgba(26, 127, 55, 0.12);
+  --ok-dim: rgba(26, 127, 55, 0.14);
   --ok-text: #1a7f37;
   --warn: #9a6700;
-  --warn-dim: rgba(154, 103, 0, 0.12);
-  --error: #cf222e;
-  --error-dim: rgba(207, 34, 46, 0.12);
+  --warn-dim: rgba(154, 103, 0, 0.14);
+  --error: #e51400;
+  --error-dim: rgba(229, 20, 0, 0.14);
+  --danger: #e51400;
+  --danger-dim: rgba(229, 20, 0, 0.14);
   --on-accent: #ffffff;
-  --panel: #f3f4f6;
+  --panel: #f3f3f3;
   --canvas-bg: #ffffff;
   --row-border: rgba(0, 0, 0, 0.08);
 }

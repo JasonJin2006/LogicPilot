@@ -9,6 +9,7 @@ import { startIdePluginHost, stopIdePluginHost } from '../plugins/host';
 import {
   clearProblemSources,
   collectProblems,
+  countProblems,
   problemSourcesVersion,
   registerProblemSource,
   subscribeProblemSources,
@@ -136,5 +137,17 @@ describe('collectProblems', () => {
 
   it('returns an empty list for a clean workspace with no contributors', () => {
     expect(collectProblems({ document: emptyModel() })).toEqual([]);
+  });
+
+  it('counts severities from the same entries the panel lists', () => {
+    const entries: ProblemEntry[] = [
+      { id: 'a', origin: 'model', code: 'X1', severity: 'error', message: 'boom' },
+      { id: 'b', origin: 'model', code: 'X2', severity: 'warning', message: 'hmm' },
+      { id: 'c', origin: 'model', code: 'X3', severity: 'info', message: 'fyi' },
+      { id: 'd', origin: 'sysml', code: 'X4', severity: 'error', message: 'boom again' },
+    ];
+    expect(countProblems(entries)).toEqual({ errors: 2, warnings: 1, infos: 1 });
+    // An empty aggregation must not report phantom zeroes as "0 errors".
+    expect(countProblems([])).toEqual({ errors: 0, warnings: 0, infos: 0 });
   });
 });
