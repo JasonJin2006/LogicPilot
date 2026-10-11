@@ -166,3 +166,5 @@
 - [0135 Maintenance and Evidence Boundaries](0135-maintenance-evidence-and-contract-boundaries)
 - [0136 Unified Execution Session Protocol](0136-unified-execution-session-protocol)
 - [0137 3D Scene as a Paradigm-Agnostic View Provider](0137-scene3d-view-provider)
+- [0138 SysML v2 Is a Runtime Target and a Pack, Not the Kernel](0138-sysml-as-runtime-target)
+- [0139 Execution Evidence Method Ids Are Open](0139-open-evidence-method-ids)
