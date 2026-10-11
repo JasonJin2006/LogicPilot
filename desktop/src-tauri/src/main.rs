@@ -21,6 +21,20 @@ use tauri::WebviewWindowBuilder;
 mod project_fs;
 use project_fs::{sanitize_project_name, write_project_files_impl};
 
+// Generate the Component Model host/guest bindings directly from the frozen
+// WIT source. The current raw-WASM loader remains wire-compatible with this
+// world; this module makes schema drift fail at desktop compile time and is the
+// seam for the future Wasmtime component instantiator.
+mod logicpilot_plugin_wit {
+    wit_bindgen::generate!({
+        path: "../../schemas/wasm",
+        world: "plugin",
+    });
+}
+
+#[cfg(windows)]
+mod windows_job;
+
 static APP_ENDPOINTS: OnceLock<AppEndpoints> = OnceLock::new();
 
 #[derive(Clone, Serialize)]
@@ -227,6 +241,78 @@ fn prepend_runtime_path(command: &mut Command, root: &std::path::Path) {
     }
 }
 
+fn default_data_root() -> PathBuf {
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    #[cfg(not(windows))]
+    let base = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local").join("share"))
+        })
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("LogicPilot")
+}
+
+fn configure_runtime_data(command: &mut Command, root: &std::path::Path) {
+    let data_root = default_data_root();
+    let plugin_store = data_root.join("plugin-store");
+    let artifact_store = data_root.join("artifacts");
+    let draft_store = data_root.join("plugin-drafts");
+    let execution_store = data_root.join("execution-runs");
+    let user_plugins = data_root.join("plugins").join("user");
+    let workspace_plugins = data_root.join("plugins").join("workspace");
+    for directory in [
+        &plugin_store,
+        &artifact_store,
+        &draft_store,
+        &execution_store,
+        &user_plugins,
+        &workspace_plugins,
+    ] {
+        let _ = std::fs::create_dir_all(directory);
+    }
+    let bundled_lock = root.join("plugin-store").join("logicpilot.lock");
+    let data_lock = plugin_store.join("logicpilot.lock");
+    if !data_lock.exists() && bundled_lock.is_file() {
+        let _ = std::fs::copy(&bundled_lock, &data_lock);
+    }
+    if !data_lock.is_file() {
+        return;
+    }
+    let escape = |path: &std::path::Path| {
+        path.to_string_lossy()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+    };
+    let roots = format!(
+        "{{\"system\":[\"{}\"],\"user\":[\"{}\"],\"workspace\":[\"{}\"]}}",
+        escape(&root.join("plugins").join("runtime")),
+        escape(&user_plugins),
+        escape(&workspace_plugins),
+    );
+    command
+        .env("LOGICPILOT_ENABLE_NODE_PLUGINS", "1")
+        .env("LOGICPILOT_NODE_PLUGIN_TRUST", "t4")
+        .env("LOGICPILOT_PLUGIN_STORE_ROOT", &plugin_store)
+        .env("LOGICPILOT_PLUGIN_ROOTS", roots)
+        .env("LOGICPILOT_ARTIFACT_STORE_ROOT", &artifact_store)
+        .env("LOGICPILOT_PLUGIN_DRAFT_ROOT", &draft_store)
+        .env("LOGICPILOT_EXECUTION_RUN_STORE_ROOT", &execution_store);
+    let native_host = if cfg!(windows) {
+        root.join("runtime").join("bin").join("lp-session-host.exe")
+    } else {
+        root.join("runtime").join("bin").join("lp-session-host")
+    };
+    if native_host.is_file() {
+        command
+            .env("LOGICPILOT_ENABLE_NATIVE_SESSION_HOST", "1")
+            .env("LOGICPILOT_SESSION_HOST", native_host);
+    }
+}
+
 #[cfg(windows)]
 fn no_window(command: &mut Command) {
     // node.exe / taskkill.exe are console-subsystem binaries: launching them
@@ -266,6 +352,17 @@ fn main() {
     } {
         command.env("LP_SERVER", lp_server);
     }
+    if let Some(component_runner) = if cfg!(windows) {
+        bundled_executable(
+            &root,
+            &["runtime", "bin", "logicpilot-component-runner.exe"],
+        )
+    } else {
+        bundled_executable(&root, &["runtime", "bin", "logicpilot-component-runner"])
+    } {
+        command.env("LOGICPILOT_COMPONENT_RUNNER", component_runner);
+    }
+    configure_runtime_data(&mut command, &root);
     prepend_runtime_path(&mut command, &root);
     #[cfg(windows)]
     no_window(&mut command);
@@ -274,6 +371,18 @@ fn main() {
         .stderr(Stdio::inherit())
         .spawn()
         .expect("failed to start the LogicPilot app server");
+
+    // Keep the app server in a native kill-on-close Job Object. The existing
+    // taskkill callback remains a fast normal-exit path; this guard covers
+    // crashes and force-quits where ExitRequested is never delivered.
+    #[cfg(windows)]
+    let app_server_job = match windows_job::JobGuard::for_child(&app_server) {
+        Ok(job) => Some(job),
+        Err(error) => {
+            eprintln!("could not assign app server to Windows Job Object: {error}");
+            None
+        }
+    };
 
     // Wait for the app server to report its ports, then hand them to the
     // frontend through the app_config command.
@@ -297,7 +406,7 @@ fn main() {
             } else if let Some(token) = trimmed.strip_prefix("LOGICPILOT_SESSION_TOKEN ") {
                 session_token = Some(token.to_string());
             }
-            if http_port.is_some() && ws_port.is_some() && session_token.is_some() {
+            if http_port.is_some() && session_token.is_some() {
                 break;
             }
         }
@@ -318,9 +427,11 @@ fn main() {
             }
         });
         match (http_port, ws_port, session_token) {
-            (Some(http_port), Some(ws_port), Some(session_token)) => AppEndpoints {
+            (Some(http_port), ws_port, Some(session_token)) => AppEndpoints {
                 api_base: format!("http://127.0.0.1:{}", http_port),
-                ws_url: format!("ws://127.0.0.1:{}/sim?token={}", ws_port, session_token),
+                ws_url: ws_port
+                    .map(|port| format!("ws://127.0.0.1:{}/sim?token={}", port, session_token))
+                    .unwrap_or_default(),
                 session_token,
             },
             _ => {
@@ -369,6 +480,8 @@ fn main() {
     // hanging until Node and the gateway have both terminated.
     let cleanup_started = AtomicBool::new(false);
     app.run(move |_app_handle, event| {
+        #[cfg(windows)]
+        let _keep_job_alive = &app_server_job;
         let exiting = matches!(
             event,
             tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
