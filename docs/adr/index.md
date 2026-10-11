@@ -165,3 +165,4 @@
 - [0134 Formal Runtime Plugin Packages](0134-formal-runtime-plugin-packages)
 - [0135 Maintenance and Evidence Boundaries](0135-maintenance-evidence-and-contract-boundaries)
 - [0136 Unified Execution Session Protocol](0136-unified-execution-session-protocol)
+- [0137 3D Scene as a Paradigm-Agnostic View Provider](0137-scene3d-view-provider)
