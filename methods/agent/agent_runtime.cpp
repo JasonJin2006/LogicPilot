@@ -56,6 +56,14 @@ class AgentMethod final : public SimulationMethod {
     return last_metrics_;
   }
 
+  void collect_telemetry(std::vector<RuntimeTelemetryValue>& values) const override {
+    if (simulation_ == nullptr) return;
+    std::vector<AgentSnapshot> snapshots;
+    simulation_->snapshot_agents(snapshots);
+    values.push_back({"agent.count", static_cast<double>(snapshots.size())});
+    values.push_back({"agent.tick", static_cast<double>(simulation_->tick_count())});
+  }
+
   [[nodiscard]] bool save_method_checkpoint(
       MethodCheckpoint& checkpoint, std::string* error) const override {
     if (simulation_ == nullptr || context_ == nullptr) {

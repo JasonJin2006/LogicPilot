@@ -244,6 +244,13 @@ std::size_t StatechartNetworkReplicationModel::advance(SimTime until) {
   return dispatched;
 }
 
+// See StatechartReplicationModel::inject: the port is the whole message.
+bool StatechartNetworkReplicationModel::inject(const std::string& port,
+                                               std::uint64_t payload) {
+  (void)payload;
+  return dispatch_message(port);
+}
+
 bool StatechartNetworkReplicationModel::dispatch_message(const std::string& port) {
   return impl_ != nullptr && !impl_->failed() && impl_->dispatch_message(port);
 }

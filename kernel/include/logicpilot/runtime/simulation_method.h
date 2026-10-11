@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "logicpilot/core/time/sim_time.h"
 #include "logicpilot/runtime/replication.h"
@@ -41,6 +42,11 @@ struct MethodCapabilities {
   MethodExecutionMode execution_mode{MethodExecutionMode::kDriverAdvanced};
   bool incremental{false};
   bool checkpoint_restore{false};
+};
+
+struct RuntimeTelemetryValue {
+  std::string key;
+  double value{0.0};
 };
 
 // One modeling method runtime (Process / Agent / SystemDynamics / ...).
@@ -121,6 +127,10 @@ public:
   [[nodiscard]] virtual ReplicationMetrics replication_metrics() const {
     return ReplicationMetrics{};
   }
+
+  // Neutral live telemetry. Method-specific projectors interpret namespaced
+  // keys; the kernel only transports key/value samples.
+  virtual void collect_telemetry(std::vector<RuntimeTelemetryValue>&) const {}
 };
 
 }  // namespace logicpilot

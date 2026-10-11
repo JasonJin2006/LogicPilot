@@ -153,6 +153,19 @@ class ReplicationModel {
   virtual ~ReplicationModel() = default;
   virtual ReplicationMetrics run(const ReplicationConfig& config,
                                  TraceRecorder* trace) = 0;
+
+  // External input into a running model - the gateway's `inject` control.
+  // Returns whether the model took it.
+  //
+  // Defaulted to ignore the input on purpose. Whether a formalism has a notion of
+  // injected messages is the formalism's business, so the streaming gateway can
+  // hand every model the same call instead of asking what kind of model it is
+  // looking at. A model that cannot be injected into says so by doing nothing.
+  virtual bool inject(const std::string& port, std::uint64_t payload) {
+    (void)port;
+    (void)payload;
+    return false;
+  }
 };
 
 struct MetricSummary {

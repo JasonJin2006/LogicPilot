@@ -129,6 +129,12 @@ void StatechartRuntime::shutdown() {
   ran_ = false;
 }
 
+void StatechartRuntime::collect_telemetry(
+    std::vector<RuntimeTelemetryValue>& values) const {
+  values.push_back({"statechart.departures", static_cast<double>(last_metrics_.departures)});
+  values.push_back({"statechart.final_value", last_metrics_.final_value});
+}
+
 bool StatechartRuntime::save_method_checkpoint(MethodCheckpoint& checkpoint,
                                                std::string* error) const {
   const auto* chart = dynamic_cast<const StatechartReplicationModel*>(

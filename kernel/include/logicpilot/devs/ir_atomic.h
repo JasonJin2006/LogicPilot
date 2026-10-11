@@ -94,7 +94,7 @@ class DevsReplicationModel final : public ReplicationModel {
 
   bool reset(const ReplicationConfig& config);
   std::size_t advance(SimTime until);
-  bool inject(const std::string& root_port, std::uint64_t payload = 0);
+  bool inject(const std::string& root_port, std::uint64_t payload = 0) override;
   void set_evidence_recorder(DevsEvidenceRecorder* recorder);
   bool save_checkpoint(DevsCheckpoint& checkpoint,
                        std::string* error = nullptr) const;

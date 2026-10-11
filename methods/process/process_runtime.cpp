@@ -20,6 +20,23 @@
 #include "process_flow.h"
 
 namespace logicpilot {
+
+void ProcessRuntime::collect_telemetry(
+    std::vector<RuntimeTelemetryValue>& values) const {
+  if (replication_ == nullptr) return;
+  const auto metrics = replication_->metrics();
+  values.push_back({"process.arrivals", static_cast<double>(metrics.arrivals)});
+  values.push_back({"process.departures", static_cast<double>(metrics.departures)});
+  values.push_back({"process.queue_length", metrics.mean_in_queue});
+  values.push_back({"process.throughput", metrics.throughput});
+  for (const auto& block : replication_->block_snapshots()) {
+    const std::string prefix = "block." + block.name + ".";
+    values.push_back({prefix + "buffered", static_cast<double>(block.buffered)});
+    values.push_back({prefix + "in_service", static_cast<double>(block.in_service)});
+    values.push_back({prefix + "arrived", static_cast<double>(block.arrived)});
+    values.push_back({prefix + "departed", static_cast<double>(block.departed)});
+  }
+}
 namespace {
 
 using ir::v2::Distribution;

@@ -49,6 +49,7 @@ public:
   // Metrics of the replication driven by the lifecycle API (advance()).
   [[nodiscard]] const ReplicationMetrics& last_metrics() const { return last_metrics_; }
   [[nodiscard]] ReplicationMetrics replication_metrics() const override { return last_metrics_; }
+  void collect_telemetry(std::vector<RuntimeTelemetryValue>& values) const override;
 
 private:
   // Lower the model root to a runnable flow engine (M/M/1 fast path or the

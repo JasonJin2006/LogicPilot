@@ -57,6 +57,9 @@ class StatechartReplicationModel final : public ReplicationModel {
   [[nodiscard]] bool failed() const;
   [[nodiscard]] const std::string& failure_reason() const;
   bool dispatch_message(const std::string& port);
+  // A statechart takes messages, not payloads: the port names the event to
+  // dispatch, which is what `inject` carries for this formalism.
+  bool inject(const std::string& port, std::uint64_t payload) override;
   std::vector<std::string> take_emitted_messages();
   // Composite runtimes use this callback to route an emitted message before
   // the shared scheduler advances to the next event.

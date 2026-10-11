@@ -48,6 +48,7 @@ class SimulationSession {
   [[nodiscard]] const SimulationMethod* active_method() const;
   [[nodiscard]] SimulationMethod* active_method();
   [[nodiscard]] bool has_pending_events() const;
+  void collect_telemetry(std::vector<RuntimeTelemetryValue>& values) const;
   [[nodiscard]] VariableStore& variables() { return manager_->variables(); }
   [[nodiscard]] MessageStore& messages() { return manager_->messages(); }
 
@@ -63,6 +64,19 @@ class SimulationSession {
   bool advance(SimTime until, TraceRecorder* trace = nullptr,
                DebugRecorder* debug = nullptr, std::string* error = nullptr,
                std::size_t* dispatched = nullptr);
+
+  // Dispatch at most max_events scheduler events without draining the whole
+  // world. This is the precise event-step primitive used by live control.
+  bool advance_events(std::size_t max_events, TraceRecorder* trace = nullptr,
+                      DebugRecorder* debug = nullptr,
+                      std::string* error = nullptr,
+                      std::size_t* dispatched = nullptr);
+
+  // Stop the active world without calling finish() and therefore without
+  // draining pending events. The session releases all runtime resources and
+  // may be started again with a new replication configuration.
+  bool abort(std::string* error = nullptr,
+             std::vector<RuntimeDiagnostic>* diagnostics = nullptr);
 
   // Drain, shut down all methods, return metrics, and release the active
   // replication world. Calling finish() is the normal end of a session.

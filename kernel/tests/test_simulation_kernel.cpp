@@ -611,6 +611,32 @@ TEST_CASE("simulation session advances a shared multi-method world in slices",
   REQUIRE(metrics[1].final_value == 2.0);
 }
 
+TEST_CASE("simulation session event step and abort do not drain pending work",
+          "[runtime][kernel][session][control]") {
+  register_all_methods();
+  const IrLoadResult model = load(build_multi_method_ir());
+  SimulationKernel kernel;
+  std::string error;
+  REQUIRE(kernel.load(model.file, &error));
+  auto session = kernel.create_session(&error);
+  REQUIRE(session != nullptr);
+  REQUIRE(session->start(test_config(), &error));
+  REQUIRE(session->has_pending_events());
+
+  std::size_t dispatched = 0;
+  REQUIRE(session->advance_events(1, nullptr, nullptr, &error, &dispatched));
+  REQUIRE(dispatched == 1);
+  REQUIRE(session->active());
+  REQUIRE(session->abort(&error));
+  REQUIRE(error.empty());
+  REQUIRE_FALSE(session->active());
+  REQUIRE_FALSE(session->has_pending_events());
+
+  // Abort releases the world without poisoning the reusable session object.
+  REQUIRE(session->start(test_config(), &error));
+  REQUIRE(session->abort(&error));
+}
+
 TEST_CASE("simulation session restores a DEVS checkpoint through the method API",
           "[runtime][kernel][session][checkpoint]") {
   register_all_methods();

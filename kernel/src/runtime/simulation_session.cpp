@@ -42,6 +42,15 @@ std::size_t SimulationSession::method_count() const {
   return manager_ == nullptr ? 0 : manager_->method_count();
 }
 
+void SimulationSession::collect_telemetry(
+    std::vector<RuntimeTelemetryValue>& values) const {
+  if (manager_ == nullptr) return;
+  for (std::size_t index = 0; index < manager_->method_count(); ++index) {
+    const SimulationMethod* method = manager_->method(index);
+    if (method != nullptr) method->collect_telemetry(values);
+  }
+}
+
 bool SimulationSession::has_pending_events() const {
   return scheduler_ != nullptr && !scheduler_->empty();
 }
@@ -192,6 +201,63 @@ bool SimulationSession::advance(SimTime until, TraceRecorder* trace,
   if (dispatched != nullptr) {
     *dispatched = count;
   }
+  return true;
+}
+
+bool SimulationSession::advance_events(std::size_t max_events,
+                                       TraceRecorder* trace,
+                                       DebugRecorder* debug,
+                                       std::string* error,
+                                       std::size_t* dispatched) {
+  if (max_events == 0) {
+    if (dispatched != nullptr) *dispatched = 0;
+    return fail("KR1018", "SimulationSession event step must be positive", error,
+                nullptr);
+  }
+  if (error != nullptr) error->clear();
+  if (!active_ || manager_ == nullptr || scheduler_ == nullptr) {
+    if (dispatched != nullptr) *dispatched = 0;
+    return fail("KR1012", "SimulationSession is not active", error, nullptr);
+  }
+  std::size_t count = 0;
+  const std::uint64_t max_total = manager_->context().config().max_events;
+  while (count < max_events && !scheduler_->empty()) {
+    if (max_total == 0 || dispatched_total_ >= max_total) {
+      if (dispatched != nullptr) *dispatched = count;
+      return fail("KR1017", "KR1017: shared scheduler event budget exhausted (" +
+                               std::to_string(max_total) + " events)", error,
+                  nullptr);
+    }
+    Event event{};
+    if (!scheduler_->try_pop_next(event)) break;
+    clock_.advance_to(event.at);
+    if (trace != nullptr) trace->record(event.at, event.type, event.payload);
+    if (debug != nullptr) debug->record(event);
+    if (profile_ != nullptr) profiler_.record_event(event);
+    handlers_.dispatch(event);
+    ++count;
+    ++dispatched_total_;
+  }
+  if (dispatched != nullptr) *dispatched = count;
+  return true;
+}
+
+bool SimulationSession::abort(std::string* error,
+                              std::vector<RuntimeDiagnostic>* diagnostics) {
+  if (error != nullptr) error->clear();
+  if (!active_ || manager_ == nullptr) {
+    return fail("KR1012", "SimulationSession is not active", error,
+                diagnostics);
+  }
+  manager_->shutdown();
+  if (profile_ != nullptr) *profile_ = profiler_.end();
+  profile_ = nullptr;
+  active_ = false;
+  manager_.reset();
+  scheduler_.reset();
+  handlers_.clear();
+  variables_.clear();
+  all_shared_event_queue_ = false;
   return true;
 }
 

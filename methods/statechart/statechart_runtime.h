@@ -47,6 +47,7 @@ public:
   // Metrics of the replication driven by the lifecycle API.
   [[nodiscard]] const ReplicationMetrics& last_metrics() const { return last_metrics_; }
   [[nodiscard]] ReplicationMetrics replication_metrics() const override { return last_metrics_; }
+  void collect_telemetry(std::vector<RuntimeTelemetryValue>& values) const override;
 
 private:
   RuntimeContext* context_{nullptr};

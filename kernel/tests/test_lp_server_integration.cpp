@@ -2172,3 +2172,37 @@ TEST_CASE("streaming driver is bit-exact under failures and multiple "
   REQUIRE(streamed.mean_sojourn == reference.mean_sojourn);
   REQUIRE(streamed.mean_wait == reference.mean_wait);
 }
+
+// The gateway hands every model the same injection call.
+//
+// `apply_pending_inputs` used to be six overloads, one per formalism, and the
+// process one reached into the method's engine with a dynamic_cast to find an
+// entry point. It is now a single call on the model interface, which only works
+// if "this formalism takes no input" is expressible - so this pins that a model
+// without injection support answers false through a base reference instead of
+// being unrepresentable, and that a model that does support it is reached by the
+// same call.
+namespace {
+
+// The smallest thing that is a ReplicationModel and nothing else: what a
+// formalism with no notion of injected messages looks like from the gateway's
+// side.
+class InertModel final : public logicpilot::ReplicationModel {
+ public:
+  logicpilot::ReplicationMetrics run(const logicpilot::ReplicationConfig&,
+                                     logicpilot::TraceRecorder*) override {
+    return {};
+  }
+};
+
+}  // namespace
+
+TEST_CASE("a model without injection support is harmless to inject into",
+          "[server][integration][inject]") {
+  InertModel inert;
+  logicpilot::ReplicationModel& as_model = inert;
+  CHECK(as_model.inject("any-port", 7) == false);
+  // And it stays a no-op rather than latching state: the gateway may hand the
+  // same input to any model at any time.
+  CHECK(as_model.inject("", 0) == false);
+}

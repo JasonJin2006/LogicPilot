@@ -68,6 +68,14 @@ class SdMethod final : public SimulationMethod {
     return last_metrics_;
   }
 
+  void collect_telemetry(std::vector<RuntimeTelemetryValue>& values) const override {
+    if (simulation_ == nullptr) return;
+    for (const auto& [name, value] : simulation_->last_state())
+      values.push_back({"continuous.value." + name, value});
+    values.push_back({"continuous.time", simulation_->sim_time_seconds()});
+    values.push_back({"continuous.step", static_cast<double>(simulation_->step_count())});
+  }
+
   [[nodiscard]] std::string runtime_error() const override { return error_; }
 
   [[nodiscard]] bool save_method_checkpoint(

@@ -66,7 +66,7 @@ class ProcessFlowSim : public FlowEngine {
   // Kernel-driven mode (SimulationKernel driver): schedule into the kernel's
   // facilities instead of per-engine owned ones.
   void attach(RuntimeContext& context);
-  bool inject(const std::string& source, std::uint64_t count = 1);
+  bool inject(const std::string& source, std::uint64_t count = 1) override;
 
  private:
   struct Impl;

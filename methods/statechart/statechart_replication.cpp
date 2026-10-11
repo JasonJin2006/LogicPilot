@@ -711,6 +711,14 @@ const std::string& StatechartReplicationModel::failure_reason() const {
   return impl_ != nullptr ? impl_->failure_reason_ : kNoFailure;
 }
 
+// The declared injection capability for this formalism: the port names the event
+// to dispatch and there is no payload to deliver.
+bool StatechartReplicationModel::inject(const std::string& port,
+                                        std::uint64_t payload) {
+  (void)payload;
+  return dispatch_message(port);
+}
+
 bool StatechartReplicationModel::dispatch_message(const std::string& port) {
   if (impl_ == nullptr || impl_->done_) return false;
   const auto events = impl_->message_events.find(port);

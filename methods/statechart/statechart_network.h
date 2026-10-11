@@ -38,6 +38,8 @@ class StatechartNetworkReplicationModel final : public ReplicationModel {
   void attach(RuntimeContext& context);
   std::size_t advance(SimTime until);
   bool dispatch_message(const std::string& port);
+  // See StatechartReplicationModel::inject: the port is the whole message.
+  bool inject(const std::string& port, std::uint64_t payload) override;
   [[nodiscard]] bool done() const;
   [[nodiscard]] bool has_pending_events();
   [[nodiscard]] bool failed() const;
