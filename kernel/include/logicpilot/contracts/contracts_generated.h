@@ -108,6 +108,47 @@ enum class FixKind : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, FixKind& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(FixKind value);
 
+enum class ExecutionSessionState : std::uint8_t {
+  kQueued,
+  kPreparing,
+  kRunning,
+  kPaused,
+  kFinalizing,
+  kCompleted,
+  kCancelling,
+  kCancelled,
+  kFailed,
+};
+
+[[nodiscard]] std::string dump(ExecutionSessionState value);
+[[nodiscard]] bool parse(std::string_view text, ExecutionSessionState& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(ExecutionSessionState value);
+
+enum class ExecutionCommandAction : std::uint8_t {
+  kPause,
+  kResume,
+  kStep,
+  kStop,
+  kCancel,
+};
+
+[[nodiscard]] std::string dump(ExecutionCommandAction value);
+[[nodiscard]] bool parse(std::string_view text, ExecutionCommandAction& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(ExecutionCommandAction value);
+
+enum class ExecutionEventKind : std::uint8_t {
+  kSnapshot,
+  kState,
+  kTelemetry,
+  kDiagnostic,
+  kGap,
+  kTerminal,
+};
+
+[[nodiscard]] std::string dump(ExecutionEventKind value);
+[[nodiscard]] bool parse(std::string_view text, ExecutionEventKind& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(ExecutionEventKind value);
+
 enum class RuntimeKind : std::uint8_t {
   kInterpreter,
   kWasm,
@@ -372,6 +413,13 @@ struct DiagnosticDefinition;
 struct FixDefinition;
 struct SourceSpan;
 struct DiagnosticInstance;
+struct ExecutionProviderCapabilities;
+struct ExecutionSession;
+struct ExecutionCommand;
+struct ExecutionCommandAck;
+struct ExecutionEvent;
+struct ExecutionConformance;
+struct ExecutionEvidenceDetails;
 struct RuntimeRef;
 struct ExecutionTarget;
 struct ExecutionBudget;
@@ -410,6 +458,8 @@ struct PluginLockfile;
 struct PluginRegistryIntegrity;
 struct PluginRegistry;
 struct PluginRuntimeSession;
+struct PluginServiceMethod;
+struct PluginService;
 struct ViewQuery;
 struct ViewDefinition;
 struct ViewContributions;
@@ -626,28 +676,107 @@ struct ExecutionBudget {
 [[nodiscard]] nlohmann::ordered_json to_json(const ExecutionBudget& value);
 [[nodiscard]] std::string dump(const ExecutionBudget& value);
 
+// execution-session.schema.json
+struct ExecutionCommand {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string command_id;
+  std::string run_id;
+  ExecutionCommandAction action;
+  std::int64_t expected_state_version;
+};
+
+[[nodiscard]] bool operator==(const ExecutionCommand& lhs, const ExecutionCommand& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionCommand& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionCommand& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionCommand& value);
+[[nodiscard]] std::string dump(const ExecutionCommand& value);
+
+// execution-session.schema.json
+struct ExecutionCommandAck {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string command_id;
+  std::string run_id;
+  bool accepted;
+  std::int64_t state_version;
+  ExecutionSessionState status;
+  std::optional<std::string> error_code;
+  std::optional<std::string> error;
+};
+
+[[nodiscard]] bool operator==(const ExecutionCommandAck& lhs, const ExecutionCommandAck& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionCommandAck& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionCommandAck& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionCommandAck& value);
+[[nodiscard]] std::string dump(const ExecutionCommandAck& value);
+
 // execution-target.schema.json
-struct ExecutionEvidence {
+struct ExecutionConformance {
+  bool passed;
+  JsonValue checks;
+};
+
+[[nodiscard]] bool operator==(const ExecutionConformance& lhs, const ExecutionConformance& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionConformance& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionConformance& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionConformance& value);
+[[nodiscard]] std::string dump(const ExecutionConformance& value);
+
+// execution-session.schema.json
+struct ExecutionEvent {
   std::string schema;
   std::int64_t contract_version;
   std::string run_id;
-  std::string digest;
-  std::optional<ArtifactRef> trace_ref;
-  std::optional<std::map<std::string, double>> metrics;
+  std::optional<std::string> replication_id;
+  std::int64_t seq;
+  ExecutionEventKind kind;
+  nlohmann::ordered_json payload;
 };
 
-[[nodiscard]] bool operator==(const ExecutionEvidence& lhs, const ExecutionEvidence& rhs);
-[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidence& out, std::string& error);
-[[nodiscard]] bool parse(std::string_view text, ExecutionEvidence& out, std::string& error);
-[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionEvidence& value);
-[[nodiscard]] std::string dump(const ExecutionEvidence& value);
+[[nodiscard]] bool operator==(const ExecutionEvent& lhs, const ExecutionEvent& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionEvent& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionEvent& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionEvent& value);
+[[nodiscard]] std::string dump(const ExecutionEvent& value);
+
+// execution-target.schema.json
+struct ExecutionEvidenceDetails {
+  std::string kind;
+  JsonValue summary;
+};
+
+[[nodiscard]] bool operator==(const ExecutionEvidenceDetails& lhs, const ExecutionEvidenceDetails& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidenceDetails& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionEvidenceDetails& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionEvidenceDetails& value);
+[[nodiscard]] std::string dump(const ExecutionEvidenceDetails& value);
+
+// execution-session.schema.json
+struct ExecutionProviderCapabilities {
+  std::optional<bool> pause;
+  std::optional<bool> resume;
+  std::optional<bool> event_step;
+  bool cancel;
+  bool telemetry;
+  bool snapshot;
+  std::optional<std::int64_t> max_concurrent_runs;
+};
+
+[[nodiscard]] bool operator==(const ExecutionProviderCapabilities& lhs, const ExecutionProviderCapabilities& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionProviderCapabilities& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionProviderCapabilities& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionProviderCapabilities& value);
+[[nodiscard]] std::string dump(const ExecutionProviderCapabilities& value);
 
 // execution-target.schema.json
 struct ExecutionRequest {
   std::string schema;
   std::int64_t contract_version;
   std::string request_id;
+  std::optional<std::string> run_id;
   std::string target_id;
+  std::optional<ArtifactRef> artifact_ref;
   std::optional<std::int64_t> seed;
   std::optional<JsonValue> inputs;
   std::optional<ExecutionBudget> budget;
@@ -680,6 +809,29 @@ struct ExecutionRun {
 [[nodiscard]] bool parse(std::string_view text, ExecutionRun& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const ExecutionRun& value);
 [[nodiscard]] std::string dump(const ExecutionRun& value);
+
+// execution-session.schema.json
+struct ExecutionSession {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string run_id;
+  std::string request_id;
+  std::string target_id;
+  std::optional<ArtifactRef> artifact_ref;
+  ExecutionSessionState status;
+  std::int64_t state_version;
+  ExecutionProviderCapabilities capabilities;
+  std::string created_at;
+  std::optional<std::string> started_at;
+  std::optional<std::string> finished_at;
+  std::optional<std::string> error;
+};
+
+[[nodiscard]] bool operator==(const ExecutionSession& lhs, const ExecutionSession& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionSession& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionSession& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionSession& value);
+[[nodiscard]] std::string dump(const ExecutionSession& value);
 
 // diagnostic.schema.json
 struct FixDefinition {
@@ -823,6 +975,7 @@ struct PluginEntrypoints {
   std::optional<std::string> web;
   std::optional<std::string> node;
   std::optional<std::string> wasm;
+  std::optional<std::string> component;
   std::optional<std::string> native;
   std::optional<std::string> data;
 };
@@ -908,7 +1061,7 @@ struct PluginMigration {
 // plugin-contributions.schema.json
 struct PluginPaletteContribution {
   std::string id;
-  std::string canvas;
+  CanvasEngineId canvas;
   std::string item_kind;
   std::string label;
   std::optional<std::string> icon;
@@ -953,6 +1106,19 @@ struct PluginRuntimeSession {
 [[nodiscard]] bool parse(std::string_view text, PluginRuntimeSession& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginRuntimeSession& value);
 [[nodiscard]] std::string dump(const PluginRuntimeSession& value);
+
+// plugin-services.schema.json
+struct PluginServiceMethod {
+  std::string name;
+  std::optional<JsonSchemaFragment> input;
+  std::optional<JsonSchemaFragment> output;
+};
+
+[[nodiscard]] bool operator==(const PluginServiceMethod& lhs, const PluginServiceMethod& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginServiceMethod& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginServiceMethod& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginServiceMethod& value);
+[[nodiscard]] std::string dump(const PluginServiceMethod& value);
 
 // plugin-contributions.schema.json
 struct PluginSkillStep {
@@ -1258,6 +1424,28 @@ struct DiagnosticInstance {
 [[nodiscard]] std::string dump(const DiagnosticInstance& value);
 
 // execution-target.schema.json
+struct ExecutionEvidence {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string run_id;
+  std::string digest;
+  std::optional<std::vector<std::string>> methods;
+  std::optional<std::string> ir_digest;
+  std::optional<std::string> runtime_kind;
+  std::optional<std::string> method;
+  std::optional<ExecutionConformance> conformance;
+  std::optional<ExecutionEvidenceDetails> details;
+  std::optional<ArtifactRef> trace_ref;
+  std::optional<std::map<std::string, double>> metrics;
+};
+
+[[nodiscard]] bool operator==(const ExecutionEvidence& lhs, const ExecutionEvidence& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidence& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, ExecutionEvidence& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const ExecutionEvidence& value);
+[[nodiscard]] std::string dump(const ExecutionEvidence& value);
+
+// execution-target.schema.json
 struct ExecutionTarget {
   std::string schema;
   std::int64_t contract_version;
@@ -1265,6 +1453,7 @@ struct ExecutionTarget {
   std::optional<std::string> title_key;
   ArtifactRef artifact_ref;
   RuntimeRef runtime;
+  std::optional<ExecutionProviderCapabilities> capabilities;
   std::optional<JsonValue> options;
 };
 
@@ -1358,31 +1547,17 @@ struct NotationPack {
 [[nodiscard]] nlohmann::ordered_json to_json(const NotationPack& value);
 [[nodiscard]] std::string dump(const NotationPack& value);
 
-// plugin-manifest-v2.schema.json
-struct PluginManifest {
-  std::string schema;
-  std::int64_t contract_version;
-  std::string id;
-  std::string version;
-  std::int64_t api_version;
-  std::optional<std::string> display_name;
-  std::optional<std::string> description;
-  std::vector<std::string> provides;
-  std::vector<PluginDependency> requires_;
-  PluginEntrypoints entrypoints;
-  std::vector<PermissionId> permissions;
-  TrustRequirement trust;
-  std::optional<JsonSchemaFragment> config;
-  std::optional<std::vector<PluginMigration>> migrations;
-  std::optional<std::vector<std::string>> conformance;
-  std::optional<PluginIntegrity> integrity;
+// plugin-services.schema.json
+struct PluginService {
+  std::string name;
+  std::vector<PluginServiceMethod> methods;
 };
 
-[[nodiscard]] bool operator==(const PluginManifest& lhs, const PluginManifest& rhs);
-[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::string& error);
-[[nodiscard]] bool parse(std::string_view text, PluginManifest& out, std::string& error);
-[[nodiscard]] nlohmann::ordered_json to_json(const PluginManifest& value);
-[[nodiscard]] std::string dump(const PluginManifest& value);
+[[nodiscard]] bool operator==(const PluginService& lhs, const PluginService& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginService& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginService& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginService& value);
+[[nodiscard]] std::string dump(const PluginService& value);
 
 // plugin-contributions.schema.json
 struct PluginSkillContribution {
@@ -1480,22 +1655,6 @@ struct WasmHostAbi {
 [[nodiscard]] nlohmann::ordered_json to_json(const WasmHostAbi& value);
 [[nodiscard]] std::string dump(const WasmHostAbi& value);
 
-// plugin-catalog.schema.json
-struct PluginCatalogEntry {
-  std::string id;
-  PluginScope scope;
-  std::string root_id;
-  std::string path;
-  std::string sha256;
-  PluginManifest manifest;
-};
-
-[[nodiscard]] bool operator==(const PluginCatalogEntry& lhs, const PluginCatalogEntry& rhs);
-[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalogEntry& out, std::string& error);
-[[nodiscard]] bool parse(std::string_view text, PluginCatalogEntry& out, std::string& error);
-[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogEntry& value);
-[[nodiscard]] std::string dump(const PluginCatalogEntry& value);
-
 // plugin-contributions.schema.json
 struct PluginContributionSet {
   std::string schema;
@@ -1518,6 +1677,66 @@ struct PluginContributionSet {
 [[nodiscard]] bool parse(std::string_view text, PluginContributionSet& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginContributionSet& value);
 [[nodiscard]] std::string dump(const PluginContributionSet& value);
+
+// plugin-manifest-v2.schema.json
+struct PluginManifest {
+  std::string schema;
+  std::int64_t contract_version;
+  std::string id;
+  std::string version;
+  std::int64_t api_version;
+  std::optional<std::string> display_name;
+  std::optional<std::string> description;
+  std::vector<std::string> provides;
+  std::vector<PluginDependency> requires_;
+  PluginEntrypoints entrypoints;
+  std::vector<PermissionId> permissions;
+  std::optional<std::vector<PluginService>> services;
+  std::optional<std::vector<ExecutionTarget>> execution_targets;
+  TrustRequirement trust;
+  std::optional<JsonSchemaFragment> config;
+  std::optional<std::vector<PluginMigration>> migrations;
+  std::optional<std::vector<std::string>> conformance;
+  std::optional<PluginIntegrity> integrity;
+};
+
+[[nodiscard]] bool operator==(const PluginManifest& lhs, const PluginManifest& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginManifest& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginManifest& value);
+[[nodiscard]] std::string dump(const PluginManifest& value);
+
+// plugin-registry.schema.json
+struct PluginRegistry {
+  std::string schema;
+  std::int64_t contract_version;
+  std::int64_t generation;
+  std::vector<std::string> plugins;
+  std::vector<PluginContributionSet> contributions;
+  std::optional<PluginRegistryIntegrity> integrity;
+};
+
+[[nodiscard]] bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginRegistry& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginRegistry& value);
+[[nodiscard]] std::string dump(const PluginRegistry& value);
+
+// plugin-catalog.schema.json
+struct PluginCatalogEntry {
+  std::string id;
+  PluginScope scope;
+  std::string root_id;
+  std::string path;
+  std::string sha256;
+  PluginManifest manifest;
+};
+
+[[nodiscard]] bool operator==(const PluginCatalogEntry& lhs, const PluginCatalogEntry& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginCatalogEntry& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginCatalogEntry& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginCatalogEntry& value);
+[[nodiscard]] std::string dump(const PluginCatalogEntry& value);
 
 // plugin-draft.schema.json
 struct PluginDraft {
@@ -1543,22 +1762,6 @@ struct PluginDraft {
 [[nodiscard]] bool parse(std::string_view text, PluginDraft& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(const PluginDraft& value);
 [[nodiscard]] std::string dump(const PluginDraft& value);
-
-// plugin-registry.schema.json
-struct PluginRegistry {
-  std::string schema;
-  std::int64_t contract_version;
-  std::int64_t generation;
-  std::vector<std::string> plugins;
-  std::vector<PluginContributionSet> contributions;
-  std::optional<PluginRegistryIntegrity> integrity;
-};
-
-[[nodiscard]] bool operator==(const PluginRegistry& lhs, const PluginRegistry& rhs);
-[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRegistry& out, std::string& error);
-[[nodiscard]] bool parse(std::string_view text, PluginRegistry& out, std::string& error);
-[[nodiscard]] nlohmann::ordered_json to_json(const PluginRegistry& value);
-[[nodiscard]] std::string dump(const PluginRegistry& value);
 
 // plugin-catalog.schema.json
 struct PluginCatalog {

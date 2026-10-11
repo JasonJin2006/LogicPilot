@@ -55,7 +55,7 @@
       "required": ["id", "canvas", "itemKind", "label", "semanticType"],
       "properties": {
         "id": { "$ref": "common.schema.json#/$defs/CapabilityId" },
-        "canvas": { "type": "string", "enum": ["2d", "3d", "flow"] },
+        "canvas": { "$ref": "view-notation.schema.json#/$defs/CanvasEngineId" },
         "itemKind": { "type": "string", "minLength": 1, "maxLength": 128 },
         "label": { "type": "string", "minLength": 1, "maxLength": 256 },
         "icon": { "type": "string", "maxLength": 256 },

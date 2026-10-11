@@ -47,6 +47,16 @@ export interface ContractTypes {
   FixDefinition: C.FixDefinition;
   SourceSpan: C.SourceSpan;
   DiagnosticInstance: C.DiagnosticInstance;
+  ExecutionSessionState: C.ExecutionSessionState;
+  ExecutionProviderCapabilities: C.ExecutionProviderCapabilities;
+  ExecutionSession: C.ExecutionSession;
+  ExecutionCommandAction: C.ExecutionCommandAction;
+  ExecutionCommand: C.ExecutionCommand;
+  ExecutionCommandAck: C.ExecutionCommandAck;
+  ExecutionEventKind: C.ExecutionEventKind;
+  ExecutionEvent: C.ExecutionEvent;
+  ExecutionConformance: C.ExecutionConformance;
+  ExecutionEvidenceDetails: C.ExecutionEvidenceDetails;
   RuntimeKind: C.RuntimeKind;
   RuntimeRef: C.RuntimeRef;
   ExecutionTarget: C.ExecutionTarget;
@@ -101,6 +111,8 @@ export interface ContractTypes {
   PluginRegistryIntegrity: C.PluginRegistryIntegrity;
   PluginRegistry: C.PluginRegistry;
   PluginRuntimeSession: C.PluginRuntimeSession;
+  PluginServiceMethod: C.PluginServiceMethod;
+  PluginService: C.PluginService;
   CanvasEngineId: C.CanvasEngineId;
   LayoutPersistence: C.LayoutPersistence;
   ViewQuery: C.ViewQuery;

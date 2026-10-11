@@ -32,6 +32,9 @@ nlohmann::ordered_json to_json_value(TransactionStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CapabilityRpcStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(Severity v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(FixKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(ExecutionSessionState v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(ExecutionCommandAction v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(ExecutionEventKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(RuntimeKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(RunStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(KnowledgeBlockType v) { return to_json(v); }
@@ -70,6 +73,13 @@ nlohmann::ordered_json to_json_value(const DiagnosticDefinition& v) { return to_
 nlohmann::ordered_json to_json_value(const FixDefinition& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const SourceSpan& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const DiagnosticInstance& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionProviderCapabilities& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionSession& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionCommand& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionCommandAck& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionEvent& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionConformance& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const ExecutionEvidenceDetails& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const RuntimeRef& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ExecutionTarget& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ExecutionBudget& v) { return to_json(v); }
@@ -108,6 +118,8 @@ nlohmann::ordered_json to_json_value(const PluginLockfile& v) { return to_json(v
 nlohmann::ordered_json to_json_value(const PluginRegistryIntegrity& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginRegistry& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginRuntimeSession& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginServiceMethod& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginService& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewQuery& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewDefinition& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const ViewContributions& v) { return to_json(v); }
@@ -362,6 +374,109 @@ bool parse(std::string_view text, FixKind& out, std::string& error) {
 }
 
 nlohmann::ordered_json to_json(FixKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(ExecutionSessionState value) {
+  switch (value) {
+    case ExecutionSessionState::kQueued: return "queued";
+    case ExecutionSessionState::kPreparing: return "preparing";
+    case ExecutionSessionState::kRunning: return "running";
+    case ExecutionSessionState::kPaused: return "paused";
+    case ExecutionSessionState::kFinalizing: return "finalizing";
+    case ExecutionSessionState::kCompleted: return "completed";
+    case ExecutionSessionState::kCancelling: return "cancelling";
+    case ExecutionSessionState::kCancelled: return "cancelled";
+    case ExecutionSessionState::kFailed: return "failed";
+  }
+  return "<invalid ExecutionSessionState>";
+}
+
+bool parse(std::string_view text, ExecutionSessionState& out, std::string& error) {
+  static const std::pair<std::string_view, ExecutionSessionState> kTable[] = {
+      {"queued", ExecutionSessionState::kQueued},
+      {"preparing", ExecutionSessionState::kPreparing},
+      {"running", ExecutionSessionState::kRunning},
+      {"paused", ExecutionSessionState::kPaused},
+      {"finalizing", ExecutionSessionState::kFinalizing},
+      {"completed", ExecutionSessionState::kCompleted},
+      {"cancelling", ExecutionSessionState::kCancelling},
+      {"cancelled", ExecutionSessionState::kCancelled},
+      {"failed", ExecutionSessionState::kFailed},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid ExecutionSessionState value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(ExecutionSessionState value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(ExecutionCommandAction value) {
+  switch (value) {
+    case ExecutionCommandAction::kPause: return "pause";
+    case ExecutionCommandAction::kResume: return "resume";
+    case ExecutionCommandAction::kStep: return "step";
+    case ExecutionCommandAction::kStop: return "stop";
+    case ExecutionCommandAction::kCancel: return "cancel";
+  }
+  return "<invalid ExecutionCommandAction>";
+}
+
+bool parse(std::string_view text, ExecutionCommandAction& out, std::string& error) {
+  static const std::pair<std::string_view, ExecutionCommandAction> kTable[] = {
+      {"pause", ExecutionCommandAction::kPause},
+      {"resume", ExecutionCommandAction::kResume},
+      {"step", ExecutionCommandAction::kStep},
+      {"stop", ExecutionCommandAction::kStop},
+      {"cancel", ExecutionCommandAction::kCancel},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid ExecutionCommandAction value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(ExecutionCommandAction value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(ExecutionEventKind value) {
+  switch (value) {
+    case ExecutionEventKind::kSnapshot: return "snapshot";
+    case ExecutionEventKind::kState: return "state";
+    case ExecutionEventKind::kTelemetry: return "telemetry";
+    case ExecutionEventKind::kDiagnostic: return "diagnostic";
+    case ExecutionEventKind::kGap: return "gap";
+    case ExecutionEventKind::kTerminal: return "terminal";
+  }
+  return "<invalid ExecutionEventKind>";
+}
+
+bool parse(std::string_view text, ExecutionEventKind& out, std::string& error) {
+  static const std::pair<std::string_view, ExecutionEventKind> kTable[] = {
+      {"snapshot", ExecutionEventKind::kSnapshot},
+      {"state", ExecutionEventKind::kState},
+      {"telemetry", ExecutionEventKind::kTelemetry},
+      {"diagnostic", ExecutionEventKind::kDiagnostic},
+      {"gap", ExecutionEventKind::kGap},
+      {"terminal", ExecutionEventKind::kTerminal},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid ExecutionEventKind value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(ExecutionEventKind value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(RuntimeKind value) {
   switch (value) {
@@ -3836,6 +3951,851 @@ bool operator==(const DiagnosticInstance& lhs, const DiagnosticInstance& rhs) {
       && lhs.available_fix_ids == rhs.available_fix_ids;
 }
 
+bool parse_json(const nlohmann::ordered_json& j, ExecutionProviderCapabilities& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionProviderCapabilities";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "pause",
+      "resume",
+      "eventStep",
+      "cancel",
+      "telemetry",
+      "snapshot",
+      "maxConcurrentRuns",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionProviderCapabilities: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    auto field_it = j.find("pause");
+    if (field_it != j.end()) {
+      bool parsed{};
+      if (!(*field_it).is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.pause") + ": expected boolean";
+        return false;
+      }
+      parsed = (*field_it).get<bool>();
+      out.pause = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("resume");
+    if (field_it != j.end()) {
+      bool parsed{};
+      if (!(*field_it).is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.resume") + ": expected boolean";
+        return false;
+      }
+      parsed = (*field_it).get<bool>();
+      out.resume = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("eventStep");
+    if (field_it != j.end()) {
+      bool parsed{};
+      if (!(*field_it).is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.eventStep") + ": expected boolean";
+        return false;
+      }
+      parsed = (*field_it).get<bool>();
+      out.event_step = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "cancel", "ExecutionProviderCapabilities");
+      if (!value.is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.cancel") + ": expected boolean";
+        return false;
+      }
+      out.cancel = value.get<bool>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "telemetry", "ExecutionProviderCapabilities");
+      if (!value.is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.telemetry") + ": expected boolean";
+        return false;
+      }
+      out.telemetry = value.get<bool>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "snapshot", "ExecutionProviderCapabilities");
+      if (!value.is_boolean()) {
+        error = std::string("ExecutionProviderCapabilities.snapshot") + ": expected boolean";
+        return false;
+      }
+      out.snapshot = value.get<bool>();
+  }
+  {
+    auto field_it = j.find("maxConcurrentRuns");
+    if (field_it != j.end()) {
+      std::int64_t parsed{};
+      if (!(*field_it).is_number_integer()) {
+        error = std::string("ExecutionProviderCapabilities.maxConcurrentRuns") + ": expected integer";
+        return false;
+      }
+      parsed = (*field_it).get<std::int64_t>();
+      out.max_concurrent_runs = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionProviderCapabilities& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionProviderCapabilities& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+  if (value.pause.has_value()) {
+    j["pause"] = to_json_value(*value.pause);
+  }
+  if (value.resume.has_value()) {
+    j["resume"] = to_json_value(*value.resume);
+  }
+  if (value.event_step.has_value()) {
+    j["eventStep"] = to_json_value(*value.event_step);
+  }
+    j["cancel"] = to_json_value(value.cancel);
+    j["telemetry"] = to_json_value(value.telemetry);
+    j["snapshot"] = to_json_value(value.snapshot);
+  if (value.max_concurrent_runs.has_value()) {
+    j["maxConcurrentRuns"] = to_json_value(*value.max_concurrent_runs);
+  }
+  return j;
+}
+
+std::string dump(const ExecutionProviderCapabilities& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionProviderCapabilities& lhs, const ExecutionProviderCapabilities& rhs) {
+  return lhs.pause == rhs.pause
+      && lhs.resume == rhs.resume
+      && lhs.event_step == rhs.event_step
+      && lhs.cancel == rhs.cancel
+      && lhs.telemetry == rhs.telemetry
+      && lhs.snapshot == rhs.snapshot
+      && lhs.max_concurrent_runs == rhs.max_concurrent_runs;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionSession& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionSession";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "runId",
+      "requestId",
+      "targetId",
+      "artifactRef",
+      "status",
+      "stateVersion",
+      "capabilities",
+      "createdAt",
+      "startedAt",
+      "finishedAt",
+      "error",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionSession: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "ExecutionSession");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.execution-session/v1") {
+        error = std::string("ExecutionSession.schema") + ": expected constant " + "logicpilot.execution-session/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "ExecutionSession");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("ExecutionSession.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "runId", "ExecutionSession");
+      if (!value.is_string()) {
+        error = std::string("ExecutionSession.runId") + ": expected string";
+        return false;
+      }
+      out.run_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "requestId", "ExecutionSession");
+      if (!value.is_string()) {
+        error = std::string("ExecutionSession.requestId") + ": expected string";
+        return false;
+      }
+      out.request_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "targetId", "ExecutionSession");
+      if (!value.is_string()) {
+        error = std::string("ExecutionSession.targetId") + ": expected string";
+        return false;
+      }
+      out.target_id = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("artifactRef");
+    if (field_it != j.end()) {
+      ArtifactRef parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("ExecutionSession.artifactRef") + ": " + error;
+        return false;
+      }
+      out.artifact_ref = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "status", "ExecutionSession");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.status, enum_error)) {
+        error = std::string("ExecutionSession.status") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "stateVersion", "ExecutionSession");
+      if (!value.is_number_integer()) {
+        error = std::string("ExecutionSession.stateVersion") + ": expected integer";
+        return false;
+      }
+      out.state_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "capabilities", "ExecutionSession");
+      if (!parse_json(value, out.capabilities, error)) {
+        error = std::string("ExecutionSession.capabilities") + ": " + error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "createdAt", "ExecutionSession");
+      if (!value.is_string()) {
+        error = std::string("ExecutionSession.createdAt") + ": expected string";
+        return false;
+      }
+      out.created_at = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("startedAt");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionSession.startedAt") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.started_at = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("finishedAt");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionSession.finishedAt") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.finished_at = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("error");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionSession.error") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.error = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionSession& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionSession& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["runId"] = to_json_value(value.run_id);
+    j["requestId"] = to_json_value(value.request_id);
+    j["targetId"] = to_json_value(value.target_id);
+  if (value.artifact_ref.has_value()) {
+    j["artifactRef"] = to_json(*value.artifact_ref);
+  }
+    j["status"] = to_json(value.status);
+    j["stateVersion"] = to_json_value(value.state_version);
+    j["capabilities"] = to_json(value.capabilities);
+    j["createdAt"] = to_json_value(value.created_at);
+  if (value.started_at.has_value()) {
+    j["startedAt"] = to_json_value(*value.started_at);
+  }
+  if (value.finished_at.has_value()) {
+    j["finishedAt"] = to_json_value(*value.finished_at);
+  }
+  if (value.error.has_value()) {
+    j["error"] = to_json_value(*value.error);
+  }
+  return j;
+}
+
+std::string dump(const ExecutionSession& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionSession& lhs, const ExecutionSession& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.run_id == rhs.run_id
+      && lhs.request_id == rhs.request_id
+      && lhs.target_id == rhs.target_id
+      && lhs.artifact_ref == rhs.artifact_ref
+      && lhs.status == rhs.status
+      && lhs.state_version == rhs.state_version
+      && lhs.capabilities == rhs.capabilities
+      && lhs.created_at == rhs.created_at
+      && lhs.started_at == rhs.started_at
+      && lhs.finished_at == rhs.finished_at
+      && lhs.error == rhs.error;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionCommand& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionCommand";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "commandId",
+      "runId",
+      "action",
+      "expectedStateVersion",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionCommand: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "ExecutionCommand");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.execution-command/v1") {
+        error = std::string("ExecutionCommand.schema") + ": expected constant " + "logicpilot.execution-command/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "ExecutionCommand");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("ExecutionCommand.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "commandId", "ExecutionCommand");
+      if (!value.is_string()) {
+        error = std::string("ExecutionCommand.commandId") + ": expected string";
+        return false;
+      }
+      out.command_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "runId", "ExecutionCommand");
+      if (!value.is_string()) {
+        error = std::string("ExecutionCommand.runId") + ": expected string";
+        return false;
+      }
+      out.run_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "action", "ExecutionCommand");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.action, enum_error)) {
+        error = std::string("ExecutionCommand.action") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "expectedStateVersion", "ExecutionCommand");
+      if (!value.is_number_integer()) {
+        error = std::string("ExecutionCommand.expectedStateVersion") + ": expected integer";
+        return false;
+      }
+      out.expected_state_version = value.get<std::int64_t>();
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionCommand& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionCommand& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["commandId"] = to_json_value(value.command_id);
+    j["runId"] = to_json_value(value.run_id);
+    j["action"] = to_json(value.action);
+    j["expectedStateVersion"] = to_json_value(value.expected_state_version);
+  return j;
+}
+
+std::string dump(const ExecutionCommand& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionCommand& lhs, const ExecutionCommand& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.command_id == rhs.command_id
+      && lhs.run_id == rhs.run_id
+      && lhs.action == rhs.action
+      && lhs.expected_state_version == rhs.expected_state_version;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionCommandAck& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionCommandAck";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "commandId",
+      "runId",
+      "accepted",
+      "stateVersion",
+      "status",
+      "errorCode",
+      "error",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionCommandAck: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "ExecutionCommandAck");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.execution-command-ack/v1") {
+        error = std::string("ExecutionCommandAck.schema") + ": expected constant " + "logicpilot.execution-command-ack/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "ExecutionCommandAck");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("ExecutionCommandAck.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "commandId", "ExecutionCommandAck");
+      if (!value.is_string()) {
+        error = std::string("ExecutionCommandAck.commandId") + ": expected string";
+        return false;
+      }
+      out.command_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "runId", "ExecutionCommandAck");
+      if (!value.is_string()) {
+        error = std::string("ExecutionCommandAck.runId") + ": expected string";
+        return false;
+      }
+      out.run_id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "accepted", "ExecutionCommandAck");
+      if (!value.is_boolean()) {
+        error = std::string("ExecutionCommandAck.accepted") + ": expected boolean";
+        return false;
+      }
+      out.accepted = value.get<bool>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "stateVersion", "ExecutionCommandAck");
+      if (!value.is_number_integer()) {
+        error = std::string("ExecutionCommandAck.stateVersion") + ": expected integer";
+        return false;
+      }
+      out.state_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "status", "ExecutionCommandAck");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.status, enum_error)) {
+        error = std::string("ExecutionCommandAck.status") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    auto field_it = j.find("errorCode");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionCommandAck.errorCode") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.error_code = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("error");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionCommandAck.error") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.error = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionCommandAck& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionCommandAck& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["commandId"] = to_json_value(value.command_id);
+    j["runId"] = to_json_value(value.run_id);
+    j["accepted"] = to_json_value(value.accepted);
+    j["stateVersion"] = to_json_value(value.state_version);
+    j["status"] = to_json(value.status);
+  if (value.error_code.has_value()) {
+    j["errorCode"] = to_json_value(*value.error_code);
+  }
+  if (value.error.has_value()) {
+    j["error"] = to_json_value(*value.error);
+  }
+  return j;
+}
+
+std::string dump(const ExecutionCommandAck& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionCommandAck& lhs, const ExecutionCommandAck& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.command_id == rhs.command_id
+      && lhs.run_id == rhs.run_id
+      && lhs.accepted == rhs.accepted
+      && lhs.state_version == rhs.state_version
+      && lhs.status == rhs.status
+      && lhs.error_code == rhs.error_code
+      && lhs.error == rhs.error;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionEvent& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionEvent";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "schema",
+      "contractVersion",
+      "runId",
+      "replicationId",
+      "seq",
+      "kind",
+      "payload",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionEvent: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "schema", "ExecutionEvent");
+      if (!value.is_string() || value.get<std::string>() != "logicpilot.execution-event/v1") {
+        error = std::string("ExecutionEvent.schema") + ": expected constant " + "logicpilot.execution-event/v1";
+        return false;
+      }
+      out.schema = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "contractVersion", "ExecutionEvent");
+      if (!value.is_number_integer() || value.get<std::int64_t>() != 1) {
+        error = std::string("ExecutionEvent.contractVersion") + ": expected constant 1";
+        return false;
+      }
+      out.contract_version = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "runId", "ExecutionEvent");
+      if (!value.is_string()) {
+        error = std::string("ExecutionEvent.runId") + ": expected string";
+        return false;
+      }
+      out.run_id = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("replicationId");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionEvent.replicationId") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.replication_id = std::move(parsed);
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "seq", "ExecutionEvent");
+      if (!value.is_number_integer()) {
+        error = std::string("ExecutionEvent.seq") + ": expected integer";
+        return false;
+      }
+      out.seq = value.get<std::int64_t>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "kind", "ExecutionEvent");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.kind, enum_error)) {
+        error = std::string("ExecutionEvent.kind") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "payload", "ExecutionEvent");
+      out.payload = value;
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionEvent& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionEvent& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["schema"] = to_json_value(value.schema);
+    j["contractVersion"] = to_json_value(value.contract_version);
+    j["runId"] = to_json_value(value.run_id);
+  if (value.replication_id.has_value()) {
+    j["replicationId"] = to_json_value(*value.replication_id);
+  }
+    j["seq"] = to_json_value(value.seq);
+    j["kind"] = to_json(value.kind);
+    j["payload"] = to_json_value(value.payload);
+  return j;
+}
+
+std::string dump(const ExecutionEvent& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionEvent& lhs, const ExecutionEvent& rhs) {
+  return lhs.schema == rhs.schema
+      && lhs.contract_version == rhs.contract_version
+      && lhs.run_id == rhs.run_id
+      && lhs.replication_id == rhs.replication_id
+      && lhs.seq == rhs.seq
+      && lhs.kind == rhs.kind
+      && lhs.payload.dump() == rhs.payload.dump();
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionConformance& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionConformance";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "passed",
+      "checks",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionConformance: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "passed", "ExecutionConformance");
+      if (!value.is_boolean()) {
+        error = std::string("ExecutionConformance.passed") + ": expected boolean";
+        return false;
+      }
+      out.passed = value.get<bool>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "checks", "ExecutionConformance");
+      out.checks = value;
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionConformance& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionConformance& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["passed"] = to_json_value(value.passed);
+    j["checks"] = to_json_value(value.checks);
+  return j;
+}
+
+std::string dump(const ExecutionConformance& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionConformance& lhs, const ExecutionConformance& rhs) {
+  return lhs.passed == rhs.passed
+      && lhs.checks.dump() == rhs.checks.dump();
+}
+
+bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidenceDetails& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for ExecutionEvidenceDetails";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "kind",
+      "summary",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "ExecutionEvidenceDetails: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "kind", "ExecutionEvidenceDetails");
+      if (!value.is_string()) {
+        error = std::string("ExecutionEvidenceDetails.kind") + ": expected string";
+        return false;
+      }
+      out.kind = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "summary", "ExecutionEvidenceDetails");
+      out.summary = value;
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, ExecutionEvidenceDetails& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const ExecutionEvidenceDetails& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["kind"] = to_json_value(value.kind);
+    j["summary"] = to_json_value(value.summary);
+  return j;
+}
+
+std::string dump(const ExecutionEvidenceDetails& value) { return to_json(value).dump(2); }
+
+bool operator==(const ExecutionEvidenceDetails& lhs, const ExecutionEvidenceDetails& rhs) {
+  return lhs.kind == rhs.kind
+      && lhs.summary.dump() == rhs.summary.dump();
+}
+
 bool parse_json(const nlohmann::ordered_json& j, RuntimeRef& out, std::string& error) {
   if (!j.is_object()) {
     error = "expected object for RuntimeRef";
@@ -3934,6 +4894,7 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionTarget& out, std::stri
       "titleKey",
       "artifactRef",
       "runtime",
+      "capabilities",
       "options",
   };
   for (auto it = j.begin(); it != j.end(); ++it) {
@@ -3997,6 +4958,17 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionTarget& out, std::stri
       }
   }
   {
+    auto field_it = j.find("capabilities");
+    if (field_it != j.end()) {
+      ExecutionProviderCapabilities parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("ExecutionTarget.capabilities") + ": " + error;
+        return false;
+      }
+      out.capabilities = std::move(parsed);
+    }
+  }
+  {
     auto field_it = j.find("options");
     if (field_it != j.end()) {
       JsonValue parsed{};
@@ -4028,6 +5000,9 @@ nlohmann::ordered_json to_json(const ExecutionTarget& value) {
   }
     j["artifactRef"] = to_json(value.artifact_ref);
     j["runtime"] = to_json(value.runtime);
+  if (value.capabilities.has_value()) {
+    j["capabilities"] = to_json(*value.capabilities);
+  }
   if (value.options.has_value()) {
     j["options"] = to_json_value(*value.options);
   }
@@ -4043,6 +5018,7 @@ bool operator==(const ExecutionTarget& lhs, const ExecutionTarget& rhs) {
       && lhs.title_key == rhs.title_key
       && lhs.artifact_ref == rhs.artifact_ref
       && lhs.runtime == rhs.runtime
+      && lhs.capabilities == rhs.capabilities
       && (lhs.options.has_value() == rhs.options.has_value()
       && (!lhs.options.has_value() || lhs.options->dump() == rhs.options->dump()));
 }
@@ -4131,7 +5107,9 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionRequest& out, std::str
       "schema",
       "contractVersion",
       "requestId",
+      "runId",
       "targetId",
+      "artifactRef",
       "seed",
       "inputs",
       "budget",
@@ -4171,12 +5149,35 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionRequest& out, std::str
       out.request_id = value.get<std::string>();
   }
   {
+    auto field_it = j.find("runId");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionRequest.runId") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.run_id = std::move(parsed);
+    }
+  }
+  {
     const auto& value = field_or_fail(error, j, "targetId", "ExecutionRequest");
       if (!value.is_string()) {
         error = std::string("ExecutionRequest.targetId") + ": expected string";
         return false;
       }
       out.target_id = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("artifactRef");
+    if (field_it != j.end()) {
+      ArtifactRef parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("ExecutionRequest.artifactRef") + ": " + error;
+        return false;
+      }
+      out.artifact_ref = std::move(parsed);
+    }
   }
   {
     auto field_it = j.find("seed");
@@ -4228,7 +5229,13 @@ nlohmann::ordered_json to_json(const ExecutionRequest& value) {
     j["schema"] = to_json_value(value.schema);
     j["contractVersion"] = to_json_value(value.contract_version);
     j["requestId"] = to_json_value(value.request_id);
+  if (value.run_id.has_value()) {
+    j["runId"] = to_json_value(*value.run_id);
+  }
     j["targetId"] = to_json_value(value.target_id);
+  if (value.artifact_ref.has_value()) {
+    j["artifactRef"] = to_json(*value.artifact_ref);
+  }
   if (value.seed.has_value()) {
     j["seed"] = to_json_value(*value.seed);
   }
@@ -4247,7 +5254,9 @@ bool operator==(const ExecutionRequest& lhs, const ExecutionRequest& rhs) {
   return lhs.schema == rhs.schema
       && lhs.contract_version == rhs.contract_version
       && lhs.request_id == rhs.request_id
+      && lhs.run_id == rhs.run_id
       && lhs.target_id == rhs.target_id
+      && lhs.artifact_ref == rhs.artifact_ref
       && lhs.seed == rhs.seed
       && (lhs.inputs.has_value() == rhs.inputs.has_value()
       && (!lhs.inputs.has_value() || lhs.inputs->dump() == rhs.inputs->dump()))
@@ -4465,6 +5474,12 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidence& out, std::st
       "contractVersion",
       "runId",
       "digest",
+      "methods",
+      "irDigest",
+      "runtimeKind",
+      "method",
+      "conformance",
+      "details",
       "traceRef",
       "metrics",
   };
@@ -4509,6 +5524,82 @@ bool parse_json(const nlohmann::ordered_json& j, ExecutionEvidence& out, std::st
         return false;
       }
       out.digest = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("methods");
+    if (field_it != j.end()) {
+      std::vector<std::string> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("ExecutionEvidence.methods") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!item.is_string()) {
+          error = std::string("ExecutionEvidence.methods") + ": expected string item";
+          return false;
+        }
+        parsed.emplace_back() = item.get<std::string>();
+      }
+      out.methods = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("irDigest");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionEvidence.irDigest") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.ir_digest = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("runtimeKind");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionEvidence.runtimeKind") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.runtime_kind = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("method");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("ExecutionEvidence.method") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.method = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("conformance");
+    if (field_it != j.end()) {
+      ExecutionConformance parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("ExecutionEvidence.conformance") + ": " + error;
+        return false;
+      }
+      out.conformance = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("details");
+    if (field_it != j.end()) {
+      ExecutionEvidenceDetails parsed{};
+      if (!parse_json((*field_it), parsed, error)) {
+        error = std::string("ExecutionEvidence.details") + ": " + error;
+        return false;
+      }
+      out.details = std::move(parsed);
+    }
   }
   {
     auto field_it = j.find("traceRef");
@@ -4559,6 +5650,24 @@ nlohmann::ordered_json to_json(const ExecutionEvidence& value) {
     j["contractVersion"] = to_json_value(value.contract_version);
     j["runId"] = to_json_value(value.run_id);
     j["digest"] = to_json_value(value.digest);
+  if (value.methods.has_value()) {
+    j["methods"] = to_json_value(*value.methods);
+  }
+  if (value.ir_digest.has_value()) {
+    j["irDigest"] = to_json_value(*value.ir_digest);
+  }
+  if (value.runtime_kind.has_value()) {
+    j["runtimeKind"] = to_json_value(*value.runtime_kind);
+  }
+  if (value.method.has_value()) {
+    j["method"] = to_json_value(*value.method);
+  }
+  if (value.conformance.has_value()) {
+    j["conformance"] = to_json(*value.conformance);
+  }
+  if (value.details.has_value()) {
+    j["details"] = to_json(*value.details);
+  }
   if (value.trace_ref.has_value()) {
     j["traceRef"] = to_json(*value.trace_ref);
   }
@@ -4575,6 +5684,12 @@ bool operator==(const ExecutionEvidence& lhs, const ExecutionEvidence& rhs) {
       && lhs.contract_version == rhs.contract_version
       && lhs.run_id == rhs.run_id
       && lhs.digest == rhs.digest
+      && lhs.methods == rhs.methods
+      && lhs.ir_digest == rhs.ir_digest
+      && lhs.runtime_kind == rhs.runtime_kind
+      && lhs.method == rhs.method
+      && lhs.conformance == rhs.conformance
+      && lhs.details == rhs.details
       && lhs.trace_ref == rhs.trace_ref
       && lhs.metrics == rhs.metrics;
 }
@@ -6621,11 +7736,11 @@ bool parse_json(const nlohmann::ordered_json& j, PluginPaletteContribution& out,
   }
   {
     const auto& value = field_or_fail(error, j, "canvas", "PluginPaletteContribution");
-      if (!value.is_string()) {
-        error = std::string("PluginPaletteContribution.canvas") + ": expected string";
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.canvas, enum_error)) {
+        error = std::string("PluginPaletteContribution.canvas") + ": " + enum_error;
         return false;
       }
-      out.canvas = value.get<std::string>();
   }
   {
     const auto& value = field_or_fail(error, j, "itemKind", "PluginPaletteContribution");
@@ -6688,7 +7803,7 @@ bool parse(std::string_view text, PluginPaletteContribution& out, std::string& e
 nlohmann::ordered_json to_json(const PluginPaletteContribution& value) {
   nlohmann::ordered_json j = nlohmann::ordered_json::object();
     j["id"] = to_json_value(value.id);
-    j["canvas"] = to_json_value(value.canvas);
+    j["canvas"] = to_json(value.canvas);
     j["itemKind"] = to_json_value(value.item_kind);
     j["label"] = to_json_value(value.label);
   if (value.icon.has_value()) {
@@ -7402,6 +8517,8 @@ bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::strin
       "requires",
       "entrypoints",
       "permissions",
+      "services",
+      "executionTargets",
       "trust",
       "config",
       "migrations",
@@ -7531,6 +8648,40 @@ bool parse_json(const nlohmann::ordered_json& j, PluginManifest& out, std::strin
       }
   }
   {
+    auto field_it = j.find("services");
+    if (field_it != j.end()) {
+      std::vector<PluginService> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("PluginManifest.services") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("PluginManifest.services") + ": " + error;
+          return false;
+        }
+      }
+      out.services = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("executionTargets");
+    if (field_it != j.end()) {
+      std::vector<ExecutionTarget> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("PluginManifest.executionTargets") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("PluginManifest.executionTargets") + ": " + error;
+          return false;
+        }
+      }
+      out.execution_targets = std::move(parsed);
+    }
+  }
+  {
     const auto& value = field_or_fail(error, j, "trust", "PluginManifest");
       if (!parse_json(value, out.trust, error)) {
         error = std::string("PluginManifest.trust") + ": " + error;
@@ -7622,6 +8773,12 @@ nlohmann::ordered_json to_json(const PluginManifest& value) {
     j["requires"] = to_json_value(value.requires_);
     j["entrypoints"] = to_json(value.entrypoints);
     j["permissions"] = to_json_value(value.permissions);
+  if (value.services.has_value()) {
+    j["services"] = to_json_value(*value.services);
+  }
+  if (value.execution_targets.has_value()) {
+    j["executionTargets"] = to_json_value(*value.execution_targets);
+  }
     j["trust"] = to_json(value.trust);
   if (value.config.has_value()) {
     j["config"] = to_json_value(*value.config);
@@ -7652,6 +8809,8 @@ bool operator==(const PluginManifest& lhs, const PluginManifest& rhs) {
       && lhs.requires_ == rhs.requires_
       && lhs.entrypoints == rhs.entrypoints
       && lhs.permissions == rhs.permissions
+      && lhs.services == rhs.services
+      && lhs.execution_targets == rhs.execution_targets
       && lhs.trust == rhs.trust
       && (lhs.config.has_value() == rhs.config.has_value()
       && (!lhs.config.has_value() || lhs.config->dump() == rhs.config->dump()))
@@ -7755,6 +8914,7 @@ bool parse_json(const nlohmann::ordered_json& j, PluginEntrypoints& out, std::st
       "web",
       "node",
       "wasm",
+      "component",
       "native",
       "data",
   };
@@ -7802,6 +8962,18 @@ bool parse_json(const nlohmann::ordered_json& j, PluginEntrypoints& out, std::st
       }
       parsed = (*field_it).get<std::string>();
       out.wasm = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("component");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginEntrypoints.component") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.component = std::move(parsed);
     }
   }
   {
@@ -7853,6 +9025,9 @@ nlohmann::ordered_json to_json(const PluginEntrypoints& value) {
   if (value.wasm.has_value()) {
     j["wasm"] = to_json_value(*value.wasm);
   }
+  if (value.component.has_value()) {
+    j["component"] = to_json_value(*value.component);
+  }
   if (value.native.has_value()) {
     j["native"] = to_json_value(*value.native);
   }
@@ -7868,6 +9043,7 @@ bool operator==(const PluginEntrypoints& lhs, const PluginEntrypoints& rhs) {
   return lhs.web == rhs.web
       && lhs.node == rhs.node
       && lhs.wasm == rhs.wasm
+      && lhs.component == rhs.component
       && lhs.native == rhs.native
       && lhs.data == rhs.data;
 }
@@ -8620,6 +9796,154 @@ bool operator==(const PluginRuntimeSession& lhs, const PluginRuntimeSession& rhs
       && lhs.trust == rhs.trust
       && lhs.grants == rhs.grants
       && lhs.expires_at == rhs.expires_at;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginServiceMethod& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginServiceMethod";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "name",
+      "input",
+      "output",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginServiceMethod: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "name", "PluginServiceMethod");
+      if (!value.is_string()) {
+        error = std::string("PluginServiceMethod.name") + ": expected string";
+        return false;
+      }
+      out.name = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("input");
+    if (field_it != j.end()) {
+      JsonSchemaFragment parsed{};
+      parsed = (*field_it);
+      out.input = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("output");
+    if (field_it != j.end()) {
+      JsonSchemaFragment parsed{};
+      parsed = (*field_it);
+      out.output = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginServiceMethod& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginServiceMethod& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["name"] = to_json_value(value.name);
+  if (value.input.has_value()) {
+    j["input"] = to_json_value(*value.input);
+  }
+  if (value.output.has_value()) {
+    j["output"] = to_json_value(*value.output);
+  }
+  return j;
+}
+
+std::string dump(const PluginServiceMethod& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginServiceMethod& lhs, const PluginServiceMethod& rhs) {
+  return lhs.name == rhs.name
+      && (lhs.input.has_value() == rhs.input.has_value()
+      && (!lhs.input.has_value() || lhs.input->dump() == rhs.input->dump()))
+      && (lhs.output.has_value() == rhs.output.has_value()
+      && (!lhs.output.has_value() || lhs.output->dump() == rhs.output->dump()));
+}
+
+bool parse_json(const nlohmann::ordered_json& j, PluginService& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginService";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "name",
+      "methods",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginService: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "name", "PluginService");
+      if (!value.is_string()) {
+        error = std::string("PluginService.name") + ": expected string";
+        return false;
+      }
+      out.name = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "methods", "PluginService");
+      if (!value.is_array()) {
+        error = std::string("PluginService.methods") + ": expected array";
+        return false;
+      }
+      for (const auto& item : value) {
+        if (!parse_json(item, out.methods.emplace_back(), error)) {
+          error = std::string("PluginService.methods") + ": " + error;
+          return false;
+        }
+      }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginService& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginService& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["name"] = to_json_value(value.name);
+    j["methods"] = to_json_value(value.methods);
+  return j;
+}
+
+std::string dump(const PluginService& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginService& lhs, const PluginService& rhs) {
+  return lhs.name == rhs.name
+      && lhs.methods == rhs.methods;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, ViewQuery& out, std::string& error) {

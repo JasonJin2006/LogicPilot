@@ -11,9 +11,26 @@ interface host-random {
   random-u32: func() -> u32;
 }
 
+interface host-service {
+  record capability-request {
+    capability: string,
+    operation: string,
+    payload-json: string,
+  }
+
+  record capability-response {
+    ok: bool,
+    payload-json: string,
+    error-code: option<string>,
+  }
+
+  invoke: func(request: capability-request) -> capability-response;
+}
+
 world plugin {
   import host-log;
   import host-random;
+  import host-service;
 
   export logicpilot-abi-version: func() -> u32;
   export activate: func() -> result<_, string>;

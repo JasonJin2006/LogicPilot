@@ -35,6 +35,11 @@
           "description": "Permissions requested by this plugin. Granting happens out of band and is recorded in the lockfile.",
           "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" }
         },
+        "services": {
+          "type": "array",
+          "description": "Services this plugin may provide over the capability broker. Runtime methods must be declared here.",
+          "items": { "$ref": "plugin-services.schema.json#/$defs/PluginService" }
+        },
         "trust": { "$ref": "permission-trust.schema.json#/$defs/TrustRequirement" },
         "config": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
         "migrations": {
@@ -70,6 +75,7 @@
         "web": { "type": "string", "description": "ESM module path for the IDE web host (T4 trusted ESM)." },
         "node": { "type": "string", "description": "Node service worker module path." },
         "wasm": { "type": "string", "description": "WASM module path for sandboxed validators/runtimes (T2)." },
+        "component": { "type": "string", "description": "WASM Component Model path for the Wasmtime sidecar (T2)." },
         "native": { "type": "string", "description": "Dynamic library path for the C ABI host (T5, requires explicit approval and restart)." },
         "data": { "type": "string", "description": "Data-only asset root for knowledge/diagnostic/notation contributions (T0/T1)." }
       }

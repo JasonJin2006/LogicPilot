@@ -86,6 +86,18 @@
         "contractVersion": { "const": 1 },
         "runId": { "type": "string", "minLength": 1 },
         "digest": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "methods": {
+          "type": "array",
+          "description": "Semantic methods represented by this evidence; mixed runs list every method instead of inventing one runtime kind.",
+          "items": { "type": "string", "enum": ["process", "devs", "continuous", "agent"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "irDigest": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
+        "runtimeKind": { "type": "string", "enum": ["process", "devs", "continuous", "agent"] },
+        "method": { "type": "string", "enum": ["process", "devs", "sd", "agent"] },
+        "conformance": { "$ref": "#/$defs/ExecutionConformance" },
+        "details": { "$ref": "#/$defs/ExecutionEvidenceDetails" },
         "traceRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
         "metrics": {
           "type": "object",

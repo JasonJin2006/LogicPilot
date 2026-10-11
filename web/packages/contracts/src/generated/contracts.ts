@@ -313,6 +313,89 @@ export interface DiagnosticInstance {
   readonly availableFixIds?: ReadonlyArray<FixId>;
 }
 
+// --- ExecutionSessionState (execution-session.schema.json) ---
+export type ExecutionSessionState = "queued" | "preparing" | "running" | "paused" | "finalizing" | "completed" | "cancelling" | "cancelled" | "failed";
+
+// --- ExecutionProviderCapabilities (execution-session.schema.json) ---
+export interface ExecutionProviderCapabilities {
+  readonly pause?: boolean;
+  readonly resume?: boolean;
+  readonly eventStep?: boolean;
+  readonly cancel: boolean;
+  readonly telemetry: boolean;
+  readonly snapshot: boolean;
+  readonly maxConcurrentRuns?: number;
+}
+
+// --- ExecutionSession (execution-session.schema.json) ---
+export interface ExecutionSession {
+  readonly schema: "logicpilot.execution-session/v1";
+  readonly contractVersion: 1;
+  readonly runId: string;
+  readonly requestId: string;
+  readonly targetId: CapabilityId;
+  readonly artifactRef?: ArtifactRef;
+  readonly status: ExecutionSessionState;
+  readonly stateVersion: number;
+  readonly capabilities: ExecutionProviderCapabilities;
+  readonly createdAt: Iso8601Timestamp;
+  readonly startedAt?: Iso8601Timestamp;
+  readonly finishedAt?: Iso8601Timestamp;
+  readonly error?: string;
+}
+
+// --- ExecutionCommandAction (execution-session.schema.json) ---
+export type ExecutionCommandAction = "pause" | "resume" | "step" | "stop" | "cancel";
+
+// --- ExecutionCommand (execution-session.schema.json) ---
+export interface ExecutionCommand {
+  readonly schema: "logicpilot.execution-command/v1";
+  readonly contractVersion: 1;
+  readonly commandId: string;
+  readonly runId: string;
+  readonly action: ExecutionCommandAction;
+  readonly expectedStateVersion: number;
+}
+
+// --- ExecutionCommandAck (execution-session.schema.json) ---
+export interface ExecutionCommandAck {
+  readonly schema: "logicpilot.execution-command-ack/v1";
+  readonly contractVersion: 1;
+  readonly commandId: string;
+  readonly runId: string;
+  readonly accepted: boolean;
+  readonly stateVersion: number;
+  readonly status: ExecutionSessionState;
+  readonly errorCode?: string;
+  readonly error?: string;
+}
+
+// --- ExecutionEventKind (execution-session.schema.json) ---
+export type ExecutionEventKind = "snapshot" | "state" | "telemetry" | "diagnostic" | "gap" | "terminal";
+
+// --- ExecutionEvent (execution-session.schema.json) ---
+export interface ExecutionEvent {
+  readonly schema: "logicpilot.execution-event/v1";
+  readonly contractVersion: 1;
+  readonly runId: string;
+  readonly replicationId?: string;
+  readonly seq: number;
+  readonly kind: ExecutionEventKind;
+  readonly payload: JsonValue;
+}
+
+// --- ExecutionConformance (execution-target.schema.json) ---
+export interface ExecutionConformance {
+  readonly passed: boolean;
+  readonly checks: JsonValue;
+}
+
+// --- ExecutionEvidenceDetails (execution-target.schema.json) ---
+export interface ExecutionEvidenceDetails {
+  readonly kind: "process" | "devs" | "continuous" | "agent";
+  readonly summary: JsonValue;
+}
+
 // --- RuntimeKind (execution-target.schema.json) ---
 export type RuntimeKind = "interpreter" | "wasm" | "native" | "external";
 
@@ -331,6 +414,7 @@ export interface ExecutionTarget {
   readonly titleKey?: LocalizedKey;
   readonly artifactRef: ArtifactRef;
   readonly runtime: RuntimeRef;
+  readonly capabilities?: ExecutionProviderCapabilities;
   readonly options?: JsonValue;
 }
 
@@ -345,7 +429,9 @@ export interface ExecutionRequest {
   readonly schema: "logicpilot.execution-request/v1";
   readonly contractVersion: 1;
   readonly requestId: string;
+  readonly runId?: string;
   readonly targetId: CapabilityId;
+  readonly artifactRef?: ArtifactRef;
   readonly seed?: number;
   readonly inputs?: JsonValue;
   readonly budget?: ExecutionBudget;
@@ -376,6 +462,12 @@ export interface ExecutionEvidence {
   readonly contractVersion: 1;
   readonly runId: string;
   readonly digest: Sha256Hex;
+  readonly methods?: ReadonlyArray<"process" | "devs" | "continuous" | "agent">;
+  readonly irDigest?: Sha256Hex;
+  readonly runtimeKind?: "process" | "devs" | "continuous" | "agent";
+  readonly method?: "process" | "devs" | "sd" | "agent";
+  readonly conformance?: ExecutionConformance;
+  readonly details?: ExecutionEvidenceDetails;
   readonly traceRef?: ArtifactRef;
   readonly metrics?: { readonly [key: string]: number };
 }
@@ -582,7 +674,7 @@ export interface PluginInstructionContribution {
 // --- PluginPaletteContribution (plugin-contributions.schema.json) ---
 export interface PluginPaletteContribution {
   readonly id: CapabilityId;
-  readonly canvas: "2d" | "3d" | "flow";
+  readonly canvas: CanvasEngineId;
   readonly itemKind: string;
   readonly label: string;
   readonly icon?: string;
@@ -659,6 +751,8 @@ export interface PluginManifest {
   readonly requires: ReadonlyArray<PluginDependency>;
   readonly entrypoints: PluginEntrypoints;
   readonly permissions: ReadonlyArray<PermissionId>;
+  readonly services?: ReadonlyArray<PluginService>;
+  readonly executionTargets?: ReadonlyArray<ExecutionTarget>;
   readonly trust: TrustRequirement;
   readonly config?: JsonSchemaFragment;
   readonly migrations?: ReadonlyArray<PluginMigration>;
@@ -678,6 +772,7 @@ export interface PluginEntrypoints {
   readonly web?: string;
   readonly node?: string;
   readonly wasm?: string;
+  readonly component?: string;
   readonly native?: string;
   readonly data?: string;
 }
@@ -743,6 +838,19 @@ export interface PluginRuntimeSession {
   readonly trust: TrustLevel;
   readonly grants: ReadonlyArray<PermissionGrant>;
   readonly expiresAt: Iso8601Timestamp;
+}
+
+// --- PluginServiceMethod (plugin-services.schema.json) ---
+export interface PluginServiceMethod {
+  readonly name: string;
+  readonly input?: JsonSchemaFragment;
+  readonly output?: JsonSchemaFragment;
+}
+
+// --- PluginService (plugin-services.schema.json) ---
+export interface PluginService {
+  readonly name: CapabilityId;
+  readonly methods: ReadonlyArray<PluginServiceMethod>;
 }
 
 // --- CanvasEngineId (view-notation.schema.json) ---

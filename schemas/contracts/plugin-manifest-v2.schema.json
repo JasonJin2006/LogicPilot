@@ -7,7 +7,18 @@
     "PluginManifest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "contractVersion", "id", "version", "apiVersion", "provides", "requires", "entrypoints", "permissions", "trust"],
+      "required": [
+        "schema",
+        "contractVersion",
+        "id",
+        "version",
+        "apiVersion",
+        "provides",
+        "requires",
+        "entrypoints",
+        "permissions",
+        "trust"
+      ],
       "properties": {
         "schema": { "const": "logicpilot.plugin-manifest/v2" },
         "contractVersion": { "const": 1 },
@@ -34,6 +45,16 @@
           "type": "array",
           "description": "Permissions requested by this plugin. Granting happens out of band and is recorded in the lockfile.",
           "items": { "$ref": "permission-trust.schema.json#/$defs/PermissionId" }
+        },
+        "services": {
+          "type": "array",
+          "description": "Services this plugin may provide over the capability broker. Runtime methods must be declared here.",
+          "items": { "$ref": "plugin-services.schema.json#/$defs/PluginService" }
+        },
+        "executionTargets": {
+          "type": "array",
+          "description": "Execution targets exposed by the plugin runtime. The host binds each target to the plugin's execution RPC and revokes it with the plugin lifecycle.",
+          "items": { "$ref": "execution-target.schema.json#/$defs/ExecutionTarget" }
         },
         "trust": { "$ref": "permission-trust.schema.json#/$defs/TrustRequirement" },
         "config": { "$ref": "common.schema.json#/$defs/JsonSchemaFragment" },
@@ -67,11 +88,27 @@
       "description": "Entrypoints per runtime host. The shell activates only the hosts matching the requested trust tier.",
       "additionalProperties": false,
       "properties": {
-        "web": { "type": "string", "description": "ESM module path for the IDE web host (T4 trusted ESM)." },
+        "web": {
+          "type": "string",
+          "description": "ESM module path for the IDE web host (T4 trusted ESM)."
+        },
         "node": { "type": "string", "description": "Node service worker module path." },
-        "wasm": { "type": "string", "description": "WASM module path for sandboxed validators/runtimes (T2)." },
-        "native": { "type": "string", "description": "Dynamic library path for the C ABI host (T5, requires explicit approval and restart)." },
-        "data": { "type": "string", "description": "Data-only asset root for knowledge/diagnostic/notation contributions (T0/T1)." }
+        "wasm": {
+          "type": "string",
+          "description": "WASM module path for sandboxed validators/runtimes (T2)."
+        },
+        "component": {
+          "type": "string",
+          "description": "WASM Component Model path for the Wasmtime sidecar (T2)."
+        },
+        "native": {
+          "type": "string",
+          "description": "Dynamic library path for the C ABI host (T5, requires explicit approval and restart)."
+        },
+        "data": {
+          "type": "string",
+          "description": "Data-only asset root for knowledge/diagnostic/notation contributions (T0/T1)."
+        }
       }
     },
     "PluginMigration": {
@@ -81,7 +118,10 @@
       "properties": {
         "fromVersion": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
         "toVersion": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
-        "script": { "type": "string", "description": "Migration script reference; data-only migrations may be declarative." }
+        "script": {
+          "type": "string",
+          "description": "Migration script reference; data-only migrations may be declarative."
+        }
       }
     },
     "PluginIntegrity": {
@@ -104,7 +144,10 @@
         "version": { "$ref": "common.schema.json#/$defs/SemanticVersion" },
         "apiVersion": { "type": "integer", "minimum": 1 },
         "sha256": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
-        "source": { "type": "string", "description": "Origin (builtin, marketplace URL, local path, ...)." },
+        "source": {
+          "type": "string",
+          "description": "Origin (builtin, marketplace URL, local path, ...)."
+        },
         "trust": { "$ref": "permission-trust.schema.json#/$defs/TrustLevel" },
         "permissions": {
           "type": "array",

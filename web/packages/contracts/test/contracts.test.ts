@@ -17,6 +17,7 @@ const validManifest = {
   requires: [{ id: 'logicpilot.graph2d' }],
   entrypoints: { data: 'plugins/process/' },
   permissions: ['knowledge.draft.write'],
+  services: [{ name: 'logicpilot.example', methods: [{ name: 'ping' }] }],
   trust: { minLevel: 't0' },
 };
 
@@ -41,6 +42,15 @@ describe('round-trip gate', () => {
   it('validates a well-formed plugin manifest', () => {
     const result = validateContract('PluginManifest', validManifest);
     expect(result.ok).toBe(true);
+  });
+
+  it('validates declared service names and rejects undeclared method shapes', () => {
+    expect(validateContract('PluginManifest', validManifest).ok).toBe(true);
+    const invalid = {
+      ...validManifest,
+      services: [{ name: 'logicpilot.example', methods: [{ name: 'not valid' }] }],
+    };
+    expect(validateContract('PluginManifest', invalid).ok).toBe(false);
   });
 
   it('JSON text round-trips through parse without loss', () => {
@@ -143,6 +153,99 @@ describe('version check gate', () => {
   it('rejects unsupported plugin apiVersion values', () => {
     expect(isSupportedPluginApiVersion(1)).toBe(true);
     expect(isSupportedPluginApiVersion(99)).toBe(false);
+  });
+});
+
+describe('execution session contract gate', () => {
+  const capabilities = {
+    cancel: true,
+    telemetry: true,
+    snapshot: true,
+    pause: true,
+    resume: true,
+    eventStep: true,
+  };
+
+  const session = {
+    schema: 'logicpilot.execution-session/v1',
+    contractVersion: 1,
+    runId: 'run-1',
+    requestId: 'request-1',
+    targetId: 'logicpilot.execution.process',
+    status: 'queued',
+    stateVersion: 0,
+    capabilities,
+    createdAt: '2026-09-05T00:00:00.000Z',
+  };
+
+  it('validates a session, command, acknowledgement and event envelope', () => {
+    expect(validateContract('ExecutionSession', session).ok).toBe(true);
+    expect(
+      validateContract('ExecutionCommand', {
+        schema: 'logicpilot.execution-command/v1',
+        contractVersion: 1,
+        commandId: 'command-1',
+        runId: 'run-1',
+        action: 'pause',
+        expectedStateVersion: 0,
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateContract('ExecutionCommandAck', {
+        schema: 'logicpilot.execution-command-ack/v1',
+        contractVersion: 1,
+        commandId: 'command-1',
+        runId: 'run-1',
+        accepted: true,
+        stateVersion: 1,
+        status: 'paused',
+      }).ok,
+    ).toBe(true);
+    expect(
+      validateContract('ExecutionEvent', {
+        schema: 'logicpilot.execution-event/v1',
+        contractVersion: 1,
+        runId: 'run-1',
+        replicationId: 'rep-1',
+        seq: 0,
+        kind: 'snapshot',
+        payload: { state: 'paused' },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('accepts mixed-method evidence without inventing a single runtime kind', () => {
+    expect(
+      validateContract('ExecutionEvidence', {
+        schema: 'logicpilot.execution-evidence/v1',
+        contractVersion: 1,
+        runId: 'run-mixed',
+        digest: 'a'.repeat(64),
+        methods: ['process', 'agent'],
+        metrics: { throughput: 1 },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('rejects a command that uses an unknown action or loses its state guard', () => {
+    expect(
+      validateContract('ExecutionCommand', {
+        schema: 'logicpilot.execution-command/v1',
+        contractVersion: 1,
+        commandId: 'command-1',
+        runId: 'run-1',
+        action: 'restart',
+        expectedStateVersion: 0,
+      }).ok,
+    ).toBe(false);
+    const missingGuard = {
+      schema: 'logicpilot.execution-command/v1',
+      contractVersion: 1,
+      commandId: 'command-1',
+      runId: 'run-1',
+      action: 'cancel',
+    };
+    expect(validateContract('ExecutionCommand', missingGuard).ok).toBe(false);
   });
 });
 

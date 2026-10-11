@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://logicpilot.dev/schemas/contracts/v1/execution-session.schema.json",
+  "title": "LogicPilot execution session contracts",
+  "description": "Versioned lifecycle, control and subscription contracts for an execution run.",
+  "$defs": {
+    "ExecutionSessionState": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "preparing",
+        "running",
+        "paused",
+        "finalizing",
+        "completed",
+        "cancelling",
+        "cancelled",
+        "failed"
+      ]
+    },
+    "ExecutionProviderCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cancel", "telemetry", "snapshot"],
+      "properties": {
+        "pause": { "type": "boolean" },
+        "resume": { "type": "boolean" },
+        "eventStep": { "type": "boolean" },
+        "cancel": { "type": "boolean" },
+        "telemetry": { "type": "boolean" },
+        "snapshot": { "type": "boolean" },
+        "maxConcurrentRuns": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ExecutionSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "runId",
+        "requestId",
+        "targetId",
+        "status",
+        "stateVersion",
+        "capabilities",
+        "createdAt"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-session/v1" },
+        "contractVersion": { "const": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "requestId": { "type": "string", "minLength": 1 },
+        "targetId": { "$ref": "common.schema.json#/$defs/CapabilityId" },
+        "artifactRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },
+        "status": { "$ref": "#/$defs/ExecutionSessionState" },
+        "stateVersion": { "type": "integer", "minimum": 0 },
+        "capabilities": { "$ref": "#/$defs/ExecutionProviderCapabilities" },
+        "createdAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
+        "startedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
+        "finishedAt": { "$ref": "common.schema.json#/$defs/Iso8601Timestamp" },
+        "error": { "type": "string" }
+      }
+    },
+    "ExecutionCommandAction": {
+      "type": "string",
+      "enum": ["pause", "resume", "step", "stop", "cancel"]
+    },
+    "ExecutionCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "commandId",
+        "runId",
+        "action",
+        "expectedStateVersion"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-command/v1" },
+        "contractVersion": { "const": 1 },
+        "commandId": { "type": "string", "minLength": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "action": { "$ref": "#/$defs/ExecutionCommandAction" },
+        "expectedStateVersion": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ExecutionCommandAck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "contractVersion",
+        "commandId",
+        "runId",
+        "accepted",
+        "stateVersion",
+        "status"
+      ],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-command-ack/v1" },
+        "contractVersion": { "const": 1 },
+        "commandId": { "type": "string", "minLength": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "accepted": { "type": "boolean" },
+        "stateVersion": { "type": "integer", "minimum": 0 },
+        "status": { "$ref": "#/$defs/ExecutionSessionState" },
+        "errorCode": { "type": "string" },
+        "error": { "type": "string" }
+      }
+    },
+    "ExecutionEventKind": {
+      "type": "string",
+      "enum": ["snapshot", "state", "telemetry", "diagnostic", "gap", "terminal"]
+    },
+    "ExecutionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "contractVersion", "runId", "seq", "kind", "payload"],
+      "properties": {
+        "schema": { "const": "logicpilot.execution-event/v1" },
+        "contractVersion": { "const": 1 },
+        "runId": { "type": "string", "minLength": 1 },
+        "replicationId": { "type": "string", "minLength": 1 },
+        "seq": { "type": "integer", "minimum": 0 },
+        "kind": { "$ref": "#/$defs/ExecutionEventKind" },
+        "payload": { "x-freeform-json": true }
+      }
+    }
+  }
+}
