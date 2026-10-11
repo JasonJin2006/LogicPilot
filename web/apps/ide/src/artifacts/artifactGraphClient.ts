@@ -1,3 +1,4 @@
+import { generateDsl } from '@logicpilot/editor';
 import type { ModelDocument, ModelPatch } from '@logicpilot/editor';
 import { getAppConfig, sessionHeaders } from '../state/appConfig';
 
@@ -468,7 +469,10 @@ export async function persistModelSnapshot(
     artifactId: MODEL_ARTIFACT_ID,
     artifactKind: 'semantic-model',
     operationType: 'model-save',
-    payload: { document },
+    // Keep the canonical editor graph and its executable DSL together in the
+    // revision operation. Server-side execution can then materialize a pinned
+    // revision without trusting a second, caller-supplied DSL string.
+    payload: { document, dsl: generateDsl(document) },
     actor,
   });
   try {

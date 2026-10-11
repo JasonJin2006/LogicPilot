@@ -7,6 +7,9 @@
 // configures the scanned directories. Unset means no roots -> empty catalog.
 
 import { createPrivateKey } from 'node:crypto';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { createNativeSessionProvider } from './native-session-provider.mjs';
 
 import {
   createPluginCatalogHandler,
@@ -22,26 +25,53 @@ import {
   PluginSignatureKeyring,
   FileSystemPackageStore,
   NodePluginRuntime,
+  ExecutionTargetRegistry,
   pluginRootsFromEnv,
   FileSystemRegistryHistory,
   signPluginRegistry,
+  ExecutionService,
+  FileSystemExecutionRunStore,
 } from '../../../packages/plugin-catalog/dist/index.bundle.js';
 
 let nodePluginRuntime;
+let executionTargetRegistry;
+let executionService;
+let executionRunStore;
+let nativeExecutionDisposer;
 const registryClients = new Set();
 const registryHistory = [];
 const REGISTRY_HISTORY_LIMIT = 32;
 let registrySubscription;
 let registryHistoryStore;
 let registrySigner;
+/** In-flight kernel runs keyed by execution requestId (one controller per
+ * call; a retry with the same id aborts all of them). */
+const kernelRuns = new Map();
+
+/** Abort an in-flight kernel execution so the subprocess tree is reclaimed.
+ * Safe to call for unknown or already-finished request ids. */
+export function cancelKernelRun(requestId) {
+  if (typeof requestId !== 'string') return;
+  for (const controller of kernelRuns.get(requestId) ?? []) {
+    try {
+      controller.abort();
+    } catch {
+      // Already aborted or settled; cancellation is best effort.
+    }
+  }
+}
 
 /** GET /api/plugin-catalog[?scope=system|user|workspace] */
 export function handlePluginCatalog(req, res) {
   return createPluginCatalogHandler({ roots: pluginRootsFromEnv(process.env) })(req, res);
 }
 
-/** GET /api/plugins: catalog plus sanitized installed/audit state. */
-export function handlePlugins(req, res) {
+/** GET /api/plugins: catalog plus sanitized installed/audit state.
+ * POST /api/plugins: { action: 'uninstall', pluginId } - the operator-owned
+ * lifecycle surface. Installation stays draft-gated (approval chain); removal
+ * is an explicit user decision, so it gets the direct endpoint. */
+export async function handlePlugins(req, res) {
+  if (req.method === 'POST') return handlePluginLifecycle(req, res);
   const roots = pluginRootsFromEnv(process.env);
   const storeRoot = process.env.LOGICPILOT_PLUGIN_STORE_ROOT;
   const store = storeRoot ? new FileSystemPackageStore({ rootDir: storeRoot }) : undefined;
@@ -55,6 +85,77 @@ export function handlePlugins(req, res) {
         }
       : {}),
   })(req, res);
+}
+
+async function handlePluginLifecycle(req, res) {
+  const send = (status, payload) => {
+    if (res.headersSent || res.writableEnded) return;
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(JSON.stringify(payload));
+  };
+  let input;
+  try {
+    input = JSON.parse(await readArtifactBody(req));
+  } catch {
+    send(400, { ok: false, error: 'plugin lifecycle request body is not valid JSON' });
+    return;
+  }
+  if (input?.action !== 'uninstall' || typeof input.pluginId !== 'string' || !input.pluginId) {
+    send(400, {
+      ok: false,
+      error: "plugin lifecycle action 'uninstall' with a pluginId is required",
+    });
+    return;
+  }
+  const storeRoot = process.env.LOGICPILOT_PLUGIN_STORE_ROOT;
+  if (!storeRoot) {
+    send(503, { ok: false, error: 'plugin package store is not configured' });
+    return;
+  }
+  const store = new FileSystemPackageStore({ rootDir: storeRoot });
+  const manager = new PackageManager(store, new AuditLog());
+  try {
+    await manager.uninstall(input.pluginId);
+  } catch (error) {
+    const code = error?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    if (code === 'not-installed') {
+      send(404, { ok: false, error: message });
+      return;
+    }
+    if (code === 'dependency') {
+      send(409, { ok: false, error: message });
+      return;
+    }
+    if (code === 'invalid-manifest' || code === 'api-version') {
+      send(400, { ok: false, error: message });
+      return;
+    }
+    send(500, { ok: false, error: message });
+    return;
+  }
+  // The lockfile no longer carries the plugin; swap the runtime generation so
+  // its execution targets/sessions/services are revoked immediately instead
+  // of waiting for the next watch tick. A failed hot-swap does not undo the
+  // durable uninstall - the boundary is surfaced to the caller.
+  let runtimeRefreshError;
+  if (nodePluginRuntime) {
+    try {
+      await nodePluginRuntime.refresh();
+    } catch (error) {
+      runtimeRefreshError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  send(200, {
+    ok: true,
+    uninstalled: input.pluginId,
+    installed: (store.readLockfile()?.plugins ?? []).map((entry) => entry.id),
+    ...(runtimeRefreshError === undefined ? {} : { runtimeRefreshError }),
+  });
 }
 
 function draftStoreFromEnv() {
@@ -338,7 +439,7 @@ function artifactOutboxFromEnv() {
 
 let artifactOutboxDrain;
 
-async function drainArtifactOutbox(store, outbox) {
+export async function drainArtifactOutbox(store, outbox) {
   if (artifactOutboxDrain) return artifactOutboxDrain;
   artifactOutboxDrain = (async () => {
     for (;;) {
@@ -373,9 +474,13 @@ async function drainArtifactOutbox(store, outbox) {
           createdBy: entry.actor ?? 'runtime',
           digest: entry.digest,
         });
-        outbox.complete(entry.id, revision.id);
+        outbox.complete(entry.id, revision.id, entry.leaseToken);
       } catch (error) {
-        outbox.fail(entry.id, error instanceof Error ? error.message : String(error));
+        outbox.fail(
+          entry.id,
+          error instanceof Error ? error.message : String(error),
+          entry.leaseToken,
+        );
       }
     }
   })().finally(() => {
@@ -670,6 +775,15 @@ export async function startNodePluginRuntime() {
     );
   }
   const store = new FileSystemPackageStore({ rootDir: storeRoot });
+  executionTargetRegistry = new ExecutionTargetRegistry();
+  const executionStoreRoot = process.env.LOGICPILOT_EXECUTION_RUN_STORE_ROOT;
+  executionRunStore = executionStoreRoot
+    ? new FileSystemExecutionRunStore({ rootDir: executionStoreRoot })
+    : undefined;
+  executionService = new ExecutionService({
+    registry: executionTargetRegistry,
+    ...(executionRunStore === undefined ? {} : { store: executionRunStore }),
+  });
   nodePluginRuntime = new NodePluginRuntime({
     roots: pluginRootsFromEnv(process.env),
     defaultTrustLevel: trust,
@@ -679,17 +793,84 @@ export async function startNodePluginRuntime() {
     maxModuleBytes: 16 * 1024 * 1024,
     maxWasmBytes: 16 * 1024 * 1024,
     maxWasmMemoryBytes: 64 * 1024 * 1024,
+    executionTargetRegistry,
+    services: new Map([
+      [
+        'logicpilot.execution.kernel',
+        async (input) => {
+          if (!['process', 'devs', 'continuous', 'agent', 'generic'].includes(input?.runtimeKind))
+            throw new Error('execution kernel runtimeKind is required');
+          const root = process.env.LOGICPILOT_ROOT ?? process.cwd();
+          const module = await import(
+            pathToFileURL(join(root, 'scripts', 'runtime-adapters.mjs')).href
+          );
+          const requestId = typeof input?.requestId === 'string' ? input.requestId : undefined;
+          const controller = new AbortController();
+          let owners;
+          if (requestId !== undefined) {
+            owners = kernelRuns.get(requestId);
+            if (owners === undefined) {
+              owners = new Set();
+              kernelRuns.set(requestId, owners);
+            }
+            owners.add(controller);
+          }
+          try {
+            if (input.runtimeKind === 'generic') {
+              const generic = await import(pathToFileURL(join(root, 'scripts', 'ai-build.mjs')).href);
+              return await generic.runModelDsl({
+                dsl: input.dsl,
+                runParams: input.runParams,
+                budget: input.budget,
+                signal: controller.signal,
+              });
+            }
+            return await module.runRuntimeModel({ ...input, signal: controller.signal });
+          } finally {
+            if (owners !== undefined) {
+              owners.delete(controller);
+              if (owners.size === 0) kernelRuns.delete(requestId);
+            }
+          }
+        },
+      ],
+    ]),
   });
   await nodePluginRuntime.start();
+  if (process.env.LOGICPILOT_ENABLE_NATIVE_SESSION_HOST === '1') {
+    const host = process.env.LOGICPILOT_SESSION_HOST;
+    if (!host) throw new Error('LOGICPILOT_SESSION_HOST is required for native session host');
+    nativeExecutionDisposer = executionTargetRegistry.register(
+      createNativeSessionProvider({ host }),
+    );
+  }
   nodePluginRuntime.watch();
   ensureRegistrySubscription();
   return nodePluginRuntime;
+}
+
+/** Returns the execution registry owned by the active Node PluginRuntime.
+ * The HTTP execution surface uses this instead of maintaining a second
+ * registry whenever Node plugins are enabled. */
+export function getNodeExecutionTargetRegistry() {
+  return nodePluginRuntime?.executionTargetRegistry() ?? null;
+}
+
+/** Shared execution orchestration boundary. It owns run identity and
+ * idempotency while the registry remains the provider authority. */
+export function getNodeExecutionService() {
+  return executionService ?? null;
 }
 
 export async function stopNodePluginRuntime() {
   if (!nodePluginRuntime) return;
   await nodePluginRuntime.stop();
   nodePluginRuntime = undefined;
+  executionTargetRegistry = undefined;
+  executionService = undefined;
+  executionRunStore = undefined;
+  nativeExecutionDisposer?.();
+  nativeExecutionDisposer = undefined;
   registrySubscription?.();
   registrySubscription = undefined;
   for (const client of registryClients) {

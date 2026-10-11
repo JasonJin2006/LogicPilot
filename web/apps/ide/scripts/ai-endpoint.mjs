@@ -3,9 +3,15 @@
 // provider state/models/test, MCP capabilities/call, the assistant chat +
 // stream and the app config. Mounted by vite.config.ts (dev only).
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { API_MAX_BODY_BYTES } from '../../../../app/request-policy.mjs';
+import {
+  getNodeExecutionService,
+  getNodeExecutionTargetRegistry,
+} from './plugin-catalog-bridge.mjs';
+import { persistExecutionResult } from './execution-artifacts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 // scripts/ -> ide -> apps -> web -> repo root.
@@ -49,6 +55,47 @@ async function loadAiOptimize() {
 async function loadAiExplain() {
   const module = await import(pathToFileURL(join(root, 'scripts', 'ai-explain.mjs')).href);
   return module.aiExplain;
+}
+
+const AI_EXECUTION_TARGETS = Object.freeze({
+  process: 'logicpilot.process.runtime',
+  devs: 'logicpilot.devs.runtime',
+  continuous: 'logicpilot.continuous.runtime',
+  agent: 'logicpilot.agent.runtime',
+  generic: 'logicpilot.generic.runtime',
+});
+
+/** Route an explicitly typed AI run through the same ExecutionService used by
+ * the canvas. Generic/mixed AI runs remain on the compatibility runner until
+ * a generic runtime target is installed; silently guessing a paradigm here
+ * would be unsafe. */
+async function runAiThroughExecutionService({ dsl, runtimeKind, runParams, payload }) {
+  const targetId = AI_EXECUTION_TARGETS[runtimeKind];
+  if (!targetId) return null;
+  const service = getNodeExecutionService();
+  const registry = getNodeExecutionTargetRegistry();
+  const target = registry?.get(targetId);
+  if (!service || !target) return null;
+  const request = {
+    schema: 'logicpilot.execution-request/v1',
+    contractVersion: 1,
+    requestId: typeof payload.requestId === 'string' ? payload.requestId : randomUUID(),
+    targetId,
+    artifactRef: target.target.artifactRef,
+    ...(Number.isSafeInteger(payload.seed) ? { seed: payload.seed } : {}),
+    ...(payload.budget && typeof payload.budget === 'object' ? { budget: payload.budget } : {}),
+    inputs: { paradigm: runtimeKind, dsl, runParams },
+  };
+  const session = await service.start(request);
+  const result = await service.wait(session.runId);
+  const refs = await persistExecutionResult(request, result);
+  return {
+    ...(result.output && typeof result.output === 'object' ? result.output : {}),
+    execution: {
+      run: { ...result.run, ...(refs.evidenceRef ? { evidenceRef: refs.evidenceRef } : {}) },
+      ...(result.evidence === undefined ? {} : { evidence: result.evidence }),
+    },
+  };
 }
 
 async function loadAssistant() {
@@ -389,22 +436,33 @@ export async function handleAiRun(req, res) {
     return;
   }
   try {
-    const runModelDsl = await loadRunModelDsl();
-    const result = runModelDsl({
+    const runParams = {
+      seed: Number.isFinite(payload?.seed) ? payload.seed : 42,
+      seedMode: payload?.seedMode ?? 'fixed',
+      reps: Number.isFinite(payload?.reps) ? payload.reps : 3,
+      replicationMode: payload?.replicationMode ?? 'fixed',
+      minReps: Number.isFinite(payload?.minReps) ? payload.minReps : 5,
+      maxReps: Number.isFinite(payload?.maxReps) ? payload.maxReps : 100,
+      errorPercent: Number.isFinite(payload?.errorPercent) ? payload.errorPercent : 5,
+      precisionMetric: payload?.precisionMetric ?? 'Wq',
+      arrivals: Number.isFinite(payload?.arrivals) ? payload.arrivals : 4000,
+      warmup: Number.isFinite(payload?.warmup) ? payload.warmup : 400,
+      confidence: Number.isFinite(payload?.confidence) ? payload.confidence : 0.95,
+    };
+    const unified = await runAiThroughExecutionService({
       dsl,
-      runParams: {
-        seed: Number.isFinite(payload?.seed) ? payload.seed : 42,
-        seedMode: payload?.seedMode ?? 'fixed',
-        reps: Number.isFinite(payload?.reps) ? payload.reps : 3,
-        replicationMode: payload?.replicationMode ?? 'fixed',
-        minReps: Number.isFinite(payload?.minReps) ? payload.minReps : 5,
-        maxReps: Number.isFinite(payload?.maxReps) ? payload.maxReps : 100,
-        errorPercent: Number.isFinite(payload?.errorPercent) ? payload.errorPercent : 5,
-        precisionMetric: payload?.precisionMetric ?? 'Wq',
-        arrivals: Number.isFinite(payload?.arrivals) ? payload.arrivals : 4000,
-        warmup: Number.isFinite(payload?.warmup) ? payload.warmup : 400,
-        confidence: Number.isFinite(payload?.confidence) ? payload.confidence : 0.95,
-      },
+      runtimeKind: payload?.runtimeKind,
+      runParams,
+      payload,
+    });
+    if (unified !== null) {
+      send(res, 200, unified);
+      return;
+    }
+    const runModelDsl = await loadRunModelDsl();
+    const result = await runModelDsl({
+      dsl,
+      runParams,
     });
     send(res, 200, result);
   } catch (error) {
@@ -475,7 +533,7 @@ export async function handleAiValidate(req, res) {
   }
   try {
     const validateModelDsl = await loadValidateModelDsl();
-    send(res, 200, validateModelDsl({ dsl }));
+    send(res, 200, await validateModelDsl({ dsl }));
   } catch (error) {
     send(res, 500, { ok: false, error: String(error?.message ?? error) });
   }
