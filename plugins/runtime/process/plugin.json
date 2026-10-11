@@ -1,0 +1,25 @@
+{
+  "schema": "logicpilot.plugin-manifest/v2",
+  "contractVersion": 1,
+  "id": "logicpilot.runtime.process",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "displayName": "LogicPilot Process Runtime",
+  "description": "Kernel-backed Process execution target.",
+  "provides": ["logicpilot.process.runtime"],
+  "requires": [],
+  "entrypoints": { "node": "./runtime.mjs" },
+  "permissions": ["runtime.service.call"],
+  "executionTargets": [
+    {
+      "schema": "logicpilot.execution-target/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.process.runtime",
+      "artifactRef": { "artifactId": "workspace.model" },
+      "runtime": { "kind": "interpreter", "pluginId": "logicpilot.runtime.process" },
+      "capabilities": { "cancel": false, "telemetry": false, "snapshot": true },
+      "options": { "paradigm": "process" }
+    }
+  ],
+  "trust": { "minLevel": "t4", "sandbox": "worker" }
+}

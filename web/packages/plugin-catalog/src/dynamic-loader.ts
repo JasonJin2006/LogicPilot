@@ -4,6 +4,7 @@
 
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
+import { createComponentRunnerController } from './component-runner.js';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { PermissionGrant } from '@logicpilot/contracts';
@@ -143,6 +144,8 @@ export function createDynamicEsmLoader(
           return {
             activate: (ctx) => controller.activate(ctx),
             deactivate: () => controller.deactivate(),
+            execute: (request) => controller.execute(request),
+            callService: (name, method, args) => controller.callService(name, method, args),
           } satisfies PluginModule;
         }
         // A URL fragment busts Node's ESM module cache on upgrade without
@@ -165,6 +168,16 @@ export function createDynamicEsmLoader(
                 deactivate: () =>
                   withTimeout(
                     Promise.resolve(candidate.deactivate?.()),
+                    options.activationTimeoutMs,
+                    entry.id,
+                  ),
+              }
+            : {}),
+          ...(typeof candidate.execute === 'function'
+            ? {
+                execute: (request) =>
+                  withTimeout(
+                    Promise.resolve(candidate.execute?.(request)),
                     options.activationTimeoutMs,
                     entry.id,
                   ),
@@ -193,12 +206,15 @@ function createEsmWorkerController(
 ): {
   activate(ctx: unknown): Promise<void>;
   deactivate(): Promise<void>;
+  execute(request: unknown): Promise<unknown>;
+  callService(name: string, method: string, args: readonly unknown[]): Promise<unknown>;
 } {
   const workerSource = `
     const { parentPort, workerData } = require('node:worker_threads');
     let moduleValue;
     let activationContext;
     let effects = [];
+    const provided = new Map();
     let rpcSequence = 0;
     const pending = new Map();
     function requestCapability(capability, payload) {
@@ -214,11 +230,18 @@ function createEsmWorkerController(
         pluginId: workerData.pluginId,
         manifest: workerData.manifest,
         grants: workerData.grants,
-        service: (name) => ({ call: (...args) => requestCapability('runtime.service.call', { name, args }) }),
+        service: (name) => new Proxy({}, {
+          get(_target, method) {
+            if (typeof method !== 'string' || method === 'then' || method === 'toJSON') return undefined;
+            return (...args) => requestCapability('runtime.service.call', { name, method, args });
+          },
+        }),
         emit: (event, payload) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.emit', payload: { event, payload } }),
         on: (event) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.event.subscribe', payload: { event } }),
         effect: (cleanup) => { if (typeof cleanup === 'function') effects.push(cleanup); },
-        provide: (name, service) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.service.provide', payload: { name, methods: Object.keys(service || {}) } }),
+        provide: (name, service) => requestCapability('runtime.service.provide', { name, methods: Object.keys(service || {}) })
+          .then(() => { provided.set(name, service); return { ok: true, methods: Object.keys(service || {}) }; })
+          .catch((error) => ({ ok: false, error: error instanceof Error ? error.message : String(error) })),
       };
     }
     (async () => {
@@ -226,6 +249,8 @@ function createEsmWorkerController(
         const namespace = await import(workerData.url);
         moduleValue = namespace.default || namespace;
         if (!moduleValue || typeof moduleValue.activate !== 'function') throw new Error('missing-activate');
+        if (workerData.manifest.executionTargets?.length && typeof moduleValue.execute !== 'function')
+          throw new Error('missing-execute');
         parentPort.postMessage({ ok: true });
       } catch (error) {
         parentPort.postMessage({ ok: false });
@@ -238,23 +263,40 @@ function createEsmWorkerController(
           if (waiting) {
             pending.delete(message.request);
             if (message.ok) waiting.resolve(message.payload);
-            else waiting.reject(new Error('capability request failed'));
+            else waiting.reject(new Error(message.errorCode ?? 'capability request failed'));
           }
           return;
         }
         if (!moduleValue) throw new Error('not-ready');
+        let result;
         if (message.kind === 'activate') {
           activationContext = rpcContext();
           await moduleValue.activate(activationContext);
         } else if (message.kind === 'deactivate' && typeof moduleValue.deactivate === 'function') {
           await moduleValue.deactivate();
+        } else if (message.kind === 'execute' && typeof moduleValue.execute === 'function') {
+          result = await moduleValue.execute(message.payload);
+        } else if (message.kind === 'execute') {
+          throw new Error('missing-execute');
+        } else if (message.kind === 'service-call') {
+          const payload = message.payload || {};
+          const service = provided.get(payload.name);
+          if (!service) throw new Error('service not provided by this plugin');
+          const fn = service[payload.method];
+          if (typeof fn !== 'function') throw new Error('service method not found');
+          result = await fn(...(payload.args || []));
         }
         if (message.kind === 'deactivate') {
           for (const cleanup of effects.reverse()) { try { cleanup(); } catch (_) {} }
+          provided.clear();
         }
-        parentPort.postMessage({ ok: true, request: message.request });
+        parentPort.postMessage({ ok: true, request: message.request, result });
       } catch (error) {
-        parentPort.postMessage({ ok: false, request: message.request });
+        parentPort.postMessage({
+          ok: false,
+          request: message.request,
+          errorCode: error instanceof Error ? error.message : String(error),
+        });
       }
     });
   `;
@@ -293,62 +335,138 @@ function createEsmWorkerController(
             payload,
           }),
         )
-        .catch(() =>
-          worker.postMessage({ kind: 'capability-response', request: message.request, ok: false }),
+        .catch((reason) =>
+          worker.postMessage({
+            kind: 'capability-response',
+            request: message.request,
+            ok: false,
+            errorCode: reason instanceof Error ? reason.message : undefined,
+          }),
         );
     }
   });
   let readyResolve: (() => void) | null = null;
-  let readyReject: (() => void) | null = null;
+  let readyReject: ((error: Error) => void) | null = null;
   const ready = new Promise<void>((resolveReady, rejectReady) => {
     readyResolve = resolveReady;
     readyReject = rejectReady;
   });
   worker.once('message', (value: unknown) => {
     if ((value as { readonly ok?: boolean }).ok) readyResolve?.();
-    else readyReject?.();
+    else readyReject?.(new DynamicEsmLoaderError('isolated ESM initialization failed', 'module'));
   });
+  worker.on('error', () =>
+    readyReject?.(new DynamicEsmLoaderError('isolated ESM worker failed', 'module')),
+  );
+  worker.on('exit', () =>
+    readyReject?.(new DynamicEsmLoaderError('isolated ESM worker exited', 'module')),
+  );
   let request = 0;
-  const call = (kind: 'activate' | 'deactivate'): Promise<void> => {
+  let terminated = false;
+  const terminateWorker = async () => {
+    if (terminated) return;
+    terminated = true;
+    await worker.terminate();
+  };
+  const call = (
+    kind: 'activate' | 'deactivate' | 'execute' | 'service-call',
+    payload?: unknown,
+  ): Promise<unknown> => {
+    if (terminated)
+      return Promise.reject(new DynamicEsmLoaderError('isolated ESM worker stopped', 'module'));
     const id = ++request;
-    const result = new Promise<void>((resolveResult, rejectResult) => {
+    let cleanup = () => {};
+    const result = new Promise<unknown>((resolveResult, rejectResult) => {
       const onMessage = (value: unknown) => {
         const message = value as {
           readonly ok?: boolean;
           readonly request?: number;
           readonly kind?: string;
+          readonly result?: unknown;
+          readonly errorCode?: string;
         };
         if (message.kind !== undefined) return;
         if (message.request !== id) return;
         worker.off('message', onMessage);
-        if (message.ok) resolveResult();
-        else rejectResult(new DynamicEsmLoaderError('isolated ESM execution failed', 'module'));
+        if (message.ok) resolveResult(message.result);
+        else
+          rejectResult(
+            new DynamicEsmLoaderError(
+              message.errorCode ?? 'isolated ESM execution failed',
+              'module',
+            ),
+          );
+      };
+      const onFailure = () =>
+        rejectResult(new DynamicEsmLoaderError('isolated ESM worker stopped', 'module'));
+      cleanup = () => {
+        worker.off('message', onMessage);
+        worker.off('error', onFailure);
+        worker.off('exit', onFailure);
       };
       worker.on('message', onMessage);
-      worker.postMessage({ kind, request: id });
+      worker.once('error', onFailure);
+      worker.once('exit', onFailure);
+      worker.postMessage({ kind, request: id, payload });
     });
-    return withTimeout(result, options.timeoutMs, entry.id);
+    return withTimeout(result, timeoutFor(kind, payload, options.timeoutMs), entry.id).finally(() =>
+      cleanup(),
+    );
   };
   return {
     activate: async (ctx) => {
       void ctx;
       try {
-        await ready;
+        await withTimeout(ready, options.timeoutMs, entry.id);
         await call('activate');
       } catch (error) {
-        await worker.terminate();
+        await terminateWorker();
         throw error;
       }
     },
     deactivate: async () => {
+      if (terminated) return; // A failed activate/execute already reclaimed it.
       try {
-        await ready;
+        await withTimeout(ready, options.timeoutMs, entry.id);
         await call('deactivate');
       } finally {
-        await worker.terminate();
+        await terminateWorker();
+      }
+    },
+    execute: async (request) => {
+      try {
+        await withTimeout(ready, options.timeoutMs, entry.id);
+        return await call('execute', request);
+      } catch (error) {
+        await terminateWorker();
+        throw error;
+      }
+    },
+    callService: async (name, method, args) => {
+      try {
+        await withTimeout(ready, options.timeoutMs, entry.id);
+        return await call('service-call', { name, method, args });
+      } catch (error) {
+        await terminateWorker();
+        throw error;
       }
     },
   };
+}
+
+function timeoutFor(
+  kind: 'activate' | 'deactivate' | 'execute' | 'service-call',
+  payload: unknown,
+  activationTimeoutMs: number | undefined,
+): number | undefined {
+  if (kind === 'execute') {
+    const budget = (payload as { readonly budget?: { readonly maxWallMs?: unknown } } | undefined)
+      ?.budget?.maxWallMs;
+    if (Number.isSafeInteger(budget) && (budget as number) >= 1) return (budget as number) + 30_000;
+    return activationTimeoutMs;
+  }
+  if (kind === 'service-call') return Math.max(activationTimeoutMs ?? 10_000, 30_000);
+  return activationTimeoutMs;
 }
 
 export interface DynamicWasmLoaderOptions {
@@ -359,11 +477,17 @@ export interface DynamicWasmLoaderOptions {
   readonly maxWasmBytes?: number;
   readonly maxMemoryBytes?: number;
   readonly activationTimeoutMs?: number;
+  /** Wasmtime Component Model runner used for manifest `component` entrypoints. */
+  readonly componentRunner?: string;
   readonly capabilities?: ReadonlySet<string>;
   readonly imports?: WasmHostImports;
   /** Run the WASM instance in a disposable Worker with hard termination. */
   readonly isolate?: boolean;
   readonly onCapability?: (capability: string, payload: unknown) => void;
+  readonly onCapabilityRequest?: (
+    capability: string,
+    payload: unknown,
+  ) => unknown | Promise<unknown>;
   readonly onError?: (error: DynamicEsmLoaderError) => void;
 }
 
@@ -395,6 +519,10 @@ export function createDynamicWasmLoader(
       return undefined;
     }
     const relativeEntrypoint = entry.manifest.entrypoints.wasm;
+    if (entry.manifest.entrypoints.component !== undefined) {
+      if (options.componentRunner === undefined) return undefined;
+      return createDynamicComponentThunk(entry, options, rootsById);
+    }
     const root = rootsById.get(entry.rootId);
     if (relativeEntrypoint === undefined || root === undefined) return undefined;
     let packageDir: string;
@@ -498,6 +626,63 @@ export function createDynamicWasmLoader(
   };
 }
 
+function createDynamicComponentThunk(
+  entry: PluginCatalogEntry,
+  options: DynamicWasmLoaderOptions,
+  rootsById: ReadonlyMap<string, string>,
+): (() => Promise<PluginModule>) | undefined {
+  const root = rootsById.get(entry.rootId);
+  const relativeEntrypoint = entry.manifest.entrypoints.component;
+  if (
+    !root ||
+    !relativeEntrypoint ||
+    !isSafeRelative(entry.path) ||
+    !isSafeRelative(relativeEntrypoint)
+  ) {
+    report(
+      options,
+      new DynamicEsmLoaderError(`plugin '${entry.id}' component path is invalid`, 'path'),
+    );
+    return undefined;
+  }
+  let packageDir: string;
+  let componentPath: string;
+  try {
+    packageDir = realpathSync(resolve(root, entry.path));
+    componentPath = resolve(packageDir, relativeEntrypoint);
+    if (!isWithin(root, packageDir) || !lstatSync(packageDir).isDirectory())
+      throw new Error('package path');
+    const componentReal = realpathSync(componentPath);
+    if (!isWithin(packageDir, componentReal) || !lstatSync(componentReal).isFile())
+      throw new Error('component path');
+    if (statSync(componentReal).size > (options.maxWasmBytes ?? 16 * 1024 * 1024))
+      throw new Error('component size');
+    if (computePackageDigest(packageDir, entry.manifest) !== entry.sha256.toLowerCase())
+      throw new Error('digest mismatch');
+  } catch {
+    report(
+      options,
+      new DynamicEsmLoaderError(`plugin '${entry.id}' component package is invalid`, 'integrity'),
+    );
+    return undefined;
+  }
+  return async () => {
+    const controller = createComponentRunnerController(
+      options.componentRunner!,
+      componentPath,
+      entry.id,
+      options.activationTimeoutMs,
+      options.onCapabilityRequest,
+      options.capabilities,
+      options.maxMemoryBytes,
+    );
+    return {
+      activate: () => controller.activate(),
+      deactivate: () => controller.deactivate(),
+    } satisfies PluginModule;
+  };
+}
+
 function isPluginModule(value: unknown): value is PluginModule {
   return (
     typeof value === 'object' &&
@@ -580,7 +765,13 @@ function createWasmWorkerController(
     function importsFor(capabilities) {
       const logicpilot = {};
       if (capabilities.includes('runtime.log')) logicpilot.log = (level, value) => parentPort.postMessage({ kind: 'capability', capability: 'runtime.log', payload: { level, value } });
-      if (capabilities.includes('runtime.random')) logicpilot.random_u32 = () => Math.floor(Math.random() * 0x100000000);
+       if (capabilities.includes('runtime.random')) logicpilot.random_u32 = () => {
+         const value = Math.floor(Math.random() * 0x100000000);
+         // The ABI is synchronous, so the value is produced locally; still
+         // report every invocation to the host broker for audit/quota policy.
+         parentPort.postMessage({ kind: 'capability', capability: 'runtime.random', payload: { value } });
+         return value;
+       };
       return { logicpilot };
     }
     (async () => {
@@ -589,8 +780,12 @@ function createWasmWorkerController(
         const result = await WebAssembly.instantiate(bytes, importsFor(workerData.capabilities));
         instance = result.instance;
         const memory = instance.exports.memory;
-        const size = memory && memory.buffer ? memory.buffer.byteLength : 0;
-        if (workerData.maxMemoryBytes && size > workerData.maxMemoryBytes) throw new Error('memory-limit');
+        const checkMemory = () => {
+          const size = memory && memory.buffer ? memory.buffer.byteLength : 0;
+          if (workerData.maxMemoryBytes && size > workerData.maxMemoryBytes)
+            throw new Error('memory-limit');
+        };
+        checkMemory();
         if (typeof instance.exports.logicpilot_abi_version !== 'function' || instance.exports.logicpilot_abi_version() !== 1) throw new Error('unsupported-abi');
         if (typeof instance.exports.logicpilot_activate !== 'function') throw new Error('missing-activate');
         parentPort.postMessage({ ok: true });
@@ -604,6 +799,12 @@ function createWasmWorkerController(
         const fn = message.kind === 'activate' ? instance.exports.logicpilot_activate : instance.exports.logicpilot_deactivate;
         if (message.kind === 'activate' && typeof fn !== 'function') throw new Error('missing-activate');
         if (typeof fn === 'function') fn();
+        // WASM can grow linear memory after instantiation. Re-check after
+        // every host-visible lifecycle operation and fail closed if it grows
+        // beyond the configured quota.
+        const memory = instance.exports.memory;
+        if (workerData.maxMemoryBytes && memory?.buffer?.byteLength > workerData.maxMemoryBytes)
+          throw new Error('memory-limit');
         parentPort.postMessage({ ok: true, request: message.request });
       } catch (error) {
         parentPort.postMessage({ ok: false, request: message.request, error: String(error && error.message || error) });

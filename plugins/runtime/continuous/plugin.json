@@ -1,0 +1,25 @@
+{
+  "schema": "logicpilot.plugin-manifest/v2",
+  "contractVersion": 1,
+  "id": "logicpilot.runtime.continuous",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "displayName": "LogicPilot Continuous Runtime",
+  "description": "Kernel-backed Continuous execution target.",
+  "provides": ["logicpilot.continuous.runtime"],
+  "requires": [],
+  "entrypoints": { "node": "./runtime.mjs" },
+  "permissions": ["runtime.service.call"],
+  "executionTargets": [
+    {
+      "schema": "logicpilot.execution-target/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.continuous.runtime",
+      "artifactRef": { "artifactId": "workspace.model" },
+      "runtime": { "kind": "interpreter", "pluginId": "logicpilot.runtime.continuous" },
+      "capabilities": { "cancel": false, "telemetry": false, "snapshot": true },
+      "options": { "paradigm": "continuous" }
+    }
+  ],
+  "trust": { "minLevel": "t4", "sandbox": "worker" }
+}

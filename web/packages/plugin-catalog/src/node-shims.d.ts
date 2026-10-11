@@ -14,7 +14,12 @@ declare class Buffer {
   toString(encoding?: string): string;
 }
 
-declare const process: { readonly pid: number };
+declare const process: {
+  readonly pid: number;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly platform: string;
+  kill(pid: number, signal?: string): void;
+};
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
 
@@ -92,12 +97,43 @@ declare module 'node:url' {
 declare module 'node:worker_threads' {
   export class Worker {
     constructor(code: string, options: { readonly eval: boolean; readonly workerData?: unknown });
-    once(event: 'message' | 'error', listener: (value: unknown) => void): this;
-    on(event: 'message' | 'error', listener: (value: unknown) => void): this;
-    off(event: 'message' | 'error', listener: (value: unknown) => void): this;
+    once(event: 'message' | 'error' | 'exit', listener: (value: unknown) => void): this;
+    on(event: 'message' | 'error' | 'exit', listener: (value: unknown) => void): this;
+    off(event: 'message' | 'error' | 'exit', listener: (value: unknown) => void): this;
     postMessage(value: unknown): void;
     terminate(): Promise<number>;
   }
+}
+
+declare module 'node:child_process' {
+  interface ChildStream {
+    on(event: 'data', listener: (chunk: Buffer) => void): this;
+    destroy(): void;
+  }
+  interface ChildProcess {
+    readonly pid: number | undefined;
+    readonly stdout: ChildStream | null;
+    readonly stderr: ChildStream | null;
+    readonly stdin: {
+      write(data: string): boolean;
+      destroy(): void;
+      once(event: 'error', listener: (error: Error) => void): void;
+    } | null;
+    on(event: 'data', listener: (chunk: Buffer) => void): this;
+    on(event: 'error', listener: (error: Error) => void): this;
+    once(event: 'error', listener: (error: Error) => void): this;
+    once(event: 'exit', listener: (code: number | null) => void): this;
+    once(event: 'close', listener: () => void): this;
+    kill(signal?: string): boolean;
+  }
+  export function spawn(
+    command: string,
+    args?: readonly string[],
+    options?: {
+      readonly stdio?: readonly unknown[] | 'ignore';
+      readonly windowsHide?: boolean;
+    },
+  ): ChildProcess;
 }
 
 declare module 'node:http' {
