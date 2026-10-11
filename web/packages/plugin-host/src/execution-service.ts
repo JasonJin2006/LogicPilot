@@ -1,5 +1,4 @@
 import type {
-  ExecutionCommand,
   ExecutionCommandAck,
   ExecutionEvent,
   ExecutionRequest,
