@@ -104,7 +104,7 @@ const aiBuildPlugin = (): Plugin => ({
       // handler resolves the explicit targets/runs/commands routes.
       const originalUrl = req.url;
       if (!originalUrl?.startsWith('/api/execution')) {
-        req.url = '/api/execution' + (originalUrl === '/' ? '' : originalUrl ?? '');
+        req.url = '/api/execution' + (originalUrl === '/' ? '' : (originalUrl ?? ''));
       }
       void runWithApiPolicy(req, res, () => handleExecution(req, res)).finally(() => {
         req.url = originalUrl;

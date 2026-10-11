@@ -312,7 +312,9 @@ export function RunDialog() {
       return;
     }
     if (nodeCount === 0) {
-      setNativeError('There is no executable model on the canvas. Add blocks or open a model first.');
+      setNativeError(
+        'There is no executable model on the canvas. Add blocks or open a model first.',
+      );
     } else {
       // Canvas model: compile first, then run with the model's parameters.
       runCanvasModel();

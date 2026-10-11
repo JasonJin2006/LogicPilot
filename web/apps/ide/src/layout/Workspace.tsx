@@ -443,8 +443,7 @@ function PanelArea({ area }: { area: AreaId }) {
   // as "a tab is open" or the body would stay blank with its tab showing.
   const sceneOpen = area === 'center' && centerPanels.includes('scene3d');
   // Blank until a tab is opened: the welcome page is a closable tab too.
-  const centerEmpty =
-    area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen && !sceneOpen;
+  const centerEmpty = area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen && !sceneOpen;
   // The left side bar stacks views instead of paging them: the activity bar
   // picks a *container*, and every view that names it is rendered at once.
   // Other areas stay tabbed (one pane at a time).

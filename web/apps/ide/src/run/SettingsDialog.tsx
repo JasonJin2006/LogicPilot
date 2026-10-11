@@ -60,7 +60,9 @@ export function SettingsDialog() {
       .listTargets()
       .then((targets) => {
         if (!cancelled)
-          setNativeRuntimeAvailable(targets.some((target) => target.id === 'logicpilot.native.session'));
+          setNativeRuntimeAvailable(
+            targets.some((target) => target.id === 'logicpilot.native.session'),
+          );
       })
       .catch(() => {
         if (!cancelled) setNativeRuntimeAvailable(false);

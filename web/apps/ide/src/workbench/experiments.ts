@@ -98,7 +98,10 @@ const SHELL_TO_DSL = Object.fromEntries(
 
 type Params = Record<string, string | number | boolean>;
 
-function declared(params: Params, shell: keyof typeof SHELL_TO_DSL): string | number | boolean | undefined {
+function declared(
+  params: Params,
+  shell: keyof typeof SHELL_TO_DSL,
+): string | number | boolean | undefined {
   return params[SHELL_TO_DSL[shell]];
 }
 

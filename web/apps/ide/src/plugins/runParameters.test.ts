@@ -13,9 +13,7 @@ afterEach(() => {
 describe('run parameter contributions', () => {
   it('surfaces the knobs a paradigm pack declares', () => {
     disposers.push(registerLocalPluginContribution(desContributions));
-    const byId = new Map(
-      runParameterDeclarations().map((entry) => [entry.parameter.id, entry]),
-    );
+    const byId = new Map(runParameterDeclarations().map((entry) => [entry.parameter.id, entry]));
 
     // The metric vocabulary is the pack's, not the shell's. This is the whole
     // point of the seam: the shell holds no list of metric names any more.

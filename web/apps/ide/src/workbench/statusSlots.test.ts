@@ -5,7 +5,7 @@ import { backendLabel, declaredLibraries } from './statusSlots';
 const node = (kind: string, name: string) => ({ kind, name }) as never;
 
 describe('declaredLibraries', () => {
-  it('lists the model\'s own use declarations in document order', () => {
+  it("lists the model's own use declarations in document order", () => {
     const document = {
       nodes: [node('use', 'process'), node('resource', 'Server'), node('use', 'math')],
     };

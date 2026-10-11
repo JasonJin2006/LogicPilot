@@ -251,9 +251,9 @@ describe('execution session contract gate', () => {
       runId: 'run-bad-id',
       digest: 'c'.repeat(64),
     };
-    expect(validateContract('ExecutionEvidence', { ...base, runtimeKind: 'Process Family' }).ok).toBe(
-      false,
-    );
+    expect(
+      validateContract('ExecutionEvidence', { ...base, runtimeKind: 'Process Family' }).ok,
+    ).toBe(false);
     expect(validateContract('ExecutionEvidence', { ...base, methods: ['Process'] }).ok).toBe(false);
   });
 

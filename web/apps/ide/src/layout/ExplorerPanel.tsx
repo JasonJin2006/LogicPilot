@@ -215,10 +215,7 @@ function FolderRow({
  */
 export type ExplorerRootKind = 'folder' | 'bundle' | 'document';
 
-export function explorerRootKind(input: {
-  isDisk: boolean;
-  hasBundle: boolean;
-}): ExplorerRootKind {
+export function explorerRootKind(input: { isDisk: boolean; hasBundle: boolean }): ExplorerRootKind {
   // A disk project wins even if its bundle is not loaded yet: the folder is
   // still a folder, and the old bundle-only test rendered it as a closed one.
   if (input.isDisk) return 'folder';

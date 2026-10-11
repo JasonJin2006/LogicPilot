@@ -556,11 +556,7 @@ export function projectToDocument(bundle: ProjectBundle): DocumentLoadResult {
       return {
         ok: true,
         document: parsed.document,
-        diagnostics: [
-          ...(parsed.diagnostics ?? []),
-          ...merged.diagnostics,
-          ...layoutDiagnostics,
-        ],
+        diagnostics: [...(parsed.diagnostics ?? []), ...merged.diagnostics, ...layoutDiagnostics],
       };
     }
     return {

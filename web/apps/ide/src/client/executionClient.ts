@@ -90,9 +90,9 @@ export function createExecutionClient(): ExecutionClient {
       return request<ExecutionCommandAck>(
         '/api/execution/runs/' + encodeURIComponent(command.runId) + '/commands',
         {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(command),
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(command),
         },
       );
     },
