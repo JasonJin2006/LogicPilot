@@ -18,6 +18,11 @@ export interface CapabilityBrokerOptions {
     readonly requestId: string;
     readonly detail?: string;
   }) => void;
+  /** When set, a successful invoke slides the session's expiry forward by
+   * this many ms, so an actively-used worker is not evicted by its initial
+   * TTL. This only extends the session lifetime; it never affects the
+   * deadline of the call already in flight. */
+  readonly renewTtlMs?: number;
 }
 
 export interface CapabilityInvocationContext {
@@ -29,6 +34,20 @@ export type CapabilityHandler = (
   context: CapabilityInvocationContext,
 ) => unknown | Promise<unknown>;
 
+/** Throw this from a capability handler to surface an explicit deny through
+ * the RPC boundary. The distinction matters: a caller must be able to tell
+ * "not allowed" from "the handler crashed", and the audit log must record the
+ * deny as such instead of a generic handler failure. */
+export class CapabilityDeniedError extends Error {
+  constructor(
+    readonly denialCode: string,
+    message = denialCode,
+  ) {
+    super(message);
+    this.name = 'CapabilityDeniedError';
+  }
+}
+
 /** Central authorization and quota gate for Worker/PluginHost RPC. It is
  * deliberately transport-agnostic: MessagePort, child-process IPC and a
  * future browser bridge can all validate through the same broker. */
@@ -39,13 +58,15 @@ export class CapabilityBroker {
   private readonly maxInFlight: number;
   private readonly maxPayloadBytes: number;
   private readonly now: () => number;
+  private readonly renewTtlMs: number | null;
   private sequence = 0;
-  private activeGeneration: number | null = null;
+  private readonly activeGenerations = new Set<number>();
 
   constructor(private readonly options: CapabilityBrokerOptions = {}) {
     this.maxInFlight = options.maxInFlightPerSession ?? 32;
     this.maxPayloadBytes = options.maxPayloadBytes ?? 256 * 1024;
     this.now = options.now ?? (() => Date.now());
+    this.renewTtlMs = options.renewTtlMs ?? null;
     if (!Number.isSafeInteger(this.maxInFlight) || this.maxInFlight < 1)
       throw new Error('maxInFlightPerSession must be a positive integer');
     if (!Number.isSafeInteger(this.maxPayloadBytes) || this.maxPayloadBytes < 1)
@@ -86,15 +107,44 @@ export class CapabilityBroker {
     this.inFlight.delete(sessionId);
   }
 
+  /** Extend a session's expiry (sliding TTL). Does not affect the deadline of
+   * any call already in flight. Throws when the session is already revoked. */
+  renewSession(sessionId: string, ttlMs: number): PluginRuntimeSession {
+    if (!Number.isSafeInteger(ttlMs) || ttlMs < 1) {
+      throw new Error('session ttlMs must be a positive integer');
+    }
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`session '${sessionId}' was not found`);
+    const renewed = { ...session, expiresAt: new Date(this.now() + ttlMs).toISOString() };
+    const validated = validateContract('PluginRuntimeSession', renewed);
+    if (!validated.ok) throw new Error(`invalid runtime session: ${validated.errors.join('; ')}`);
+    this.sessions.set(sessionId, validated.value);
+    return validated.value;
+  }
+
+  /** Read-only view of a session for observability and tests. */
+  sessionInfo(sessionId: string): PluginRuntimeSession | undefined {
+    return this.sessions.get(sessionId);
+  }
+
   activateGeneration(generation: number): void {
     if (!Number.isSafeInteger(generation) || generation < 1) {
       throw new Error('generation must be a positive integer');
     }
-    this.activeGeneration = generation;
+    this.activeGenerations.clear();
+    this.activeGenerations.add(generation);
+  }
+
+  /** Admit a candidate generation while the current generation is still
+   * serving. NodePluginRuntime uses this only during an atomic refresh. */
+  beginGeneration(generation: number): void {
+    if (!Number.isSafeInteger(generation) || generation < 1)
+      throw new Error('generation must be a positive integer');
+    this.activeGenerations.add(generation);
   }
 
   revokeGeneration(generation: number): void {
-    if (this.activeGeneration === generation) this.activeGeneration = null;
+    this.activeGenerations.delete(generation);
     for (const [sessionId, session] of this.sessions) {
       if (session.generation === generation) this.revokeSession(sessionId);
     }
@@ -121,7 +171,7 @@ export class CapabilityBroker {
     ) {
       return this.failureResponse(envelope, 'denied', 'session-mismatch');
     }
-    if (this.activeGeneration !== null && envelope.generation !== this.activeGeneration) {
+    if (this.activeGenerations.size > 0 && !this.activeGenerations.has(envelope.generation)) {
       return this.failureResponse(envelope, 'denied', 'generation-retired');
     }
     if (Date.parse(session.expiresAt) <= this.now()) {
@@ -157,20 +207,22 @@ export class CapabilityBroker {
         capability: envelope.capability,
         requestId: envelope.requestId,
       });
+      this.renewSessionIfConfigured(session);
       return this.successResponse(envelope, result);
     } catch (error) {
       const timeout = error instanceof BrokerTimeoutError;
+      const denied = error instanceof CapabilityDeniedError;
       this.audit({
-        action: timeout ? 'timeout' : 'error',
+        action: timeout ? 'timeout' : denied ? 'deny' : 'error',
         pluginId: envelope.pluginId,
         capability: envelope.capability,
         requestId: envelope.requestId,
-        detail: timeout ? 'deadline-exceeded' : 'handler-failed',
+        detail: timeout ? 'deadline-exceeded' : denied ? error.denialCode : 'handler-failed',
       });
       return this.failureResponse(
         envelope,
-        timeout ? 'timeout' : 'failed',
-        timeout ? 'deadline-exceeded' : 'handler-failed',
+        timeout ? 'timeout' : denied ? 'denied' : 'failed',
+        timeout ? 'deadline-exceeded' : denied ? error.denialCode : 'handler-failed',
       );
     } finally {
       this.inFlight.set(
@@ -228,6 +280,17 @@ export class CapabilityBroker {
       });
     }
     return response;
+  }
+
+  private renewSessionIfConfigured(session: PluginRuntimeSession): void {
+    if (this.renewTtlMs === null) return;
+    // A handler may finish after its session was revoked or replaced. Never
+    // resurrect an identity from that stale in-flight invocation.
+    if (this.sessions.get(session.sessionId) !== session) return;
+    this.sessions.set(session.sessionId, {
+      ...session,
+      expiresAt: new Date(this.now() + this.renewTtlMs).toISOString(),
+    });
   }
 
   private audit(event: Parameters<NonNullable<CapabilityBrokerOptions['onAudit']>>[0]): void {

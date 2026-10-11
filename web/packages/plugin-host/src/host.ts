@@ -16,6 +16,7 @@ import type {
   PermissionGrant,
   TrustLevel,
   PluginScope,
+  ExecutionRequest,
 } from '@logicpilot/contracts';
 import {
   isSupportedPluginApiVersion,
@@ -151,6 +152,15 @@ export interface PluginModule {
   readonly activate: (ctx: ActivationContext) => void | Promise<void>;
   /** Optional graceful teardown before effects are cleaned up. */
   readonly deactivate?: () => void | Promise<void>;
+  /** Optional execution RPC used by manifest-declared execution targets. */
+  readonly execute?: (request: ExecutionRequest) => unknown | Promise<unknown>;
+  /** Optional service RPC used to route a capability service call to the
+   * plugin that provided it. Present for isolated worker modules. */
+  readonly callService?: (
+    name: string,
+    method: string,
+    args: readonly unknown[],
+  ) => unknown | Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------

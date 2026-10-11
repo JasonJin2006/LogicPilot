@@ -12,3 +12,4 @@ export * from './agent-engine-parity.js';
 export * from './agent-engine-trace.js';
 export * from './agent-turn-runner.js';
 export * from './execution-target-registry.js';
+export * from './execution-service.js';
