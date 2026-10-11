@@ -13,6 +13,8 @@
     "test": "vitest run",
     "verify:headless": "node scripts/headless-verify.mjs",
     "verify:browser": "node scripts/browser-verify.mjs",
+    "verify:ui": "node scripts/ui-snapshot.mjs",
+    "verify:ui:runtime": "node scripts/ui-snapshot.mjs --runtime",
     "verify:zero-paradigm": "node scripts/zero-paradigm-verify.mjs",
     "verify:paradigm-lifecycle": "node scripts/paradigm-lifecycle-verify.mjs"
   },
