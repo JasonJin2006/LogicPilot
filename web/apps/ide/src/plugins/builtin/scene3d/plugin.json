@@ -1,0 +1,14 @@
+{
+  "schema": "logicpilot.plugin-manifest/v2",
+  "contractVersion": 1,
+  "id": "logicpilot.scene3d",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "displayName": "LogicPilot 3D Scene",
+  "description": "Read-only 3D projection of the model document, drawn in the browser with Three.js. Contributes the scene3d canvas view; owns no paradigm.",
+  "provides": ["logicpilot.view.scene3d"],
+  "requires": [],
+  "entrypoints": { "web": "./activate.ts" },
+  "permissions": [],
+  "trust": { "minLevel": "t0", "sandbox": "none" }
+}

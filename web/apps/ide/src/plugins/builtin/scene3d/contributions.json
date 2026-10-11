@@ -1,0 +1,36 @@
+{
+  "schema": "logicpilot.plugin-contributions/v1",
+  "contractVersion": 1,
+  "pluginId": "logicpilot.scene3d",
+  "version": "1.0.0",
+  "knowledge": [],
+  "skills": [],
+  "instructions": [],
+  "diagnostics": [],
+  "views": [
+    {
+      "schema": "logicpilot.view-definition/v1",
+      "contractVersion": 1,
+      "id": "logicpilot.view.scene3d.structure",
+      "owner": "logicpilot.scene3d",
+      "titleKey": "logicpilot.view.scene3d.structure.title",
+      "canvas": "scene3d",
+      "query": {
+        "artifactKinds": ["semantic-model", "run", "evidence"]
+      },
+      "projection": {
+        "source": "model-document",
+        "nodes": "artifact",
+        "edges": "relation",
+        "height": "container-depth"
+      },
+      "interactions": ["select", "orbit", "pan", "zoom"],
+      "supportsInverseEdit": false,
+      "layoutPersistence": "none"
+    }
+  ],
+  "notations": [],
+  "createActions": [],
+  "palettes": [],
+  "tools": []
+}

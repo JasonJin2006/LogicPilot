@@ -1,0 +1,119 @@
+/* Scene (3D) panel. Colours come from the shared custom properties in
+   base.css so the view follows the workspace theme instead of hard-coding its
+   own palette. */
+
+.scene3d-workspace {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+.scene3d-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex: 0 0 auto;
+}
+
+.scene3d-toolbar button {
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.scene3d-toolbar button:hover {
+  background: var(--surface-3);
+}
+
+.scene3d-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scene3d-hint {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+/* The surface must be able to shrink: without min-height:0 a flex child refuses
+   to go below its content height, and the canvas ends up taller than the panel
+   with the status line pushed out of view. */
+.scene3d-surface {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.scene3d-surface canvas {
+  display: block;
+}
+
+.scene3d-notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.scene3d-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.scene3d-status {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-1);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene3d-status-note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Live run readout. Tabular figures keep the numbers from jittering as they
+   change ten times a second. */
+.scene3d-live {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Spatial readout: the board extent and grid cell are what make the floor's
+   scale checkable, so they get the same steady figures as the live counters. */
+.scene3d-spatial {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}

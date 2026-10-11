@@ -1,0 +1,27 @@
+{
+  "name": "@logicpilot/scene3d",
+  "version": "0.0.1",
+  "private": true,
+  "description": "LogicPilot 3D scene kernel: orbit camera, document-to-scene projection, 3D layout and wire-frame motion reduction. Pure and renderer-free, so it is testable without WebGL.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@logicpilot/editor": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^3.1.3"
+  }
+}
