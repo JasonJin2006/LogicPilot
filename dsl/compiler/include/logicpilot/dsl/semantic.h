@@ -21,9 +21,9 @@
 namespace logicpilot::dsl {
 
 // Returns all semantic diagnostics (empty => the model is well-formed).
-// `registry` overrides the built-in process registry (a merged registry that
-// layers custom `use`d libraries); `libraries` lists the loaded library
-// names so `use <name>` resolves.
+// `registry` overrides the built-in standard registry (core markup + process
+// blocks); callers that loaded `use`d libraries pass a registry layering them on
+// top. `libraries` lists the loaded library names so `use <name>` resolves.
 [[nodiscard]] std::vector<Diagnostic> analyze_model(
     const ModelAst& model, const LibraryRegistry* registry = nullptr,
     const std::vector<std::string>* libraries = nullptr);

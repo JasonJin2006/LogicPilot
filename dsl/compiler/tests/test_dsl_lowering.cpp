@@ -5,6 +5,7 @@
 #include <cmath>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -140,6 +141,73 @@ TEST_CASE("lowering: mm1.lp produces a valid v2 ModelFile", "[dsl][lowering]") {
 
   // Structural dump golden.
   REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/mm1_ir_dump.txt", dump_ir(loaded.file));
+}
+
+// The core spatial markup is the one formalism markup whose whole handling is
+// data - a couple of typed fields, no ports, no dedicated IR structure - and the
+// repository's only example using it had no compiler-side coverage at all: the
+// kernel test builds the same shapes by hand. So this is the pin for both halves.
+// The golden holds the IR the kernel's path solver reads; the field assertions
+// hold the part a golden cannot explain, that a coordinate stays a number and a
+// node reference stays an identifier rather than becoming a quoted string.
+TEST_CASE("lowering: spatial markup lowers to the core library node",
+          "[dsl][lowering][spatial]") {
+  const std::string source =
+      logicpilot::testing::read_text_file(LOGICPILOT_EXAMPLES_DIR "/move_route.lp");
+  REQUIRE(!source.empty());
+  const IrLoadResult loaded = compile_and_load(source, "move_route.lp");
+
+  const v2::Node* root = loaded.file.v2_root->root();
+  REQUIRE(root != nullptr);
+  REQUIRE(root->children() != nullptr);
+
+  std::map<std::string, const v2::Node*> by_name;
+  for (const v2::Node* child : *root->children()) {
+    by_name[child->metadata()->name()->str()] = child;
+  }
+  REQUIRE(by_name.size() == 8);
+
+  for (const char* name : {"Dock", "Depot", "Bay"}) {
+    const v2::Node* place = by_name.at(name);
+    REQUIRE(place->semantics() != nullptr);
+    CHECK(place->semantics()->library()->str() == "core");
+    CHECK(place->semantics()->block()->str() == "node");
+    // A place has no members; whether the writer emits an empty vector or omits
+    // the field is a flatbuffers detail this test has no business pinning.
+    CHECK((place->children() == nullptr || place->children()->size() == 0));
+  }
+  for (const char* name : {"Run1", "Run2"}) {
+    const v2::Node* segment = by_name.at(name);
+    CHECK(segment->semantics()->library()->str() == "core");
+    CHECK(segment->semantics()->block()->str() == "path");
+  }
+
+  const auto float_param = [](const v2::Node* node, const char* name) {
+    for (const v2::Var* var : *node->params()) {
+      if (var->name()->str() == name && var->type() == v2::VarType_Float) {
+        return var->float_value();
+      }
+    }
+    return -1.0;
+  };
+  const auto string_param = [](const v2::Node* node, const char* name) -> std::string {
+    for (const v2::Var* var : *node->params()) {
+      if (var->name()->str() == name && var->type() == v2::VarType_String) {
+        return var->string_value()->str();
+      }
+    }
+    return {};
+  };
+  CHECK(float_param(by_name.at("Dock"), "x") == 0.0);
+  CHECK(float_param(by_name.at("Depot"), "x") == 10.0);
+  CHECK(float_param(by_name.at("Depot"), "y") == 0.0);
+  CHECK(float_param(by_name.at("Bay"), "y") == 10.0);
+  CHECK(string_param(by_name.at("Run1"), "node1") == "Dock");
+  CHECK(string_param(by_name.at("Run1"), "node2") == "Depot");
+  CHECK(string_param(by_name.at("Run2"), "node2") == "Bay");
+
+  REQUIRE_MATCHES_GOLDEN(std::string(kGoldenDir) + "/move_route_ir_dump.txt",
+                         dump_ir(loaded.file));
 }
 
 TEST_CASE("lowering: flat process blocks keep declaration order and couples", "[dsl][lowering]") {

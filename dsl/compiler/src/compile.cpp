@@ -194,14 +194,19 @@ CompileResult compile_source(const std::string& source,
   }
   if (!result.diagnostics.empty()) return result;
 
-  // Layer `use`d libraries over the built-in process registry.
-  LibraryRegistry registry;
-  std::vector<Diagnostic> registry_diagnostics;
-  (void)registry.load(stdlib_process_source(), &registry_diagnostics);
+  // Layer `use`d libraries over the built-in standard library (core markup +
+  // process blocks), which is the same registry the compiler falls back to when
+  // no registry is supplied - taken from there rather than assembled again, so
+  // the two cannot disagree about what the language already contains.
+  LibraryRegistry registry = builtin_stdlib_registry();
   std::vector<std::string> loaded_libraries;
   std::vector<Diagnostic> library_errors;
   for (const std::string& library : parsed.model->used_libraries) {
-    if (library == "process") {
+    // The built-in libraries are already in the registry above, so `use`ing one is
+    // a no-op rather than a second merge. Merging it again would declare every one
+    // of its kinds twice, which the registry reports as ambiguity - `use core`
+    // would turn `node` into LP2013 for a model that had it right.
+    if (library == "process" || library == "core") {
       loaded_libraries.push_back(library);
       continue;
     }

@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "logicpilot/dsl/parser.h"
+#include "logicpilot/dsl/stdlib_core.h"
 #include "logicpilot/dsl/stdlib_process.h"
 
 namespace logicpilot::dsl {
@@ -157,13 +158,39 @@ const BlockShape* LibraryRegistry::resolve(const std::string& kind) const {
 
 const LibraryRegistry& builtin_process_registry() {
   static const LibraryRegistry registry = [] {
-    LibraryRegistry registry;
+    LibraryRegistry loaded;
     // The embedded standard library must always parse; a dedicated test
     // pins the expected block set. A failure here leaves an empty registry
     // (model blocks then fail with LP2004 unknown kind).
     std::vector<Diagnostic> diagnostics;
-    (void)registry.load(stdlib_process_source(), &diagnostics);
-    return registry;
+    (void)loaded.load(stdlib_process_source(), &diagnostics);
+    return loaded;
+  }();
+  return registry;
+}
+
+const LibraryRegistry& builtin_core_registry() {
+  static const LibraryRegistry registry = [] {
+    LibraryRegistry loaded;
+    // Same contract as the process library: the embedded source must parse, and a
+    // failure here means `node`/`path` degrade to LP2004 unknown kind. The test
+    // that pins the process block set pins this one too.
+    std::vector<Diagnostic> diagnostics;
+    (void)loaded.load(stdlib_core_source(), &diagnostics);
+    return loaded;
+  }();
+  return registry;
+}
+
+const LibraryRegistry& builtin_stdlib_registry() {
+  static const LibraryRegistry registry = [] {
+    LibraryRegistry merged;
+    // load() clears, merge() layers - the second library must merge or it would
+    // silently replace the first.
+    std::vector<Diagnostic> diagnostics;
+    (void)merged.load(stdlib_core_source(), &diagnostics);
+    (void)merged.merge(stdlib_process_source(), &diagnostics);
+    return merged;
   }();
   return registry;
 }

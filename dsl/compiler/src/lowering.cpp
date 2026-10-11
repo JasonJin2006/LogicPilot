@@ -735,29 +735,13 @@ flatbuffers::Offset<v2::Node> v2_node(flatbuffers::FlatBufferBuilder& builder, c
   if (node.kind == "continuous") {
     return v2_continuous(builder, node, scope, source_file);
   }
-  if (node.kind == "node") {
-    std::vector<flatbuffers::Offset<v2::Var>> params;
-    params.push_back(v2_var_float(builder, "x", float_field(node, "x", scope, 0.0)));
-    params.push_back(v2_var_float(builder, "y", float_field(node, "y", scope, 0.0)));
-    return v2::CreateNode(builder, v2_metadata(builder, node.name, source_file),
-                          builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-                          builder.CreateVector(params), 0, v2_semantics(builder, "core", "node"), 0,
-                          0, 0, 0, 0);
-  }
-  if (node.kind == "path") {
-    std::vector<flatbuffers::Offset<v2::Var>> params;
-    const std::string node1 = node_field_identifier(node, "node1");
-    const std::string node2 = node_field_identifier(node, "node2");
-    params.push_back(v2_var_string(builder, "node1", node1.c_str()));
-    params.push_back(v2_var_string(builder, "node2", node2.c_str()));
-    return v2::CreateNode(builder, v2_metadata(builder, node.name, source_file),
-                          builder.CreateVector(std::vector<flatbuffers::Offset<v2::Var>>{}),
-                          builder.CreateVector(params), 0, v2_semantics(builder, "core", "path"), 0,
-                          0, 0, 0, 0);
-  }
+  // Declared blocks lower from their library shape, which is where the spatial
+  // markup lives now: `node`/`path` come through here as {core, node} and
+  // {core, path} because `library core` is what declares them, so the IR the
+  // kernel reads is unchanged by their having left the hand-written dispatch.
   // Process blocks declared outside a process (e.g. top-level resource
-  // instances) lower as standalone {process, <block>} nodes; experiment
-  // members are handled via ModelFile.experiments, not the node tree.
+  // instances) take the same path; experiment members are handled via
+  // ModelFile.experiments, not the node tree.
   if (registry.has_block(node.registry_key())) {
     return v2_process_block(builder, node, resources, scope, source_file, registry, source_text);
   }
@@ -770,7 +754,7 @@ LoweredIr lower_to_ir_v2(const ModelAst& model, const std::string& source_file,
                          const LibraryRegistry* registry, const std::string* source_text) {
   flatbuffers::FlatBufferBuilder builder;
   const LibraryRegistry& registry_ref =
-      registry != nullptr ? *registry : builtin_process_registry();
+      registry != nullptr ? *registry : builtin_stdlib_registry();
 
   ParamScope model_scope;
   for (const VarDecl& param : model.params) {

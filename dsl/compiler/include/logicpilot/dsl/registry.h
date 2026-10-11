@@ -124,6 +124,18 @@ private:
 };
 
 // The embedded standard process library (libraries/process.lplib).
+//
+// Process blocks only. Kept separate from the core markup so a test can pin the
+// process block set, and so "the process library" keeps meaning one thing.
 [[nodiscard]] const LibraryRegistry& builtin_process_registry();
+
+// The embedded core library (libraries/core.lplib): the spatial markup blocks
+// `node` and `path`, which are declared rather than dispatched in code.
+[[nodiscard]] const LibraryRegistry& builtin_core_registry();
+
+// What the compiler actually analyzes against when it has no registry of its
+// own: the core markup merged with the process library, so a model can name
+// `queue` and `node` in the same breath.
+[[nodiscard]] const LibraryRegistry& builtin_stdlib_registry();
 
 }  // namespace logicpilot::dsl

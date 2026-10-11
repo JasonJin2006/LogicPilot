@@ -161,3 +161,51 @@ TEST_CASE("registry: malformed library source fails to load", "[dsl][registry]")
   REQUIRE_FALSE(registry.load("library broken { block { } }", &diagnostics));
   REQUIRE(!diagnostics.empty());
 }
+
+// The core markup is declared, not dispatched.
+//
+// `node`/`path` used to be branches in the compiler's kind dispatch with their own
+// hand-written checks. They are now ordinary blocks in a `core` library, which is
+// what makes the language's spatial vocabulary the library's business rather than
+// the compiler's - and what lets a `z` a model declares reach the IR instead of
+// being validated and dropped.
+TEST_CASE("registry: the core library declares the spatial markup", "[dsl][registry][spatial]") {
+  const LibraryRegistry& core = builtin_core_registry();
+  REQUIRE(core.blocks().size() == 2);
+
+  const BlockShape* node = core.block("node");
+  REQUIRE(node != nullptr);
+  REQUIRE(node->library == "core");
+  REQUIRE(node->kind == "node");
+  REQUIRE(node->ports.empty());
+  REQUIRE(node->param("x")->type == BlockParamType::kFloat);
+  REQUIRE(node->param("y")->type == BlockParamType::kFloat);
+  REQUIRE(node->param("z")->type == BlockParamType::kFloat);
+  // Declared with defaults, so a node may omit any coordinate the way the kernel's
+  // `node_float_param(child, "x", 0.0)` already assumed.
+  REQUIRE(!node->param("x")->required);
+
+  const BlockShape* path = core.block("path");
+  REQUIRE(path != nullptr);
+  REQUIRE(path->library == "core");
+  REQUIRE(path->ports.empty());
+  REQUIRE(path->param("node1")->type == BlockParamType::kRef);
+  REQUIRE(path->param("node2")->type == BlockParamType::kRef);
+  REQUIRE(!path->param("node1")->required);
+}
+
+TEST_CASE("registry: the standard registry carries both libraries", "[dsl][registry][spatial]") {
+  const LibraryRegistry& stdlib = builtin_stdlib_registry();
+  // Process blocks and core markup resolve side by side, which is what a model
+  // naming `queue` and `node` in one breath needs.
+  REQUIRE(stdlib.has_block("queue"));
+  REQUIRE(stdlib.has_block("node"));
+  REQUIRE(stdlib.has_block("path"));
+  REQUIRE(stdlib.block("node")->library == "core");
+  REQUIRE(stdlib.block("queue")->library == "process");
+  // Neither library's name is ambiguous, so an unqualified kind resolves.
+  REQUIRE(!stdlib.is_ambiguous("node"));
+  REQUIRE(!stdlib.is_ambiguous("queue"));
+  // The process registry itself is untouched: it still means process blocks only.
+  REQUIRE(builtin_process_registry().block("node") == nullptr);
+}

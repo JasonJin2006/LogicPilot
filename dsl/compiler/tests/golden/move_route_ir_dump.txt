@@ -1,0 +1,30 @@
+ModelFile schema_version=2
+metadata name='MoveRoute'
+root node 'MoveRoute' library='core' block='model'
+root   node 'Dock' library='core' block='node'
+root     param x = float(0)
+root     param y = float(0)
+root   node 'Depot' library='core' block='node'
+root     param x = float(10)
+root     param y = float(0)
+root   node 'Bay' library='core' block='node'
+root     param x = float(10)
+root     param y = float(10)
+root   node 'Run1' library='core' block='path'
+root     param node1 = string('Dock')
+root     param node2 = string('Depot')
+root   node 'Run2' library='core' block='path'
+root     param node1 = string('Depot')
+root     param node2 = string('Bay')
+root   node 'Jobs' library='process' block='source'
+root     param arrival = distribution(Poisson params=[1])
+root     port 'out' dir=output
+root   node 'Ship' library='process' block='moveTo'
+root     param node = string('Bay')
+root     param speed = float(10)
+root     port 'in' dir=input
+root     port 'out' dir=output
+root   node 'Done' library='process' block='sink'
+root     port 'in' dir=input
+root   coupling 'Jobs'.out -> 'Ship'.in
+root   coupling 'Ship'.out -> 'Done'.in

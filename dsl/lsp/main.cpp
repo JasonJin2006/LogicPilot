@@ -32,7 +32,7 @@ namespace {
 using logicpilot::dsl::CompileResult;
 using logicpilot::dsl::Diagnostic;
 using logicpilot::dsl::Severity;
-using logicpilot::dsl::builtin_process_registry;
+using logicpilot::dsl::builtin_stdlib_registry;
 using logicpilot::lsp::JsonValue;
 using logicpilot::lsp::json_string;
 using logicpilot::lsp::parse_json;
@@ -155,7 +155,10 @@ void publish_diagnostics(const std::string& uri,
                            diagnostics_json(diagnostics) + "}"));
 }
 
-// Completion items: core kinds + process library blocks (with field hints).
+// Completion items: core kinds + standard library blocks (with field hints).
+// The blocks come from the registry rather than a list here, so a kind the
+// language declares in a library - the spatial markup, say - is offered without
+// this file having to know it exists.
 std::string completion_json() {
   const std::vector<std::string> core_kinds = {
       "model", "param", "state", "couple", "use", "agent",
@@ -174,9 +177,10 @@ std::string completion_json() {
   for (const std::string& kind : core_kinds) {
     add_item(kind, "core kind / keyword");
   }
-  const auto& registry = builtin_process_registry();
+  const auto& registry = builtin_stdlib_registry();
   for (const auto& shape : registry.blocks()) {
-    std::string detail = "process library block";
+    // The library owns the kind, so it also owns the label the editor shows.
+    std::string detail = shape.library + " library block";
     if (!shape.params.empty()) {
       detail += " · fields: ";
       for (std::size_t i = 0; i < shape.params.size(); ++i) {
@@ -228,10 +232,11 @@ std::string hover_json(const std::string& text, long line, long character) {
   if (token.empty()) {
     return "null";
   }
-  const auto& registry = builtin_process_registry();
+  const auto& registry = builtin_stdlib_registry();
   const auto* shape = registry.block(token);
   if (shape != nullptr) {
-    std::string markdown = "**`" + token + "`** — process library block\n\n";
+    std::string markdown =
+        "**`" + token + "`** — " + shape->library + " library block\n\n";
     if (!shape->ports.empty()) {
       markdown += "ports: ";
       for (std::size_t i = 0; i < shape->ports.size(); ++i) {

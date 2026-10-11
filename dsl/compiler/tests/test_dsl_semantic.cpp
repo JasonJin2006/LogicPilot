@@ -1009,3 +1009,99 @@ TEST_CASE("semantic: statechart unsupported actions and identifiers fail explici
   REQUIRE(std::any_of(guard_diagnostics.begin(), guard_diagnostics.end(),
                       [](const auto& diagnostic) { return diagnostic.code == "LP5006"; }));
 }
+
+// Spatial markup field types.
+//
+// These hold on both sides of the change that moved `node`/`path` out of the
+// compiler's core-kind dispatch and into a declared library, and that is the
+// point: they pin the behaviour (a coordinate must be a number, a node reference
+// must be a name) without pinning the wording, so the checks can move into the
+// library without the guard quietly disappearing.
+TEST_CASE("semantic: spatial markup accepts coordinates and node references",
+          "[dsl][semantic][spatial]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  node Dock { x = 0 y = 0 }\n"
+      "  node Depot { x = 10 y = 0 }\n"
+      "  node Bay { x = 10 y = 10 z = 3 }\n"
+      "  path Run1 { node1 = Dock node2 = Depot }\n"
+      "  path Run2 { node1 = Depot node2 = Bay }\n"
+      "  source Jobs { arrival = rate(1.0) }\n"
+      "  moveTo Ship { node = Bay speed = 10.0 }\n"
+      "  sink Done { }\n"
+      "  couple Jobs.out -> Ship.in\n"
+      "  couple Ship.out -> Done.in\n"
+      "}\n",
+      "spatial.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.empty());
+}
+
+TEST_CASE("semantic: a coordinate that is not a number is rejected",
+          "[dsl][semantic][spatial]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  node Dock { x = \"wide\" y = 0 }\n"
+      "}\n",
+      "spatial.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.size() == 1);
+  CHECK(diagnostics[0].code == "LP3001");
+  CHECK(diagnostics[0].severity == Severity::kError);
+  CHECK(diagnostics[0].message.find("x") != std::string::npos);
+}
+
+TEST_CASE("semantic: a node reference that is not a name is rejected",
+          "[dsl][semantic][spatial]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  node Dock { x = 0 y = 0 }\n"
+      "  path Run { node1 = \"Dock\" node2 = Dock }\n"
+      "}\n",
+      "spatial.lp");
+  REQUIRE(parsed.ok());
+  const std::vector<Diagnostic> diagnostics = analyze_model(*parsed.model);
+  REQUIRE(diagnostics.size() == 1);
+  CHECK(diagnostics[0].code == "LP3001");
+  CHECK(diagnostics[0].severity == Severity::kError);
+  CHECK(diagnostics[0].message.find("node1") != std::string::npos);
+}
+
+// `use core` must not fight the core library that is already loaded.
+//
+// The built-in libraries are merged into the registry before `use` lines are
+// resolved, so a model that spells out `use core` would declare `node` twice and
+// get LP2013 (ambiguous kind) for markup it had written correctly. The same
+// no-op treatment `use process` already had is what keeps that honest.
+TEST_CASE("semantic: naming a built-in library is harmless", "[dsl][semantic][spatial]") {
+  const ParseOutput parsed = parse_source(
+      "model M {\n"
+      "  use core\n"
+      "  use process\n"
+      "  node Dock { x = 0 y = 0 }\n"
+      "  node Bay { x = 10 y = 10 }\n"
+      "  path Run { node1 = Dock node2 = Bay }\n"
+      "  moveTo Ship { node = Bay speed = 10.0 }\n"
+      "  source Jobs { arrival = rate(1.0) }\n"
+      "  sink Done { }\n"
+      "  couple Jobs.out -> Ship.in\n"
+      "  couple Ship.out -> Done.in\n"
+      "}\n",
+      "builtins.lp");
+  REQUIRE(parsed.ok());
+  // Through the compiler, not analyze_model: the `use` resolution this guards
+  // lives in the compile entry point.
+  const CompileResult compiled = compile_source(
+      "model M {\n"
+      "  use core\n"
+      "  node Dock { x = 0 y = 0 }\n"
+      "  node Bay { x = 1 y = 1 }\n"
+      "  path Run { node1 = Dock node2 = Bay }\n"
+      "}\n",
+      "builtins.lp");
+  INFO(format_diagnostics("builtins.lp", compiled.diagnostics));
+  CHECK(compiled.ok);
+  CHECK(compiled.diagnostics.empty());
+}

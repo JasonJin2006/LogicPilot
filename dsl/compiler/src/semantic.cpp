@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -83,7 +84,10 @@ class Analyzer {
 public:
   std::vector<Diagnostic> run(const ModelAst& model, const LibraryRegistry* registry,
                               const std::vector<std::string>* libraries) {
-    registry_ = registry != nullptr ? registry : &builtin_process_registry();
+    // The stdlib registry, not the process one: `node`/`path` are declared by the
+    // core library, so a fallback that only knew the process blocks would report
+    // the spatial markup as an unknown kind.
+    registry_ = registry != nullptr ? registry : &builtin_stdlib_registry();
     libraries_ = libraries;
     declared_resources_.clear();
     entity_attribute_names_.clear();
@@ -254,20 +258,13 @@ private:
     if (kind == "experiment") {
       return;  // validated via the typed ExperimentDecl list below
     }
-    if (kind == "node") {
-      check_node(node, parent_scope);
-      return;
-    }
-    if (kind == "path") {
-      check_path(node);
-      return;
-    }
     if (kind == "statechart") {
       check_statechart(node);
       return;
     }
     if (registry_ != nullptr && registry_->has_block(node.registry_key())) {
-      // Process-library blocks (source/queue/service/... and resource) are
+      // Declared blocks: the core markup (`node`/`path`) and every
+      // process-library block (source/queue/service/..., resource). Both are
       // valid members of the model root and agent bodies (agent-centric
       // structure).
       check_process_block(node, parent_scope);
@@ -278,52 +275,28 @@ private:
             node.span);
       return;
     }
-    std::string known = "core kinds: agent/atomic/continuous/experiment/node/path";
+    // Name what the language does know, grouped by where it comes from: the kinds
+    // the compiler still dispatches in code, then each loaded library's blocks.
+    // Listing them all as one run would have suggested `node` and `queue` share a
+    // provenance, which is the confusion this grouping exists to prevent.
+    std::string known = "core kinds: agent/atomic/continuous/experiment/statechart";
     if (registry_ != nullptr) {
-      std::string process_kinds;
+      std::map<std::string, std::string> by_library;
       for (const BlockShape& shape : registry_->blocks()) {
-        if (!process_kinds.empty()) {
-          process_kinds += "/";
+        std::string& kinds = by_library[shape.library];
+        if (!kinds.empty()) {
+          kinds += "/";
         }
-        process_kinds += shape.kind;
+        kinds += shape.kind;
       }
-      known += "; process library: " + process_kinds;
+      for (const auto& [library, kinds] : by_library) {
+        known += "; " + library + " library: " + kinds;
+      }
     } else {
       known += "; process library: resource/source/queue/service/sink";
     }
     error("LP2004", "unknown declaration kind '" + kind + "' (" + known + ")",
           node.name_span);
-  }
-
-  // Spatial markup: `node <Name> { x = <f>; y = <f>; z = <f> }` anchors the
-  // moveTo destination (AnyLogic node markup; coordinates are numeric
-  // constants).
-  void check_node(const Node& node, const ParamScope& scope) {
-    for (const char* field_name : {"x", "y", "z"}) {
-      const Field* field = field_of(node, field_name);
-      if (field == nullptr) {
-        continue;
-      }
-      Value folded;
-      if (!fold_value(field->value, scope, folded) ||
-          (folded.kind != ValueKind::kInt && folded.kind != ValueKind::kFloat)) {
-        error("LP3001",
-              "node '" + node.name + "' field '" + field_name + "' must be a numeric constant",
-              field->span);
-      }
-    }
-  }
-
-  // Network edge: `path <Name> { node1 = <Node>; node2 = <Node> }` links two
-  // nodes with a straight segment (weight = Euclidean distance).
-  void check_path(const Node& node) {
-    for (const char* field_name : {"node1", "node2"}) {
-      const Field* field = field_of(node, field_name);
-      if (field != nullptr && field->value.kind != ValueKind::kIdentifier) {
-        error("LP3001", "path '" + node.name + "' field '" + field_name + "' must reference a node",
-              field->span);
-      }
-    }
   }
 
   // ------------------------------------------------------------------
@@ -636,6 +609,14 @@ private:
         check_distribution_field(field, scope, context);
         break;
       case BlockParamType::kRef:
+        // A reference names something. Spelling it as a literal is not a
+        // narrower way of saying the same thing: a quoted node name becomes a
+        // dangling segment that the kernel skips without a word, so the library's
+        // `ref` type has to mean "a name" or it means nothing.
+        if (field.value.kind != ValueKind::kIdentifier) {
+          error("LP3001", context + " must reference a name", field.span);
+        }
+        break;
       case BlockParamType::kBool:
       case BlockParamType::kString:
       case BlockParamType::kExpression:
