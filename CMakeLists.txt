@@ -36,6 +36,10 @@ option(LOGICPILOT_METHOD_DEVS "Include the kernel-native DEVS method plugin" ON)
 # Compiler hygiene
 # ---------------------------------------------------------------------------
 if(MSVC)
+  find_program(LOGICPILOT_NODE_FOR_MSVC node REQUIRED)
+  set(CMAKE_CL_SHOWINCLUDES_PREFIX "Note: including file:")
+  set(CMAKE_C_COMPILER_LAUNCHER "${LOGICPILOT_NODE_FOR_MSVC};${CMAKE_CURRENT_SOURCE_DIR}/cmake/msvc-output.mjs")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${LOGICPILOT_NODE_FOR_MSVC};${CMAKE_CURRENT_SOURCE_DIR}/cmake/msvc-output.mjs")
   add_compile_options(/W4 /permissive- /utf-8)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)

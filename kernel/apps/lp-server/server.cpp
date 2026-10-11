@@ -37,7 +37,6 @@
 #include "wire_frames.h"
 #include "statechart_network.h"
 #include "statechart/statechart_replication.h"
-#include "process_flow.h"
 #include <wire_generated.h>
 
 #ifdef LOGICPILOT_HAS_DSL
@@ -595,28 +594,14 @@ struct SimServer::Impl {
     return inputs;
   }
 
-  void apply_pending_inputs(StatechartReplicationModel& chart) {
+  // One overload for every model. Which formalisms accept input - and what a
+  // "port" means to them - is declared by the model itself
+  // (ReplicationModel::inject), so the gateway neither sorts models by type nor
+  // reaches into a method's engine to find an injection entry point. A model that
+  // takes no input inherits the no-op, and that is how it says so.
+  void apply_pending_inputs(ReplicationModel& model) {
     for (const ExternalInput& input : take_pending_inputs()) {
-      chart.dispatch_message(input.port);
-    }
-  }
-
-  void apply_pending_inputs(StatechartNetworkReplicationModel& network) {
-    for (const ExternalInput& input : take_pending_inputs()) {
-      network.dispatch_message(input.port);
-    }
-  }
-
-  void apply_pending_inputs(DevsReplicationModel& atomic) {
-    for (const ExternalInput& input : take_pending_inputs()) {
-      atomic.inject(input.port, input.payload);
-    }
-  }
-
-  void apply_pending_inputs(FlowEngine& flow) {
-    auto* process = dynamic_cast<ProcessFlowSim*>(&flow);
-    for (const ExternalInput& input : take_pending_inputs()) {
-      if (process != nullptr) process->inject(input.port, input.payload);
+      (void)model.inject(input.port, input.payload);
     }
   }
 

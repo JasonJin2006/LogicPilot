@@ -132,6 +132,19 @@ endif()
 
 # lpcli (Phase 1b ships the `run` subcommand; compile lands in Phase 2).
 add_subdirectory(apps/lpcli)
+
+# Private native session host (G4): line-delimited JSON over stdin/stdout,
+# reusing SimulationKernel/SimulationSession without opening another socket.
+if(LOGICPILOT_BUILD_DSL AND LOGICPILOT_METHOD_DEVS)
+  add_executable(lp-session-host apps/lp-session-host/main.cpp)
+  target_link_libraries(lp-session-host PRIVATE
+    logicpilot_kernel
+    logicpilot_methods
+    logicpilot_dsl
+    fmt::fmt
+  )
+  target_compile_definitions(lp-session-host PRIVATE LOGICPILOT_HAS_DSL=1)
+endif()
 if(LOGICPILOT_HAS_WASMTIME AND WIN32 AND
    EXISTS "${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll")
   configure_file("${LOGICPILOT_WASMTIME_ROOT}/lib/wasmtime.dll"

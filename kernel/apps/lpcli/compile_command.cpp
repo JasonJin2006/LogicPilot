@@ -22,6 +22,7 @@
 #include "logicpilot/dsl/diagnostics.h"
 #include "logicpilot/dsl/experiments_json.h"
 #include "logicpilot/dsl/json_diagnostics.h"
+#include "logicpilot/runtime/ir_loader.h"
 #include "project_io.h"
 
 namespace logicpilot::cli {
@@ -38,7 +39,8 @@ void print_usage() {
       "  -o, --output <path>  output file (default <input>.ir.bin)\n"
       "  --project <path.lpproj>  compile the bundled DSL instead of <input>\n"
       "  --diagnostics-json <path>  write machine-readable diagnostics JSON\n"
-      "  --experiments-json <path>  write the model's declared experiments\n");
+      "  --experiments-json <path>  write the model's declared experiments\n"
+      "  --methods-json <path>      write the lowered IR method summary\n");
 }
 
 std::string default_output_path(const std::string& input) {
@@ -58,6 +60,7 @@ int compile_command(std::span<const std::string> args) {
   std::string output;
   std::string diagnostics_json;
   std::string experiments_json;
+  std::string methods_json;
   std::string project_path;
   std::vector<std::string> library_dirs;
   dsl::ParameterOverrides parameter_overrides;
@@ -85,6 +88,12 @@ int compile_command(std::span<const std::string> args) {
         return 2;
       }
       experiments_json = args[++i];
+    } else if (arg == "--methods-json") {
+      if (i + 1 >= args.size()) {
+        fmt::print(stderr, "error: {} needs a value\n", arg);
+        return 2;
+      }
+      methods_json = args[++i];
     } else if (arg == "--project") {
       if (i + 1 >= args.size()) {
         fmt::print(stderr, "error: {} needs a value\n", arg);
@@ -226,6 +235,26 @@ int compile_command(std::span<const std::string> args) {
   }
 
   const std::vector<std::uint8_t>& output_bytes = compiled.v2_bytes;
+
+  if (!methods_json.empty()) {
+    const auto loaded = logicpilot::load_model_buffer(output_bytes.data(), output_bytes.size());
+    if (!loaded.ok()) {
+      fmt::print(stderr, "error: compiled IR cannot be inspected: {}\n", loaded.message);
+      return 1;
+    }
+    std::ofstream methods_out(methods_json, std::ios::trunc);
+    if (!methods_out) {
+      fmt::print(stderr, "error: cannot write '{}'\n", methods_json);
+      return 1;
+    }
+    const auto methods = logicpilot::resolve_method_names(loaded.file);
+    methods_out << "{\"schema\":\"logicpilot.ir-methods/v1\",\"methods\":[";
+    for (std::size_t index = 0; index < methods.size(); ++index) {
+      if (index != 0) methods_out << ',';
+      methods_out << '"' << methods[index] << '"';
+    }
+    methods_out << "]}\n";
+  }
 
   std::ofstream out(output, std::ios::binary | std::ios::trunc);
   if (!out) {
