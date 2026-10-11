@@ -549,13 +549,18 @@ export function projectToDocument(bundle: ProjectBundle): DocumentLoadResult {
     );
     const parsed = parseDsl(merged.source);
     if (parsed.ok) {
-      if (canvasText !== undefined) {
-        applyCanvasLayout(parsed.document, canvasText);
-      }
+      const layoutDiagnostics =
+        canvasText === undefined
+          ? []
+          : applyCanvasLayout(parsed.document, canvasText, merged.source);
       return {
         ok: true,
         document: parsed.document,
-        diagnostics: [...(parsed.diagnostics ?? []), ...merged.diagnostics],
+        diagnostics: [
+          ...(parsed.diagnostics ?? []),
+          ...merged.diagnostics,
+          ...layoutDiagnostics,
+        ],
       };
     }
     return {
@@ -576,9 +581,33 @@ function isLayoutCanvas(text: string): boolean {
   }
 }
 
+/**
+ * Whether the model source declares couplings explicitly.
+ *
+ * Used only to narrow the guard below: a model with no `couple` lines can never
+ * be rescued by it, so a wrong answer here can only fail to protect, never cause
+ * loss.
+ */
+function declaresCouplings(source: string | undefined): boolean {
+  if (source === undefined) return false;
+  return /(^|\s)couple\s/.test(source);
+}
+
 /** Apply a v2 layout-only canvas file (positions + couplings by node path)
- *  onto a freshly parsed document. */
-function applyCanvasLayout(document: ModelDocument, text: string): void {
+ *  onto a freshly parsed document.
+ *
+ * The authored couplings normally replace the parse-time ones, because the app
+ * writes the full list on save and a round trip must be faithful. An *empty*
+ * authored list is the one case where that rule destroys data: a stub or
+ * hand-written presentation carries `edges: []` while the model source declares
+ * real couplings, and taking it literally silently removes every connection.
+ * In that case the declared couplings win and the disagreement is reported.
+ */
+function applyCanvasLayout(
+  document: ModelDocument,
+  text: string,
+  modelSource: string | undefined,
+): SyncDiagnostic[] {
   let raw: {
     layout?: Record<string, { x?: unknown; y?: unknown }>;
     edges?: Array<{ from?: unknown; to?: unknown }>;
@@ -586,11 +615,12 @@ function applyCanvasLayout(document: ModelDocument, text: string): void {
   try {
     raw = JSON.parse(text);
   } catch {
-    return;
+    return [];
   }
   if (raw === null || typeof raw !== 'object' || !raw.layout) {
-    return;
+    return [];
   }
+  const diagnostics: SyncDiagnostic[] = [];
   const byPath = new Map<string, ModelNode>();
   for (const node of document.nodes) {
     byPath.set(nodePath(node, document.nodes), node);
@@ -611,8 +641,24 @@ function applyCanvasLayout(document: ModelDocument, text: string): void {
         next.push({ id: freshId('edge'), from: from.id, to: to.id });
       }
     }
-    // The persisted couplings replace the parse-time default ones.
-    document.edges = next;
+    const wouldEraseDeclaredCouplings =
+      next.length === 0 && document.edges.length > 0 && declaresCouplings(modelSource);
+    if (wouldEraseDeclaredCouplings) {
+      // Keep the couplings the model source declares. Dropping them is silent
+      // and total - the canvas would come back with no connections at all - so
+      // the conservative reading wins and the user is told about it.
+      diagnostics.push({
+        code: 'LP3104',
+        severity: 'warning',
+        message:
+          `the canvas presentation lists no connections but the model source declares ` +
+          `${document.edges.length}; keeping the declared ones`,
+        path: 'presentation',
+      });
+    } else {
+      // The persisted couplings replace the parse-time default ones.
+      document.edges = next;
+    }
   }
   // v3: presentation shapes (vector objects) are restored by creating (or
   // attaching to) their nodes - they have no DSL representation.
@@ -650,6 +696,7 @@ function applyCanvasLayout(document: ModelDocument, text: string): void {
       }
     }
   }
+  return diagnostics;
 }
 
 function parseCanvas(text: string, fallbackName: string): ModelDocument | null {

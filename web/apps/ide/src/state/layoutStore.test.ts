@@ -61,7 +61,7 @@ describe('layoutStore', () => {
     const { areas } = useLayoutStore.getState();
     expect(areas.center.panels).toEqual(['model', 'dsl']);
     expect(areas.right.panels).toEqual(['ai', 'properties']);
-    expect(areas.left.panels).toEqual(['explorer', 'modelInfo', 'palette']);
+    expect(areas.left.panels).toEqual(['explorer', 'navigator', 'palette']);
     // Problems leads the bottom area: the aggregated list is the tab users
     // reach for first when something looks off.
     expect(areas.bottom.panels).toEqual(['problems', 'console']);
@@ -87,23 +87,23 @@ describe('layoutStore', () => {
     expect(merged.areas.center.activePanel).toBe('model');
   });
 
-  it('merge appends newly registered panels to a stale persisted layout', () => {
+  it('migrates old Project and Plugin Drafts activity layouts to daily modeling views', () => {
     const stale = {
-      state: {
-        areas: {
-          left: {
-            size: 280,
-            collapsed: false,
-            activePanel: 'modelInfo',
-            panels: ['modelInfo', 'palette'],
-          },
+      areas: {
+        left: {
+          size: 280,
+          collapsed: false,
+          activePanel: 'pluginDrafts',
+          panels: ['modelInfo', 'pluginDrafts', 'palette'],
         },
       },
     };
     const merged = mergePersistedLayout(stale, useLayoutStore.getState());
     expect(merged.areas.left.panels).toContain('explorer');
-    expect(merged.areas.left.panels).toContain('modelInfo');
+    expect(merged.areas.left.panels).toContain('navigator');
     expect(merged.areas.left.panels).toContain('palette');
+    expect(merged.areas.left.panels).not.toContain('pluginDrafts');
+    expect(merged.areas.left.activePanel).toBe('navigator');
   });
 
   it('merge restores defaults when a persisted area is empty', () => {

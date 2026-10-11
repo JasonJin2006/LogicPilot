@@ -26,7 +26,14 @@ interface DraftsPayload {
   readonly drafts: readonly DraftRecord[];
 }
 
-export function PluginDraftsPanel() {
+export interface PluginDraftsPanelProps {
+  /** The draft lifecycle belongs inside Extensions settings, not the daily
+   * modeling activity bar. Keep the component reusable for a future
+   * extension-management surface without duplicating its heading. */
+  readonly embedded?: boolean;
+}
+
+export function PluginDraftsPanel({ embedded = false }: PluginDraftsPanelProps) {
   const [payload, setPayload] = useState<DraftsPayload | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,9 +90,12 @@ export function PluginDraftsPanel() {
   };
 
   return (
-    <section className="plugin-drafts-panel" aria-label="Plugin drafts">
+    <section
+      className={`plugin-drafts-panel${embedded ? ' plugin-drafts-panel-embedded' : ''}`}
+      aria-label="Plugin drafts"
+    >
       <div className="plugin-drafts-toolbar">
-        <h2>Plugin Drafts</h2>
+        {!embedded && <h2>Plugin Drafts</h2>}
         <button type="button" onClick={() => void refresh()} disabled={busy !== null}>
           Refresh
         </button>

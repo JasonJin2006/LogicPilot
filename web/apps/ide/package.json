@@ -13,7 +13,8 @@
     "test": "vitest run",
     "verify:headless": "node scripts/headless-verify.mjs",
     "verify:browser": "node scripts/browser-verify.mjs",
-    "verify:zero-paradigm": "node scripts/zero-paradigm-verify.mjs"
+    "verify:zero-paradigm": "node scripts/zero-paradigm-verify.mjs",
+    "verify:paradigm-lifecycle": "node scripts/paradigm-lifecycle-verify.mjs"
   },
   "dependencies": {
     "@logicpilot/canvas": "workspace:*",
@@ -22,18 +23,20 @@
     "@logicpilot/plugin-host": "workspace:*",
     "@logicpilot/protocol": "workspace:*",
     "@logicpilot/renderer2d": "workspace:*",
+    "@logicpilot/scene3d": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "elkjs": "0.9.2",
     "lucide-react": "^1.28.0",
-    "pixi.js": "^8.6.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "three": "^0.186.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^4.4.1",
     "playwright-core": "^1.62.1",
     "typescript": "^5.6.3",

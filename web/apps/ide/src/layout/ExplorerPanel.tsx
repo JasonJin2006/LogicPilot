@@ -2,7 +2,7 @@
 // project the tree mirrors the real folder contents exactly; in-memory
 // bundles show the bundle files. Right-click on a folder creates a file, on
 // a file renames or deletes it - all edits update the bundle in place (the
-// Project panel re-parses the changed DSL automatically) and mark the
+// Navigator panel re-parses the changed DSL automatically) and mark the
 // project dirty.
 
 import { useRef, useState } from 'react';
@@ -204,6 +204,27 @@ function FolderRow({
   );
 }
 
+/** What the Explorer's root row may promise about itself.
+ *
+ * `folder`   a real directory on disk, browsable into.
+ * `bundle`   an in-memory project with a file table, which expands too.
+ * `document` a single file opened as a virtual workspace (a bare .lp/.sysml).
+ *            It has no file table at all, so a folder glyph would promise an
+ *            expansion that cannot happen - the row would look like a folder
+ *            that refuses to open.
+ */
+export type ExplorerRootKind = 'folder' | 'bundle' | 'document';
+
+export function explorerRootKind(input: {
+  isDisk: boolean;
+  hasBundle: boolean;
+}): ExplorerRootKind {
+  // A disk project wins even if its bundle is not loaded yet: the folder is
+  // still a folder, and the old bundle-only test rendered it as a closed one.
+  if (input.isDisk) return 'folder';
+  return input.hasBundle ? 'bundle' : 'document';
+}
+
 export function ExplorerPanel() {
   const bundle = useProjectStore((state) => state.bundle);
   const projectPath = useProjectStore((state) => state.path);
@@ -260,6 +281,7 @@ export function ExplorerPanel() {
 
   // A bare folder opened without logicpilot.json still browses its files
   // (code editing works; Save initializes the project).
+  const rootKind = explorerRootKind({ isDisk, hasBundle: bundle !== null });
   const rootName = bundle
     ? bundle.manifest.name
     : (workspaceName ?? projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'Workspace');
@@ -502,8 +524,15 @@ export function ExplorerPanel() {
       onContextMenu={onContextMenu}
     >
       <div className="tree-row tree-root" data-dir="">
-        <span className="tree-glyph">
-          {bundle ? <FolderOpen size={13} /> : <Folder size={13} />}
+        <span
+          className="tree-glyph"
+          title={
+            rootKind === 'document'
+              ? 'Opened as a single document, not a project - it has no file tree'
+              : undefined
+          }
+        >
+          {rootKind === 'document' ? <FileCode2 size={13} /> : <FolderOpen size={13} />}
         </span>
         <span className="tree-label">{rootName}</span>
         {dirty && <span className="tree-dirty-dot" title="unsaved changes" />}

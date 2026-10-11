@@ -16,6 +16,8 @@ import { contributedProblemStores } from '../workbench/problems';
 import { PANELS } from '../layout/panels';
 import { PLUGIN_REGISTRY } from './registry';
 import { compilePluginContext } from '../ai/contextCompiler';
+import { modelSemanticProviders } from './registries/modelSemantics';
+import { sysmlSemanticProviders } from './registries/sysmlSemantics';
 
 afterEach(async () => {
   await stopIdePluginHost();
@@ -52,6 +54,7 @@ describe('IDE plugin host', () => {
       'logicpilot.continuous',
       'logicpilot.des',
       'logicpilot.devs',
+      'logicpilot.scene3d',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
@@ -62,6 +65,7 @@ describe('IDE plugin host', () => {
       'logicpilot.continuous',
       'logicpilot.des',
       'logicpilot.devs',
+      'logicpilot.scene3d',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
@@ -86,6 +90,8 @@ describe('IDE plugin host', () => {
     expect(contributedProblemStores()).toEqual([]);
     expect(PANELS.sysml).toBeUndefined();
     expect(PLUGIN_REGISTRY.snapshot().contributions).toEqual([]);
+    expect(modelSemanticProviders()).toEqual([]);
+    expect(sysmlSemanticProviders()).toEqual([]);
   });
 
   it('writes a contracts-shaped lockfile of the discovered set', async () => {
@@ -98,6 +104,7 @@ describe('IDE plugin host', () => {
       'logicpilot.continuous',
       'logicpilot.des',
       'logicpilot.devs',
+      'logicpilot.scene3d',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);
@@ -255,6 +262,7 @@ describe('remote catalog discovery (Phase 2B-1)', () => {
       'logicpilot.continuous',
       'logicpilot.des',
       'logicpilot.devs',
+      'logicpilot.scene3d',
       'logicpilot.statechart',
       'logicpilot.sysml',
     ]);

@@ -1,3 +1,4 @@
 import { activateDataPack } from '../dataPack';
 import contributions from './contributions.json';
-export const activateDevsPlugin = () => activateDataPack(contributions);
+import { projectDevsTelemetry } from '../telemetryProjectors';
+export const activateDevsPlugin = () => activateDataPack(contributions, projectDevsTelemetry);

@@ -20,10 +20,11 @@ import { useModelStore } from './state/modelStore';
 import { useLayoutStore } from './state/layoutStore';
 import { useProjectStore } from './state/projectStore';
 import { useCanvasView, syncCanvasViewsWithDocument } from './state/canvasView';
-import { useConnectionStore } from './state/connectionStore';
+import { useLegacyGatewayStore } from './state/legacyGateway';
 import { useUiStore } from './state/uiStore';
 import { ThemeManager } from './theme/ThemeManager';
 import { editorPanelFor } from './workbench/documentTypes';
+import { createExecutionClient } from './client/executionClient';
 
 export default function App() {
   const settingsOpen = useUiStore((state) => state.settingsOpen);
@@ -36,8 +37,22 @@ export default function App() {
   // client launches lp-server itself; the browser dev server can connect to
   // the default ws://127.0.0.1:8089/sim). Retries stop when connected.
   useEffect(() => {
-    useConnectionStore.getState().autoConnect();
-    return () => useConnectionStore.getState().disconnect();
+    let cancelled = false;
+    void createExecutionClient()
+      .listTargets()
+      .then((targets) => {
+        if (cancelled) return;
+        if (!targets.some((target) => target.id === 'logicpilot.native.session')) {
+          useLegacyGatewayStore.getState().autoConnect();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) useLegacyGatewayStore.getState().autoConnect();
+      });
+    return () => {
+      cancelled = true;
+      useLegacyGatewayStore.getState().disconnect();
+    };
   }, []);
 
   // Opening a file brings the DSL editor tab to the front; closing the last

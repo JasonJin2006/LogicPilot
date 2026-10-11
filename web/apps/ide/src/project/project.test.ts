@@ -17,6 +17,7 @@ import {
   projectToDocument,
   sceneContainerFromFile,
   splitModelSource,
+  DEFAULT_PRESENTATION_PATH,
 } from './project';
 import { saveProject } from './syncEngine';
 
@@ -344,6 +345,52 @@ describe('project bundle', () => {
     expect(new Set(reparsed.model!.members.map((member) => member.kind))).toEqual(
       new Set(['resource', 'agent']),
     );
+  });
+
+  it('keeps declared couplings when the presentation carries none', () => {
+    // A stub or hand-written presentation says `edges: []` while the model
+    // source declares real couplings. Taking the empty list literally removes
+    // every connection with no error, so the declared ones win and the
+    // disagreement is reported.
+    const bundle = createProjectBundle(buildSample());
+    const canvas = JSON.parse(bundle.files[DEFAULT_PRESENTATION_PATH]!) as {
+      edges: unknown[];
+    };
+    canvas.edges = [];
+    const result = projectToDocument({
+      ...bundle,
+      files: { ...bundle.files, [DEFAULT_PRESENTATION_PATH]: JSON.stringify(canvas) },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.document!.edges.length).toBeGreaterThan(0);
+    expect(result.diagnostics?.some((entry) => entry.code === 'LP3104')).toBe(true);
+  });
+
+  it('still lets an authored coupling list replace the parsed one', () => {
+    // The app writes the full list on save, so a non-empty one is authoritative
+    // and the round trip must stay faithful.
+    const result = projectToDocument(createProjectBundle(buildSample()));
+    expect(result.ok).toBe(true);
+    expect(result.document!.edges).toHaveLength(1);
+    expect(result.diagnostics?.some((entry) => entry.code === 'LP3104')).toBe(false);
+  });
+
+  it('does not warn when there is nothing to protect', () => {
+    // No parsed couplings means an empty authored list is not a disagreement.
+    let bare = createDocument('Bare');
+    bare = addNode(bare, { kind: 'resource', name: 'Only', x: 10, y: 10, params: {} });
+    const bundle = createProjectBundle(bare);
+    const canvas = JSON.parse(bundle.files[DEFAULT_PRESENTATION_PATH]!) as {
+      edges: unknown[];
+    };
+    canvas.edges = [];
+    const result = projectToDocument({
+      ...bundle,
+      files: { ...bundle.files, [DEFAULT_PRESENTATION_PATH]: JSON.stringify(canvas) },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.document!.edges).toHaveLength(0);
+    expect(result.diagnostics?.some((entry) => entry.code === 'LP3104')).toBe(false);
   });
 
   it('round-trips the canvas layout (positions and edges survive by path)', () => {

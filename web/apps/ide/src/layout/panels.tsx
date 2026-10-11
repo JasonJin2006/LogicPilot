@@ -8,9 +8,9 @@
 // registerPanel() from their own contribution modules.
 
 import type { ComponentType } from 'react';
-import { Boxes, Files, Palette, Puzzle } from 'lucide-react';
+import { CircleAlert, Files, ListTree, Palette, ScrollText } from 'lucide-react';
 import { AIPanel } from '../ai/AIPanel';
-import { DslEditor, ModelWorkspace } from '../plugins/registries/panelComponents';
+import { DslEditor, ModelWorkspace, Scene3DPanel } from '../plugins/registries/panelComponents';
 import { ConsolePanel } from './ConsolePanel';
 import { ExplorerPanel } from './ExplorerPanel';
 import { ModelInfoPanel } from './ModelInfoPanel';
@@ -19,7 +19,6 @@ import { ProblemsPanel } from './ProblemsPanel';
 import { PropertiesHost } from './PropertiesHost';
 import { WelcomePanel } from './WelcomePanel';
 import { useModelStore } from '../state/modelStore';
-import { PluginDraftsPanel } from './PluginDraftsPanel';
 
 export type AreaId = 'left' | 'center' | 'right' | 'bottom';
 
@@ -31,6 +30,8 @@ export interface PanelDef {
   title: string;
   area: AreaId;
   component: ComponentType;
+  /** VS Code-style panel glyph shown before the tab label. */
+  icon?: ComponentType<{ size?: number }>;
   /** Selection-driven focus probe. When it returns true the workspace brings
    *  this panel forward; checked over the registry before falling back to
    *  the area's default tab. Lets a language own its properties-panel rule
@@ -57,6 +58,10 @@ const registry: Record<PanelId, PanelDef> = {
   model: { title: 'Model', area: 'center', component: ModelWorkspace },
   dsl: { title: 'DSL', area: 'center', component: DslEditor },
   welcome: { title: 'Welcome', area: 'center', component: WelcomePanel },
+  // center: the 3D scene view. Paradigm-agnostic - it projects whatever
+  // document is open - so it belongs to the shell rather than to a language
+  // plugin, and it is listed here so the default layout can name it.
+  scene3d: { title: 'Scene', area: 'center', component: Scene3DPanel },
   // right: the AI copilot panel.
   ai: { title: 'AI', area: 'right', component: AIPanel },
   // right: properties host - one Properties tab whose content the active
@@ -69,14 +74,13 @@ const registry: Record<PanelId, PanelDef> = {
     focus: () => useModelStore.getState().selectedId !== null,
   },
   // bottom: diagnostics / event stream.
-  console: { title: 'Console', area: 'bottom', component: ConsolePanel },
+  console: { title: 'Console', area: 'bottom', component: ConsolePanel, icon: ScrollText },
   // bottom: aggregated, navigable problems across document kinds.
-  problems: { title: 'Problems', area: 'bottom', component: ProblemsPanel },
+  problems: { title: 'Problems', area: 'bottom', component: ProblemsPanel, icon: CircleAlert },
   // left: side panels switched by the activity bar (VS Code style).
   explorer: { title: 'Explorer', area: 'left', component: ExplorerPanel },
-  modelInfo: { title: 'Project', area: 'left', component: ModelInfoPanel },
+  navigator: { title: 'Navigator', area: 'left', component: ModelInfoPanel, icon: ListTree },
   palette: { title: 'Palette', area: 'left', component: PalettePanel },
-  pluginDrafts: { title: 'Plugin Drafts', area: 'left', component: PluginDraftsPanel },
 };
 
 /** Register a panel at runtime (language contributions). Duplicate ids are
@@ -132,14 +136,17 @@ export const ACTIVITY_VIEWS: Array<{
   panel: PanelId;
 }> = [
   { id: 'explorer', label: 'Explorer', icon: Files, panel: 'explorer' },
-  { id: 'model', label: 'Project', icon: Boxes, panel: 'modelInfo' },
+  { id: 'navigator', label: 'Navigator', icon: ListTree, panel: 'navigator' },
   { id: 'palette', label: 'Palette', icon: Palette, panel: 'palette' },
-  { id: 'plugin-drafts', label: 'Plugin Drafts', icon: Puzzle, panel: 'pluginDrafts' },
 ];
 
 /** Default per-area layout: which panels live where, and the active tab. */
 export const DEFAULT_LAYOUT: Record<AreaId, { panels: PanelId[]; active: PanelId }> = {
-  left: { panels: ['explorer', 'modelInfo', 'palette'], active: 'explorer' },
+  left: { panels: ['explorer', 'navigator', 'palette'], active: 'explorer' },
+  // The centre area's tabs are document/canvas driven, not panel driven, so a
+  // view that is not a document (Welcome, Scene) is opened through
+  // openPanel() and appears as its own tab. Listing one here would only mount
+  // it at startup.
   center: { panels: ['model', 'dsl'], active: 'model' },
   right: { panels: ['ai', 'properties'], active: 'ai' },
   bottom: { panels: ['problems', 'console'], active: 'problems' },

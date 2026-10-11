@@ -32,6 +32,9 @@ export function registerModelPaletteContributions(): () => void {
         PALETTE_CONTRIBUTIONS.register({
           id: `logicpilot.${library.id}`,
           library: { id: library.id, name: library.name },
+          // The .lp model canvas is the context for the model libraries:
+          // a SysML or plain-text document must not offer process blocks.
+          context: { documentTypes: ['dsl'] },
           // Catalog-only process kinds have no kernel registry entry yet;
           // hiding them keeps the palette honest (dragging one would fail
           // DSL compile with LP2004).

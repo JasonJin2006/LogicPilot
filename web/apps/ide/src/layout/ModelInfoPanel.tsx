@@ -1,4 +1,4 @@
-// Side panel host (Project view): a generic outline host per the workbench
+// Side panel host (Navigator view): a generic outline host per the workbench
 // extension contracts (workbench-architecture-plan.md §5/§9.2). Semantic
 // element trees come from outline contributions registered by language
 // extensions - this file parses no language and branches on no kind. Each
@@ -18,7 +18,11 @@ export function ModelInfoPanel() {
   const contribution = OUTLINE_CONTRIBUTIONS.resolve({
     activePath: activeFile,
     activeDocumentType:
-      activeFile !== null ? (documentContributionFor(activeFile)?.id ?? null) : null,
+      activeFile !== null
+        ? (documentContributionFor(activeFile)?.id ?? null)
+        : bundle !== null && bundle !== undefined
+          ? 'dsl'
+          : null,
     hasProject: bundle !== null && bundle !== undefined,
   });
 

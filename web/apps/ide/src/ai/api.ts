@@ -22,6 +22,8 @@ export type ExperimentSettings = Pick<
   | 'confidence'
 >;
 
+export type AiRuntimeKind = 'process' | 'devs' | 'continuous' | 'agent' | 'generic';
+
 export interface AiDiagnostic {
   code: string;
   message: string;
@@ -309,12 +311,13 @@ export async function aiRunDsl(
   dsl: string,
   experiment?: ExperimentSettings,
   signal?: AbortSignal,
+  runtimeKind?: AiRuntimeKind,
 ): Promise<AiResult> {
   const config = await getAppConfig();
   const response = await fetch(`${config?.apiBase ?? ''}/api/ai-run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...sessionHeaders(config) },
-    body: JSON.stringify({ dsl, ...experiment }),
+    body: JSON.stringify({ dsl, ...experiment, ...(runtimeKind ? { runtimeKind } : {}) }),
     signal,
   });
   const data = (await response.json()) as Omit<AiResult, 'iterations' | 'dsl'> & { error?: string };

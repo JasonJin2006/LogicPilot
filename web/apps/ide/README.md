@@ -65,5 +65,5 @@ pnpm test:browser                         # 启动网关/Vite 并运行完整浏
 - 遥测为二进制帧：4 字节 size 前缀 → FlatBuffer（identifier `LPWR`，
   version 1）→ `FrameHeader` + payload union（见 `schemas/wire.fbs`）。
 - 解码位于 `web/packages/renderer2d/src/decode.ts`，纯函数、零 DOM 依赖；
-  运行可视化用 PixiJS 渲染循环（`src/state/vizState.ts`），画布徽标由
-  `SimClient` → `vizState` 驱动。
+  运行可视化由 `SimClient` → `vizState`（`src/state/vizState.ts`）驱动，
+  由 requestAnimationFrame 消费：画布令牌动画与 3D 场景的 agent 图层。

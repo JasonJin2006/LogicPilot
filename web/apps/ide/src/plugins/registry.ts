@@ -6,6 +6,7 @@ import type {
 import { validateContract } from '@logicpilot/contracts';
 
 export interface PluginRegistrySnapshot {
+  /** Local render revision; never use this value as a remote replay cursor. */
   readonly generation: number;
   readonly plugins: readonly string[];
   readonly contributions: readonly PluginContributionSet[];
@@ -57,6 +58,11 @@ export interface StructuredPaletteItem {
 export class PluginRegistryStore {
   private value: PluginRegistrySnapshot = { generation: 0, plugins: [], contributions: [] };
   private remoteValue: PluginRegistrySnapshot = this.value;
+  // `generation` is the externally observable composition revision. Remote
+  // generations and local lifecycle changes must both advance it; otherwise
+  // React consumers using useSyncExternalStore can miss local activation.
+  private compositionGeneration = 0;
+  private hasRemoteSnapshot = false;
   private readonly localContributions = new Map<string, PluginContributionSet>();
   private readonly listeners = new Set<() => void>();
   private stopStream: (() => void) | null = null;
@@ -74,16 +80,19 @@ export class PluginRegistryStore {
 
   apply(payload: unknown): PluginRegistrySnapshot {
     const value = validateRegistryPayload(payload);
-    if (value.generation < this.value.generation)
+    if (value.generation < this.remoteValue.generation)
       throw new Error('stale plugin registry generation');
-    if (value.generation === this.value.generation) return this.value;
+    if (this.hasRemoteSnapshot && value.generation === this.remoteValue.generation)
+      return this.value;
+    this.hasRemoteSnapshot = true;
     this.remoteValue = {
       generation: value.generation,
       plugins: value.plugins,
       contributions: value.contributions,
       ...(value.integrity === undefined ? {} : { integrity: value.integrity }),
     };
-    this.value = this.mergeSnapshot(this.remoteValue);
+    this.compositionGeneration = Math.max(this.compositionGeneration + 1, value.generation);
+    this.value = this.mergeSnapshot(this.remoteValue, this.compositionGeneration);
     for (const listener of this.listeners) listener();
     return this.value;
   }
@@ -99,11 +108,13 @@ export class PluginRegistryStore {
     if (this.localContributions.has(contribution.pluginId))
       throw new Error(`local plugin contribution '${contribution.pluginId}' already exists`);
     this.localContributions.set(contribution.pluginId, contribution);
-    this.value = this.mergeSnapshot(this.remoteValue);
+    this.compositionGeneration += 1;
+    this.value = this.mergeSnapshot(this.remoteValue, this.compositionGeneration);
     for (const listener of this.listeners) listener();
     return () => {
       if (!this.localContributions.delete(contribution.pluginId)) return;
-      this.value = this.mergeSnapshot(this.remoteValue);
+      this.compositionGeneration += 1;
+      this.value = this.mergeSnapshot(this.remoteValue, this.compositionGeneration);
       for (const listener of this.listeners) listener();
     };
   }
@@ -164,7 +175,7 @@ export class PluginRegistryStore {
           const response = await fetchImpl(options.url ?? '/api/plugin-registry/stream', {
             headers: {
               ...(options.headers ?? {}),
-              'last-event-id': String(this.value.generation),
+              'last-event-id': String(this.remoteValue.generation),
             },
             signal: controller.signal,
           });
@@ -221,7 +232,10 @@ export class PluginRegistryStore {
     );
   }
 
-  private mergeSnapshot(value: PluginRegistry | PluginRegistrySnapshot): PluginRegistrySnapshot {
+  private mergeSnapshot(
+    value: PluginRegistry | PluginRegistrySnapshot,
+    generation = value.generation,
+  ): PluginRegistrySnapshot {
     const remotePlugins = [...value.plugins];
     const remoteContributions = [...value.contributions];
     const plugins = [...new Set([...remotePlugins, ...this.localContributions.keys()])];
@@ -236,10 +250,17 @@ export class PluginRegistryStore {
       ...localByPlugin.values(),
     ];
     return {
-      generation: value.generation,
+      generation,
       plugins,
       contributions,
-      ...(value.integrity === undefined ? {} : { integrity: value.integrity }),
+      // A remote signature covers only the remote payload. Once local
+      // lifecycle contributions are composed, do not present that signature
+      // as if it covered the mutated snapshot.
+      ...(value.integrity === undefined ||
+      this.localContributions.size > 0 ||
+      generation !== value.generation
+        ? {}
+        : { integrity: value.integrity }),
     };
   }
 }

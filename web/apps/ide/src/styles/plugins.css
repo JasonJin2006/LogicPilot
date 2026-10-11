@@ -8,6 +8,12 @@
   color: var(--text-primary, #e8edf5);
 }
 
+.plugin-drafts-panel-embedded {
+  height: auto;
+  overflow: visible;
+  padding: 0;
+}
+
 .plugin-drafts-toolbar,
 .plugin-draft-heading,
 .plugin-draft-actions {

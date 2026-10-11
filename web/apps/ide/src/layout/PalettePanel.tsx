@@ -16,12 +16,16 @@ import { documentContributionFor } from '../workbench/documentTypes';
 import { useCanvasView } from '../state/canvasView';
 import { usePaletteStore } from '../state/paletteStore';
 import { useUiStore } from '../state/uiStore';
+import { useProjectStore } from '../state/projectStore';
 import { ScrollArea } from '../components/ScrollArea';
 import {
   pluginRegistryGeneration,
   structuredPaletteItems,
   subscribePluginRegistry,
 } from '../plugins/registry';
+import type { PaletteContribution } from '../workbench/palette';
+
+type PaletteContributionValue = PaletteContribution;
 
 interface PaletteBlock {
   kind: string;
@@ -50,12 +54,19 @@ function toBlock(item: CatalogItem): PaletteBlock {
   };
 }
 
-/** Registered contributions + imported custom libraries -> one block map
- *  keyed by kind (custom entries override built-ins of the same kind). */
-function blockIndex(customLibraries: Record<string, { blocks: PaletteBlock[] }>): PaletteBlockMap {
+/** Contributions applicable to the active document type + imported custom
+ *  libraries -> one block map keyed by kind (custom entries override
+ *  built-ins of the same kind). Only applicable contributions are indexed so
+ *  the palette follows the canvas (plan §5 PaletteProvider context). */
+function blockIndex(
+  contributions: readonly PaletteContributionValue[],
+  customLibraries: Record<string, { blocks: PaletteBlock[] }>,
+): PaletteBlockMap {
   const defs: PaletteBlockMap = new Map();
-  for (const item of PALETTE_CONTRIBUTIONS.allItems()) {
-    defs.set(item.kind, toBlock(item));
+  for (const contribution of contributions) {
+    for (const item of contribution.items) {
+      defs.set(item.kind, toBlock(item));
+    }
   }
   for (const custom of Object.values(customLibraries)) {
     for (const block of custom.blocks) {
@@ -121,6 +132,22 @@ export function PalettePanel() {
   const library = usePaletteStore((state) => state.library);
   const customLibraries = usePaletteStore((state) => state.customLibraries);
   useSyncExternalStore(subscribePluginRegistry, pluginRegistryGeneration);
+  const activeFile = useUiStore((state) => state.activeFile);
+  // The palette palette follows the active document: only contributions whose
+  // declared context matches the active document type are offered, so the
+  // process library never shows up on a SysML canvas or in a plain file.
+  // A newly-created project opens its model canvas before a file tab is
+  // selected. The canvas is already a DSL editing context, so keep the model
+  // palette available; only an actual plain-file view has no paradigm context.
+  const bundle = useProjectStore((state) => state.bundle);
+  const documentTypeId =
+    activeFile === null
+      ? bundle !== null && bundle !== undefined
+        ? 'dsl'
+        : undefined
+      : documentContributionFor(activeFile)?.id;
+  const applicable = PALETTE_CONTRIBUTIONS.forDocumentType(documentTypeId);
+  const applicableLibraryIds = new Set(applicable.map((entry) => entry.library.id));
   const recentKinds = usePaletteStore((state) => state.recentKinds);
   const setLibrary = usePaletteStore((state) => state.setLibrary);
   const importLibrary = usePaletteStore((state) => state.importLibrary);
@@ -150,10 +177,12 @@ export function PalettePanel() {
     return () => bar.removeEventListener('wheel', onWheel);
   }, []);
 
-  // The registry owns the catalog: built-in libraries come from palette
-  // contributions, custom imports override by kind.
-  const defs = blockIndex(customLibraries);
-  const structuredItems = structuredPaletteItems().map((item) => toBlock(item));
+  // The registry owns the catalog: applicable built-in libraries come from
+  // palette contributions, custom imports override by kind.
+  const defs = blockIndex(applicable, customLibraries);
+  const structuredItems = structuredPaletteItems()
+    .map((item) => toBlock(item))
+    .filter((item) => item.library !== undefined && applicableLibraryIds.has(item.library));
   for (const item of structuredItems) {
     if (!defs.has(item.kind)) defs.set(item.kind, item);
   }
@@ -165,7 +194,7 @@ export function PalettePanel() {
     visible = recentKinds
       .map((kind) => defs.get(kind))
       .filter((block): block is PaletteBlock => block !== undefined);
-  } else if (PALETTE_CONTRIBUTIONS.itemsFor(library).length > 0) {
+  } else if (applicableLibraryIds.has(library)) {
     // Registered library view: resolve through the defs map so custom
     // overrides of a registered kind render identically.
     visible = PALETTE_CONTRIBUTIONS.itemsFor(library)
@@ -175,6 +204,7 @@ export function PalettePanel() {
     visible = structuredItems.filter((item) => item.library === library);
     if (visible.length === 0) visible = customLibraries[library]?.blocks ?? [];
   }
+  const isEmpty = defs.size === 0 && Object.keys(customLibraries).length === 0;
 
   const onImportFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -196,9 +226,10 @@ export function PalettePanel() {
   const tabs: Array<{ id: string; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
-    ...PALETTE_CONTRIBUTIONS.libraries().map((entry) => ({ id: entry.id, label: entry.name })),
+    ...applicable.map((entry) => ({ id: entry.library.id, label: entry.library.name })),
     ...structuredPaletteItems()
       .map((item) => ({ id: item.library, label: item.library }))
+      .filter((tab) => applicableLibraryIds.has(tab.id))
       .filter((tab, index, all) => all.findIndex((candidate) => candidate.id === tab.id) === index),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
@@ -216,8 +247,7 @@ export function PalettePanel() {
     if (!drag || !drag.moved) {
       return;
     }
-    const activeFile = useUiStore.getState().activeFile;
-    const isSysml = activeFile !== null && documentContributionFor(activeFile)?.id === 'sysml';
+    const isSysml = documentTypeId === 'sysml';
     const contribution = contributionForItem({
       kind: drag.kind,
       library: drag.library,
@@ -275,121 +305,129 @@ export function PalettePanel() {
       </ScrollArea>
       {importError !== '' && <p className="palette-import-error">{importError}</p>}
       <ScrollArea className="palette-list-scroll">
-        <ul className="palette-list">
-          {visible.map((block) => {
-            const ContributedIcon = iconForItem(block);
-            return (
-              <li
-                key={block.kind}
-                className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
-                title={
-                  DRAWABLE_PRESENTATION_KINDS.has(block.kind)
-                    ? `${block.name}: double-click to draw point by point; drag to insert a preset`
-                    : block.hint
-                      ? `${block.kind} - ${block.hint}`
-                      : block.kind
-                }
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-                  dragRef.current = {
-                    kind: block.kind,
-                    library: block.library ?? 'process',
-                    pointerId: event.pointerId,
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    moved: false,
-                  };
-                  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-                  setGhost({
-                    x: event.clientX,
-                    y: event.clientY,
-                    kind: block.kind,
-                    library: block.library,
-                  });
-                }}
-                onPointerMove={(event) => {
-                  const drag = dragRef.current;
-                  if (!drag || drag.pointerId !== event.pointerId) return;
-                  if (
-                    !drag.moved &&
-                    Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4
-                  ) {
-                    drag.moved = true;
+        {isEmpty ? (
+          <p className="palette-empty">
+            {documentTypeId === undefined
+              ? 'No element library for this file - open a model document.'
+              : 'No element library for this document.'}
+          </p>
+        ) : (
+          <ul className="palette-list">
+            {visible.map((block) => {
+              const ContributedIcon = iconForItem(block);
+              return (
+                <li
+                  key={block.kind}
+                  className={`palette-item${ghost?.kind === block.kind ? ' dragging' : ''}${drawingKind === block.kind ? ' drawing-active' : ''}`}
+                  title={
+                    DRAWABLE_PRESENTATION_KINDS.has(block.kind)
+                      ? `${block.name}: double-click to draw point by point; drag to insert a preset`
+                      : block.hint
+                        ? `${block.kind} - ${block.hint}`
+                        : block.kind
                   }
-                  if (drag.moved) {
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return;
+                    dragRef.current = {
+                      kind: block.kind,
+                      library: block.library ?? 'process',
+                      pointerId: event.pointerId,
+                      startX: event.clientX,
+                      startY: event.clientY,
+                      moved: false,
+                    };
+                    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
                     setGhost({
                       x: event.clientX,
                       y: event.clientY,
                       kind: block.kind,
                       library: block.library,
                     });
-                  }
-                }}
-                onPointerUp={endDrag}
-                onPointerCancel={() => {
-                  dragRef.current = null;
-                  setGhost(null);
-                }}
-                onDoubleClick={() => {
-                  if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
-                    startDrawing(block.kind as 'line' | 'polyline' | 'curve');
-                    recordUse(block.kind);
-                    return;
-                  }
-                  contributionForItem(block)?.insert?.(paletteItemFor(block));
-                  if (contributionForItem(block)?.insert !== undefined) recordUse(block.kind);
-                }}
-              >
-                <span className="palette-chip">
-                  <span className="palette-chip-icon">
-                    {ContributedIcon !== undefined ? (
-                      <ContributedIcon size={26} />
-                    ) : (
-                      <GenericPaletteIcon />
-                    )}
-                    {(() => {
-                      // Port dots at the glyph's real port anchors (AnyLogic
-                      // green-dot positions), scaled to the 30px chip icon
-                      // (icon centre at (15,15), scale 0.75). Custom-library
-                      // blocks keep the old in/out edge dots via the fallback.
-                      const inPorts = block.inPorts?.length
-                        ? block.inPorts
-                        : block.in
-                          ? ['in']
-                          : [];
-                      const outPorts = block.outPorts?.length
-                        ? block.outPorts
-                        : block.out
-                          ? ['out']
-                          : [];
-                      return [...inPorts, ...outPorts].map((name) => {
-                        const direction = inPorts.includes(name) ? 'in' : 'out';
-                        const [px, py] =
-                          contributionForItem(block)?.portGlyphFor?.(
-                            paletteItemFor(block),
-                            name,
-                            direction,
-                          ) ?? (direction === 'in' ? [0, 20] : [40, 20]);
-                        return (
-                          <span
-                            key={name}
-                            className={`palette-port port-${direction}`}
-                            style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
-                            aria-hidden
-                          />
-                        );
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = dragRef.current;
+                    if (!drag || drag.pointerId !== event.pointerId) return;
+                    if (
+                      !drag.moved &&
+                      Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4
+                    ) {
+                      drag.moved = true;
+                    }
+                    if (drag.moved) {
+                      setGhost({
+                        x: event.clientX,
+                        y: event.clientY,
+                        kind: block.kind,
+                        library: block.library,
                       });
-                    })()}
-                    {DRAWABLE_PRESENTATION_KINDS.has(block.kind) && (
-                      <PencilLine className="palette-drawable-mark" size={11} aria-hidden />
-                    )}
+                    }
+                  }}
+                  onPointerUp={endDrag}
+                  onPointerCancel={() => {
+                    dragRef.current = null;
+                    setGhost(null);
+                  }}
+                  onDoubleClick={() => {
+                    if (DRAWABLE_PRESENTATION_KINDS.has(block.kind)) {
+                      startDrawing(block.kind as 'line' | 'polyline' | 'curve');
+                      recordUse(block.kind);
+                      return;
+                    }
+                    contributionForItem(block)?.insert?.(paletteItemFor(block));
+                    if (contributionForItem(block)?.insert !== undefined) recordUse(block.kind);
+                  }}
+                >
+                  <span className="palette-chip">
+                    <span className="palette-chip-icon">
+                      {ContributedIcon !== undefined ? (
+                        <ContributedIcon size={26} />
+                      ) : (
+                        <GenericPaletteIcon />
+                      )}
+                      {(() => {
+                        // Port dots at the glyph's real port anchors (AnyLogic
+                        // green-dot positions), scaled to the 30px chip icon
+                        // (icon centre at (15,15), scale 0.75). Custom-library
+                        // blocks keep the old in/out edge dots via the fallback.
+                        const inPorts = block.inPorts?.length
+                          ? block.inPorts
+                          : block.in
+                            ? ['in']
+                            : [];
+                        const outPorts = block.outPorts?.length
+                          ? block.outPorts
+                          : block.out
+                            ? ['out']
+                            : [];
+                        return [...inPorts, ...outPorts].map((name) => {
+                          const direction = inPorts.includes(name) ? 'in' : 'out';
+                          const [px, py] =
+                            contributionForItem(block)?.portGlyphFor?.(
+                              paletteItemFor(block),
+                              name,
+                              direction,
+                            ) ?? (direction === 'in' ? [0, 20] : [40, 20]);
+                          return (
+                            <span
+                              key={name}
+                              className={`palette-port port-${direction}`}
+                              style={{ left: 15 + (px - 20) * 0.75, top: 15 + (py - 20) * 0.75 }}
+                              aria-hidden
+                            />
+                          );
+                        });
+                      })()}
+                      {DRAWABLE_PRESENTATION_KINDS.has(block.kind) && (
+                        <PencilLine className="palette-drawable-mark" size={11} aria-hidden />
+                      )}
+                    </span>
                   </span>
-                </span>
-                <span className="palette-name">{block.name}</span>
-              </li>
-            );
-          })}
-        </ul>
+                  <span className="palette-name">{block.name}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </ScrollArea>
       {ghost && (
         <span className="palette-drag-ghost" style={{ left: ghost.x, top: ghost.y }}>

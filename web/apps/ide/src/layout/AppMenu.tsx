@@ -14,7 +14,7 @@ import { useWorkspaceStore } from '../state/workspaceStore';
 import { parseWorkspaceFile, workspaceToJson } from '../state/workspaceFile';
 import { useRunStore } from '../state/runStore';
 import { resetVizState, vizState } from '../state/vizState';
-import { logConsoleEvent } from '../state/connectionStore';
+import { logConsoleEvent } from '../state/legacyGateway';
 import { saveProject } from '../project/syncEngine';
 import { persistModelSnapshot } from '../artifacts/artifactGraphClient';
 import {
@@ -199,7 +199,7 @@ export function AppMenu() {
     if (!result.ok || !result.manifestJson || !result.files) {
       // VS Code model: any folder is a valid workspace. No blocking prompt -
       // the Console note explains the one Save-away initialization, and
-      // File > Initialize Project Here converts explicitly on demand.
+      // The first Save initializes a bare folder into a LogicPilot project.
       useProjectStore.getState().clearProject();
       useProjectStore.getState().setPath(dir);
       useWorkspaceStore.getState().openFolder(dir);
@@ -483,7 +483,7 @@ export function AppMenu() {
 
   const showPanel = (
     area: 'left' | 'right',
-    panel: 'explorer' | 'modelInfo' | 'palette' | 'properties' | 'ai',
+    panel: 'explorer' | 'navigator' | 'palette' | 'properties' | 'ai',
   ) => {
     const areaState = areas[area];
     // The check mark means "this panel is open", not "focused". The left area
@@ -617,14 +617,6 @@ export function AppMenu() {
           : [{ label: 'No recent models', disabled: true as const, action: undefined }]),
         { kind: 'separator' },
         { label: 'Save', shortcut: 'Ctrl+S', action: fileSave },
-        {
-          label: 'Initialize Project Here',
-          action: () => {
-            if (useProjectStore.getState().path !== null && !useProjectStore.getState().bundle) {
-              void fileSave();
-            }
-          },
-        },
         { label: 'Save As...', shortcut: 'Ctrl+Shift+S', action: fileSave },
         { kind: 'separator' },
         { label: 'Close Workspace', disabled: !workspaceOpen, action: fileClose },
@@ -670,9 +662,9 @@ export function AppMenu() {
           action: () => showPanel('left', 'explorer'),
         },
         {
-          label: 'Project',
-          checked: !areas.left.collapsed && areas.left.activePanel === 'modelInfo',
-          action: () => showPanel('left', 'modelInfo'),
+          label: 'Navigator',
+          checked: !areas.left.collapsed && areas.left.activePanel === 'navigator',
+          action: () => showPanel('left', 'navigator'),
         },
         {
           label: 'Palette',

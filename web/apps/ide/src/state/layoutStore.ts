@@ -67,11 +67,28 @@ function defaultAreas(): Areas {
 // not know about yet (e.g. Explorer), and fix the active panel.
 export function mergePersistedLayout(persisted: unknown, current: LayoutState): LayoutState {
   const stored = (persisted ?? {}) as Partial<LayoutState>;
+  // `modelInfo` was the old generic Project label. Migrate it to the semantic
+  // Navigator id so persisted layouts do not resurrect the misleading name.
+  const migratedAreas = stored.areas
+    ? Object.fromEntries(
+        Object.entries(stored.areas).map(([area, value]) => [
+          area,
+          value
+            ? {
+                ...value,
+                activePanel: value.activePanel === 'modelInfo' ? 'navigator' : value.activePanel,
+                panels: value.panels?.map((panel) => (panel === 'modelInfo' ? 'navigator' : panel)),
+              }
+            : value,
+        ]),
+      )
+    : undefined;
+  const migratedStored = migratedAreas === undefined ? stored : { ...stored, areas: migratedAreas };
   const areas = {} as Areas;
   for (const area of ['left', 'center', 'right', 'bottom'] as const) {
     const merged = {
       ...current.areas[area],
-      ...(stored.areas?.[area] ?? {}),
+      ...(migratedStored.areas?.[area] ?? {}),
     };
     const persistedPanels = (merged.panels ?? []).filter(
       (panel): panel is PanelId => panel in PANELS,
@@ -86,7 +103,7 @@ export function mergePersistedLayout(persisted: unknown, current: LayoutState): 
     const active = panels.includes(merged.activePanel as PanelId) ? merged.activePanel : panels[0]!;
     areas[area] = { ...merged, panels, activePanel: active };
   }
-  return { ...current, ...stored, areas };
+  return { ...current, ...migratedStored, areas };
 }
 
 export const useLayoutStore = create<LayoutState>()(

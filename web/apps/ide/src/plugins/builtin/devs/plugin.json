@@ -10,5 +10,6 @@
   "requires": [],
   "entrypoints": { "web": "./activate.ts" },
   "permissions": [],
+  "integrity": { "sha256": "d1d5e683531d20fd4ea93aa5bd8f115e32e262f83cebcf74e49e1a2211a894fb" },
   "trust": { "minLevel": "t0", "sandbox": "none" }
 }

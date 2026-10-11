@@ -1,7 +1,7 @@
 // Mutable visualization state shared between the frame handler (10 Hz wire
-// frames) and the PixiJS render loop (requestAnimationFrame). Kept outside
-// React state on purpose: interpolation runs at display rate and must not
-// trigger React re-renders.
+// frames) and the requestAnimationFrame consumers - the canvas token animation
+// and the 3D scene's agent layer. Kept outside React state on purpose:
+// interpolation runs at display rate and must not trigger React re-renders.
 
 export interface VizAgent {
   /** Target position in world units (MM1: queue slot index / 0 at server). */
@@ -151,8 +151,8 @@ export function parseBlockCounters(values: Record<string, number>): Map<string, 
   return blocks;
 }
 
-// Module-level singleton shared by the frame handler (10 Hz wire frames)
-// and the PixiJS render loop (requestAnimationFrame). Kept outside React
-// state on purpose: interpolation runs at display rate and must not trigger
-// React re-renders.
+// Module-level singleton shared by the frame handler (10 Hz wire frames) and
+// the requestAnimationFrame consumers (canvas tokens, 3D agents). Kept outside
+// React state on purpose: interpolation runs at display rate and must not
+// trigger React re-renders.
 export const vizState = createVizState();

@@ -1,4 +1,4 @@
-// Settings dialog: categorized IDE preferences (appearance, AI and connection).
+// Settings dialog: categorized IDE preferences (appearance, AI and runtime).
 // Per-experiment run configuration and controls live in the Run dialog
 // (opened from the canvas Run button) - a simulation run belongs to a
 // specific model, not to the IDE settings.
@@ -9,6 +9,7 @@ import {
   KeyRound,
   LoaderCircle,
   Palette,
+  Puzzle,
   RadioTower,
   RefreshCw,
   RotateCcw,
@@ -24,18 +25,23 @@ import {
   testAiProvider,
   type AiProviderState,
 } from '../ai/providerConfig';
-import { useConnectionStore } from '../state/connectionStore';
+import { useLegacyGatewayStore } from '../state/legacyGateway';
 import { useThemeStore, type ThemeMode } from '../state/themeStore';
 import { useUiStore } from '../state/uiStore';
 import { useEscapeToClose } from '../components/useEscapeToClose';
+import { PluginDraftsPanel } from '../layout/PluginDraftsPanel';
+import { createExecutionClient } from '../client/executionClient';
+import { useExecutionStore } from '../state/executionStore';
 
 export function SettingsDialog() {
-  const [section, setSection] = useState<'appearance' | 'ai' | 'connection'>('appearance');
-  const url = useConnectionStore((state) => state.url);
-  const conn = useConnectionStore((state) => state.conn);
-  const setUrl = useConnectionStore((state) => state.setUrl);
-  const connect = useConnectionStore((state) => state.connect);
-  const disconnect = useConnectionStore((state) => state.disconnect);
+  const [section, setSection] = useState<'appearance' | 'ai' | 'extensions' | 'runtime'>(
+    'appearance',
+  );
+  const url = useLegacyGatewayStore((state) => state.url);
+  const conn = useLegacyGatewayStore((state) => state.conn);
+  const setUrl = useLegacyGatewayStore((state) => state.setUrl);
+  const connect = useLegacyGatewayStore((state) => state.connect);
+  const disconnect = useLegacyGatewayStore((state) => state.disconnect);
   const closeSettings = useUiStore((state) => state.closeSettings);
   const settingsOpen = useUiStore((state) => state.settingsOpen);
   useEscapeToClose(settingsOpen, closeSettings);
@@ -45,6 +51,24 @@ export function SettingsDialog() {
   const setAiSourceEditingEnabled = useUiStore((state) => state.setAiSourceEditingEnabled);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
+  const nativeSession = useExecutionStore((state) => state.session);
+  const [nativeRuntimeAvailable, setNativeRuntimeAvailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void createExecutionClient()
+      .listTargets()
+      .then((targets) => {
+        if (!cancelled)
+          setNativeRuntimeAvailable(targets.some((target) => target.id === 'logicpilot.native.session'));
+      })
+      .catch(() => {
+        if (!cancelled) setNativeRuntimeAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const connected = conn === 'connected';
   const connecting = conn === 'connecting';
@@ -227,13 +251,23 @@ export function SettingsDialog() {
               </span>
             </button>
             <button
-              className={section === 'connection' ? 'active' : ''}
-              onClick={() => setSection('connection')}
+              className={section === 'extensions' ? 'active' : ''}
+              onClick={() => setSection('extensions')}
+            >
+              <Puzzle size={16} />
+              <span>
+                <strong>Extensions</strong>
+                <small>Plugin drafts and approvals</small>
+              </span>
+            </button>
+            <button
+              className={section === 'runtime' ? 'active' : ''}
+              onClick={() => setSection('runtime')}
             >
               <RadioTower size={16} />
               <span>
-                <strong>Simulation</strong>
-                <small>Gateway connection</small>
+                <strong>运行环境</strong>
+                <small>本机执行与遥测</small>
               </span>
             </button>
           </nav>
@@ -472,44 +506,76 @@ export function SettingsDialog() {
               </section>
             )}
 
-            {section === 'connection' && (
-              <section className="settings-page" aria-labelledby="settings-connection-title">
+            {section === 'runtime' && (
+              <section className="settings-page" aria-labelledby="settings-runtime-title">
                 <div className="settings-page-heading">
-                  <h3 id="settings-connection-title">Simulation gateway</h3>
-                  <p>Configure the WebSocket endpoint used for simulation telemetry.</p>
+                  <h3 id="settings-runtime-title">运行环境</h3>
+                  <p>LogicPilot 会按需管理本机执行会话；运行参数和控制仍在画布的 Run 对话框中。</p>
                 </div>
                 <div className="settings-group">
-                  <label className="settings-control-label" htmlFor="gateway-url">
-                    <strong>Gateway URL</strong>
-                    <span>Desktop clients normally discover this endpoint automatically.</span>
-                  </label>
-                  <input
-                    id="gateway-url"
-                    className="url-input"
-                    value={url}
-                    spellCheck={false}
-                    disabled={connected || connecting}
-                    onChange={(event) => setUrl(event.target.value)}
-                    placeholder="ws://127.0.0.1:8089/sim"
-                  />
-                  <div className="dialog-actions">
-                    {connected || connecting ? (
-                      <button onClick={disconnect} disabled={connecting}>
-                        Disconnect
-                      </button>
-                    ) : (
-                      <button className="btn-primary" onClick={connect} disabled={connecting}>
-                        Connect
-                      </button>
-                    )}
-                    <span className={`conn-badge conn-${conn}`}>{conn}</span>
+                  <div className="settings-control-label">
+                    <strong>本机执行服务</strong>
+                    <span>
+                      {nativeRuntimeAvailable
+                        ? nativeSession?.status === 'running'
+                          ? '正在运行模型'
+                          : nativeSession?.status === 'paused'
+                            ? '模型已暂停'
+                            : '已就绪，打开 Run 后按需启动'
+                        : '原生执行目标未加载'}
+                    </span>
                   </div>
+                  <div className="dialog-actions">
+                    <span
+                      className={`conn-badge conn-${nativeRuntimeAvailable ? (nativeSession?.status ?? 'ready') : 'disconnected'}`}
+                    >
+                      {nativeRuntimeAvailable ? (nativeSession?.status ?? 'ready') : 'unavailable'}
+                    </span>
+                  </div>
+                  {!nativeRuntimeAvailable && (
+                    <details className="settings-advanced">
+                      <summary>兼容传输（开发模式）</summary>
+                      <label className="settings-control-label" htmlFor="gateway-url">
+                        <strong>Legacy WebSocket URL</strong>
+                        <span>仅在原生执行目标不可用时使用，不是默认运行架构。</span>
+                      </label>
+                      <input
+                        id="gateway-url"
+                        className="url-input"
+                        value={url}
+                        spellCheck={false}
+                        disabled={connected || connecting}
+                        onChange={(event) => setUrl(event.target.value)}
+                        placeholder="ws://127.0.0.1:8089/sim"
+                      />
+                      <div className="dialog-actions">
+                        {connected || connecting ? (
+                          <button onClick={disconnect} disabled={connecting}>
+                            Disconnect
+                          </button>
+                        ) : (
+                          <button className="btn-primary" onClick={connect} disabled={connecting}>
+                            Connect
+                          </button>
+                        )}
+                        <span className={`conn-badge conn-${conn}`}>{conn}</span>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </section>
+            )}
 
-                  <p className="dialog-hint">
-                    The gateway streams telemetry frames over WebSocket (wire.fbs contract F2); run
-                    parameters and controls live in the Run dialog on the canvas.
+            {section === 'extensions' && (
+              <section className="settings-page" aria-labelledby="settings-extensions-title">
+                <div className="settings-page-heading">
+                  <h3 id="settings-extensions-title">Extensions</h3>
+                  <p>
+                    Review AI-generated plugin proposals before they can add capabilities to
+                    LogicPilot.
                   </p>
                 </div>
+                <PluginDraftsPanel embedded />
               </section>
             )}
           </div>

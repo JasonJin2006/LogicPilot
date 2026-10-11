@@ -6,7 +6,7 @@
 // are merged into the model tree; file names belong to the Explorer, not
 // here. Right-click adds/renames/deletes elements in their owning file;
 // files that do not parse as a model are listed as orphan rows at the end.
-// Contributed through the workbench outline seam so the Project panel hosts
+// Contributed through the workbench outline seam so the Navigator panel hosts
 // it without parsing the DSL itself.
 
 import { useMemo, useState } from 'react';
@@ -107,6 +107,10 @@ function kindRank(kind: string): number {
 
 function countBlocks(members: ProjectMember[], kind: string): number {
   return members.filter((member) => !member.isLeaf && member.kind === kind).length;
+}
+
+function flattenMembers(members: ProjectMember[]): ProjectMember[] {
+  return members.flatMap((member) => [member, ...flattenMembers(member.children)]);
 }
 
 function DslOutline() {
@@ -442,8 +446,25 @@ function DslOutline() {
     return null;
   }
 
+  const semanticMembers = entries
+    .filter((entry): entry is Extract<PanelEntry, { type: 'model' }> => entry.type === 'model')
+    .flatMap((entry) => flattenMembers(entry.members.map((item) => item.member)));
+  const processKinds = ['source', 'queue', 'service', 'sink', 'delay'];
+  const processCount = processKinds.reduce(
+    (total, kind) => total + countBlocks(semanticMembers, kind),
+    0,
+  );
+  const resourceCount = countBlocks(semanticMembers, 'resource');
+  const experimentCount = countBlocks(semanticMembers, 'experiment');
+
   return (
     <div className="side-panel-body">
+      <div className="navigator-header">
+        <span className="navigator-title">Process Navigator</span>
+        <span className="navigator-summary" title="Process model elements">
+          {processCount} flow · {resourceCount} resources · {experimentCount} experiments
+        </span>
+      </div>
       <div className="tree-row tree-root">
         <span className="tree-glyph">
           <FolderOpen size={13} />

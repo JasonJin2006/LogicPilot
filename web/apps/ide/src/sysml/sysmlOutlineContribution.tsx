@@ -1,6 +1,6 @@
 // SysML outline contribution (workbench-architecture-plan.md §5/§9.2): the
 // projection's element tree, contributed through the workbench outline seam
-// so the Project panel hosts it without importing SysML specifics.
+// so the Navigator panel hosts it without importing SysML specifics.
 
 import type { ReactNode } from 'react';
 import { useSysMLStore } from '../state/sysmlStore';

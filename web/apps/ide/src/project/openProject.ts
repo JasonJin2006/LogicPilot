@@ -102,10 +102,19 @@ export async function openProjectFromFile(file: File): Promise<void> {
   useProjectStore.getState().clearProject();
   const parsed = parseDsl(text);
   if (parsed.ok) {
-    useWorkspaceStore.getState().openVirtual(parsed.document.name);
+    // Name the workspace after the **file**, not the model inside it. The
+    // Explorer is a file browser, so a root labelled `MM1` (the DSL's model
+    // name) reads as neither a file nor a folder. The .sysml branch above
+    // already opens with the file name; this makes the two agree.
+    //
+    // The name is also the AI conversation scope and the recent-list key, so
+    // keying on the file fixes two collisions the model name caused: two files
+    // whose models share a name no longer share one history, and no longer
+    // overwrite each other in Open Recent.
+    useWorkspaceStore.getState().openVirtual(file.name);
     loadModelDocument(parsed.document);
     useProjectStore.getState().markClean();
-    addRecent({ name: parsed.document.name, dsl: text, at: Date.now() });
+    addRecent({ name: file.name, dsl: text, at: Date.now() });
   } else {
     openInfo('Open failed', parsed.error ?? 'invalid DSL');
   }

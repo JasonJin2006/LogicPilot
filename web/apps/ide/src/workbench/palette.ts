@@ -28,6 +28,10 @@ export interface PaletteContribution {
   id: string;
   /** Selector-bar tab this contribution adds. */
   library: PaletteLibraryTab;
+  /** Which workbench document types (e.g. 'dsl', 'sysml') this library
+   *  applies to. Contributions without a declaration are legacy and appear
+   *  for any known document type; plain files get no paradigm libraries. */
+  context?: { readonly documentTypes?: readonly string[] };
   /** Catalog items under this library, in display order. Contributors own
    *  honesty filters (e.g. hiding catalog-only kinds their compiler would
    *  reject) - the host renders whatever is registered. */
@@ -55,6 +59,19 @@ class PaletteRegistry {
     }
     this.entries.set(contribution.id, contribution);
     return () => this.entries.delete(contribution.id);
+  }
+
+  /** Contributions visible for a workbench document type. Plain files (no
+   *  document type) never receive paradigm libraries; declared context is
+   *  authoritative, undeclared (legacy) contributions appear for any known
+   *  document type. */
+  forDocumentType(documentTypeId: string | undefined): readonly PaletteContribution[] {
+    return this.list().filter((entry) => {
+      if (documentTypeId === undefined) return false;
+      const declared = entry.context?.documentTypes;
+      if (declared === undefined || declared.length === 0) return true;
+      return declared.includes(documentTypeId);
+    });
   }
 
   list(): readonly PaletteContribution[] {

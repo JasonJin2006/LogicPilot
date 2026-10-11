@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { AppMenu } from './AppMenu';
-import { logConsoleEvent } from '../state/connectionStore';
+import { logConsoleEvent } from '../state/legacyGateway';
 
 // Standard Windows title-bar glyphs (Segoe Fluent Icons / Segoe MDL2 Assets).
 const GLYPHS = {

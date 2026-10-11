@@ -33,6 +33,9 @@ export function registerSysmlPaletteContribution(): () => void {
   return PALETTE_CONTRIBUTIONS.register({
     id: 'sysml.visual-subset',
     library: { id: 'sysml', name: 'SysML' },
+    // The SysML library only belongs to a .sysml document: the .lp model
+    // canvas must not offer SysML declarations.
+    context: { documentTypes: ['sysml'] },
     iconFor: sysmlIcon,
     insert: (entry) => {
       const [baseKind, declarationKind] = entry.kind.split(':');

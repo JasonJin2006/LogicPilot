@@ -2,7 +2,7 @@
 // model/*.lp files). The tree preserves source spans, so edits (add/delete/
 // rename) mutate the text in place instead of re-serializing: field and
 // behavior content is never touched. Unparseable source is reported with an
-// error so the Project panel can show the file as an orphan.
+// error so the Navigator panel can show the file as an orphan.
 
 export interface ProjectMember {
   /** The declaration kind token ('resource', 'process', 'source', ...). */
@@ -346,7 +346,7 @@ export function replaceSpan(source: string, start: number, end: number, newText:
   return `${source.slice(0, start)}${newText}${source.slice(end)}`;
 }
 
-// --- default block templates for the Project panel's "add" actions ----------
+// --- default block templates for the Navigator panel's "add" actions -------
 
 export const MODEL_ADD_KINDS: Array<{ kind: string; template: (name: string) => string }> = [
   { kind: 'param', template: (n) => `param ${n}: float = 0.0` },

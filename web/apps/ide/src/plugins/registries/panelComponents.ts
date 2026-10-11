@@ -4,3 +4,4 @@
 export { DslEditor } from '../../model/DslEditor';
 export { ModelWorkspace } from '../../model/ModelWorkspace';
 export { PropertiesPanel } from '../../model/PropertiesPanel';
+export { Scene3DPanel } from '../../scene3d/Scene3DPanel';

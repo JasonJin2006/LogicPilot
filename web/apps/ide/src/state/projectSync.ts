@@ -9,7 +9,7 @@ import { useCanvasView } from './canvasView';
 import { useModelStore } from './modelStore';
 import { useProjectStore } from './projectStore';
 import { useUiStore } from './uiStore';
-import { logConsoleEvent } from './connectionStore';
+import { logConsoleEvent } from './legacyGateway';
 
 /** Load a freshly parsed document and show its root canvas (a new project or
  *  an opened model should never land inside a stale container view). */

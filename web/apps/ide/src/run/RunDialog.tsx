@@ -5,13 +5,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
+import { generateDsl } from '@logicpilot/editor';
+import type { JsonValue } from '@logicpilot/contracts';
 import type { StartOptions } from '../client/simClient';
-import { useConnectionStore } from '../state/connectionStore';
+import { createExecutionClient, type ExecutionEventStream } from '../client/executionClient';
+import { useLegacyGatewayStore } from '../state/legacyGateway';
 import { useEscapeToClose } from '../components/useEscapeToClose';
 import { useModelStore } from '../state/modelStore';
 import { useRunStore, validateRunOptions } from '../state/runStore';
 import { useUiStore } from '../state/uiStore';
 import { diagnoseDocument } from '../workbench/diagnostics';
+import { useExecutionStore } from '../state/executionStore';
+import { projectExecutionEvent } from '../state/executionProjector';
+import { resetVizState, vizState } from '../state/vizState';
 
 interface NumberFieldProps {
   label: string;
@@ -42,18 +48,54 @@ function parseNum(text: string): number | undefined {
 export function RunDialog() {
   const open = useUiStore((state) => state.runDialogOpen);
   const closeRunDialog = useUiStore((state) => state.closeRunDialog);
-  const conn = useConnectionStore((state) => state.conn);
-  const controlState = useConnectionStore((state) => state.controlState);
+  const conn = useLegacyGatewayStore((state) => state.conn);
+  const controlState = useLegacyGatewayStore((state) => state.controlState);
   useEscapeToClose(open, closeRunDialog);
-  const start = useConnectionStore((state) => state.start);
-  const pause = useConnectionStore((state) => state.pause);
-  const resume = useConnectionStore((state) => state.resume);
-  const step = useConnectionStore((state) => state.step);
-  const stop = useConnectionStore((state) => state.stop);
-  const runCanvasModel = useConnectionStore((state) => state.runCanvasModel);
+  const pause = useLegacyGatewayStore((state) => state.pause);
+  const resume = useLegacyGatewayStore((state) => state.resume);
+  const step = useLegacyGatewayStore((state) => state.step);
+  const stop = useLegacyGatewayStore((state) => state.stop);
+  const runCanvasModel = useLegacyGatewayStore((state) => state.runCanvasModel);
   const document = useModelStore((state) => state.document);
   const runOptions = useRunStore((state) => state.runOptions);
   const setRunOptions = useRunStore((state) => state.setRunOptions);
+  const nativeSession = useExecutionStore((state) => state.session);
+  const beginNative = useExecutionStore((state) => state.begin);
+  const applyNativeEvent = useExecutionStore((state) => state.applyEvent);
+  const applyNativeQuery = useExecutionStore((state) => state.applyQuery);
+  const executionClient = useRef(createExecutionClient());
+  const nativeStream = useRef<ExecutionEventStream | null>(null);
+  const [nativeTargetId, setNativeTargetId] = useState<string | null>(null);
+  const [nativeRunId, setNativeRunId] = useState<string | null>(null);
+  const [nativeError, setNativeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void executionClient.current
+      .listTargets()
+      .then((targets) => {
+        if (!cancelled)
+          setNativeTargetId(
+            targets.some((target) => target.id === 'logicpilot.native.session')
+              ? 'logicpilot.native.session'
+              : null,
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setNativeTargetId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+  useEffect(
+    () => () => {
+      nativeStream.current?.close();
+      nativeStream.current = null;
+    },
+    [],
+  );
 
   const initial = useRef(runOptions);
   const [seed, setSeed] = useState(String(runOptions.seed));
@@ -144,14 +186,69 @@ export function RunDialog() {
     confidence: parseNum(confidence),
     speed: parseNum(speed),
   });
+  const onNativeEvent = (event: Parameters<typeof applyNativeEvent>[0]) => {
+    applyNativeEvent(event);
+    projectExecutionEvent(event);
+  };
   const onStart = () => {
+    if (nativeTargetId !== null && nodeCount > 0) {
+      setNativeError(null);
+      void (async () => {
+        try {
+          const nativeSeed = seedMode === 'random' ? undefined : parseNum(seed);
+          const session = await executionClient.current.start({
+            requestId: `ide-${Date.now().toString(36)}`,
+            targetId: nativeTargetId,
+            ...(nativeSeed === undefined ? {} : { seed: nativeSeed }),
+            budget: { maxWallMs: 10 * 60 * 1000 },
+            inputs: {
+              dsl: generateDsl(document),
+              runParams: JSON.parse(JSON.stringify(buildOptions())) as JsonValue,
+              executionMode,
+              autoFinish: executionMode !== 'animated',
+            },
+          });
+          resetVizState(vizState);
+          beginNative(session);
+          setNativeRunId(session.runId);
+          nativeStream.current = await executionClient.current.subscribe(
+            session.runId,
+            -1,
+            onNativeEvent,
+            applyNativeQuery,
+          );
+        } catch (error) {
+          setNativeError(error instanceof Error ? error.message : String(error));
+        }
+      })();
+      return;
+    }
     if (nodeCount === 0) {
-      // Empty canvas: run the served model with the configured parameters.
-      start(buildOptions());
+      setNativeError('There is no executable model on the canvas. Add blocks or open a model first.');
     } else {
       // Canvas model: compile first, then run with the model's parameters.
       runCanvasModel();
     }
+  };
+
+  const nativeActive =
+    nativeRunId !== null &&
+    nativeSession !== null &&
+    !['completed', 'failed', 'cancelled'].includes(nativeSession.status);
+  const nativeControlState = nativeActive ? nativeSession?.status : 'idle';
+  const canRun = nodeCount > 0 && (connected || nativeTargetId !== null);
+  const sendNativeCommand = (action: 'pause' | 'resume' | 'step' | 'stop') => {
+    if (!nativeSession) return;
+    void executionClient.current
+      .command({
+        schema: 'logicpilot.execution-command/v1',
+        contractVersion: 1,
+        commandId: `ide-command-${Date.now().toString(36)}`,
+        runId: nativeSession.runId,
+        action,
+        expectedStateVersion: nativeSession.stateVersion,
+      })
+      .catch((error) => setNativeError(error instanceof Error ? error.message : String(error)));
   };
 
   return (
@@ -175,7 +272,7 @@ export function RunDialog() {
               <span>seed mode</span>
               <select
                 value={seedMode}
-                disabled={!connected}
+                disabled={!canRun}
                 onChange={(event) => setSeedMode(event.target.value as typeof seedMode)}
               >
                 <option value="fixed">Fixed (reproducible)</option>
@@ -186,13 +283,13 @@ export function RunDialog() {
               label="seed"
               value={seed}
               onChange={setSeed}
-              disabled={!connected || seedMode === 'random'}
+              disabled={!canRun || seedMode === 'random'}
             />
             <label className="field">
               <span>replications</span>
               <select
                 value={replicationMode}
-                disabled={!connected}
+                disabled={!canRun}
                 onChange={(event) =>
                   setReplicationMode(event.target.value as typeof replicationMode)
                 }
@@ -202,32 +299,32 @@ export function RunDialog() {
               </select>
             </label>
             {replicationMode === 'fixed' ? (
-              <NumberField label="reps" value={reps} onChange={setReps} disabled={!connected} />
+              <NumberField label="reps" value={reps} onChange={setReps} disabled={!canRun} />
             ) : (
               <>
                 <NumberField
                   label="minimum reps"
                   value={minReps}
                   onChange={setMinReps}
-                  disabled={!connected}
+                  disabled={!canRun}
                 />
                 <NumberField
                   label="maximum reps"
                   value={maxReps}
                   onChange={setMaxReps}
-                  disabled={!connected}
+                  disabled={!canRun}
                 />
                 <NumberField
                   label="error percent"
                   value={errorPercent}
                   onChange={setErrorPercent}
-                  disabled={!connected}
+                  disabled={!canRun}
                 />
                 <label className="field">
                   <span>precision metric</span>
                   <select
                     value={precisionMetric}
-                    disabled={!connected}
+                    disabled={!canRun}
                     onChange={(event) =>
                       setPrecisionMetric(event.target.value as typeof precisionMetric)
                     }
@@ -247,20 +344,20 @@ export function RunDialog() {
               label="arrivals"
               value={arrivals}
               onChange={setArrivals}
-              disabled={!connected}
+              disabled={!canRun}
             />
-            <NumberField label="warmup" value={warmup} onChange={setWarmup} disabled={!connected} />
+            <NumberField label="warmup" value={warmup} onChange={setWarmup} disabled={!canRun} />
             <NumberField
               label="confidence"
               value={confidence}
               onChange={setConfidence}
-              disabled={!connected}
+              disabled={!canRun}
             />
             <label className="field">
               <span>execution mode</span>
               <select
                 value={executionMode}
-                disabled={!connected}
+                disabled={!canRun}
                 onChange={(event) => setExecutionMode(event.target.value as typeof executionMode)}
               >
                 <option value="fast">Fast (batch) - run at full speed</option>
@@ -271,7 +368,7 @@ export function RunDialog() {
               label="speed"
               value={speed}
               onChange={setSpeedField}
-              disabled={!connected || executionMode !== 'animated'}
+              disabled={!canRun || executionMode !== 'animated'}
             />
             {executionMode === 'fast' && (
               <p className="dialog-hint">
@@ -283,43 +380,72 @@ export function RunDialog() {
           <div className="dialog-actions">
             <button
               className="btn-primary"
-              disabled={
-                !connected || validationError !== null || blockingModelDiagnostics.length > 0
-              }
+              disabled={!canRun || validationError !== null || blockingModelDiagnostics.length > 0}
               onClick={onStart}
             >
               Start
             </button>
             <button
-              disabled={!connected || controlState !== 'running'}
-              title={controlState !== 'running' ? 'Pause needs a running simulation' : undefined}
-              onClick={pause}
+              disabled={
+                nativeActive
+                  ? nativeControlState !== 'running'
+                  : !connected || controlState !== 'running'
+              }
+              title={
+                (nativeActive ? nativeControlState !== 'running' : controlState !== 'running')
+                  ? 'Pause needs a running simulation'
+                  : undefined
+              }
+              onClick={() => (nativeActive ? sendNativeCommand('pause') : pause())}
             >
               Pause
             </button>
             <button
-              disabled={!connected || controlState !== 'paused'}
-              title={controlState !== 'paused' ? 'Resume needs a paused simulation' : undefined}
-              onClick={resume}
+              disabled={
+                nativeActive
+                  ? nativeControlState !== 'paused'
+                  : !connected || controlState !== 'paused'
+              }
+              title={
+                (nativeActive ? nativeControlState !== 'paused' : controlState !== 'paused')
+                  ? 'Resume needs a paused simulation'
+                  : undefined
+              }
+              onClick={() => (nativeActive ? sendNativeCommand('resume') : resume())}
             >
               Resume
             </button>
             <button
-              disabled={!connected || controlState !== 'paused'}
-              title={controlState !== 'paused' ? 'Step requires a paused run' : undefined}
-              onClick={step}
+              disabled={
+                nativeActive
+                  ? nativeControlState !== 'paused'
+                  : !connected || controlState !== 'paused'
+              }
+              title={
+                (nativeActive ? nativeControlState !== 'paused' : controlState !== 'paused')
+                  ? 'Step requires a paused run'
+                  : undefined
+              }
+              onClick={() => (nativeActive ? sendNativeCommand('step') : step())}
             >
               Step
             </button>
             <button
-              disabled={!connected || controlState === 'idle'}
-              title={controlState === 'idle' ? 'Nothing is running' : undefined}
-              onClick={stop}
+              disabled={nativeActive ? false : !connected || controlState === 'idle'}
+              title={
+                nativeActive
+                  ? undefined
+                  : controlState === 'idle'
+                    ? 'Nothing is running'
+                    : undefined
+              }
+              onClick={() => (nativeActive ? sendNativeCommand('stop') : stop())}
             >
               Stop
             </button>
           </div>
           {validationError !== null && <p className="ai-error">{validationError}</p>}
+          {nativeError !== null && <p className="ai-error">{nativeError}</p>}
           {nodeCount > 0 && modelDiagnostics.length > 0 && (
             <div className="run-model-diagnostics" aria-label="Model diagnostics">
               <strong>
@@ -338,7 +464,7 @@ export function RunDialog() {
           <p className="dialog-hint">
             {nodeCount > 0
               ? 'Runs the model on the canvas (compiled first); parameters use the model\u2019s own rates.'
-              : 'The canvas is empty: runs the model served by the gateway.'}
+              : 'No executable model is open. Add blocks to the canvas or open a model file before running.'}
           </p>
         </div>
       </div>

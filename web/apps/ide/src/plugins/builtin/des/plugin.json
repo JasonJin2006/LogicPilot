@@ -12,6 +12,7 @@
     "web": "./activate.ts"
   },
   "permissions": [],
+  "integrity": { "sha256": "b308b789755b1359d0dfa6a43a2c553d5466a58aef07c1e64384309aa87ce742" },
   "trust": {
     "minLevel": "t0",
     "sandbox": "none"

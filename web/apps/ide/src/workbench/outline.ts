@@ -1,6 +1,6 @@
 // Workbench outline provider seam (workbench-architecture-plan.md §5/§9.2):
 // semantic element trees are contributed by language extensions, while the
-// Project panel is a generic host that mounts the first applicable
+// Navigator panel is a generic host that mounts the first applicable
 // contribution. The host never parses a language or branches on its kinds -
 // adding an outline means registering here.
 

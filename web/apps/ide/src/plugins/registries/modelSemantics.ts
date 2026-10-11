@@ -8,6 +8,11 @@ import {
 
 export interface ModelSemanticProvider {
   readonly id: string;
+  /** Returns whether this provider owns the semantic kind. Providers that do
+   * not declare a resolver remain usable as the sole provider for legacy
+   * fixtures, but are never allowed to win a multi-provider dispatch by map
+   * insertion order. */
+  readonly supports?: (kind: string) => boolean;
   readonly blockPorts: typeof blockPorts;
   readonly isExecutableProcessKind: typeof isExecutableProcessKind;
   readonly portGlyphPoint: typeof portGlyphPoint;
@@ -18,6 +23,7 @@ export interface ModelSemanticProvider {
  * register providers without changing state or canvas consumers. */
 export const PROCESS_MODEL_SEMANTIC_PROVIDER: ModelSemanticProvider = Object.freeze({
   id: 'logicpilot-process',
+  supports: (kind: string) => BLOCK_DEFS.some((definition) => definition.kind === kind),
   blockPorts,
   isExecutableProcessKind,
   portGlyphPoint,
@@ -47,11 +53,11 @@ export function modelSemanticProviders(): readonly ModelSemanticProvider[] {
 }
 
 export function modelBlockPorts(kind: string) {
-  return modelSemanticProviders()[0]?.blockPorts(kind) ?? [];
+  return resolveProvider(kind)?.blockPorts(kind) ?? [];
 }
 
 export function modelIsExecutableProcessKind(kind: string): boolean {
-  return modelSemanticProviders()[0]?.isExecutableProcessKind(kind) ?? false;
+  return resolveProvider(kind)?.isExecutableProcessKind(kind) ?? false;
 }
 
 export function modelPortGlyphPoint(
@@ -60,9 +66,19 @@ export function modelPortGlyphPoint(
   direction: Parameters<typeof portGlyphPoint>[2],
 ) {
   return (
-    modelSemanticProviders()[0]?.portGlyphPoint(kind, port, direction) ??
+    resolveProvider(kind)?.portGlyphPoint(kind, port, direction) ??
     (direction === 'in' ? [7, 20] : [33, 20])
   );
+}
+
+function resolveProvider(kind: string): ModelSemanticProvider | undefined {
+  const candidates = modelSemanticProviders();
+  if (candidates.length === 1) return candidates[0];
+  const matches = candidates.filter((provider) => provider.supports?.(kind) === true);
+  if (matches.length > 1) {
+    throw new Error(`ambiguous model semantic kind '${kind}'`);
+  }
+  return matches[0];
 }
 
 export { BLOCK_DEFS, CANVAS_CONTAINER_KINDS };

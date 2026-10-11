@@ -34,6 +34,15 @@ function useContributedEpoch(): number {
   );
 }
 
+/** Live problem count for VS Code-style tab badges. Subscribes to the model
+ *  document and every contributed problem source, so the badge follows the
+ *  diagnostics without the tab bar knowing a paradigm. */
+export function useProblemCount(): number {
+  const document = useModelStore((state) => state.document);
+  const contributedEpoch = useContributedEpoch();
+  return useMemo(() => collectProblems({ document }).length, [document, contributedEpoch]);
+}
+
 export function ProblemsPanel() {
   const document = useModelStore((state) => state.document);
   const selectNode = useModelStore((state) => state.select);

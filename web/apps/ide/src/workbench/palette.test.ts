@@ -53,4 +53,32 @@ describe('palette provider registry', () => {
     // The tab disappears with the contribution.
     expect(PALETTE_CONTRIBUTIONS.libraries().some((l) => l.id === 'test-lib')).toBe(false);
   });
+
+  it('filters contributions by the active document type (palette follows the canvas)', () => {
+    // Plain files get no paradigm libraries at all.
+    expect(PALETTE_CONTRIBUTIONS.forDocumentType(undefined)).toEqual([]);
+    // The .lp model document: process libraries apply, sysml does not.
+    const dsl = PALETTE_CONTRIBUTIONS.forDocumentType('dsl').map((entry) => entry.library.id);
+    expect(dsl).toContain('process');
+    expect(dsl).not.toContain('sysml');
+    // The SysML document: only the sysml library applies.
+    const sysml = PALETTE_CONTRIBUTIONS.forDocumentType('sysml').map((entry) => entry.library.id);
+    expect(sysml).toEqual(['sysml']);
+    // A declared context is authoritative; legacy (undeclared) contributions
+    // appear for any known document type.
+    const legacy: PaletteContribution = {
+      id: 'test.legacy-palette',
+      library: { id: 'legacy-lib', name: 'Legacy Lib' },
+      items: [{ kind: 'legacy', library: 'legacy-lib', name: 'Legacy' }],
+    };
+    const disposeLegacy = PALETTE_CONTRIBUTIONS.register(legacy);
+    expect(
+      PALETTE_CONTRIBUTIONS.forDocumentType('dsl').some((e) => e.id === 'test.legacy-palette'),
+    ).toBe(true);
+    expect(
+      PALETTE_CONTRIBUTIONS.forDocumentType('sysml').some((e) => e.id === 'test.legacy-palette'),
+    ).toBe(true);
+    expect(PALETTE_CONTRIBUTIONS.forDocumentType(undefined)).toEqual([]);
+    disposeLegacy();
+  });
 });

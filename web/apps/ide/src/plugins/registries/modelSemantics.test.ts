@@ -39,4 +39,30 @@ describe('model semantic registry', () => {
       setModelSemanticFallbackEnabled(true);
     }
   });
+
+  it('dispatches by declared semantic ownership instead of first registration order', () => {
+    const left = {
+      id: 'semantic-left',
+      supports: (kind: string) => kind === 'left',
+      blockPorts: () => [],
+      isExecutableProcessKind: () => false,
+      portGlyphPoint: () => [1, 1] as [number, number],
+    };
+    const right = {
+      id: 'semantic-right',
+      supports: (kind: string) => kind === 'right',
+      blockPorts: () => [],
+      isExecutableProcessKind: () => false,
+      portGlyphPoint: () => [2, 2] as [number, number],
+    };
+    const disposeLeft = registerModelSemanticProvider(left);
+    const disposeRight = registerModelSemanticProvider(right);
+    try {
+      expect(modelPortGlyphPoint('left', 'unused', 'in')).toEqual([1, 1]);
+      expect(modelPortGlyphPoint('right', 'unused', 'in')).toEqual([2, 2]);
+    } finally {
+      disposeRight();
+      disposeLeft();
+    }
+  });
 });

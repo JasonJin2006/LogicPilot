@@ -21,6 +21,8 @@ import {
 } from '../../registries/modelSemantics';
 import desContributionsJson from './contributions.json';
 import { registerLocalPluginContribution } from '../../registry';
+import { registerExecutionTelemetryProjector } from '../../../state/executionProjector';
+import { projectProcessTelemetry } from '../telemetryProjectors';
 
 export function activateDesPlugin(): PluginModule {
   return {
@@ -40,6 +42,7 @@ export function activateDesPlugin(): PluginModule {
       ctx.effect(registerDslOutlineContribution());
       ctx.effect(registerModelSemanticProvider(PROCESS_MODEL_SEMANTIC_PROVIDER));
       ctx.effect(registerLocalPluginContribution(desContributionsJson));
+      ctx.effect(registerExecutionTelemetryProjector(projectProcessTelemetry));
       ctx.effect(
         replacePanel('model', { title: 'Model', area: 'center', component: ModelWorkspace }),
       );

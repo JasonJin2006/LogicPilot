@@ -5,9 +5,9 @@
 
 import { useEffect, useReducer } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { Hammer, Play, Save, X } from 'lucide-react';
+import { Box, Hammer, Play, Save, X } from 'lucide-react';
 import { SIZE_RANGE, useLayoutStore } from '../state/layoutStore';
-import { logConsoleEvent, useConnectionStore } from '../state/connectionStore';
+import { logConsoleEvent, useLegacyGatewayStore } from '../state/legacyGateway';
 import { useModelStore } from '../state/modelStore';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
@@ -16,6 +16,7 @@ import { mergeModelSource } from '../project/project';
 import { generateDsl, parseDsl } from '@logicpilot/editor';
 import { writeProjectFile } from '../state/tauriFs';
 import { PANELS, focusedPanelId, type AreaId, type PanelId } from './panels';
+import { useProblemCount } from './ProblemsPanel';
 import { ScrollArea } from '../components/ScrollArea';
 import { editorPanelFor } from '../workbench/documentTypes';
 import { onSelectionChanged } from '../workbench/selectionFocus';
@@ -93,6 +94,7 @@ function TabBar({ area }: { area: AreaId }) {
   const setActive = useLayoutStore((s) => s.setActive);
   const toggleCollapse = useLayoutStore((s) => s.toggleCollapse);
   const openPanel = useLayoutStore((s) => s.openPanel);
+  const problemCount = useProblemCount();
   const canvasViews = useCanvasView((s) => s.views);
   const rootOpen = useCanvasView((s) => s.rootOpen);
   const activeView = useCanvasView((s) => s.view);
@@ -119,7 +121,7 @@ function TabBar({ area }: { area: AreaId }) {
   // reply - the worst kind of false negative. Any divergence in that path
   // is surfaced as LP4100 rather than silently resolved.
   const handleCompile = () => {
-    const { compile } = useConnectionStore.getState();
+    const { compile } = useLegacyGatewayStore.getState();
     const activeFile = useUiStore.getState().activeFile;
     if (activeFile !== null) {
       // File-editor context: compile the whole project's file text.
@@ -172,28 +174,41 @@ function TabBar({ area }: { area: AreaId }) {
       void useProjectStore.getState().refreshDiskTree();
     });
   };
-  const renderTab = (panel: PanelId) => (
-    <div
-      key={panel}
-      className={`tab${panel === state.activePanel ? ' active' : ''}`}
-      onClick={() => setActive(area, panel)}
-    >
-      <span className="tab-label">{PANELS[panel]?.title ?? panel}</span>
-      {perTabClose && (
-        <button
-          className="tab-x"
-          aria-label={`Close ${panel} tab`}
-          title="Close tab"
-          onClick={(event) => {
-            event.stopPropagation();
-            useLayoutStore.getState().removePanel(area, panel);
-          }}
-        >
-          <X size={11} />
-        </button>
-      )}
-    </div>
-  );
+  const renderTab = (panel: PanelId) => {
+    const definition = PANELS[panel];
+    const Icon = definition?.icon;
+    const problemBadge = area === 'bottom' && panel === 'problems' ? problemCount : undefined;
+    return (
+      <div
+        key={panel}
+        className={`tab${panel === state.activePanel ? ' active' : ''}`}
+        onClick={() => setActive(area, panel)}
+      >
+        {Icon !== undefined && (
+          <span className="tab-icon" aria-hidden>
+            <Icon size={11} />
+          </span>
+        )}
+        <span className="tab-label">{definition?.title ?? panel}</span>
+        {problemBadge !== undefined && problemBadge > 0 && (
+          <span className="tab-badge">{problemBadge > 99 ? '99+' : problemBadge}</span>
+        )}
+        {perTabClose && (
+          <button
+            className="tab-x"
+            aria-label={`Close ${panel} tab`}
+            title="Close tab"
+            onClick={(event) => {
+              event.stopPropagation();
+              useLayoutStore.getState().removePanel(area, panel);
+            }}
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+    );
+  };
   return (
     <div className="tab-bar">
       {area === 'center' ? (
@@ -306,19 +321,49 @@ function TabBar({ area }: { area: AreaId }) {
               </button>
             </div>
           )}
+          {state.panels.includes('scene3d') && (
+            <div
+              className={`tab${activePanel === 'scene3d' ? ' active' : ''}`}
+              title="3D scene"
+              onClick={() => setActive('center', 'scene3d')}
+            >
+              <span className="tab-label">Scene</span>
+              <button
+                className="tab-x"
+                aria-label="Close Scene tab"
+                title="Close tab"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  useLayoutStore.getState().removePanel('center', 'scene3d');
+                }}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          )}
           {/* The right end of the tab bar is a contextual action area:
               Run for the canvas, Compile (and Save for disk files) for the
               code editor - icon buttons, not text. */}
           <div className="tab-actions">
             {activePanel === 'model' && (
-              <button
-                className="tab-action"
-                title="Run the model"
-                aria-label="Run"
-                onClick={openRunDialog}
-              >
-                <Play size={14} />
-              </button>
+              <>
+                <button
+                  className="tab-action"
+                  title="Run the model"
+                  aria-label="Run"
+                  onClick={openRunDialog}
+                >
+                  <Play size={14} />
+                </button>
+                <button
+                  className="tab-action"
+                  title="View the model in 3D"
+                  aria-label="3D scene"
+                  onClick={() => openPanel('center', 'scene3d')}
+                >
+                  <Box size={14} />
+                </button>
+              </>
             )}
             {activePanel === 'dsl' && (
               <>
@@ -367,8 +412,12 @@ function PanelArea({ area }: { area: AreaId }) {
   const canvasOpen = useCanvasView((s) => s.rootOpen || s.views.length > 0);
   const filesOpen = useUiStore((s) => s.openFiles.length > 0);
   const welcomeOpen = area === 'center' && centerPanels.includes('welcome');
+  // The 3D scene is a centre tab without a backing document, so it has to count
+  // as "a tab is open" or the body would stay blank with its tab showing.
+  const sceneOpen = area === 'center' && centerPanels.includes('scene3d');
   // Blank until a tab is opened: the welcome page is a closable tab too.
-  const centerEmpty = area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen;
+  const centerEmpty =
+    area === 'center' && !canvasOpen && !filesOpen && !welcomeOpen && !sceneOpen;
   return (
     <section className={`panel-area area-${area}${state.collapsed ? ' collapsed' : ''}`}>
       {!state.collapsed &&

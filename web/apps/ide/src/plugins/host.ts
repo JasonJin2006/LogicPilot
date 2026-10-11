@@ -1,7 +1,7 @@
-// IDE PluginHost wiring (Phase 2): the composition root is no longer a
-// static import list (ADR-0068 is superseded by the plugin platform plan).
-// Builtin paradigms ship as PluginManifest v2 packages under plugins/builtin
-// and activate through @logicpilot/plugin-host with dependency-resolved,
+// IDE PluginHost wiring (Phase 2): the composition root is manifest-driven and
+// lifecycle-scoped. Builtin paradigms currently ship as an in-process system
+// map under plugins/builtin; moving that map behind the Node catalog/loader is
+// the remaining package-boundary work. They activate through @logicpilot/plugin-host with dependency-resolved,
 // deterministic ordering, trust gating and an append-only audit trail.
 //
 // Discovery is layered (ADR-0070 §3, ADR-0071):
@@ -39,34 +39,53 @@ import { setSysMLSemanticFallbackEnabled } from './registries/sysmlSemantics';
 // Builtin web entrypoints. Bundlers resolve these statically; the manifest
 // `entrypoints.web` field documents the mapping for the packaged (non-bundled)
 // host, which loads modules dynamically instead.
-import { activateDesPlugin } from './builtin/des/activate';
 import desManifestJson from './builtin/des/plugin.json';
-import { activateSysmlPlugin } from './builtin/sysml/activate';
 import sysmlManifestJson from './builtin/sysml/plugin.json';
-import { activateStatechartPlugin } from './builtin/statechart/activate';
 import statechartManifestJson from './builtin/statechart/plugin.json';
-import { activateAgentPlugin } from './builtin/agent/activate';
 import agentManifestJson from './builtin/agent/plugin.json';
-import { activateContinuousPlugin } from './builtin/continuous/activate';
 import continuousManifestJson from './builtin/continuous/plugin.json';
-import { activateDevsPlugin } from './builtin/devs/activate';
 import devsManifestJson from './builtin/devs/plugin.json';
-import { activateC4Plugin } from './builtin/c4/activate';
 import c4ManifestJson from './builtin/c4/plugin.json';
+import scene3dManifestJson from './builtin/scene3d/plugin.json';
 
 interface BuiltinPlugin {
   readonly manifestJson: unknown;
-  readonly load: () => PluginModule;
+  readonly load: () => Promise<PluginModule>;
 }
 
 const BUILTIN_PLUGINS: readonly BuiltinPlugin[] = [
-  { manifestJson: desManifestJson, load: activateDesPlugin },
-  { manifestJson: sysmlManifestJson, load: activateSysmlPlugin },
-  { manifestJson: statechartManifestJson, load: activateStatechartPlugin },
-  { manifestJson: agentManifestJson, load: activateAgentPlugin },
-  { manifestJson: continuousManifestJson, load: activateContinuousPlugin },
-  { manifestJson: devsManifestJson, load: activateDevsPlugin },
-  { manifestJson: c4ManifestJson, load: activateC4Plugin },
+  {
+    manifestJson: desManifestJson,
+    load: async () => (await import('./builtin/des/activate')).activateDesPlugin(),
+  },
+  {
+    manifestJson: sysmlManifestJson,
+    load: async () => (await import('./builtin/sysml/activate')).activateSysmlPlugin(),
+  },
+  {
+    manifestJson: statechartManifestJson,
+    load: async () => (await import('./builtin/statechart/activate')).activateStatechartPlugin(),
+  },
+  {
+    manifestJson: agentManifestJson,
+    load: async () => (await import('./builtin/agent/activate')).activateAgentPlugin(),
+  },
+  {
+    manifestJson: continuousManifestJson,
+    load: async () => (await import('./builtin/continuous/activate')).activateContinuousPlugin(),
+  },
+  {
+    manifestJson: devsManifestJson,
+    load: async () => (await import('./builtin/devs/activate')).activateDevsPlugin(),
+  },
+  {
+    manifestJson: c4ManifestJson,
+    load: async () => (await import('./builtin/c4/activate')).activateC4Plugin(),
+  },
+  {
+    manifestJson: scene3dManifestJson,
+    load: async () => (await import('./builtin/scene3d/activate')).activateScene3DPlugin(),
+  },
 ];
 
 /** Validates a bundled manifest against the frozen Phase 1 contract and
@@ -210,8 +229,12 @@ export async function startIdePluginHost(options: IdePluginHostOptions = {}): Pr
     (import.meta.env.VITE_ZERO_PLUGINS === '1' || import.meta.env.VITE_PLUGINS === '0'
       ? []
       : BUILTIN_PLUGINS);
-  setModelSemanticFallbackEnabled(builtins.length > 0);
-  setSysMLSemanticFallbackEnabled(builtins.length > 0);
+  // Production semantics must come exclusively from active plugin providers.
+  // The registries retain an opt-in fallback for isolated unit fixtures, but
+  // the host never enables it: otherwise stopping one paradigm would silently
+  // resurrect its old built-in semantics.
+  setModelSemanticFallbackEnabled(false);
+  setSysMLSemanticFallbackEnabled(false);
   const sources: DiscoverySource[] = [builtinSourceFor(builtins, 'system')];
   const remoteSources = await remoteCatalogSources(
     options.catalog,
@@ -307,6 +330,13 @@ async function refreshIdePluginRegistry(
  *  table. The shell must still construct and edit plain files. */
 export async function startZeroPluginHost(): Promise<PluginHost> {
   return startIdePluginHost({ builtins: [] });
+}
+
+/** The active IDE plugin host, if one is running. Runtime per-plugin
+ *  lifecycle (e.g. stopping one paradigm's builtin) is driven through it;
+ *  exposed for diagnostics and browser verification gates. */
+export function idePluginHost(): PluginHost | null {
+  return host;
 }
 
 /** Stops the active host (tests, HMR teardown). */

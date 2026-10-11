@@ -26,6 +26,17 @@ describe('panel registry', () => {
     }
   });
 
+  it('uses Navigator for semantic structure instead of the old Project panel', () => {
+    expect(PANELS.navigator?.title).toBe('Navigator');
+    expect(PANELS.modelInfo).toBeUndefined();
+    expect(ACTIVITY_VIEWS.find((view) => view.id === 'navigator')?.panel).toBe('navigator');
+  });
+
+  it('keeps plugin draft governance out of the daily activity bar', () => {
+    expect(PANELS.pluginDrafts).toBeUndefined();
+    expect(ACTIVITY_VIEWS.some((view) => view.id === 'plugin-drafts')).toBe(false);
+  });
+
   it('activity views map onto left-side panels', () => {
     for (const view of ACTIVITY_VIEWS) {
       expect(PANELS[view.panel]?.area).toBe('left');

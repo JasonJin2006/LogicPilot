@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import type { PluginRegistry } from '@logicpilot/contracts';
-import { createPluginRegistryVerifier, PluginRegistryStore } from './registry';
+import {
+  createPluginRegistryVerifier,
+  PluginRegistryStore,
+  type PluginRegistryStreamOptions,
+} from './registry';
 
 function envelope(generation: number) {
   return {
@@ -55,6 +59,46 @@ describe('PluginRegistryStore', () => {
       signedBy: 'registry-key',
       signature: 'sig',
     });
+  });
+
+  it('advances composition generation and removes remote integrity after local composition', () => {
+    const store = new PluginRegistryStore();
+    store.apply({
+      ...envelope(1),
+      integrity: { sha256: 'a'.repeat(64), signedBy: 'registry-key', signature: 'sig' },
+    });
+    const before = store.snapshot().generation;
+    const dispose = store.registerLocalContribution({
+      ...envelope(1).contributions[0],
+      pluginId: 'logicpilot.local',
+    });
+    expect(store.snapshot().generation).toBeGreaterThan(before);
+    expect(store.snapshot().integrity).toBeUndefined();
+    dispose();
+    expect(store.snapshot().generation).toBeGreaterThan(before + 1);
+    expect(store.snapshot().integrity).toBeUndefined();
+  });
+
+  it('accepts the first remote generation zero and uses only the remote cursor for SSE', async () => {
+    const store = new PluginRegistryStore();
+    store.apply(envelope(0));
+    expect(store.snapshot().plugins).toContain('logicpilot.registry-test');
+    store.registerLocalContribution({
+      ...envelope(0).contributions[0],
+      pluginId: 'logicpilot.local',
+    });
+    const fetchImpl = vi.fn<NonNullable<PluginRegistryStreamOptions['fetch']>>(async () => ({
+      ok: true,
+      status: 200,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.close();
+        },
+      }),
+    }));
+    const stop = store.startLive({ fetch: fetchImpl });
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers?.['last-event-id']).toBe('0');
+    stop();
   });
 
   it('verifies signed snapshots with browser WebCrypto and rejects tampering', async () => {

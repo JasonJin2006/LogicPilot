@@ -99,7 +99,16 @@ const aiBuildPlugin = (): Plugin => ({
       void runWithApiPolicy(req, res, () => handleAgentStep(req, res));
     });
     server.middlewares.use('/api/execution', (req, res) => {
-      void runWithApiPolicy(req, res, () => handleExecution(req, res));
+      // Connect strips the mount prefix from req.url. The production app
+      // server receives the full path, so restore it here before the shared
+      // handler resolves the explicit targets/runs/commands routes.
+      const originalUrl = req.url;
+      if (!originalUrl?.startsWith('/api/execution')) {
+        req.url = '/api/execution' + (originalUrl === '/' ? '' : originalUrl ?? '');
+      }
+      void runWithApiPolicy(req, res, () => handleExecution(req, res)).finally(() => {
+        req.url = originalUrl;
+      });
     });
     server.middlewares.use('/api/config', (req, res) => {
       void runWithApiPolicy(req, res, () => handleConfig(req, res));
