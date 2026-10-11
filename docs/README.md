@@ -26,6 +26,23 @@
 执行证据优先级：当前源码与可复现测试 > 当前状态页 > 历史计划/ADR > 会话中的进度描述。
 历史 ADR 保留原始语境，不能单凭 `Accepted` 推断功能已完整交付。
 
+## 语言与格式约定
+
+- **语言分层**：机器与 AI 读取的载荷（`AGENTS.md`、JSON Schema、机器消费的配置键、注入给
+  agent 的 prompt）用**英文**；面向人的说明、路线与运维文档用**中文**。
+- **英文文档（现状；新增同类照此）**：`adr/` 全部、`specs/dsl-spec.md`、
+  `specs/ai-model-patch.md`、`specs/workspace.md`、`specs/des-anylogic-compatibility.md`、
+  `performance-budget.md`、`maintenance/execution-session-progress.md` —— 它们是逐字段校验
+  或对外引用的**规范正文**，与上游实现同一语言。ADR 记录当时的决策、备选与理由，同上。
+- **中文文档（现状）**：其余全部 —— `guide/`、`architecture/`、`specs/` 多数、`maintenance/`
+  多数、`docs/README.md`、根 `README.md`、`CONTRIBUTING.md`、`HANDOVER.md`。
+  **不因本约定批量翻译既有文档**（历史记录保持原语境）。
+- **状态头随文档语言**：英文文档写 `Status: <值>`（ADR 惯例，如 `Status: Accepted`）；
+  中文文档写 `状态：<值>（<日期>）`，需要时可加 `；维护者：…`。
+- **标点**：中文正文一律用**全角**标点（`，。；：（）「」`）；并列用 `、`，分句用 `；`。
+  **不用 `·`（中点）当分隔符** —— 它是明显的机器排版痕迹。
+- **日期**：`YYYY-MM-DD`。**标题**：层级不跳级。**表格**：必须有表头分隔行。
+
 命令入口在根 `package.json`；JSON Schema 的源在 `schemas/contracts/`。
 生成文件只用 `node scripts/gen-contracts.mjs` 更新，不手改 TS/C++ 生成物。
 变更冻结 baseline 必须说明具体破坏性变化，不能为了让检查变绿而整目录覆盖。

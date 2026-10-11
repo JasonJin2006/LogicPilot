@@ -1,9 +1,9 @@
 # LogicPilot
 
-开发接手入口：[文档导航](docs/README.md) · [当前架构状态](docs/architecture/current-state.md) ·
+开发接手入口：[文档导航](docs/README.md)、[当前架构状态](docs/architecture/current-state.md)、
 [交接提示词](docs/maintenance/handoff-next-ai.md)。历史计划中的完成状态以当前状态页和实际门禁为准。
 
-AI 原生 · Web 化 · 高性能的**多方法建模仿真平台**（Simulation OS）。
+AI 原生、Web 化的**可扩展工程建模与仿真 Workbench**。
 
 用一套薄 DSL 描述模型，C++ 内核高速执行，浏览器/Tauri 桌面端拖拽建模，并为
 process / agent / statechart / 连续 ODE / DEVS 原子等**全部方法提供实时遥测
@@ -14,9 +14,20 @@ target（解释器 / lowering / 外部工具）。技术路线上与 AnyLogic / 
 但采用更现代的 **DSL → IR → C++ Runtime → Web/Tauri IDE** 分层，而不是
 Java/生成代码。
 
-> 定位声明：LogicPilot 是**建模仿真平台**（离散事件、DEVS 原子、Agent 群体、
-> 连续 ODE，多方法在同一内核/事件队列中组合），不是通用编程语言，也不是
-> 逻辑推理引擎。语言边界见 [DSL 冻结契约](docs/specs/dsl-freeze.md)。
+> 定位声明（权威措辞见 [dev-plan §0](docs/dev-plan.md)）：LogicPilot 是**可扩展工程建模与
+> 仿真 Workbench** —— 离散事件、DEVS 原子、Agent 群体、连续 ODE、状态机等仿真模型与
+> SysML/C4 等工程模型**都是一等文档**；**时间推进是可选能力，不是进入 Workbench 的前提**。
+> 它不是通用编程语言，也不是逻辑推理引擎，也不把所有语言塞入同一 DSL、同一 `ModelDocument`
+> 或同一 runtime。语言边界见 [DSL 冻结契约](docs/specs/dsl-freeze.md)。
+>
+> 边界补充：**工作台与外壳是范式无关的** —— 面板、图元、记号、语言与求解器全部由扩展
+> （范式包）贡献，外壳只提供槽位；「零范式」构建仍能启动并编辑纯文本文件（有门禁守着）。
+> 因此这里也住得下**不需要执行**的内容：C4 架构记号被明确设计为不可执行
+> （[ADR-0132](docs/adr/0132-kernel-runtime-target-family.md)），presentation 图元与 controls
+> 控件只负责表达与交互。**运行只是产出证据的一种方式**，不是这台工作台唯一的动作：模型是唯一
+> 权威修订，跑或不跑都要留下证据。新范式要带自己的后端，发一个 Node 插件包即可，外壳与状态栏
+> 都不用改（[ADR-0134](docs/adr/0134-formal-runtime-plugin-packages.md)）；SysML v2 的接入
+> 边界见 [ADR-0138](docs/adr/0138-sysml-as-runtime-target.md)。
 
 ## 架构总览
 

@@ -1,6 +1,6 @@
 # LogicPilot Performance Budget
 
-Status: **Accepted** (Phase 0 baseline) · Owner: kernel team
+Status: **Accepted** (Phase 0 baseline); Owner: kernel team
 
 This document is the normative performance contract. CI gates (benchmark jobs)
 must fail when a budget is exceeded beyond tolerance. All budgets assume

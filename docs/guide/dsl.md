@@ -379,11 +379,11 @@ experiment CapacityStudy {
 数值 `param`；浮点参数可使用浮点范围，整数参数的范围端点和步长必须为整数。
 IDE 的 AI 面板可直接执行项目中声明的参数扫描，以表格显示每个组合的均值、
 Student-t 置信区间和实际重复次数。固定种子模式会让各组合使用相同的重复种子，
-便于采用共同随机数降低比较噪声；组合数上限为 100,000。
+便于采用共同随机数降低比较噪声；组合数上限为 100，000。
 
 ## 自定义库与行业库
 
-库块形状声明在 `.lplib` 文件中（`block <Name> { <field>: <type> [= 默认值];
+库块形状声明在 `.lplib` 文件中（`block <Name> { <field>： <type> [= 默认值]；
 in/out 端口 }`），`use <library>` 按搜索路径加载（模型所在目录与 `libraries/`），
 `lpcli compile --lib-path` 可指定额外目录：
 

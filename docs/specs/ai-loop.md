@@ -1,6 +1,6 @@
 # AI Model Build Loop (Simulation Copilot 第一刀)
 
-状态: Implemented（2026-08-04）。NL → DSL → 编译 → 结构化诊断 → 修复 → 运行
+状态： Implemented（2026-08-04）。NL → DSL → 编译 → 结构化诊断 → 修复 → 运行
 的闭环已落地并接入 CI（`ai_build_smoke`）。
 
 ## 入口

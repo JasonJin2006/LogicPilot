@@ -1,6 +1,6 @@
 # 流程库图标与端口排布规范
 
-状态：已落地（2026-08-06）· 适用范围：`web/apps/ide/src/model/BlockIcon.tsx`、
+状态：已落地（2026-08-06）；适用范围：`web/apps/ide/src/model/BlockIcon.tsx`、
 `blockDefs.ts`、`ModelCanvas.tsx`、`styles/model.css`
 
 ## 1. 目标

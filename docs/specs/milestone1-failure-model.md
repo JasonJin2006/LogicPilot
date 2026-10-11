@@ -1,6 +1,6 @@
 # 里程碑 1 契约：多服务器与机器故障（M/M/c + breakdowns）
 
-状态: Implemented（2026-08-04；全量 ctest 现为 212）。内核引擎（QueueingFlowSim M/M/c + breakdowns）、
+状态： Implemented（2026-08-04；全量 ctest 现为 212）。内核引擎（QueueingFlowSim M/M/c + breakdowns）、
 IR 接线（ir_loader）、验收模型（examples/mm1_failure.lp + expect.json）与流式驱动
 （SimRunner/lp-server 现已按 IR 模型参数运行，含多服务器与故障，wire Counters 增加
 `servers` / `down_servers` 字段）均已落地。
@@ -18,7 +18,7 @@ IR 接线（ir_loader）、验收模型（examples/mm1_failure.lp + expect.json�
 
 - IR 中资源 = CoupledModel 子节点 `AtomicModel`，`params` 携带：
   - `capacity`（IntValue，≥ 1）
-  - `failure_rate`（FloatValue，∈ [0, 1]；0 = 永不故障）
+  - `failure_rate`（FloatValue，∈ [0， 1]；0 = 永不故障）
   - `repair_rate`（FloatValue，**可选**；v0 运行时缺省 = 1.0）
 - `ServiceNode.servers` = 对应资源的 `capacity`（DSL lowering 已实现）；运行时必须读取并生效。
 - 故障语义（v1，preemptive-repeat）：

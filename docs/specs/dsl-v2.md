@@ -1,7 +1,7 @@
 # DSL v2 重设计草案（DSL 2.0）——分层设计
 
-状态: **已实施**（Phase B–E 全部落地，2026-08-06；本文为设计记录，规范性与
-规则表以 `dsl-spec.md` 为准）· 目标: 消除 v0 的语法与绑定混乱，
+状态： **已实施**（Phase B–E 全部落地，2026-08-06；本文为设计记录，规范性与
+规则表以 `dsl-spec.md` 为准）；目标：消除 v0 的语法与绑定混乱，
 对齐 IR v2（Node/SemanticsRef 薄契约 + 引擎注册表），并按 AnyLogic 官方的
 分层（核心原语 + 块库 + 模型文件）重构 DSL 的语法分层。
 
@@ -40,7 +40,7 @@ DSL 是"每完成一个里程碑长一块"累积出来的，缺少一次统一�
 4. **显式引用**：资源、端口、实验变量全部用限定引用，禁止同名魔法。
 5. **类型 + 表达式**：`param`/`state`/库块字段类型化；数值位置接受表达式
    （先常量折叠，后参数引用，分阶段落地）。
-6. **1:1 映射 IR v2**：每个 DSL 元素映射 `Node + SemanticsRef`；不引入
+6. **1：1 映射 IR v2**：每个 DSL 元素映射 `Node + SemanticsRef`；不引入
    IR v2 表达不了的概念（如资源引用以编译期校验的 `ref` 类型落地）。
 
 ### 2.1 已定决策（Phase B 起生效）
@@ -269,7 +269,7 @@ model Decay {
 2. kind 解析：核心种类 → 库注册表 → 否则 `LP2001`（unknown kind，带 span）。
 3. 形状校验：实例字段/端口/类型对照块形状。
 4. 引用校验：`resource` 引用、`couple` 端口、`experiment.variable` 路径。
-5. lowering → IR v2（1:1，见 §6）。
+5. lowering → IR v2（1：1，见 §6）。
 6. 运行时：引擎注册表按 `{library, block}` 分发。
 
 ## 5. 类型与表达式（分阶段）
@@ -302,13 +302,13 @@ model Decay {
 | `couple a.p -> b.p` | `Node.couplings = [Coupling]` |
 | `experiment E { variable=param }` | `ModelFile.experiments[].variable = 限定路径` |
 
-映射是 1:1 的，**不引入 IR v2 表达不了的概念**；`resource` 引用以 `String` 参数
+映射是 1：1 的，**不引入 IR v2 表达不了的概念**；`resource` 引用以 `String` 参数
 落地，但编译期已做 `ref` 校验（禁止裸字符串魔法）。
 
 ## 7. 迁移路径（分阶段，沿用 IR v2 的纪律）
 
-- **Phase A（本轮）**: ✅ 本草案评审；分层设计确认（薄核心文法 + 库注册表）。
-- **Phase B（泛化文法）**: ✅ 已完成（2026-08-04）：`grammar.js` 重写为通用骨架
+- **Phase A（本轮）**： ✅ 本草案评审；分层设计确认（薄核心文法 + 库注册表）。
+- **Phase B（泛化文法）**： ✅ 已完成（2026-08-04）：`grammar.js` 重写为通用骨架
   （`kind = identifier`、统一 field/behavior/port/couple/expr），tree-sitter CLI
   0.26.11 重生成 `parser.c`/`grammar.json`/`node-types.json`；`parser.cpp`/AST
   改为泛化 Node；process 库块形状迁入编译器内建注册表（C++ 侧形状表，新增
@@ -316,19 +316,19 @@ model Decay {
   校验；corpus 重写为 40 用例；示例/测试/`scripts/ai-provider.mjs` 同步为 v2
   写法（`on_<trigger> { }` 行为；`poisson` 保留为 `rate` 等价别名）。
   修复 D1/D2/D8。
-- **Phase C（显式引用）**: ✅ 已完成（2026-08-04）：`service { resource = R }`
+- **Phase C（显式引用）**： ✅ 已完成（2026-08-04）：`service { resource = R }`
   显式引用替代同名魔法绑定——`resource` 字段进 service 块形状（`LP2005` 放行），
   引用目标必须指向已声明资源（`LP4001`，span 指向引用处）；字段缺失时保留
   v0 同名绑定作为过渡回退；lowering 按引用解析 `resource`/`servers` 参数。
   示例（mm1/mm1_failure/two_servers）迁移为 `service Handle { resource = Server; ... }`，
   AI provider 同步；golden 与新增 `LP4001` 引用测试覆盖。修复 D3。
-- **Phase D（表达式）**: ✅ 已完成（2026-08-04）：`value` 文法扩展为表达式
+- **Phase D（表达式）**： ✅ 已完成（2026-08-04）：`value` 文法扩展为表达式
   （二元 `+ - * /` 带优先级、一元取负、括号）；AST 改为表达式树；编译器
   常量折叠（`rate(2 * 0.4)` → Poisson[0.8]）并解析参数引用
   （`rate(arrival_rate)` → 取模型级 `param` 值，`LP2006` 拒绝未声明标识符/
   非常量）；模型级 `param` 落入 IR 根节点 params；示例 mm1 迁移为
   `param arrival_rate` + `rate(arrival_rate)`。修复 D6；吸收 roadmap P1-5。
-- **Phase E（行为统一 + 实验 + 库元层）**: ✅ 全部完成（2026-08-04）——
+- **Phase E（行为统一 + 实验 + 库元层）**： ✅ 全部完成（2026-08-04）——
   行为统一 `on_<trigger> { }` 已在 Phase B 落地；experiment `variable` 限定路径
   （引用已声明模型参数，`LP7001` 校验，`servers` 保留兼容）；**`library`/`block`
   库元层落地**：块形状声明在 `libraries/process.lplib`（类型化字段

@@ -21,14 +21,14 @@
 
 > 原则：契约先行 → 消费者在后；每批独立可验证；避免 `git add -A`，按路径精确暂存。
 
-### B0 · 仓库卫生（先做，独立提交）
+### B0 仓库卫生（先做，独立提交）
 - `.gitignore` 增加 `.zcode/`（ZCode 会话计划属本地工具产物）。
 - 处置 `integrations/dsh-des/` 与 `.zcode/plans/`：前者若保留则随 B12 入库，后者不入库。
 - 涉及：`.gitignore`（改）、`.zcode/plans/*.md`（不入库）
 - 建议 message：`chore: ignore local zcode plan cache`
 - 验证：`git status` 中 `.zcode/` 消失。
 
-### B1 · 契约演进（必须最先落地）
+### B1 契约演进（必须最先落地）
 - 新增 `schemas/contracts/execution-session.schema.json`、`plugin-services.schema.json`（含 `baseline/` 同名）。
 - 修改 `execution-target` / `plugin-contributions` / `plugin-manifest-v2`（含 `baseline/`）。
 - `schemas/wasm/logicpilot-plugin.wit`。
@@ -37,18 +37,18 @@
 - 建议 message：`feat(contracts): add execution-session and plugin-services schemas`
 - 验证：`node scripts/check-contract-conform.mjs` ✅（已实测通过：18 schemas / 124 defs）
 
-### B2 · 插件宿主与执行目标
+### B2 插件宿主与执行目标
 - `web/packages/plugin-host/src/`：`capability-broker.ts`、`execution-target-registry.ts`、`host.ts`、`index.ts`（改），`execution-service.ts`（新）。
 - 测试：`capability-broker.test.ts`、`execution-target-registry.test.ts`（改），`execution-service.test.ts`（新）。
 - 建议 message：`feat(plugin-host): add execution service over target registry`
 
-### B3 · Node 运行时与正式 runtime 包
+### B3 Node 运行时与正式 runtime 包
 - `web/packages/plugin-catalog/src/`：`dynamic-loader.ts`、`node-runtime.ts`、`node-shims.d.ts`、`wasm-bindings.ts`、`index.ts`（改），`component-runner.ts`、`execution-run-store.ts`（新）+ 对应测试。
 - `plugins/runtime/`：`entrypoint.mjs` + 5 个 `plugin.json` + `README.md`（新）。
 - 建议 message：`feat(plugin-catalog): load formal runtime packages`
 - 验证：`node scripts/test-node-runtime-e2e.mjs`（需先 build plugin-catalog）。
 
-### B4 · 执行边界与子进程监督
+### B4 执行边界与子进程监督
 - `scripts/`：`subprocess-supervisor.mjs`、`runtime-adapters.mjs`、`runtime-conformance.mjs`、`kernel-boundary.mjs`、`check-kernel-boundary.mjs`、`check-wit-contract.mjs`（新）。
 - 测试脚本：`test-execution-boundary`、`test-kernel-boundary`、`test-kernel-supervisor`、`test-plugin-lifecycle`、`test-runtime-adapters`、`test-runtime-conformance`、`test-session-host`（新）。
 - `app/execution-websocket.mjs`（新）、`app/server.mjs`、`app/request-policy.mjs`（改）。
@@ -56,7 +56,7 @@
 - 建议 message：`feat(runtime): add subprocess supervisor and boundary gates`
 - 验证：本方案已实测 6 个门禁全绿（见文末）。
 
-### B5 · 会话宿主与组件运行器（C++ / Rust）
+### B5 会话宿主与组件运行器（C++ / Rust）
 - `kernel/apps/lp-session-host/main.cpp`（新）、`kernel/apps/lp-server/server.cpp`、`kernel/apps/lpcli/compile_command.cpp`（改）。
 - `CMakeLists.txt`、`kernel/CMakeLists.txt`、`cmake/msvc-output.mjs`（改/新）。
 - `runtime/component-runner/`（Cargo.toml/Cargo.lock/src/fixtures，新）
@@ -64,44 +64,44 @@
 - 建议 message：`feat(kernel): add session host and component runner build`
 - 验证：`./scripts/windows-build.ps1 -Preset windows-msvc-dev -Configure -Test`（Windows 专用纪律）。
 
-### B6 · 内核方法层（复制/目标族）
+### B6 内核方法层（复制/目标族）
 - `kernel/include/logicpilot/runtime/{replication.h,simulation_method.h,simulation_session.h}`、`kernel/src/runtime/simulation_session.cpp`、`kernel/include/logicpilot/devs/ir_atomic.h`。
 - `methods/`：`agent`、`process`、`sd`、`statechart`（含新 `*_network.*`、`*_replication.*`）。
 - `kernel/tests/test_lp_server_integration.cpp`、`test_simulation_kernel.cpp`。
 - 建议 message：`feat(kernel): replication and simulation session targets`
 
-### B7 · DSL 编译器
+### B7 DSL 编译器
 - `dsl/compiler/`（`registry.h`、`semantic.h`、`compile.cpp`、`lowering.cpp`、`registry.cpp`、`semantic.cpp` + 测试）。
 - 新增 `dsl/compiler/include/logicpilot/dsl/stdlib_core.h`、`dsl/compiler/tests/golden/move_route_ir_dump.txt`、`libraries/core.lplib`。
 - `dsl/lsp/main.cpp`、`scripts/gen-stdlib-header.mjs`（改）。
 - 建议 message：`feat(dsl): stdlib core and registry semantics`
 
-### B8 · IDE 执行客户端与状态
+### B8 IDE 执行客户端与状态
 - `web/apps/ide/src/client/executionClient.ts`（新）+ 测试；`src/state/{executionStore,executionProjector,legacyGateway}.ts`（新）+ 测试。
 - `web/apps/ide/scripts/`：`execution-endpoint.mjs`、`.d.mts`、`plugin-catalog-bridge.mjs`、`ai-endpoint.mjs`、`browser-verify.mjs`（改），`execution-artifacts.mjs`、`native-session-provider.mjs`（新）。
 
-### B9 · 3D 场景（独立新能力）
+### B9 3D 场景（独立新能力）
 - 新包 `web/packages/scene3d/**`（含 6 个测试 + tsconfig + README）。
 - `web/apps/ide/src/scene3d/**`、`plugins/builtin/scene3d/**`、`state/sceneStore.ts`、`styles/scene3d.css`、`plugins/builtin/telemetryProjectors.ts`。
 - `web/apps/ide/scripts/scene3d-verify.mjs`、`scripts/test-scene3d-browser.mjs`。
 - 建议 message：`feat(scene3d): spatial scene package and IDE panel`
 - 验证：`node scripts/test-scene3d-browser.mjs`。
 
-### B10 · IDE 插件 / 范式生命周期重构
+### B10 IDE 插件 / 范式生命周期重构
 - `web/apps/ide/src/plugins/**`（`host.ts`、`registry.ts`、`registries/*`、`builtin/*/activate.ts|plugin.json`）。
 - `src/workbench/{palette,outline}.ts`、`src/model/paletteContributions.ts`、`src/layout/**`、`src/sysml/**`、`src/project/**`（含新测试）、`src/App.tsx`、`src/styles/**`、`package.json`、`vite.config.ts`、`README.md`。
 - `web/apps/ide/scripts/paradigm-lifecycle-verify.mjs`（新）。
 - 建议 message：`refactor(ide): route paradigms through plugin lifecycle`
 - 验证：`pnpm --filter @logicpilot/ide run verify:paradigm-lifecycle`。
 
-### B11 · Artifact Store 原子性
+### B11 Artifact Store 原子性
 - `web/packages/artifact-store/`：`index.ts`、`outbox.ts`、`node-shims.d.ts`（改），`atomic-file.ts`、`lock.ts`（新）+ 测试。
 
-### B12 · 桌面壳（Tauri）
+### B12 桌面壳（Tauri）
 - `desktop/src-tauri/{Cargo.toml,Cargo.lock,src/main.rs}`（改）、`src/windows_job.rs`（新）——`KILL_ON_JOB_CLOSE` 作业对象兜底回收。
 - 建议 message：`feat(desktop): job-object process cleanup`
 
-### B13 · 文档（含 DSH 支线）
+### B13 文档（含 DSH 支线）
 - `docs/`：`adr/`（0134–0136 新 + 0092/0133 改 + index）、`architecture/`（`current-state.md`、`canvas-platform.md`、`next-generation-plugin-platform.md` 新/改，`dsh-modeling-cocreation-plan.md`、`execution-session-gateway-plan.md` 新）、`maintenance/`（18 份 09-04/09-05 报告 + DSH 三件套）、`guide/`、`specs/`、`workbench-*.md`、`roadmap.md`、`README.md`。
 - `integrations/dsh-des/**`（新，原型参考）。
 - 建议 message：`docs: record runtime plugin and execution session boundaries`

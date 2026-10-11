@@ -1,6 +1,6 @@
 # Agent-centric 模型结构迁移设计
 
-状态：已完成（2026-08-06）· 维护者：`/root`
+状态：已完成（2026-08-06）；维护者：`/root`
 
 ## 1. 目标
 
@@ -111,7 +111,7 @@ model CallCenter {
   `nodePath` 去掉 `Flow/` 前缀；嵌套 agent 仍按 instance/独立文件组织。
 - 阶段 D（IDE）✅：`insertBlockAt` 不再自动建 `process Flow` 容器；
   根画布平铺 resource 与全部流程块。
-- 阶段 E（内核·嵌套 agent 体）✅：`build_replication_model` /
+- 阶段 E（内核级嵌套 agent 体）✅：`build_replication_model` /
   `extract_flow_params` 检测 agent 子节点体内的 process 库成员与其 couplings，
   将其作为流程作用域执行（M/M/1 快路径 + ProcessFlowSim）；与根级扁平放置
   bit-exact 对拍（同种子全指标一致，`test_ir_loader` "agent body flow"）；

@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: LogicPilot
-  text: AI 原生 · Web 化 · 高性能仿真平台
+  text: AI 原生、Web 化的可扩展工程建模与仿真 Workbench
   tagline: 用 DSL 描述模型、C++ 高速执行、浏览器流式/批量可视化、AI 自动建模与优化
   actions:
     - theme: brand
@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: 多方法统一
-    details: 离散事件（process）、DEVS 原子、Agent 群体、连续 ODE 系统——五种模型在同一套 IR（v2 Node/SemanticsRef）与引擎注册表下执行。
+    details: 离散事件（process）、DEVS 原子、Agent 群体、连续 ODE 系统、状态机（statechart）——五种模型在同一套 IR（v2 Node/SemanticsRef）与引擎注册表下执行。
   - title: 确定性可复现
     details: 固定种子逐位可复现，xoshiro256++ + int64 纳秒定点时间 + FIFO tie-break，理论验收与 bit-exact 对拍贯穿 CI。
   - title: AI 建模闭环

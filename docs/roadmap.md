@@ -1,6 +1,6 @@
 # LogicPilot 总计划（Roadmap）
 
-状态：持续更新 · 维护者：`/root`（集成与发布） · 2026-08-23
+状态：持续更新；维护者：`/root`（集成与发布）；2026-08-23
 
 本文保留里程碑总计划；当前实现与交接请先看 [当前状态](architecture/current-state.md)
 和 [文档导航](README.md)。下列条目汇总此前散落在各 spec/ADR 中的计划与状态
@@ -379,7 +379,7 @@ execution target 并选择解释器/lowering backend。当前前端视觉设计�
    v1（`LPIR`）已全量移除：`schemas/ir.fbs`、v1↔v2 转换器、`--ir-version 1`、
    interop/TS 的 v1 绑定全部删除；loader/process 路径原生吃 v2。
 
-10. **Method Runtime Layer（多方法仿真平台架构）**
+10. **Method Runtime Layer（多方法运行时架构）**
     历史问题：kernel 曾被 Process Flow 绑架——`process_flow.cpp`、Queue/Service
     语义、IR 中 process 库解析逻辑全部内建在 kernel。第一阶段通过统一生命周期
     插件完成代码隔离，但“Process / Agent / System Dynamics / Statechart 是同级

@@ -1,6 +1,6 @@
 # LogicPilot DSL Specification (v2)
 
-Status: **Implemented** (2026-08-06; supersedes v0) · Normative reference for
+Status: **Implemented** (2026-08-06; supersedes v0); normative reference for
 the tree-sitter grammar + compiler lowering
 
 This is the normative DSL reference (tree-sitter grammar + compiler

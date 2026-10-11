@@ -3,7 +3,8 @@
 > 历史迁移计划。当前实现边界见 [当前状态](architecture/current-state.md)，后续目标见
 > [下一代插件平台计划](architecture/next-generation-plugin-platform.md)。
 
-状态：**已批准，P1 最高优先级**（2026-08-23）  
+状态：**已批准**（2026-08-23）；已由 [dev-plan](dev-plan.md) 与
+[Workbench 迁移审查](workbench-migration-review.md) 接续，本页作为历史迁移计划保留  
 范围：Workbench、文档与编辑器扩展、AI 建模、仿真运行时边界、SysML v2 首批接入  
 相关：[`roadmap.md`](./roadmap.md)、[`dev-plan.md`](./dev-plan.md)、
 [`specs/ide-layout.md`](./specs/ide-layout.md)、

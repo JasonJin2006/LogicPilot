@@ -1,6 +1,6 @@
 # LogicPilot 工程化路线计划（工程建模与仿真 Workbench）
 
-状态：已定稿（2026-08-06）· 维护者：`/root` · 参考：`docs/roadmap.md`
+状态：已定稿（2026-08-06）；维护者：`/root`；参考：`docs/roadmap.md`
 
 ## 0. 定位校准
 
