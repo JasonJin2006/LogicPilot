@@ -4,28 +4,14 @@
 //
 // Usage: node scripts/ai-explain.mjs ["<prompt>"] [--model-file <path>]
 //        [--json] [--lpcli <path>] [--question "..."]
-import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { runLpcliAsync } from './ai-build.mjs';
 import { ruleBasedProvider } from './ai-provider.mjs';
 import { parseMetric } from './optimize.mjs';
 import { findLpcli } from './tool-paths.mjs';
-
-function runLpcli(lpcli, args) {
-  if (process.platform === 'win32') {
-    const mingwBin = 'C:\\msys64\\ucrt64\\bin';
-    if (existsSync(mingwBin) &&
-        !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
-      process.env.PATH = `${mingwBin};${process.env.PATH ?? ''}`;
-    }
-  }
-  return execFileSync(lpcli, args, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-}
 
 export function explainFromSummary(summary, question = '', blocks = [], metricEvidence = {}) {
   const findings = [];
@@ -117,17 +103,17 @@ export async function aiExplain({
     if (ir && ir.endsWith('.lp')) {
       const lp = ir;
       ir = join(dir, 'model.ir.bin');
-      runLpcli(lpcli, ['compile', lp, '-o', ir]);
+      await runLpcliAsync(lpcli, ['compile', lp, '-o', ir]);
     }
     if (!ir) {
       dsl = ruleBasedProvider(prompt);
       const lp = join(dir, 'model.lp');
       ir = join(dir, 'model.ir.bin');
       writeFileSync(lp, dsl, 'utf8');
-      runLpcli(lpcli, ['compile', lp, '-o', ir]);
+      await runLpcliAsync(lpcli, ['compile', lp, '-o', ir]);
     }
     const resultsDir = join(dir, 'results');
-    const output = runLpcli(lpcli, [
+    const output = await runLpcliAsync(lpcli, [
       'run', '--model-file', ir,
       '--seed', '42',
       '--reps', String(reps),

@@ -30,7 +30,9 @@ const baselineDir = join(root, 'schemas', 'contracts', 'baseline');
 
 const problems = [];
 
-const files = readdirSync(currentDir).filter((f) => f.endsWith('.schema.json')).sort();
+const files = readdirSync(currentDir)
+  .filter((f) => f.endsWith('.schema.json'))
+  .sort();
 if (files.length === 0) throw new Error('no contract schemas found');
 
 function loadDefIndex(dir) {
@@ -90,7 +92,9 @@ for (const file of files) {
   for (const [name, def] of Object.entries(schema.$defs ?? {})) {
     if (def['x-freeform-json']) continue; // opaque payloads are intentionally free-form
     if (def.type === 'object' && def.additionalProperties !== false) {
-      problems.push(`${file}#/${name}: object definitions must set additionalProperties:false (strict unknown-field rejection)`);
+      problems.push(
+        `${file}#/${name}: object definitions must set additionalProperties:false (strict unknown-field rejection)`,
+      );
     }
   }
 }
@@ -102,7 +106,9 @@ const baselineDefs = loadDefIndex(baselineDir);
 
 for (const [name, entry] of baselineDefs) {
   if (!currentDefs.has(name)) {
-    problems.push(`breaking: definition ${name} (${entry.file}) was removed from the current schemas`);
+    problems.push(
+      `breaking: definition ${name} (${entry.file}) was removed from the current schemas`,
+    );
     continue;
   }
   const current = currentDefs.get(name).def;
@@ -116,15 +122,17 @@ for (const [name, entry] of baselineDefs) {
 
   const baselineRequired = new Set(baseline.required ?? []);
   const currentRequired = new Set(current.required ?? []);
+  for (const prop of currentRequired) {
+    if (!baselineRequired.has(prop)) {
+      problems.push(`breaking: ${name}.${prop} (${entry.file}) became required`);
+    }
+  }
 
   for (const [prop, baselineProp] of Object.entries(baseline.properties ?? {})) {
     const currentProp = current.properties?.[prop];
     if (!currentProp) {
       problems.push(`breaking: ${name}.${prop} (${entry.file}) was removed`);
       continue;
-    }
-    if (!baselineRequired.has(prop) && currentRequired.has(prop)) {
-      problems.push(`breaking: ${name}.${prop} (${entry.file}) became required`);
     }
     if (!sameSignature(signature(baselineProp), signature(currentProp))) {
       problems.push(`breaking: ${name}.${prop} (${entry.file}) changed type`);
@@ -141,4 +149,6 @@ if (problems.length > 0) {
   console.error('[contract-conform] schemas/contracts/baseline/ in the same commit.');
   process.exit(1);
 }
-console.log(`[contract-conform] OK: ${files.length} schemas, ${currentDefs.size} definitions conform to baseline`);
+console.log(
+  `[contract-conform] OK: ${files.length} schemas, ${currentDefs.size} definitions conform to baseline`,
+);

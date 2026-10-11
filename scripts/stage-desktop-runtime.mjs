@@ -16,6 +16,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildRuntimePlugins } from './build-runtime-plugins.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -73,11 +74,38 @@ const lpserver = requireFile(
   argument('--lpserver', join(buildRoot, 'windows-msvc-release', 'kernel', 'lp-server.exe')),
   'lp-server release sidecar',
 );
+const sessionHost = requireFile(
+  argument(
+    '--session-host',
+    join(buildRoot, 'windows-msvc-release', 'kernel', 'lp-session-host.exe'),
+  ),
+  'lp-session-host release sidecar',
+);
+const componentRunner = requireFile(
+  argument(
+    '--component-runner',
+    join(
+      root,
+      'runtime',
+      'component-runner',
+      'target',
+      'release',
+      process.platform === 'win32'
+        ? 'logicpilot-component-runner.exe'
+        : 'logicpilot-component-runner',
+    ),
+  ),
+  'Wasmtime Component runner',
+);
 
 const requiredFiles = [
   'app/server.mjs',
+  'app/execution-websocket.mjs',
   'app/request-policy.mjs',
   'scripts/ai-build.mjs',
+  'scripts/subprocess-supervisor.mjs',
+  'scripts/runtime-adapters.mjs',
+  'scripts/runtime-conformance.mjs',
   'scripts/ai-provider.mjs',
   'scripts/ai-provider-config.mjs',
   'scripts/ai-provider-adapters.mjs',
@@ -98,6 +126,8 @@ const requiredFiles = [
   'web/apps/ide/scripts/ai-endpoint.mjs',
   'web/apps/ide/scripts/agent-endpoint.mjs',
   'web/apps/ide/scripts/execution-endpoint.mjs',
+  'web/apps/ide/scripts/execution-artifacts.mjs',
+  'web/apps/ide/scripts/native-session-provider.mjs',
   'web/apps/ide/scripts/plugin-catalog-bridge.mjs',
   'LICENSE',
 ];
@@ -132,6 +162,15 @@ copyFile(
   pluginCatalogBundle,
   join(output, 'web', 'packages', 'plugin-catalog', 'dist', 'index.bundle.js'),
 );
+// Server-side model replay (patch-only revision materialization) imports the
+// editor bundle from execution-artifacts.mjs; the staged tree has no
+// node_modules, so the single-file bundle must ship with the runtime.
+const editorBundle = join(root, 'web', 'packages', 'editor', 'dist', 'editor.bundle.js');
+if (!existsSync(editorBundle)) {
+  throw new Error('editor bundle is missing; run pnpm --filter @logicpilot/editor build');
+}
+copyFile(editorBundle, join(output, 'web', 'packages', 'editor', 'dist', 'editor.bundle.js'));
+buildRuntimePlugins(join(output, 'plugins', 'runtime'), join(output, 'plugin-store'));
 const agentOpenAiBundle = join(root, 'web', 'packages', 'agent-openai', 'dist', 'index.bundle.js');
 if (!existsSync(agentOpenAiBundle)) {
   throw new Error(
@@ -150,6 +189,26 @@ copyFile(
 copyFile(
   lpserver,
   join(output, 'runtime', 'bin', process.platform === 'win32' ? 'lp-server.exe' : 'lp-server'),
+);
+copyFile(
+  sessionHost,
+  join(
+    output,
+    'runtime',
+    'bin',
+    process.platform === 'win32' ? 'lp-session-host.exe' : 'lp-session-host',
+  ),
+);
+copyFile(
+  componentRunner,
+  join(
+    output,
+    'runtime',
+    'bin',
+    process.platform === 'win32'
+      ? 'logicpilot-component-runner.exe'
+      : 'logicpilot-component-runner',
+  ),
 );
 
 // CMake places required non-system runtime DLLs beside each release binary.

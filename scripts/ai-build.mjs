@@ -15,19 +15,14 @@
 // Provider: scripts/ai-provider.mjs (rule-based offline; LLM when
 // OPENAI_API_KEY is set). The loop is the same either way: diagnostics JSON
 // from `lpcli compile --diagnostics-json` is fed back into the provider.
-import { execFileSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { resolveProvider, resolveProviderName } from './ai-provider.mjs';
+import { execFileAsync } from './subprocess-supervisor.mjs';
 import { extendNativeRuntimePath, findLpcli } from './tool-paths.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -74,25 +69,47 @@ export function normalizeRunParams(runParams = {}) {
   if (!Number.isFinite(value.errorPercent) || value.errorPercent <= 0) {
     throw new Error('errorPercent must be greater than 0');
   }
-  if (!['throughput', 'L', 'Lq', 'W', 'Wq', 'measure', 'utilization',
-    'availability', 'final_value'].includes(value.precisionMetric)) {
+  if (
+    ![
+      'throughput',
+      'L',
+      'Lq',
+      'W',
+      'Wq',
+      'measure',
+      'utilization',
+      'availability',
+      'final_value',
+    ].includes(value.precisionMetric)
+  ) {
     throw new Error('invalid precisionMetric');
   }
-  if (typeof value.confidence !== 'number' || !Number.isFinite(value.confidence) ||
-      value.confidence <= 0 || value.confidence >= 1) {
+  if (
+    typeof value.confidence !== 'number' ||
+    !Number.isFinite(value.confidence) ||
+    value.confidence <= 0 ||
+    value.confidence >= 1
+  ) {
     throw new Error('confidence must be between 0 and 1');
   }
   return value;
 }
 
 function experimentCliArgs(experiment) {
-  const args = experiment.seedMode === 'random'
-    ? ['--random-seed']
-    : ['--seed', String(experiment.seed)];
+  const args =
+    experiment.seedMode === 'random' ? ['--random-seed'] : ['--seed', String(experiment.seed)];
   if (experiment.replicationMode === 'precision') {
-    args.push('--precision-reps', '--min-reps', String(experiment.minReps),
-      '--max-reps', String(experiment.maxReps), '--error-percent',
-      String(experiment.errorPercent), '--precision-metric', experiment.precisionMetric);
+    args.push(
+      '--precision-reps',
+      '--min-reps',
+      String(experiment.minReps),
+      '--max-reps',
+      String(experiment.maxReps),
+      '--error-percent',
+      String(experiment.errorPercent),
+      '--precision-metric',
+      experiment.precisionMetric,
+    );
   } else {
     args.push('--reps', String(experiment.reps));
   }
@@ -110,25 +127,31 @@ function effectiveComparisonExperiment(requested, runRecord) {
   };
 }
 
-function runLpcli(lpcli, args) {
+export function prepareLpcli(lpcli) {
   extendNativeRuntimePath(lpcli);
   // MinGW-built lpcli needs its runtime DLLs (ucrt64) on PATH; make the
   // loop independent of how the parent process was launched (e.g. the Vite
   // dev server). No-op on non-Windows / when msys2 is absent.
-  if (process.platform === 'win32' &&
-      /[\\/](?:local-mingw|local-gcc)[\\/]/i.test(lpcli)) {
+  if (process.platform === 'win32' && /[\\/](?:local-mingw|local-gcc)[\\/]/i.test(lpcli)) {
     const mingwBin = 'C:\\msys64\\ucrt64\\bin';
-    if (existsSync(mingwBin) &&
-        !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
+    if (existsSync(mingwBin) && !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
       process.env.PATH = `${mingwBin};${process.env.PATH ?? ''}`;
     }
   }
-  // Capture stderr instead of inheriting it so --json reports stay clean;
-  // failed compiles surface their diagnostics through --diagnostics-json.
-  return execFileSync(lpcli, args, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+}
+
+// Async lpcli runner used by every request-serving path. Unlike execFileSync,
+// a deadline reclaims the whole process tree instead of blocking the server
+// event loop. It resolves to the stdout string just like the old sync
+// wrapper; failures reject with the captured stderr/stdout attached.
+export function runLpcliAsync(lpcli, args, options = {}) {
+  prepareLpcli(lpcli);
+  return execFileAsync({
+    command: lpcli,
+    args,
+    ...(options.timeout === undefined ? {} : { timeoutMs: options.timeout }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  }).then((result) => result.stdout);
 }
 
 // Zero the resource `capacity` value: forces an LP3001 diagnostic (capacity
@@ -142,7 +165,7 @@ function sabotage(dsl) {
   );
 }
 
-export function validateModelDsl({ dsl, lpcli = findLpcli() }) {
+export async function validateModelDsl({ dsl, lpcli = findLpcli() }) {
   const dir = mkdtempSync(join(tmpdir(), 'ai-validate-model-'));
   try {
     const modelPath = join(dir, 'model.lp');
@@ -150,10 +173,13 @@ export function validateModelDsl({ dsl, lpcli = findLpcli() }) {
     const diagnosticsPath = join(dir, 'diagnostics.json');
     writeFileSync(modelPath, dsl, 'utf8');
     try {
-      runLpcli(lpcli, [
-        'compile', modelPath,
-        '-o', irPath,
-        '--diagnostics-json', diagnosticsPath,
+      await runLpcliAsync(lpcli, [
+        'compile',
+        modelPath,
+        '-o',
+        irPath,
+        '--diagnostics-json',
+        diagnosticsPath,
       ]);
       return { ok: true, diagnostics: [] };
     } catch (error) {
@@ -161,11 +187,13 @@ export function validateModelDsl({ dsl, lpcli = findLpcli() }) {
       try {
         diagnostics = JSON.parse(readFileSync(diagnosticsPath, 'utf8')).diagnostics ?? [];
       } catch {
-        diagnostics = [{
-          code: 'LP0002',
-          severity: 'error',
-          message: String(error.stderr ?? error.message),
-        }];
+        diagnostics = [
+          {
+            code: 'LP0002',
+            severity: 'error',
+            message: String(error.stderr ?? error.message),
+          },
+        ];
       }
       return { ok: false, diagnostics };
     }
@@ -174,35 +202,62 @@ export function validateModelDsl({ dsl, lpcli = findLpcli() }) {
   }
 }
 
-export function runModelDsl({
+export async function runModelDsl({
   dsl,
   lpcli = findLpcli(),
   runParams = DEFAULT_RUN_PARAMS,
+  budget,
+  runtimeKind,
+  signal,
 }) {
   const experiment = normalizeRunParams(runParams);
+  const timeout = budget?.maxWallMs;
+  const startedAt = Date.now();
+  const remainingTimeout = () => {
+    if (signal?.aborted) throw new Error('process was aborted');
+    if (timeout === undefined) return {};
+    const remaining = timeout - (Date.now() - startedAt);
+    if (!Number.isSafeInteger(timeout) || remaining <= 0)
+      throw new Error('execution deadline exceeded');
+    return { timeout: remaining, ...(signal === undefined ? {} : { signal }) };
+  };
   const dir = mkdtempSync(join(tmpdir(), 'ai-run-model-'));
   try {
     const modelPath = join(dir, 'model.lp');
     const irPath = join(dir, 'model.ir.bin');
     const diagnosticsPath = join(dir, 'diagnostics.json');
+    const methodsPath = join(dir, 'methods.json');
     const trajectoryPath = join(dir, 'trajectory.json');
+    const logicalTracePath = join(dir, 'logical-trace.lplt');
     writeFileSync(modelPath, dsl, 'utf8');
     try {
-      runLpcli(lpcli, [
-        'compile', modelPath,
-        '-o', irPath,
-        '--diagnostics-json', diagnosticsPath,
-      ]);
+      await runLpcliAsync(
+        lpcli,
+        [
+          'compile',
+          modelPath,
+          '-o',
+          irPath,
+          '--diagnostics-json',
+          diagnosticsPath,
+          '--methods-json',
+          methodsPath,
+        ],
+        remainingTimeout(),
+      );
     } catch (error) {
+      if (signal?.aborted) throw new Error('process was aborted');
       let diagnostics;
       try {
         diagnostics = JSON.parse(readFileSync(diagnosticsPath, 'utf8')).diagnostics ?? [];
       } catch {
-        diagnostics = [{
-          code: 'LP0002',
-          severity: 'error',
-          message: String(error.stderr ?? error.message),
-        }];
+        diagnostics = [
+          {
+            code: 'LP0002',
+            severity: 'error',
+            message: String(error.stderr ?? error.message),
+          },
+        ];
       }
       return {
         ok: false,
@@ -211,41 +266,95 @@ export function runModelDsl({
         metrics: null,
         trajectory: null,
         verification: null,
+        methods: [],
       };
     }
 
-    const runSummary = runLpcli(lpcli, [
-      'run', '--model-file', irPath,
-      ...experimentCliArgs(experiment),
-      '--arrivals', String(experiment.arrivals),
-      '--warmup', String(experiment.warmup),
-      '--confidence', String(experiment.confidence),
-      '--trajectory', trajectoryPath,
-      '--results-dir', dir,
-    ]);
+    const summary = JSON.parse(readFileSync(methodsPath, 'utf8'));
+    if (
+      summary.schema !== 'logicpilot.ir-methods/v1' ||
+      !Array.isArray(summary.methods) ||
+      summary.methods.some((method) => typeof method !== 'string')
+    )
+      throw new Error('invalid IR method summary');
+    const methods = summary.methods;
+    const expectedMethod = runtimeKind === 'continuous' ? 'sd' : runtimeKind;
+    // Check BEFORE starting the kernel, including mixed models. Dedicated
+    // targets currently accept exactly one method; general AI runs remain free
+    // to use the kernel's multi-method dispatcher.
+    if (expectedMethod !== undefined && (methods.length !== 1 || methods[0] !== expectedMethod)) {
+      return {
+        ok: false,
+        diagnostics: [
+          {
+            code: 'RT0001',
+            severity: 'error',
+            message: 'compiled IR does not match the requested runtime',
+          },
+        ],
+        runSummary: '',
+        metrics: null,
+        trajectory: null,
+        verification: null,
+        methods,
+      };
+    }
+    const continuousModel = methods.length === 1 && methods[0] === 'sd';
+    const irDigest = createHash('sha256').update(readFileSync(irPath)).digest('hex');
+
+    const runSummary = await runLpcliAsync(
+      lpcli,
+      [
+        'run',
+        '--model-file',
+        irPath,
+        ...experimentCliArgs(experiment),
+        '--arrivals',
+        String(experiment.arrivals),
+        '--warmup',
+        String(experiment.warmup),
+        '--confidence',
+        String(experiment.confidence),
+        ...(continuousModel ? ['--trajectory', trajectoryPath] : []),
+        ...(runtimeKind === 'agent' &&
+        experiment.reps === 1 &&
+        experiment.replicationMode === 'fixed'
+          ? ['--logical-trace', logicalTracePath]
+          : []),
+        '--results-dir',
+        dir,
+      ],
+      remainingTimeout(),
+    );
     const metricsPath = join(dir, 'metrics.json');
     const runPath = join(dir, 'run.json');
-    const metrics = existsSync(metricsPath)
-      ? JSON.parse(readFileSync(metricsPath, 'utf8'))
-      : null;
-    const runRecord = existsSync(runPath)
-      ? JSON.parse(readFileSync(runPath, 'utf8'))
-      : null;
-    const trajectory = existsSync(trajectoryPath)
-      ? JSON.parse(readFileSync(trajectoryPath, 'utf8'))
-      : null;
+    const metrics = existsSync(metricsPath) ? JSON.parse(readFileSync(metricsPath, 'utf8')) : null;
+    const runRecord = existsSync(runPath) ? JSON.parse(readFileSync(runPath, 'utf8')) : null;
+    const trajectory =
+      continuousModel && existsSync(trajectoryPath)
+        ? JSON.parse(readFileSync(trajectoryPath, 'utf8'))
+        : null;
+    const logicalTraceSteps = /logical trace written.*\((\d+) steps\)/i.exec(runSummary)?.[1];
     let verification = null;
     if (metrics !== null) {
       try {
-        verification = JSON.parse(execFileSync(
-          process.execPath,
-          [join(here, 'verify-run.mjs'), metricsPath],
-          { encoding: 'utf8' },
-        ));
+        const verifyTimeout = remainingTimeout();
+        verification = JSON.parse(
+          (
+            await execFileAsync({
+              command: process.execPath,
+              args: [join(here, 'verify-run.mjs'), metricsPath],
+              ...(verifyTimeout.timeout === undefined
+                ? {}
+                : { timeoutMs: verifyTimeout.timeout }),
+              ...(signal === undefined ? {} : { signal }),
+            })
+          ).stdout,
+        );
       } catch (error) {
         if (error.stdout) {
           try {
-            verification = JSON.parse(String(error.stdout));
+            verification = JSON.parse(error.stdout);
           } catch {
             verification = null;
           }
@@ -259,6 +368,13 @@ export function runModelDsl({
       metrics,
       trajectory,
       verification,
+      methods,
+      logicalTraceSteps: logicalTraceSteps === undefined ? 0 : Number(logicalTraceSteps),
+      logicalTraceBytes: existsSync(logicalTracePath) ? statSync(logicalTracePath).size : 0,
+      logicalTraceDigest: existsSync(logicalTracePath)
+        ? createHash('sha256').update(readFileSync(logicalTracePath)).digest('hex')
+        : undefined,
+      irDigest,
       experiment: effectiveComparisonExperiment(experiment, runRecord),
     };
   } finally {
@@ -297,7 +413,7 @@ export async function buildModel({
       const json = join(dir, `model-${attempt}.json`);
       writeFileSync(lp, candidate, 'utf8');
       try {
-        runLpcli(lpcli, ['compile', lp, '--diagnostics-json', json]);
+        await runLpcliAsync(lpcli, ['compile', lp, '--diagnostics-json', json]);
         ok = true;
         break;
       } catch (error) {
@@ -307,11 +423,11 @@ export async function buildModel({
         } catch {
           parsed = null;
         }
-        diagnostics =
-            parsed?.diagnostics ??
-            [{ code: 'LP0002', severity: 'error', message: String(error.stderr ?? error.message) }];
+        diagnostics = parsed?.diagnostics ?? [
+          { code: 'LP0002', severity: 'error', message: String(error.stderr ?? error.message) },
+        ];
         if (diagnostics.length === 0) {
-          break;  // failed without diagnostics; nothing to repair against
+          break; // failed without diagnostics; nothing to repair against
         }
       }
     }
@@ -326,15 +442,22 @@ export async function buildModel({
         const ir = join(runDir, 'model.ir.bin');
         const trajectoryPath = join(runDir, 'trajectory.json');
         writeFileSync(lp, finalDsl, 'utf8');
-        runLpcli(lpcli, ['compile', lp, '-o', ir]);
-        runSummary = runLpcli(lpcli, [
-          'run', '--model-file', ir,
+        await runLpcliAsync(lpcli, ['compile', lp, '-o', ir]);
+        runSummary = await runLpcliAsync(lpcli, [
+          'run',
+          '--model-file',
+          ir,
           ...experimentCliArgs(experiment),
-          '--arrivals', String(experiment.arrivals),
-          '--warmup', String(experiment.warmup),
-          '--confidence', String(experiment.confidence),
-          '--trajectory', trajectoryPath,
-          '--results-dir', runDir,
+          '--arrivals',
+          String(experiment.arrivals),
+          '--warmup',
+          String(experiment.warmup),
+          '--confidence',
+          String(experiment.confidence),
+          '--trajectory',
+          trajectoryPath,
+          '--results-dir',
+          runDir,
         ]);
         if (existsSync(trajectoryPath)) {
           runTrajectory = JSON.parse(readFileSync(trajectoryPath, 'utf8'));
@@ -345,7 +468,8 @@ export async function buildModel({
         const runPath = join(runDir, 'run.json');
         if (existsSync(runPath)) {
           effectiveExperiment = effectiveComparisonExperiment(
-            experiment, JSON.parse(readFileSync(runPath, 'utf8')),
+            experiment,
+            JSON.parse(readFileSync(runPath, 'utf8')),
           );
         }
         if (existsSync(metricsPath)) {
@@ -355,19 +479,18 @@ export async function buildModel({
             runMetrics = null;
           }
           try {
-            const verifyOut = execFileSync(
-              process.execPath,
-              [join(here, 'verify-run.mjs'), metricsPath],
-              { encoding: 'utf8' },
-            );
-            verification = JSON.parse(verifyOut);
+            const verifyOut = await execFileAsync({
+              command: process.execPath,
+              args: [join(here, 'verify-run.mjs'), metricsPath],
+            });
+            verification = JSON.parse(verifyOut.stdout);
           } catch (error) {
             // The verifier exits 1 when a check fails but still prints the
             // report on stdout; a failed verification is a result, not a
             // crash of the build loop.
             if (error.stdout) {
               try {
-                verification = JSON.parse(String(error.stdout));
+                verification = JSON.parse(error.stdout);
               } catch {
                 verification = null;
               }
@@ -436,8 +559,9 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.prompt) {
     console.error(
-        'usage: node scripts/ai-build.mjs "<prompt>" [--out <path>] ' +
-        '[--run] [--max-iterations <n>] [--json]');
+      'usage: node scripts/ai-build.mjs "<prompt>" [--out <path>] ' +
+        '[--run] [--max-iterations <n>] [--json]',
+    );
     process.exit(2);
   }
   const lpcli = options.lpcli || findLpcli();
@@ -468,8 +592,9 @@ async function main() {
     console.error(`[ai-build] ${diagnostic.code}: ${diagnostic.message}`);
   }
   console.log(
-      `[ai-build] result: ok=${result.ok} iterations=${result.iterations} ` +
-      `(provider=${resolveProviderName()})`);
+    `[ai-build] result: ok=${result.ok} iterations=${result.iterations} ` +
+      `(provider=${resolveProviderName()})`,
+  );
   if (result.ok) {
     console.log('[ai-build] --- generated DSL ---');
     console.log(result.dsl.trimEnd());
@@ -484,7 +609,9 @@ async function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (process.argv[1] && import.meta.url ===
-    new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href
+) {
   main();
 }

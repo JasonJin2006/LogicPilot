@@ -7,7 +7,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { findLpcli, optimize, runLpcli } from './optimize.mjs';
+import { runLpcliAsync } from './ai-build.mjs';
+import { findLpcli, optimize } from './optimize.mjs';
 import { ruleBasedProvider } from './ai-provider.mjs';
 
 function parseOptimizeSpec(prompt) {
@@ -72,7 +73,7 @@ export async function aiOptimize({
     const json = join(dir, 'declared.json');
     writeFileSync(lp, declaredModel, 'utf8');
     try {
-      runLpcli(resolvedLpcli, ['compile', lp, '--experiments-json', json]);
+      await runLpcliAsync(resolvedLpcli, ['compile', lp, '--experiments-json', json]);
       const parsed = JSON.parse(readFileSync(json, 'utf8'));
       const experiment = parsed.experiments?.[0];
       if (experiment) {

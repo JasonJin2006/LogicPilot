@@ -177,6 +177,9 @@ function Invoke-Checked([string]$program, [string[]]$arguments) {
 
 $visualStudioRoot = Find-VisualStudioRoot
 Import-VcVars $visualStudioRoot
+# Prefer English; the CMake compiler launcher also normalizes GBK output when
+# the English language resources are unavailable on this MSVC installation.
+$env:VSLANG = '1033'
 $env:VCPKG_ROOT = Find-VcpkgRoot
 Assert-ToolchainEnvironment
 

@@ -11,7 +11,6 @@
 //   node scripts/optimize.mjs --template <file.lp> --variable servers \
 //     --min 1 --max 8 --objective minimize --metric Wq [--strategy grid|ga] \
 //     [--budget 20] [--lpcli <path>] [--json]
-import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -22,23 +21,10 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { runLpcliAsync } from './ai-build.mjs';
 import { findLpcli } from './tool-paths.mjs';
 
 export { findLpcli } from './tool-paths.mjs';
-
-export function runLpcli(lpcli, args) {
-  if (process.platform === 'win32') {
-    const mingwBin = 'C:\\msys64\\ucrt64\\bin';
-    if (existsSync(mingwBin) &&
-        !(process.env.PATH ?? '').split(';').includes(mingwBin)) {
-      process.env.PATH = `${mingwBin};${process.env.PATH ?? ''}`;
-    }
-  }
-  return execFileSync(lpcli, args, {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-}
 
 // Substitutes {{variable}} in the DSL template.
 export function substitute(template, variable, value) {
@@ -135,8 +121,8 @@ export async function optimize({
         const lp = join(dir, 'model.lp');
         const ir = join(dir, 'model.ir.bin');
         writeFileSync(lp, dsl, 'utf8');
-        runLpcli(lpcli, ['compile', lp, '-o', ir]);
-        output = runLpcli(lpcli, [
+        await runLpcliAsync(lpcli, ['compile', lp, '-o', ir]);
+        output = await runLpcliAsync(lpcli, [
           'run', '--model-file', ir,
           '--seed', '42',
           '--reps', String(reps),

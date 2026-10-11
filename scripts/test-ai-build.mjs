@@ -179,7 +179,7 @@ const base = { lpcli: lpcli || undefined };
 {
   const dsl = ruleBasedProvider(
     'build an M/M/1 queue model with arrival rate 0.8 and service rate 1.0');
-  const baseline = runModelDsl({
+  const baseline = await runModelDsl({
     dsl,
     ...base,
     runParams: {
@@ -193,7 +193,7 @@ const base = { lpcli: lpcli || undefined };
   assert.equal(baseline.experiment.replicationMode, 'fixed');
   assert.equal(baseline.experiment.reps, 2);
   assert.notEqual(baseline.experiment.seed, 42);
-  const replay = runModelDsl({ dsl, ...base, runParams: baseline.experiment });
+  const replay = await runModelDsl({ dsl, ...base, runParams: baseline.experiment });
   assert.deepEqual(replay.metrics.replications, baseline.metrics.replications);
 }
 

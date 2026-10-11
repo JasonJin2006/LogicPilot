@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import net from 'node:net';
 
 import { findLpcli, logicPilotRoot } from './tool-paths.mjs';
 
@@ -17,7 +18,19 @@ const lpcli =
   findLpcli();
 assert.ok(lpcli && existsSync(lpcli), `lpcli not found: ${lpcli ?? '(unset)'}`);
 
-const pnpmArgs = ['--filter', '@logicpilot/ide', 'dev', '--host', '127.0.0.1', '--port', '5173'];
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const port = server.address().port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+const browserPort = await freePort();
+const pnpmArgs = ['--filter', '@logicpilot/ide', 'dev', '--host', '127.0.0.1', '--port', String(browserPort)];
 const gateway = spawn(lpcli, ['serve', 'examples/mm1.lp', '--port', '8089'], {
   cwd: root,
   stdio: 'inherit',
@@ -38,7 +51,7 @@ async function waitForVite(timeoutMs = 60_000) {
   while (Date.now() < deadline) {
     if (vite.exitCode !== null) throw new Error(`Vite exited before readiness (${vite.exitCode})`);
     try {
-      const response = await fetch('http://127.0.0.1:5173');
+      const response = await fetch(`http://127.0.0.1:${browserPort}`);
       if (response.ok) return;
     } catch {
       // Keep polling while Vite is starting.
@@ -69,7 +82,12 @@ try {
   const result = spawn(
     process.execPath,
     [join(root, 'web', 'apps', 'ide', 'scripts', 'browser-verify.mjs')],
-    { cwd: root, env: process.env, stdio: 'inherit', windowsHide: true },
+    {
+      cwd: root,
+      env: { ...process.env, LOGICPILOT_BROWSER_PORT: String(browserPort) },
+      stdio: 'inherit',
+      windowsHide: true,
+    },
   );
   const exitCode = await new Promise((resolve, reject) => {
     result.once('error', reject);

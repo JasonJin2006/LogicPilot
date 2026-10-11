@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   API_MAX_CONCURRENT_REQUESTS,
   API_REQUEST_TIMEOUT_MS,
+  REQUEST_CANCEL_SIGNAL,
   createApiRequestPolicy,
 } from '../app/request-policy.mjs';
 
@@ -49,10 +50,17 @@ release();
 await Promise.all(activeRequests);
 
 const timeoutPolicy = createApiRequestPolicy({ maxConcurrent: 1, timeoutMs: 5 });
+const cancelReq = {};
 const timedOut = responseStub();
-await timeoutPolicy({}, timedOut, async () => {
+let cancelSignal = null;
+await timeoutPolicy(cancelReq, timedOut, async () => {
+  cancelSignal = cancelReq[REQUEST_CANCEL_SIGNAL];
   await new Promise((resolve) => setTimeout(resolve, API_REQUEST_TIMEOUT_MS / 100));
 });
 assert.equal(timedOut.status, 504);
+// The request carries a cancellation signal and the timeout aborts it, so
+// handlers can cancel the work behind the 504 instead of leaking it.
+assert.ok(cancelSignal instanceof AbortSignal);
+assert.equal(cancelSignal.aborted, true);
 
 console.log('REQUEST-POLICY TEST: PASS');

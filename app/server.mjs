@@ -1,8 +1,9 @@
 // LogicPilot desktop app server: the production backend for the IDE. Serves
-// the built frontend, mounts the AI endpoints (shared with the vite dev
-// server) and manages the lp-server gateway on a free port. The Tauri shell
-// spawns this process and reads `LOGICPILOT_PORT <n>` (window URL) and
-// `LOGICPILOT_WS_PORT <n>` (gateway) from stdout.
+// the built frontend and mounts the AI and execution-session endpoints shared
+// with the Vite dev server. Native desktop runs use the private session-host
+// sidecar; browser/development fallback may still expose the legacy lp-server
+// gateway during migration. The Tauri shell reads `LOGICPILOT_PORT <n>` for
+// the window URL and only receives `LOGICPILOT_WS_PORT <n>` in that fallback.
 
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -41,10 +42,12 @@ import {
   handleArtifactGraph,
   handlePluginDrafts,
   handlePlugins,
+  getNodeExecutionService,
   startNodePluginRuntime,
   stopNodePluginRuntime,
 } from '../web/apps/ide/scripts/plugin-catalog-bridge.mjs';
 import { createApiRequestPolicy } from './request-policy.mjs';
+import { attachExecutionWebSocket } from './execution-websocket.mjs';
 import { extendNativeRuntimePath, findLpServer } from '../scripts/tool-paths.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -144,8 +147,23 @@ async function serveStatic(pathname, method, res) {
 async function main() {
   const sessionToken = randomBytes(32).toString('base64url');
   process.env.LOGICPILOT_SESSION_TOKEN = sessionToken;
-  const gateway = await startGateway(sessionToken);
-  process.env.LOGICPILOT_WS_URL = `ws://127.0.0.1:${gateway.port}/sim?token=${encodeURIComponent(sessionToken)}`;
+  const nativeOnly =
+    process.env.LOGICPILOT_ENABLE_NODE_PLUGINS === '1' &&
+    process.env.LOGICPILOT_ENABLE_NATIVE_SESSION_HOST === '1';
+  const gateway = nativeOnly ? null : await startGateway(sessionToken);
+  process.env.LOGICPILOT_WS_URL = gateway
+    ? `ws://127.0.0.1:${gateway.port}/sim?token=${encodeURIComponent(sessionToken)}`
+    : '';
+  if (
+    process.env.LOGICPILOT_ENABLE_NODE_PLUGINS === '1' &&
+    process.env.LOGICPILOT_EXECUTION_RUN_STORE_ROOT === undefined &&
+    process.env.LOGICPILOT_PLUGIN_STORE_ROOT !== undefined
+  ) {
+    process.env.LOGICPILOT_EXECUTION_RUN_STORE_ROOT = join(
+      process.env.LOGICPILOT_PLUGIN_STORE_ROOT,
+      'execution-runs',
+    );
+  }
   await startNodePluginRuntime();
   const httpPort = await freePort();
   const allowedOrigin = `http://${LOOPBACK_HOST}:${httpPort}`;
@@ -265,7 +283,12 @@ async function main() {
       await runWithApiPolicy(req, res, () => handleAgentStep(req, res));
       return;
     }
-    if (pathname === '/api/execution') {
+    if (
+      pathname === '/api/execution' ||
+      pathname === '/api/execution/targets' ||
+      pathname === '/api/execution/runs' ||
+      /^\/api\/execution\/runs\/[^/]+(?:\/commands)?$/.test(pathname)
+    ) {
       setCors(res, origin, origin === allowedOrigin || tauriOrigin ? origin : null);
       await runWithApiPolicy(req, res, () => handleExecution(req, res));
       return;
@@ -325,11 +348,20 @@ async function main() {
   server.keepAliveTimeout = 5_000;
   server.listen(httpPort, LOOPBACK_HOST, () => {
     console.log(`LOGICPILOT_PORT ${httpPort}`);
-    console.log(`LOGICPILOT_WS_PORT ${gateway.port}`);
+    if (gateway) console.log(`LOGICPILOT_WS_PORT ${gateway.port}`);
     console.log(`LOGICPILOT_SESSION_TOKEN ${sessionToken}`);
     console.log(
-      `LogicPilot app server: http://127.0.0.1:${httpPort}  gateway ws://127.0.0.1:${gateway.port}/sim (session protected)`,
+      gateway
+        ? `LogicPilot app server: http://127.0.0.1:${httpPort}  gateway ws://127.0.0.1:${gateway.port}/sim (session protected)`
+        : `LogicPilot app server: http://127.0.0.1:${httpPort}  native execution session host`,
     );
+  });
+  attachExecutionWebSocket({
+    server,
+    getService: getNodeExecutionService,
+    sessionToken,
+    allowedOrigin,
+    allowedHost: `${LOOPBACK_HOST}:${httpPort}`,
   });
 
   let shuttingDown = false;
@@ -337,7 +369,7 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     await stopNodePluginRuntime().catch(() => undefined);
-    gateway.child.kill();
+    gateway?.child.kill();
     server.close();
     process.exit(0);
   };
