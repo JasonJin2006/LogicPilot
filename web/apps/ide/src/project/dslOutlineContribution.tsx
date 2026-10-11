@@ -35,7 +35,7 @@ import { MODEL_SCENE_DIR } from './project';
 import { refreshCanvasDocument } from '../state/projectSync';
 import { useCanvasView } from '../state/canvasView';
 import { useModelStore } from '../state/modelStore';
-import { CANVAS_CONTAINER_KINDS } from '../plugins/registries/modelSemantics';
+import { modelIsCanvasContainer } from '../plugins/registries/modelSemantics';
 import { useProjectStore } from '../state/projectStore';
 import { useUiStore } from '../state/uiStore';
 import { ContextMenu } from '../layout/ContextMenu';
@@ -325,7 +325,7 @@ function DslOutline() {
         onSelect: () => renameBlock(file, member.nameSpan!, member.name),
       });
     }
-    if (CANVAS_CONTAINER_KINDS.has(kind)) {
+    if (modelIsCanvasContainer(kind)) {
       actions.push({
         label: 'Open canvas',
         onSelect: () => setFocusView({ kind, name: member.name }),
@@ -346,7 +346,7 @@ function DslOutline() {
             hasChildren
               ? () => {
                   toggle(key);
-                  if (CANVAS_CONTAINER_KINDS.has(kind)) {
+                  if (modelIsCanvasContainer(kind)) {
                     setFocusView({ kind, name: member.name });
                   }
                 }

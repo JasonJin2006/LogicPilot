@@ -510,6 +510,21 @@ try {
     console.log('[snapshot] no text editor on screen; skipped the run dialog check');
   }
 
+  // Palette library tabs. The panel reads one source now (PALETTE_CONTRIBUTIONS),
+  // so the libraries on screen must still be the ones the shell catalog uses.
+  await page.locator('[aria-label="Palette"]').click();
+  await page.waitForTimeout(400);
+  const paletteTabs = await page.evaluate(() =>
+    [...document.querySelectorAll('.palette-library-tab')].map((tab) => tab.textContent?.trim()),
+  );
+  console.log('[snapshot] palette library tabs', JSON.stringify(paletteTabs));
+  for (const expected of ['process', 'presentation', 'statechart', 'action']) {
+    if (!paletteTabs.includes(expected)) {
+      errors.push(`palette library tabs are missing '${expected}': ${JSON.stringify(paletteTabs)}`);
+    }
+  }
+  await shot('10-palette-libraries');
+
   if (errors.length === 0) {
     console.log('[snapshot] no console errors');
   } else {

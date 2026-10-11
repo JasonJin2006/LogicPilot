@@ -263,18 +263,31 @@ Splitter 只改数值。
   `ExecutionEvidence` 的 `methods` / `runtimeKind` / `method` / `details.kind` 不再是
   `"process" | "devs" | ...` 闭集，改为开放的 `MethodId`（按 id 形状校验）。
 
-⚠️ **不得因此说"已无残留"**（本文件曾如此断言，2026-10-11 复核后更正）。仍有两处，且它们
-是同一件事——**调色板/图元层还处在迁移中**：贡献驱动的
-`PALETTE_CONTRIBUTIONS` / `structuredPaletteItems()` 与一份硬编码目录**并存**，与本项目
-其他「双路并存」同形（执行侧 legacy 网关 vs 原生会话）。
+⚠️ **不得因此说"已无残留"**（本文件曾如此断言，2026-10-11 复核后更正）。仍有两处：
 
 - **契约 `view-notation.schema.json` 的 `CanvasEngineId`** 里混着范式/记号名：
   `flow` / `statechart` / `sequence` / `stock-flow` / `causal-loop`（与 `graph2d` /
   `scene3d` / `table` / `chart` / `text` 这类**机制 id** 并列）。新增一个自带画布引擎的
   范式仍要改契约。注意这正是当初 `flow` 漏进大纲副标题的同源问题。
-- **`model/blockDefs.ts` 是外壳里的图元库目录**：`LibraryId` 硬编码七库
-  （`process` / `presentation` / `statechart` / `action` / `agent` / `analysis` /
-  `controls`），每个图元带 `library:` 字段，`CANVAS_CONTAINER_KINDS` 也列了范式名。
+- **`model/blockDefs.ts` 仍是外壳里的图元库目录**（内置 AnyLogic 派生库的目录数据）。
+  把它移进范式包是**独立的一步**，尚未做；但**读取路径已收口**，见下。
+
+**调色板/图元层的两条路已收口**（2026-10-12）：
+
+1. **一条读取路径**。`PalettePanel` 原先同时读 `PALETTE_CONTRIBUTIONS` 与
+   `structuredPaletteItems()`（清单 `palettes` 键）。后者**恒为空**：它给出的库 id 是
+   `pluginId:contributionId` 形式，而面板比的是裸库 id（`process` 等），永远匹配不上。
+   现在只剩一条路，那两条死代码（`paletteItems()` / `structuredPaletteItems()`）已删除。
+   契约的 `palettes` 键保留（删它是破坏性变更），但**当前不被 IDE 调色板读取**。
+2. **库清单只剩一份声明**。`LibraryId` 联合与 `LIBRARIES` 数组原先是同一份七库清单的两遍
+   手抄（`LIBRARIES` 的各条还各写两遍 id 与 name）；现在由 `LIBRARY_IDS` 单一元组派生，
+   并有测试钉住「声明 == 目录实际用到的库」。
+3. **容器种类走注册缝**。`CANVAS_CONTAINER_KINDS` 原由 `blockDefs` 直接导出、被
+   `ModelCanvas` 与 `dslOutlineContribution` 直接 import；现在经
+   `ModelSemanticProvider.isCanvasContainer` 与 `modelIsCanvasContainer()` 读取。
+   在零插件（回退关闭）时它自然为空，与「零范式启动没有 Process 语义」一致。
+
+于是**替换这份目录只需换提供者**，调色板与画布的消费方不用改。
 
 **已偿还的三笔**（2026-10-12）：门禁台账里最早那三笔已还清 ——
 

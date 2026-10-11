@@ -1,5 +1,10 @@
 # 2026-09-04 Palette 跟随活动文档(按 DocumentType 上下文过滤)
 
+> 后续（2026-10-12）：下表的「双轨过滤」一行已删除。`structuredPaletteItems()` 给出的库 id
+> 是 `pluginId:contributionId` 形式，而面板比的是裸库 id，那道过滤器**实际从未匹配到任何
+> 条目**；调色板现在只有一条读取路径（`PALETTE_CONTRIBUTIONS`）。见
+> `docs/specs/ide-layout.md` §7。
+
 起点：用户体验反馈“palette 没有跟着 canvas 走”。工作台架构计划 §2/§5/§9 明确点名
 “Palette 使用固定 library union”为必须纠正的现有边界，目标契约 `PaletteProvider` 的
 扩展职责包含“上下文条件”。本切片落地该上下文过滤。

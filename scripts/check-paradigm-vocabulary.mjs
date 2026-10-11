@@ -201,10 +201,12 @@ claim(
   'Frozen copy of view-notation.schema.json; the two move together.',
 );
 
-// Block, palette and canvas layer: still side-by-side with the contribution
-// driven palette (PALETTE_CONTRIBUTIONS). Tracked in ide-layout §7.
+// Block, palette and canvas layer: the built-in AnyLogic-derived library is
+// shell-resident, but it is read through the palette contribution registry and
+// the ModelSemanticProvider seam, so a pack can replace it. Tracked in
+// ide-layout §7.
 const BLOCK_LAYER =
-  'Block/palette layer is still shell-resident alongside the contribution driven palette; tracked in ide-layout §7.';
+  'Built-in block catalog is shell-resident; palette and canvas read it through PALETTE_CONTRIBUTIONS and ModelSemanticProvider, so a pack can replace it (ide-layout §7).';
 claim(
   ALLOWED,
   'web/apps/ide/src/model/blockDefs.ts',

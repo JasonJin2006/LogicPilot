@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   modelBlockPorts,
+  modelIsCanvasContainer,
   modelIsExecutableProcessKind,
   modelPortGlyphPoint,
   modelSemanticProviders,
@@ -14,6 +15,8 @@ describe('model semantic registry', () => {
     expect(modelBlockPorts('queue').some((port) => port.name === 'in')).toBe(true);
     expect(modelIsExecutableProcessKind('queue')).toBe(true);
     expect(modelPortGlyphPoint('queue', 'in', 'in')).toEqual([7, 20]);
+    expect(modelIsCanvasContainer('statechart')).toBe(true);
+    expect(modelIsCanvasContainer('queue')).toBe(false);
   });
 
   it('supports lifecycle-scoped provider registration and removal', () => {
@@ -22,6 +25,7 @@ describe('model semantic registry', () => {
       blockPorts: () => [],
       isExecutableProcessKind: () => false,
       portGlyphPoint: () => [20, 20] as [number, number],
+      isCanvasContainer: () => false,
     };
     const dispose = registerModelSemanticProvider(provider);
     expect(modelSemanticProviders().some((entry) => entry.id === provider.id)).toBe(true);
@@ -35,6 +39,7 @@ describe('model semantic registry', () => {
       expect(modelSemanticProviders()).toEqual([]);
       expect(modelBlockPorts('queue')).toEqual([]);
       expect(modelIsExecutableProcessKind('queue')).toBe(false);
+      expect(modelIsCanvasContainer('statechart')).toBe(false);
     } finally {
       setModelSemanticFallbackEnabled(true);
     }
@@ -47,6 +52,7 @@ describe('model semantic registry', () => {
       blockPorts: () => [],
       isExecutableProcessKind: () => false,
       portGlyphPoint: () => [1, 1] as [number, number],
+      isCanvasContainer: () => false,
     };
     const right = {
       id: 'semantic-right',
@@ -54,6 +60,7 @@ describe('model semantic registry', () => {
       blockPorts: () => [],
       isExecutableProcessKind: () => false,
       portGlyphPoint: () => [2, 2] as [number, number],
+      isCanvasContainer: () => false,
     };
     const disposeLeft = registerModelSemanticProvider(left);
     const disposeRight = registerModelSemanticProvider(right);

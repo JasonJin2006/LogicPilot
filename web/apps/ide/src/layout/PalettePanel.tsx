@@ -18,11 +18,7 @@ import { usePaletteStore } from '../state/paletteStore';
 import { useUiStore } from '../state/uiStore';
 import { useProjectStore } from '../state/projectStore';
 import { ScrollArea } from '../components/ScrollArea';
-import {
-  pluginRegistryGeneration,
-  structuredPaletteItems,
-  subscribePluginRegistry,
-} from '../plugins/registry';
+import { pluginRegistryGeneration, subscribePluginRegistry } from '../plugins/registry';
 import type { PaletteContribution } from '../workbench/palette';
 
 type PaletteContributionValue = PaletteContribution;
@@ -95,9 +91,7 @@ const DRAWABLE_PRESENTATION_KINDS = new Set(['line', 'polyline', 'curve']);
 function iconForItem(item: PaletteBlock): ComponentType<{ size?: number }> | undefined {
   const library = item.library;
   if (library === undefined) return undefined;
-  const contribution = PALETTE_CONTRIBUTIONS.list().find(
-    (entry) => entry.library.id === library,
-  );
+  const contribution = PALETTE_CONTRIBUTIONS.list().find((entry) => entry.library.id === library);
   return contribution?.iconFor?.({ kind: item.kind, library, name: item.name });
 }
 
@@ -179,14 +173,11 @@ export function PalettePanel() {
   }, []);
 
   // The registry owns the catalog: applicable built-in libraries come from
-  // palette contributions, custom imports override by kind.
+  // palette contributions, custom imports override by kind. One source only -
+  // the manifest `palettes` key is a different id space (plugin:contribution)
+  // that this host never resolves, so reading it here would add a second,
+  // permanently empty path.
   const defs = blockIndex(applicable, customLibraries);
-  const structuredItems = structuredPaletteItems()
-    .map((item) => toBlock(item))
-    .filter((item) => item.library !== undefined && applicableLibraryIds.has(item.library));
-  for (const item of structuredItems) {
-    if (!defs.has(item.kind)) defs.set(item.kind, item);
-  }
 
   let visible: PaletteBlock[] = [];
   if (library === 'all') {
@@ -202,8 +193,7 @@ export function PalettePanel() {
       .map((item) => defs.get(item.kind))
       .filter((block): block is PaletteBlock => block !== undefined);
   } else {
-    visible = structuredItems.filter((item) => item.library === library);
-    if (visible.length === 0) visible = customLibraries[library]?.blocks ?? [];
+    visible = customLibraries[library]?.blocks ?? [];
   }
   const isEmpty = defs.size === 0 && Object.keys(customLibraries).length === 0;
 
@@ -228,10 +218,6 @@ export function PalettePanel() {
     { id: 'all', label: 'All' },
     { id: 'recent', label: 'Recent' },
     ...applicable.map((entry) => ({ id: entry.library.id, label: entry.library.name })),
-    ...structuredPaletteItems()
-      .map((item) => ({ id: item.library, label: item.library }))
-      .filter((tab) => applicableLibraryIds.has(tab.id))
-      .filter((tab, index, all) => all.findIndex((candidate) => candidate.id === tab.id) === index),
   ];
   const customTabs = Object.values(customLibraries).map((custom) => ({
     id: custom.name,

@@ -2,8 +2,30 @@
 // compile and run: catalog-only kinds (restrictedArea*, pickup/dropoff,
 // resourceTask*, downtime, ...) fail DSL compilation with LP2004.
 import { describe, expect, it } from 'vitest';
-import { BLOCK_DEFS, portGlyphPoint } from './blockDefs';
+import { BLOCK_DEFS, LIBRARIES, portGlyphPoint } from './blockDefs';
 import { EXECUTABLE_PROCESS_KINDS } from './blockCatalog';
+
+describe('library declaration', () => {
+  it('lists exactly the libraries the catalog uses, in selector order', () => {
+    expect(LIBRARIES.map((library) => library.id)).toEqual([
+      'process',
+      'presentation',
+      'statechart',
+      'action',
+      'agent',
+      'analysis',
+      'controls',
+    ]);
+    const used = new Set(BLOCK_DEFS.map((block) => block.library));
+    expect([...used].sort()).toEqual(LIBRARIES.map((library) => library.id).sort());
+    for (const library of LIBRARIES) {
+      expect(
+        BLOCK_DEFS.some((block) => block.library === library.id),
+        `declared library '${library.id}' has no blocks`,
+      ).toBe(true);
+    }
+  });
+});
 
 describe('process library executable matrix', () => {
   it('every process block shown in the palette is executable', () => {

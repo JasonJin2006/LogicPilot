@@ -54,7 +54,8 @@ import { useShapeSelection } from '../presentation/selectionStore';
 import { insertBlockAt } from './canvasInsert';
 import { vizState } from '../state/vizState';
 import { usePaletteStore } from '../state/paletteStore';
-import { CANVAS_CONTAINER_KINDS, type BlockPortDef } from './blockDefs';
+import { type BlockPortDef } from './blockDefs';
+import { modelIsCanvasContainer } from '../plugins/registries/modelSemantics';
 import { ContextMenu, type ContextAction } from '../layout/ContextMenu';
 import { useRunStore } from '../state/runStore';
 import { PressGesture, snapRect, type SnapGuide } from '@logicpilot/canvas';
@@ -1562,7 +1563,7 @@ export function ModelCanvas() {
           ) {
             return null; // rendered as a real shape above
           }
-          if (CANVAS_CONTAINER_KINDS.has(node.kind)) {
+          if (modelIsCanvasContainer(node.kind)) {
             // A container Node: shown on the root canvas as a folder card.
             // Double-click drills into its subgraph canvas.
             const childCount = document.nodes.filter(

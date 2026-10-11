@@ -53,13 +53,6 @@ export interface PluginRegistryStreamOptions {
   readonly verify?: PluginRegistryVerifier;
 }
 
-export interface StructuredPaletteItem {
-  readonly kind: string;
-  readonly library: string;
-  readonly name: string;
-  readonly hint: string;
-}
-
 /** Browser-side generation store. A complete payload is validated before the
  * active snapshot changes, so a broken update cannot partially remove or add
  * UI/knowledge contributions. */
@@ -229,17 +222,6 @@ export class PluginRegistryStore {
     this.stopStream?.();
   }
 
-  paletteItems(): readonly StructuredPaletteItem[] {
-    return this.value.contributions.flatMap((set) =>
-      set.palettes.map((item) => ({
-        kind: item.itemKind,
-        library: `${set.pluginId}:${item.id}`,
-        name: item.label,
-        hint: item.semanticType,
-      })),
-    );
-  }
-
   /** Run parameters contributed by the active packs. Optional in the contract,
    *  so a pack that declares none simply adds nothing; the shell then shows no
    *  extra knobs rather than inventing paradigm vocabulary of its own. */
@@ -383,10 +365,6 @@ function decodeBase64(value: string): Uint8Array {
 }
 
 export const PLUGIN_REGISTRY = new PluginRegistryStore();
-
-export function structuredPaletteItems(): readonly StructuredPaletteItem[] {
-  return PLUGIN_REGISTRY.paletteItems();
-}
 
 /** Run parameters declared by the active packs, in registration order. This is
  *  the seam that lets a paradigm contribute its run dialog fields, so the shell

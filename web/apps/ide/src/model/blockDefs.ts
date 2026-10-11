@@ -6,8 +6,20 @@
 // AnyLogic's drawing and behavior elements (canvas annotations, not DSL).
 import { BLOCK_CATALOG, EXECUTABLE_PROCESS_KINDS } from './blockCatalog';
 
-export type LibraryId =
-  'process' | 'presentation' | 'statechart' | 'action' | 'agent' | 'analysis' | 'controls';
+/** The built-in libraries, in palette selector order. Both the `LibraryId`
+ *  union and the selector-bar tab list derive from this one declaration, so
+ *  adding a library is a single edit and the two cannot drift apart. */
+const LIBRARY_IDS = [
+  'process',
+  'presentation',
+  'statechart',
+  'action',
+  'agent',
+  'analysis',
+  'controls',
+] as const;
+
+export type LibraryId = (typeof LIBRARY_IDS)[number];
 
 /** Container kinds whose subgraph opens as its own canvas (drill-in), like
  *  AnyLogic agent canvases. `process` is the builtin flow container;
@@ -67,16 +79,13 @@ interface CatalogBlock {
 
 const catalogBlocks = BLOCK_CATALOG;
 
-/** Built-in libraries shown as tabs in the palette selector bar. */
-export const LIBRARIES: Array<{ id: LibraryId; name: string }> = [
-  { id: 'process', name: 'process' },
-  { id: 'presentation', name: 'presentation' },
-  { id: 'statechart', name: 'statechart' },
-  { id: 'action', name: 'action' },
-  { id: 'agent', name: 'agent' },
-  { id: 'analysis', name: 'analysis' },
-  { id: 'controls', name: 'controls' },
-];
+/** Built-in libraries shown as tabs in the palette selector bar. Derived from
+ *  `LIBRARY_IDS`; the tab label is the library id (a pack wanting a prettier
+ *  label registers its own palette contribution instead). */
+export const LIBRARIES: Array<{ id: LibraryId; name: string }> = LIBRARY_IDS.map((id) => ({
+  id,
+  name: id,
+}));
 
 function catalogDef(kind: string): CatalogBlock | undefined {
   return catalogBlocks.find((block) => block.kind === kind);

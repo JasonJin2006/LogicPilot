@@ -16,6 +16,9 @@ export interface ModelSemanticProvider {
   readonly blockPorts: typeof blockPorts;
   readonly isExecutableProcessKind: typeof isExecutableProcessKind;
   readonly portGlyphPoint: typeof portGlyphPoint;
+  /** Whether the kind's subgraph opens as its own canvas (drill-in). A
+   *  notation-level fact, so the pack that owns the block decides it. */
+  readonly isCanvasContainer: (kind: string) => boolean;
 }
 
 /** Runtime seam for model-semantic contributions. The Process provider is the
@@ -27,6 +30,7 @@ export const PROCESS_MODEL_SEMANTIC_PROVIDER: ModelSemanticProvider = Object.fre
   blockPorts,
   isExecutableProcessKind,
   portGlyphPoint,
+  isCanvasContainer: (kind: string) => CANVAS_CONTAINER_KINDS.has(kind),
 });
 
 const providers = new Map<string, ModelSemanticProvider>();
@@ -60,6 +64,13 @@ export function modelIsExecutableProcessKind(kind: string): boolean {
   return resolveProvider(kind)?.isExecutableProcessKind(kind) ?? false;
 }
 
+/** Whether any registered provider treats the kind as a drillable container.
+ *  Container-ness is a union across providers, not a resolved dispatch: two
+ *  packs owning the same container kind is not a conflict. */
+export function modelIsCanvasContainer(kind: string): boolean {
+  return modelSemanticProviders().some((provider) => provider.isCanvasContainer(kind));
+}
+
 export function modelPortGlyphPoint(
   kind: string,
   port: string,
@@ -81,4 +92,4 @@ function resolveProvider(kind: string): ModelSemanticProvider | undefined {
   return matches[0];
 }
 
-export { BLOCK_DEFS, CANVAS_CONTAINER_KINDS };
+export { BLOCK_DEFS };
