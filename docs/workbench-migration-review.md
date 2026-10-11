@@ -14,19 +14,19 @@ Registry 只是路由元数据的最小骨架**，Workbench 核心仍存在多�
 
 ## 2. 审查发现（对照计划 §2 边界清单）
 
-| # | 发现 | 位置 | 违反的门禁 | 严重度 |
-| --- | --- | --- | --- | --- |
-| F1 | `.lp` 未注册为 contribution，文件→编辑器路由靠 `editorPanelFor` 的 `'dsl'` 回退 + 各处硬编码扩展名判断 | `workbench/documentTypes.ts`、`layout/ExplorerPanel.tsx`（`.lp/.sysml/.json` 三元分支）、`layout/Workspace.tsx`（`=== 'sysml'`） | §13 新文档类型必须经 provider 注册 | 高（已修） |
-| F2 | Explorer 自建文件分类 union `'dsl'\|'sysml'\|'json'\|'ir'\|'muted'` 并据此选图标/可开性 | `layout/ExplorerPanel.tsx` | §13 不新增全局 kind switch | 高（已修） |
-| F3 | 新建文件模板硬编码 `` path.endsWith('.lp') ? `model …{}` : '' `` | `layout/ExplorerPanel.tsx` | §13 | 中（已修） |
-| F4 | `validateDesModel()` 被 4 处直接 import：画布徽标、Properties、Run 门禁、AI preflight——Process 校验位于全局路径，新增校验器需改每个消费方 | `model/ModelCanvas.tsx`、`model/PropertiesPanel.tsx`、`run/RunDialog.tsx`、`ai/capabilities/logicpilot-modeling/compile.ts` | §9.1 全局 Process 校验迁为 DiagnosticProvider | 高（已修） |
-| F5 | AI 工具静态全量挂载：SYSML_TOOLS 与 DSL mutation 工具对任何活动文档都可见 | `ai/capabilities/logicpilot-modeling/registry.ts` | §7 按活动文档动态发现 | 高（已修） |
-| F6 | 容器身份是**名字**：`container` 字段存容器名，同名嵌套容器靠 LP3103 警告兜底；且 `renameNode` 不级联子节点——重命名容器会把全部子成员孤立出子图（画布视图、DSL 生成、布局键同步漂移） | `web/packages/editor/src/graph.ts`、`parseDsl.ts`、`dsl.ts`、`modelPatch.ts`、`project.ts nodePath` | §13 稳定 ID，显示名不承担引用身份 | 高（级联修复已落地；ElementRef 迁移待做） |
-| F7 | Palette 直接 import 固定 `BLOCK_DEFS/LIBRARIES` union | `layout/PalettePanel.tsx` | §9.3 PaletteProvider | 中（✅ 已修：`workbench/palette.ts` + `model/paletteContributions.ts`，`PalettePanel.tsx` 为纯宿主） |
-| F8 | `PanelId` 为含 `'sysml'/'sysmlProperties'` 的硬编码 union；第三种文档类型需要改 core 面板表 | `layout/panels.tsx` | §13 | 中（✅ 已修：`PanelId = string` + `registerPanel()`，sysml 面板迁至 `sysml/sysmlPanelsContribution.tsx`） |
-| F9 | Project Outline 面板自行解析 `.lp` 并按元素种类渲染（含 `path.endsWith('.lp')` 分支） | `layout/ModelInfoPanel.tsx` | §9.2 通用 Outline host | 中（✅ 已修：`workbench/outline.ts` `OUTLINE_CONTRIBUTIONS`，项目树与 sysml 各贡献方，ModelInfoPanel 为纯宿主） |
-| F10 | Workspace 用 `selectedId/sysmlSelectedId` 二元判断决定右侧属性面板 | `layout/Workspace.tsx` | §13 不新增 kind switch | 低（✅ 已修：`focusedPanelId('right')` 注册表解析，二元分支删除） |
-| F11 | 内核侧边界良好：`SimulationMethod` 已定位为 runtime adapter、kernel 不 include `methods/`、`SemanticsRef.library` 声明为兼容键 | `kernel/runtime/`、`methods/*`、`docs/specs/method-runtime.md` | 符合 §10 | ✅ |
+| #   | 发现                                                                                                                                                                                 | 位置                                                                                                                             | 违反的门禁                                    | 严重度                                                                                                          |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| F1  | `.lp` 未注册为 contribution，文件→编辑器路由靠 `editorPanelFor` 的 `'dsl'` 回退 + 各处硬编码扩展名判断                                                                               | `workbench/documentTypes.ts`、`layout/ExplorerPanel.tsx`（`.lp/.sysml/.json` 三元分支）、`layout/Workspace.tsx`（`=== 'sysml'`） | §13 新文档类型必须经 provider 注册            | 高（已修）                                                                                                      |
+| F2  | Explorer 自建文件分类 union `'dsl'\|'sysml'\|'json'\|'ir'\|'muted'` 并据此选图标/可开性                                                                                              | `layout/ExplorerPanel.tsx`                                                                                                       | §13 不新增全局 kind switch                    | 高（已修）                                                                                                      |
+| F3  | 新建文件模板硬编码 ``path.endsWith('.lp') ? `model …{}` : ''``                                                                                                                       | `layout/ExplorerPanel.tsx`                                                                                                       | §13                                           | 中（已修）                                                                                                      |
+| F4  | `validateDesModel()` 被 4 处直接 import：画布徽标、Properties、Run 门禁、AI preflight——Process 校验位于全局路径，新增校验器需改每个消费方                                            | `model/ModelCanvas.tsx`、`model/PropertiesPanel.tsx`、`run/RunDialog.tsx`、`ai/capabilities/logicpilot-modeling/compile.ts`      | §9.1 全局 Process 校验迁为 DiagnosticProvider | 高（已修）                                                                                                      |
+| F5  | AI 工具静态全量挂载：SYSML_TOOLS 与 DSL mutation 工具对任何活动文档都可见                                                                                                            | `ai/capabilities/logicpilot-modeling/registry.ts`                                                                                | §7 按活动文档动态发现                         | 高（已修）                                                                                                      |
+| F6  | 容器身份是**名字**：`container` 字段存容器名，同名嵌套容器靠 LP3103 警告兜底；且 `renameNode` 不级联子节点——重命名容器会把全部子成员孤立出子图（画布视图、DSL 生成、布局键同步漂移） | `web/packages/editor/src/graph.ts`、`parseDsl.ts`、`dsl.ts`、`modelPatch.ts`、`project.ts nodePath`                              | §13 稳定 ID，显示名不承担引用身份             | 高（级联修复已落地；ElementRef 迁移待做）                                                                       |
+| F7  | Palette 直接 import 固定 `BLOCK_DEFS/LIBRARIES` union                                                                                                                                | `layout/PalettePanel.tsx`                                                                                                        | §9.3 PaletteProvider                          | 中（✅ 已修：`workbench/palette.ts` + `model/paletteContributions.ts`，`PalettePanel.tsx` 为纯宿主）            |
+| F8  | `PanelId` 为含 `'sysml'/'sysmlProperties'` 的硬编码 union；第三种文档类型需要改 core 面板表                                                                                          | `layout/panels.tsx`                                                                                                              | §13                                           | 中（✅ 已修：`PanelId = string` + `registerPanel()`，sysml 面板迁至 `sysml/sysmlPanelsContribution.tsx`）       |
+| F9  | Navigator 面板自行解析 `.lp` 并按元素种类渲染（含 `path.endsWith('.lp')` 分支）                                                                                                      | `layout/ModelInfoPanel.tsx`                                                                                                      | §9.2 通用 Outline host                        | 中（✅ 已修：`workbench/outline.ts` `OUTLINE_CONTRIBUTIONS`，项目树与 sysml 各贡献方，Navigator host 为纯宿主） |
+| F10 | Workspace 用 `selectedId/sysmlSelectedId` 二元判断决定右侧属性面板                                                                                                                   | `layout/Workspace.tsx`                                                                                                           | §13 不新增 kind switch                        | 低（✅ 已修：`focusedPanelId('right')` 注册表解析，二元分支删除）                                               |
+| F11 | 内核侧边界良好：`SimulationMethod` 已定位为 runtime adapter、kernel 不 include `methods/`、`SemanticsRef.library` 声明为兼容键                                                       | `kernel/runtime/`、`methods/*`、`docs/specs/method-runtime.md`                                                                   | 符合 §10                                      | ✅                                                                                                              |
 
 ## 3. 本批整改（均已通过 typecheck + vitest + 浏览器 E2E）
 
@@ -45,7 +45,7 @@ Registry 只是路由元数据的最小骨架**，Workbench 核心仍存在多�
 ### 3.2 DiagnosticProvider seam（修 F4）
 
 - 新增 `workbench/diagnostics.ts`：`DiagnosticContribution { id,
-  documentTypes, diagnose(payload) }` 注册表 + `diagnoseDocument(type, doc)`
+documentTypes, diagnose(payload) }` 注册表 + `diagnoseDocument(type, doc)`
   聚合入口。registry 不检查 payload 类型，语言自有契约不被压扁；
 - `modelValidation.ts` 把 DES 图校验注册为 `logicpilot.des-graph`
   （documentTypes: `['dsl']`）；
@@ -73,7 +73,7 @@ preflight。
    `nodePath()` 由名字链推导。剩余工作：`container` 字段改存容器节点 ID、
    canvas view 的 `{kind,name}` 键改用 ID（重命名后残留旧名空视图标签）、
    `diffModelDocuments` 匹配键迁移；这是跨视图/重命名/多文件的根，优先级最高；
-2. **通用 Outline host**（F9）：Project 面板降级为宿主，语义树由贡献方提供；
+2. **通用 Outline host**（F9）：Navigator 面板作为宿主，语义树由贡献方提供；
 3. **PaletteProvider**（F7）：块目录改为贡献注册，Palette 只做搜索/拖放宿主;
 4. **DiagramProvider 拆分**（F8/F10）：`ModelCanvas` 拆图引擎与语言投影，
    PanelId 动态化；

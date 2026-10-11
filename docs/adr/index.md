@@ -162,3 +162,6 @@
 - [0131 Kernel-Backed Process Execution Provider](0131-process-execution-provider)
 - [0132 Kernel Runtime Target Family](0132-kernel-runtime-target-family)
 - [0133 Runtime Target Conformance](0133-runtime-target-conformance)
+- [0134 Formal Runtime Plugin Packages](0134-formal-runtime-plugin-packages)
+- [0135 Maintenance and Evidence Boundaries](0135-maintenance-evidence-and-contract-boundaries)
+- [0136 Unified Execution Session Protocol](0136-unified-execution-session-protocol)

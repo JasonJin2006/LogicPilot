@@ -1,7 +1,7 @@
 # Web IDE 使用
 
 Web IDE（浏览器 `http://localhost:5173`，或打包的桌面客户端）是仿真建模与
-运行的前端：连接网关、拖拽建模、编译、运行、AI 生成与优化。
+运行的前端：编辑模型、提交统一执行会话、订阅实时遥测、编译与 AI 生成/优化。
 
 ## 启动
 
@@ -13,12 +13,13 @@ cargo build --manifest-path desktop/src-tauri/Cargo.toml
 desktop/src-tauri/target/debug/logicpilot-desktop.exe
 ```
 
-## 连接
+## 运行环境与连接
 
-IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使用它的地址；
-浏览器模式默认连接 `ws://127.0.0.1:8089/sim`（网关未就绪时自动重试，失败后
-状态栏红点提示）。活动栏齿轮打开**设置**可改网关地址并手动
-**Connect / Disconnect**。连接状态显示在底部状态栏（圆点 + 通知铃铛）。
+桌面客户端默认按需管理本机执行会话，不需要用户填写仿真网关地址。Run
+通过 HTTP 创建/控制执行会话，事件和遥测通过同源 WebSocket
+`/api/execution/events` 订阅；活动栏齿轮的 **Settings → 运行环境** 显示就绪、
+运行或暂停状态。浏览器开发模式若没有原生执行目标，会在该页面的“兼容传输（开发模式）”
+中显示旧 `ws://127.0.0.1:8089/sim` 控件；这只是迁移期 fallback，不是默认架构。
 
 ## 建模画布
 
@@ -33,6 +34,7 @@ IDE 启动时自动连接网关：桌面客户端自动拉起 lp-server 并使�
   - `statechart`：状态图元素，支持 timeout/rate/condition/message、transition emit
     和多 Statechart coupling；`action` 仍是画布建模元素，暂不进入仿真 IR。
 - 画布：滚轮缩放、空白拖动平移、坐标网格；端口拖出连线（点击连线删除）。
+  空画布不会运行隐藏的 served model；必须先打开或创建实际模型。
 - **Properties**（右侧）：选中块后编辑名称与字段（AnyLogic 风格参数）。
   - presentation 对象提供 **Layers** 树：可展开/折叠 group/frame 子对象，点击
     子层选中其根对象，并分别切换显隐/锁定；顶层图层可拖拽调整绘制顺序。

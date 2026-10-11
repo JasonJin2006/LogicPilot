@@ -2,7 +2,8 @@
 
 状态：持续更新 · 维护者：`/root`（集成与发布） · 2026-08-23
 
-本文档是**唯一的总计划入口**，汇总此前散落在各 spec/ADR 中的计划与状态
+本文保留里程碑总计划；当前实现与交接请先看 [当前状态](architecture/current-state.md)
+和 [文档导航](README.md)。下列条目汇总此前散落在各 spec/ADR 中的计划与状态
 （`docs/specs/ir-v2.md`、`docs/specs/dsl-spec.md`、`docs/specs/ai-loop.md`、
 `docs/performance-budget.md`、ADRs、用户手册）。开发按里程碑推进，每个
 里程碑结束在 `main` 打 checkpoint commit；验收纪律：单元测试 / 理论验收 /
@@ -31,7 +32,7 @@ verification case 可形成执行目标；纯结构/需求模型不需要进入�
 | Web IDE（Phase 3 切片）      | 🔶   | WebSocket 连接/运行控制、拖拽建模画布（Palette 多库/端口连线/DSL 编译）、画布实时运行徽标、AI 面板；**前端已重构**（zustand 域 store、run/ai 目录、editor 包）；**自研面板系统 ✅ + 拖拽建模 ✅（P1-7 验收达成：拖拽拼出 mm1 等价模型并 `lpcli compile` 通过，浏览器 E2E 覆盖）** |
 | 并行执行                     | ✅   | ADR-0009 阶段 A（reps 级线程池）与阶段 B（agent ECS 批量 tick，≥65536 agent 多核自动并行，10 万 agent 逐位确定）已落地；阶段 C（事件级保守并行）延后                                                                                                                              |
 | 工程与文档                   | ✅   | CI（kernel 双平台 + web build/test + docs build + schema conform + interop）、VitePress 用户手册                                                                                                                                                                                  |
-| 测试基线                     | ✅   | 492 ctest、corpus 50/50、renderer2d 5 vitest、editor 73 vitest、IDE 299 vitest（47 文件）、interop 74 checks、浏览器 E2E                                                                                                                                                                     |
+| 测试基线                     | ✅   | 492 ctest、corpus 50/50、renderer2d 5 vitest、editor 73 vitest、IDE 299 vitest（47 文件）、interop 74 checks、浏览器 E2E                                                                                                                                                          |
 
 ## 3. 契约与工程纪律状态
 
@@ -198,10 +199,11 @@ execution target 并选择解释器/lowering backend。当前前端视觉设计�
    滚动）；Recent 追踪最近拖放的块（持久化）；自定义库 JSON 导入
    （`logicpilot.palette` 持久化），自定义块可拖入画布（DSL 会照常生成，
    编译器对未注册 kind 报 LP2004）。
-   **设置重规划 ✅ 已完成**（2026-08-05）：设置弹层只保留 IDE 级外围偏好
-   （外观置顶 + 连接）；运行配置与控制移出设置，改为画布悬浮 Run 按钮打开
-   的 Run 对话框（seed/reps/arrivals/warmup/speed + Start/Pause/Resume/
-   Step/Stop）——空画布跑网关内建模型，有画布模型时先编译再带参数运行。
+   **设置重规划 ✅ 已完成**（2026-08-05，后续执行会话收口于 2026-09-06）：
+   设置弹层保留 IDE 级外围偏好，连接页现名为“运行环境”；桌面默认显示本机
+   ExecutionService 状态，旧网关 URL 只在开发 fallback 的折叠区出现。运行配置与
+   控制属于具体实验，由画布 Run 对话框打开（seed/reps/arrivals/warmup/speed +
+   Start/Pause/Resume/Step/Stop）。空画布不再运行隐藏的网关内建模型。
    **Palette 多库 ✅ 已完成**（2026-08-05）：新增演示库（rect/roundedRect/
    oval/line/polyline/arc/curve/text/image/group，画布上渲染为真实 SVG 形状，
    可拖动/选中）、状态图库（state/initialState/finalState/transition/

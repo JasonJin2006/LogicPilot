@@ -198,10 +198,16 @@ sojourn 照常记录；`enter` 是无输入端口的入口点，当前没有外�
 
 `moveTo` 已实现：`tripTime` 显式行程时间、`speed` + 坐标位移（`xYZ` 沿轴
 或 `node` 目标，耗时 = 距离/速度）；两者都不设则零时跳转。
-**空间标记**：`node <Name> { x = <f>; y = <f> }` 声明带坐标的节点，
+**空间标记**：`node <Name> { x = <f>; y = <f>; z = <f> }` 声明带坐标的节点，
 `path <Name> { node1 = A; node2 = B }` 连接节点成网络（边长 = 欧氏距离）；
 `moveTo` 的 `node = <Name>` 沿网络**最短路径**位移（距离/速度），无 path
 时回退直线。示例：`examples/move_route.lp`。
+
+这两个种类由 `libraries/core.lplib`（库名 `core`，手写而非目录生成）声明，
+不在编译器的核心种类分派里：坐标字段是 `float`、`node1`/`node2` 是 `ref`，
+所以"坐标必须是数""节点引用必须是名字"这两条校验来自库声明的字段类型。
+`z` 会被读入并写进 IR；内核的路网求解是二维的（`NodePos` 只有 x/y），
+算距离与最短路时用的仍只有 x/y。
 
 `service` 现在在**通用流程引擎**（`ProcessFlowSim`）里也遵守资源池的故障语义：
 `resource` 的 `failure_rate` / `repair_rate` 按「忙时故障 + 修复」建模

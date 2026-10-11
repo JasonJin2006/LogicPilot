@@ -1,0 +1,15 @@
+{
+  "name": "@logicpilot/dsh-des",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/host.mjs",
+  "exports": { ".": "./src/host.mjs", "./client": "./lib/client.js" },
+  "files": ["src", "lib", "cordis.patch.yml", "README.md"],
+  "scripts": { "build": "node build.mjs", "test": "node --test test/*.test.mjs" },
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "0.1.6-alpha.2", "@deepseek-ai/schemastery": "3.18.2" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "platform": "web", "inject": ["@deepseek-ai/dsh-client-ui-sidebar-right", "@deepseek-ai/dsh-client-ui-session", "@deepseek-ai/dsh-client-locale"] }
+  }
+}

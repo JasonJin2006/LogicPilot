@@ -1,5 +1,8 @@
 # LogicPilot 大一统工程建模与仿真 Workbench 迁移计划
 
+> 历史迁移计划。当前实现边界见 [当前状态](architecture/current-state.md)，后续目标见
+> [下一代插件平台计划](architecture/next-generation-plugin-platform.md)。
+
 状态：**已批准，P1 最高优先级**（2026-08-23）  
 范围：Workbench、文档与编辑器扩展、AI 建模、仿真运行时边界、SysML v2 首批接入  
 相关：[`roadmap.md`](./roadmap.md)、[`dev-plan.md`](./dev-plan.md)、
@@ -148,18 +151,18 @@ SysML Requirement
 
 第一阶段建立以下 provider registry；已有 UI 组件逐步降级为 host：
 
-| 契约 | 平台职责 | 扩展职责 |
-| --- | --- | --- |
-| `DocumentTypeProvider` | 打开、保存、版本、dirty 生命周期 | 格式、解析、序列化、能力声明 |
-| `EditorProvider` | 标签页、焦点、恢复、多视图 | 文本/图/表格/3D 等编辑体验 |
-| `OutlineProvider` | 通用树、选择、展开、菜单 | 语义层级、图标、子节点、命令 |
-| `PropertyProvider` | 通用属性宿主 | schema、读写、校验、可见条件 |
-| `PaletteProvider` | 搜索、最近项、拖放宿主 | 元素目录、创建命令、上下文条件 |
-| `DiagnosticProvider` | Problems/Console、定位、严重度 | 语法与语义诊断 |
-| `DiagramProvider` | 相机、选择、吸附、路由、图层 | 节点/边语义、连接规则、视图投影 |
-| `CommandProvider` | 命令发现、快捷键、上下文菜单 | 类型化编辑操作 |
-| `RuntimeProvider` | 运行会话和能力协商 | 可执行 artifact 的 runtime adapter |
-| `AIContribution` | 对话、审批、工具调用、diff | 语义上下文、工具、领域规则和解释 |
+| 契约                   | 平台职责                         | 扩展职责                           |
+| ---------------------- | -------------------------------- | ---------------------------------- |
+| `DocumentTypeProvider` | 打开、保存、版本、dirty 生命周期 | 格式、解析、序列化、能力声明       |
+| `EditorProvider`       | 标签页、焦点、恢复、多视图       | 文本/图/表格/3D 等编辑体验         |
+| `OutlineProvider`      | 通用树、选择、展开、菜单         | 语义层级、图标、子节点、命令       |
+| `PropertyProvider`     | 通用属性宿主                     | schema、读写、校验、可见条件       |
+| `PaletteProvider`      | 搜索、最近项、拖放宿主           | 元素目录、创建命令、上下文条件     |
+| `DiagnosticProvider`   | Problems/Console、定位、严重度   | 语法与语义诊断                     |
+| `DiagramProvider`      | 相机、选择、吸附、路由、图层     | 节点/边语义、连接规则、视图投影    |
+| `CommandProvider`      | 命令发现、快捷键、上下文菜单     | 类型化编辑操作                     |
+| `RuntimeProvider`      | 运行会话和能力协商               | 可执行 artifact 的 runtime adapter |
+| `AIContribution`       | 对话、审批、工具调用、diff       | 语义上下文、工具、领域规则和解释   |
 
 现有 Process 画布、Statechart、Presentation、Properties 和 Model tree 最终都通过
 上述契约注册；核心 Workbench 不出现 `if (kind == process/statechart/sysml)`。

@@ -4,6 +4,10 @@ Date: 2026-09-03
 Status: Accepted  
 Implements: Phase 9 runtime migration acceptance
 
+2026-09-04 clarification: this gate originally demonstrated routing only; it
+did not prove independent scientific conformance of four paradigms. Current
+fixtures and limitations are described in [current state](../architecture/current-state).
+
 ## Decision
 
 The staged desktop smoke executes the real kernel-backed provider separately

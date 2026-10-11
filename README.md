@@ -1,5 +1,8 @@
 # LogicPilot
 
+开发接手入口：[文档导航](docs/README.md) · [当前架构状态](docs/architecture/current-state.md) ·
+[交接提示词](docs/maintenance/handoff-next-ai.md)。历史计划中的完成状态以当前状态页和实际门禁为准。
+
 AI 原生 · Web 化 · 高性能的**多方法建模仿真平台**（Simulation OS）。
 
 用一套薄 DSL 描述模型，C++ 内核高速执行，浏览器/Tauri 桌面端拖拽建模，并为
@@ -119,23 +122,23 @@ pause/step）。
 
 ## 仓库结构
 
-| 目录 | 内容 |
-| --- | --- |
-| `dsl/` | tree-sitter 文法（生成物入库，ADR-0005）、C++ 编译器（parser/semantic/lowering/registry）、lp-lsp 语言服务器 |
-| `kernel/` | C++ 仿真内核：core（时钟/调度器/随机）、runtime（Method Runtime Layer + SimulationKernel）、devs（引擎）、agent（ECS）、state、apps（lpcli / lp-server） |
-| `methods/` | 方法运行时插件库（`process`、`statechart`） |
-| `libraries/` | DSL 库注册表（`process.lplib`、行业示例 `manufacturing.lplib`） |
-| `schemas/` | 冻结契约 F1（IR v2）/ F2（wire 遥测），flatc 生成 |
-| `web/` | Web IDE（React + zustand + SVG 可视化）、editor 图文档包、protocol/renderer2d |
-| `desktop/` | Tauri 2 桌面壳（Rust），嵌入同一 Web IDE |
-| `app/` | 本地 AI 网关服务（Node）：助手会话、provider 适配与请求策略 |
-| `extensions/` | logicpilot-vscode：VS Code 扩展（DSL 语法高亮等） |
-| `examples/` | 示例模型（mm1、制造线、call-center 工程等） |
-| `bench/` | 性能门禁基准（scheduler/RNG/MM1/ProcessFlow） |
-| `scripts/` | AI 闭环（ai-build/optimize/explain）、工具（logicpkg/verify-run）、桌面打包与 CI 冒烟测试 |
-| `docs/` | VitePress 手册与开发文档、specs、ADR |
-| `docker/` | 容器化构建/运行环境 |
-| `cmake/` | 共享 CMake 模块（代码生成等） |
+| 目录          | 内容                                                                                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dsl/`        | tree-sitter 文法（生成物入库，ADR-0005）、C++ 编译器（parser/semantic/lowering/registry）、lp-lsp 语言服务器                                             |
+| `kernel/`     | C++ 仿真内核：core（时钟/调度器/随机）、runtime（Method Runtime Layer + SimulationKernel）、devs（引擎）、agent（ECS）、state、apps（lpcli / lp-server） |
+| `methods/`    | 方法运行时插件库（`process`、`statechart`）                                                                                                              |
+| `libraries/`  | DSL 库注册表（`process.lplib`、行业示例 `manufacturing.lplib`）                                                                                          |
+| `schemas/`    | 冻结契约 F1（IR v2）/ F2（wire 遥测），flatc 生成                                                                                                        |
+| `web/`        | Web IDE（React + zustand + SVG 可视化）、editor 图文档包、protocol/renderer2d                                                                            |
+| `desktop/`    | Tauri 2 桌面壳（Rust），嵌入同一 Web IDE                                                                                                                 |
+| `app/`        | 本地 AI 网关服务（Node）：助手会话、provider 适配与请求策略                                                                                              |
+| `extensions/` | logicpilot-vscode：VS Code 扩展（DSL 语法高亮等）                                                                                                        |
+| `examples/`   | 示例模型（mm1、制造线、call-center 工程等）                                                                                                              |
+| `bench/`      | 性能门禁基准（scheduler/RNG/MM1/ProcessFlow）                                                                                                            |
+| `scripts/`    | AI 闭环（ai-build/optimize/explain）、工具（logicpkg/verify-run）、桌面打包与 CI 冒烟测试                                                                |
+| `docs/`       | VitePress 手册与开发文档、specs、ADR                                                                                                                     |
+| `docker/`     | 容器化构建/运行环境                                                                                                                                      |
+| `cmake/`      | 共享 CMake 模块（代码生成等）                                                                                                                            |
 
 ## 文档
 

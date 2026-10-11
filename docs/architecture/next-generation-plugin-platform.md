@@ -2,6 +2,10 @@
 
 状态：**下一阶段执行基线**
 
+> 2026-09-04 维护说明：本文是目标与迁移计划，原有进度段落保留历史语境。
+> 当前已实现能力、校验范围及未完成项以 [当前状态](current-state.md) 和
+> [最新整理报告](../maintenance/2026-09-04-cleanup.md) 为准。
+
 基线提交：`65444f3`（`feat: add cross-paradigm acceptance and harden modeling runtimes`）
 
 适用范围：Workbench、AI Agent、知识系统、诊断、Canvas/View、Palette、方法运行时、插件创作与分发

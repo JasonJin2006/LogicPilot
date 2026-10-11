@@ -18,6 +18,7 @@ usage: lpcli compile <input.lp> [-o <output>]
                         [--project <path.lpproj>]
                         [--diagnostics-json <path>]
                         [--experiments-json <path>]
+                        [--methods-json <path>]
 ```
 
 - `-o, --output <path>`：输出 IR 文件（默认 `<input>.ir.bin`）
@@ -25,6 +26,7 @@ usage: lpcli compile <input.lp> [-o <output>]
   [工程格式 v2](../specs/project-format-v2)），默认输出 `<工程名>.lpir`
 - `--diagnostics-json <path>`：写结构化诊断 JSON（AI Copilot 的修复输入，含 span/行号/错误码）
 - `--experiments-json <path>`：导出模型声明的 `experiment` 块（优化搜索规格）
+- `--methods-json <path>`：导出实际 IR 方法摘要 `logicpilot.ir-methods/v1`，专属 runtime 在执行前用它检查方法是否匹配；Continuous 对应 `sd`。
 
 示例：
 

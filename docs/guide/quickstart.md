@@ -85,7 +85,8 @@ pnpm install
 pnpm dev      # http://localhost:5173
 ```
 
-页面点 **Connect** → 设置参数 → **Start**。M/M/c 指数流程显示队列动画与实时
+页面打开 **Settings → 运行环境** 确认本机环境就绪，然后在画布打开模型，设置参数并点
+**Start**。M/M/c 指数流程显示队列动画与实时
 图表；泛型 process 流程显示逐块缓冲徽标、忙/闲状态点与实体令牌动画，支持
 Pause/Step（详见 [Web IDE 使用](./web-ide)）。
 

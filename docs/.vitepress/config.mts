@@ -52,7 +52,7 @@ export default defineConfig({
     logo: '/logo.svg',
     nav: [
       { text: '用户手册', link: '/guide/quickstart' },
-      { text: '开发文档', link: '/roadmap' },
+      { text: '开发文档', link: '/README' },
       { text: '示例模型', link: '/guide/dsl#示例模型' },
       {
         text: '仓库',
@@ -88,6 +88,11 @@ export default defineConfig({
             text: '总览',
             collapsed: true,
             items: [
+              { text: '文档导航', link: '/README' },
+              { text: '当前架构与能力边界', link: '/architecture/current-state' },
+              { text: '开发交接提示词', link: '/maintenance/handoff-next-ai' },
+              { text: '2026-09-04 整理报告', link: '/maintenance/2026-09-04-cleanup' },
+              { text: '2026-09-04 审查修复', link: '/maintenance/2026-09-04-review-fixes' },
               { text: '总计划与现状', link: '/roadmap' },
               { text: '工程化路线计划', link: '/dev-plan' },
               { text: 'Workbench 架构计划', link: '/workbench-architecture-plan' },
@@ -152,7 +157,7 @@ export default defineConfig({
                 text: '0009 运行时执行策略（并行+脚本）',
                 link: '/adr/0009-runtime-execution-strategy',
               },
-              { text: '全量 ADR 索引（0001–0068）', link: '/adr/' },
+              { text: '全量 ADR 索引', link: '/adr/' },
             ],
           },
         ],
