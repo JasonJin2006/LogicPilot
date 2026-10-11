@@ -318,6 +318,26 @@ enum class PluginContributionKind : std::uint8_t {
 [[nodiscard]] bool parse(std::string_view text, PluginContributionKind& out, std::string& error);
 [[nodiscard]] nlohmann::ordered_json to_json(PluginContributionKind value);
 
+enum class RunParameterKind : std::uint8_t {
+  kInteger,
+  kNumber,
+  kText,
+  kBoolean,
+};
+
+[[nodiscard]] std::string dump(RunParameterKind value);
+[[nodiscard]] bool parse(std::string_view text, RunParameterKind& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(RunParameterKind value);
+
+enum class RunParameterOwner : std::uint8_t {
+  kModel,
+  kRun,
+};
+
+[[nodiscard]] std::string dump(RunParameterOwner value);
+[[nodiscard]] bool parse(std::string_view text, RunParameterOwner& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(RunParameterOwner value);
+
 enum class PluginDraftStatus : std::uint8_t {
   kDraft,
   kValidated,
@@ -387,6 +407,7 @@ using Actor = std::string;
 using JsonSchemaFragment = JsonValue;
 using DiagnosticId = std::string;
 using FixId = std::string;
+using MethodId = std::string;
 using KnowledgeBlockId = std::string;
 using PluginCatalogRootId = std::string;
 using PluginCatalogPath = std::string;
@@ -445,6 +466,8 @@ struct PluginSkillContribution;
 struct PluginInstructionContribution;
 struct PluginPaletteContribution;
 struct PluginToolContribution;
+struct PluginRunParameterContribution;
+struct RunParameterChoice;
 struct PluginContributionSet;
 struct PermissionDiff;
 struct PluginDraft;
@@ -1192,6 +1215,18 @@ struct Relation {
 [[nodiscard]] nlohmann::ordered_json to_json(const Relation& value);
 [[nodiscard]] std::string dump(const Relation& value);
 
+// plugin-contributions.schema.json
+struct RunParameterChoice {
+  std::string value;
+  std::optional<std::string> label;
+};
+
+[[nodiscard]] bool operator==(const RunParameterChoice& lhs, const RunParameterChoice& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, RunParameterChoice& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, RunParameterChoice& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const RunParameterChoice& value);
+[[nodiscard]] std::string dump(const RunParameterChoice& value);
+
 // execution-target.schema.json
 struct RuntimeRef {
   RuntimeKind kind;
@@ -1547,6 +1582,24 @@ struct NotationPack {
 [[nodiscard]] nlohmann::ordered_json to_json(const NotationPack& value);
 [[nodiscard]] std::string dump(const NotationPack& value);
 
+// plugin-contributions.schema.json
+struct PluginRunParameterContribution {
+  std::string id;
+  std::string label;
+  RunParameterKind kind;
+  RunParameterOwner owner;
+  std::optional<std::string> hint;
+  std::optional<double> minimum;
+  std::optional<double> maximum;
+  std::optional<std::vector<RunParameterChoice>> choices;
+};
+
+[[nodiscard]] bool operator==(const PluginRunParameterContribution& lhs, const PluginRunParameterContribution& rhs);
+[[nodiscard]] bool parse_json(const nlohmann::ordered_json& j, PluginRunParameterContribution& out, std::string& error);
+[[nodiscard]] bool parse(std::string_view text, PluginRunParameterContribution& out, std::string& error);
+[[nodiscard]] nlohmann::ordered_json to_json(const PluginRunParameterContribution& value);
+[[nodiscard]] std::string dump(const PluginRunParameterContribution& value);
+
 // plugin-services.schema.json
 struct PluginService {
   std::string name;
@@ -1670,6 +1723,7 @@ struct PluginContributionSet {
   std::vector<CreateAction> create_actions;
   std::vector<PluginPaletteContribution> palettes;
   std::vector<PluginToolContribution> tools;
+  std::optional<std::vector<PluginRunParameterContribution>> run_parameters;
 };
 
 [[nodiscard]] bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& rhs);

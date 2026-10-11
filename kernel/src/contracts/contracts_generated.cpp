@@ -47,6 +47,8 @@ nlohmann::ordered_json to_json_value(PluginScope v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogSeverity v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginCatalogDiagnosticKind v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginContributionKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(RunParameterKind v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(RunParameterOwner v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(PluginDraftStatus v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(CanvasEngineId v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(LayoutPersistence v) { return to_json(v); }
@@ -105,6 +107,8 @@ nlohmann::ordered_json to_json_value(const PluginSkillContribution& v) { return 
 nlohmann::ordered_json to_json_value(const PluginInstructionContribution& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginPaletteContribution& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginToolContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const PluginRunParameterContribution& v) { return to_json(v); }
+nlohmann::ordered_json to_json_value(const RunParameterChoice& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginContributionSet& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PermissionDiff& v) { return to_json(v); }
 nlohmann::ordered_json to_json_value(const PluginDraft& v) { return to_json(v); }
@@ -899,6 +903,60 @@ bool parse(std::string_view text, PluginContributionKind& out, std::string& erro
 }
 
 nlohmann::ordered_json to_json(PluginContributionKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(RunParameterKind value) {
+  switch (value) {
+    case RunParameterKind::kInteger: return "integer";
+    case RunParameterKind::kNumber: return "number";
+    case RunParameterKind::kText: return "text";
+    case RunParameterKind::kBoolean: return "boolean";
+  }
+  return "<invalid RunParameterKind>";
+}
+
+bool parse(std::string_view text, RunParameterKind& out, std::string& error) {
+  static const std::pair<std::string_view, RunParameterKind> kTable[] = {
+      {"integer", RunParameterKind::kInteger},
+      {"number", RunParameterKind::kNumber},
+      {"text", RunParameterKind::kText},
+      {"boolean", RunParameterKind::kBoolean},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid RunParameterKind value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(RunParameterKind value) { return nlohmann::ordered_json(dump(value)); }
+
+std::string dump(RunParameterOwner value) {
+  switch (value) {
+    case RunParameterOwner::kModel: return "model";
+    case RunParameterOwner::kRun: return "run";
+  }
+  return "<invalid RunParameterOwner>";
+}
+
+bool parse(std::string_view text, RunParameterOwner& out, std::string& error) {
+  static const std::pair<std::string_view, RunParameterOwner> kTable[] = {
+      {"model", RunParameterOwner::kModel},
+      {"run", RunParameterOwner::kRun},
+  };
+  for (const auto& [label, parsed] : kTable) {
+    if (text == label) {
+      out = parsed;
+      return true;
+    }
+  }
+  error = "invalid RunParameterOwner value: " + std::string(text);
+  return false;
+}
+
+nlohmann::ordered_json to_json(RunParameterOwner value) { return nlohmann::ordered_json(dump(value)); }
 
 std::string dump(PluginDraftStatus value) {
   switch (value) {
@@ -7934,6 +7992,233 @@ bool operator==(const PluginToolContribution& lhs, const PluginToolContribution&
       && lhs.permissions == rhs.permissions;
 }
 
+bool parse_json(const nlohmann::ordered_json& j, PluginRunParameterContribution& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for PluginRunParameterContribution";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "id",
+      "label",
+      "kind",
+      "owner",
+      "hint",
+      "minimum",
+      "maximum",
+      "choices",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "PluginRunParameterContribution: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "id", "PluginRunParameterContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginRunParameterContribution.id") + ": expected string";
+        return false;
+      }
+      out.id = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "label", "PluginRunParameterContribution");
+      if (!value.is_string()) {
+        error = std::string("PluginRunParameterContribution.label") + ": expected string";
+        return false;
+      }
+      out.label = value.get<std::string>();
+  }
+  {
+    const auto& value = field_or_fail(error, j, "kind", "PluginRunParameterContribution");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.kind, enum_error)) {
+        error = std::string("PluginRunParameterContribution.kind") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "owner", "PluginRunParameterContribution");
+      std::string enum_error;
+      if (!parse(value.get<std::string>(), out.owner, enum_error)) {
+        error = std::string("PluginRunParameterContribution.owner") + ": " + enum_error;
+        return false;
+      }
+  }
+  {
+    auto field_it = j.find("hint");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("PluginRunParameterContribution.hint") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.hint = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("minimum");
+    if (field_it != j.end()) {
+      double parsed{};
+      if (!(*field_it).is_number()) {
+        error = std::string("PluginRunParameterContribution.minimum") + ": expected number";
+        return false;
+      }
+      parsed = (*field_it).get<double>();
+      out.minimum = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("maximum");
+    if (field_it != j.end()) {
+      double parsed{};
+      if (!(*field_it).is_number()) {
+        error = std::string("PluginRunParameterContribution.maximum") + ": expected number";
+        return false;
+      }
+      parsed = (*field_it).get<double>();
+      out.maximum = std::move(parsed);
+    }
+  }
+  {
+    auto field_it = j.find("choices");
+    if (field_it != j.end()) {
+      std::vector<RunParameterChoice> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("PluginRunParameterContribution.choices") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("PluginRunParameterContribution.choices") + ": " + error;
+          return false;
+        }
+      }
+      out.choices = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, PluginRunParameterContribution& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const PluginRunParameterContribution& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["id"] = to_json_value(value.id);
+    j["label"] = to_json_value(value.label);
+    j["kind"] = to_json(value.kind);
+    j["owner"] = to_json(value.owner);
+  if (value.hint.has_value()) {
+    j["hint"] = to_json_value(*value.hint);
+  }
+  if (value.minimum.has_value()) {
+    j["minimum"] = to_json_value(*value.minimum);
+  }
+  if (value.maximum.has_value()) {
+    j["maximum"] = to_json_value(*value.maximum);
+  }
+  if (value.choices.has_value()) {
+    j["choices"] = to_json_value(*value.choices);
+  }
+  return j;
+}
+
+std::string dump(const PluginRunParameterContribution& value) { return to_json(value).dump(2); }
+
+bool operator==(const PluginRunParameterContribution& lhs, const PluginRunParameterContribution& rhs) {
+  return lhs.id == rhs.id
+      && lhs.label == rhs.label
+      && lhs.kind == rhs.kind
+      && lhs.owner == rhs.owner
+      && lhs.hint == rhs.hint
+      && lhs.minimum == rhs.minimum
+      && lhs.maximum == rhs.maximum
+      && lhs.choices == rhs.choices;
+}
+
+bool parse_json(const nlohmann::ordered_json& j, RunParameterChoice& out, std::string& error) {
+  if (!j.is_object()) {
+    error = "expected object for RunParameterChoice";
+    return false;
+  }
+  static const char* const kKnownFields[] = {
+      "value",
+      "label",
+  };
+  for (auto it = j.begin(); it != j.end(); ++it) {
+    bool known = false;
+    for (const char* k : kKnownFields) {
+      if (it.key() == k) { known = true; break; }
+    }
+    if (!known) {
+      error = "RunParameterChoice: unknown field '" + it.key() + "'";
+      return false;
+    }
+  }
+  {
+    const auto& value = field_or_fail(error, j, "value", "RunParameterChoice");
+      if (!value.is_string()) {
+        error = std::string("RunParameterChoice.value") + ": expected string";
+        return false;
+      }
+      out.value = value.get<std::string>();
+  }
+  {
+    auto field_it = j.find("label");
+    if (field_it != j.end()) {
+      std::string parsed{};
+      if (!(*field_it).is_string()) {
+        error = std::string("RunParameterChoice.label") + ": expected string";
+        return false;
+      }
+      parsed = (*field_it).get<std::string>();
+      out.label = std::move(parsed);
+    }
+  }
+  (void)error;
+  return true;
+}
+
+bool parse(std::string_view text, RunParameterChoice& out, std::string& error) {
+  try {
+    const auto j = nlohmann::ordered_json::parse(text);
+    return parse_json(j, out, error);
+  } catch (const std::exception& ex) {
+    error = ex.what();
+    return false;
+  }
+}
+
+nlohmann::ordered_json to_json(const RunParameterChoice& value) {
+  nlohmann::ordered_json j = nlohmann::ordered_json::object();
+    j["value"] = to_json_value(value.value);
+  if (value.label.has_value()) {
+    j["label"] = to_json_value(*value.label);
+  }
+  return j;
+}
+
+std::string dump(const RunParameterChoice& value) { return to_json(value).dump(2); }
+
+bool operator==(const RunParameterChoice& lhs, const RunParameterChoice& rhs) {
+  return lhs.value == rhs.value
+      && lhs.label == rhs.label;
+}
+
 bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std::string& error) {
   if (!j.is_object()) {
     error = "expected object for PluginContributionSet";
@@ -7953,6 +8238,7 @@ bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std
       "createActions",
       "palettes",
       "tools",
+      "runParameters",
   };
   for (auto it = j.begin(); it != j.end(); ++it) {
     bool known = false;
@@ -8113,6 +8399,23 @@ bool parse_json(const nlohmann::ordered_json& j, PluginContributionSet& out, std
         }
       }
   }
+  {
+    auto field_it = j.find("runParameters");
+    if (field_it != j.end()) {
+      std::vector<PluginRunParameterContribution> parsed{};
+      if (!(*field_it).is_array()) {
+        error = std::string("PluginContributionSet.runParameters") + ": expected array";
+        return false;
+      }
+      for (const auto& item : (*field_it)) {
+        if (!parse_json(item, parsed.emplace_back(), error)) {
+          error = std::string("PluginContributionSet.runParameters") + ": " + error;
+          return false;
+        }
+      }
+      out.run_parameters = std::move(parsed);
+    }
+  }
   (void)error;
   return true;
 }
@@ -8142,6 +8445,9 @@ nlohmann::ordered_json to_json(const PluginContributionSet& value) {
     j["createActions"] = to_json_value(value.create_actions);
     j["palettes"] = to_json_value(value.palettes);
     j["tools"] = to_json_value(value.tools);
+  if (value.run_parameters.has_value()) {
+    j["runParameters"] = to_json_value(*value.run_parameters);
+  }
   return j;
 }
 
@@ -8160,7 +8466,8 @@ bool operator==(const PluginContributionSet& lhs, const PluginContributionSet& r
       && lhs.notations == rhs.notations
       && lhs.create_actions == rhs.create_actions
       && lhs.palettes == rhs.palettes
-      && lhs.tools == rhs.tools;
+      && lhs.tools == rhs.tools
+      && lhs.run_parameters == rhs.run_parameters;
 }
 
 bool parse_json(const nlohmann::ordered_json& j, PermissionDiff& out, std::string& error) {

@@ -52,11 +52,19 @@ export async function execute(request) {
     ...(seed === undefined ? {} : { seed }),
     ...(result.ok ? {} : { error: `runtime failed: ${result.diagnostics?.[0]?.code ?? 'RT0005'}` }),
   };
-  const semanticMethods = [...new Set(
-    (Array.isArray(result.methods) ? result.methods : [runtimeKind])
-      .map((method) => (method === 'sd' ? 'continuous' : method))
-      .filter((method) => ['process', 'devs', 'continuous', 'agent'].includes(method)),
-  )];
+  // Evidence method ids are open (ADR-0139): a paradigm the contract has never
+  // heard of files evidence under its own name, so nothing is filtered against
+  // a fixed list here. `sd` is the kernel's name for the continuous method and
+  // is normalised; every other name passes through. Dropping an unrecognised
+  // name would shrink the evidence silently, while the contract rejects a bad
+  // payload loudly - the loud failure is the one worth keeping.
+  const semanticMethods = [
+    ...new Set(
+      (Array.isArray(result.methods) ? result.methods : [runtimeKind]).map((method) =>
+        method === 'sd' ? 'continuous' : method,
+      ),
+    ),
+  ];
   const output = {
     ok: result.ok,
     diagnostics: result.diagnostics ?? [],

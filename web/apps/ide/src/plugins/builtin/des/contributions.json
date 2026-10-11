@@ -162,5 +162,39 @@
       "defaults": { "type": "object" }
     }
   ],
-  "tools": []
+  "tools": [],
+  "runParameters": [
+    {
+      "id": "metric",
+      "label": "precision metric",
+      "kind": "text",
+      "owner": "model",
+      "hint": "The stopping metric a precision replication count targets. It is declared in the model's experiment block (metric = ...); these are the names this paradigm recognises.",
+      "choices": [
+        { "value": "Wq" },
+        { "value": "W" },
+        { "value": "Lq" },
+        { "value": "L" },
+        { "value": "throughput" },
+        { "value": "utilization" },
+        { "value": "availability" }
+      ]
+    },
+    {
+      "id": "arrivals",
+      "label": "arrivals",
+      "kind": "integer",
+      "owner": "run",
+      "minimum": 1,
+      "hint": "Termination for this run: stop after this many arrivals."
+    },
+    {
+      "id": "warmup",
+      "label": "warmup",
+      "kind": "integer",
+      "owner": "run",
+      "minimum": 0,
+      "hint": "Entities to discard before statistics start accumulating."
+    }
+  ]
 }

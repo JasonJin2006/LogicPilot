@@ -55,6 +55,7 @@ export interface ContractTypes {
   ExecutionCommandAck: C.ExecutionCommandAck;
   ExecutionEventKind: C.ExecutionEventKind;
   ExecutionEvent: C.ExecutionEvent;
+  MethodId: string;
   ExecutionConformance: C.ExecutionConformance;
   ExecutionEvidenceDetails: C.ExecutionEvidenceDetails;
   RuntimeKind: C.RuntimeKind;
@@ -97,6 +98,10 @@ export interface ContractTypes {
   PluginInstructionContribution: C.PluginInstructionContribution;
   PluginPaletteContribution: C.PluginPaletteContribution;
   PluginToolContribution: C.PluginToolContribution;
+  PluginRunParameterContribution: C.PluginRunParameterContribution;
+  RunParameterKind: C.RunParameterKind;
+  RunParameterOwner: C.RunParameterOwner;
+  RunParameterChoice: C.RunParameterChoice;
   PluginContributionSet: C.PluginContributionSet;
   PluginDraftStatus: C.PluginDraftStatus;
   PermissionDiff: C.PermissionDiff;

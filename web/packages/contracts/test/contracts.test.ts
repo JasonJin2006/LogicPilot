@@ -227,6 +227,36 @@ describe('execution session contract gate', () => {
     ).toBe(true);
   });
 
+  // ADR-0139: the evidence method ids are open, so a paradigm the contract has
+  // never heard of needs no contract change to file evidence.
+  it('accepts a method id the contract does not enumerate', () => {
+    expect(
+      validateContract('ExecutionEvidence', {
+        schema: 'logicpilot.execution-evidence/v1',
+        contractVersion: 1,
+        runId: 'run-unlisted',
+        digest: 'b'.repeat(64),
+        methods: ['process', 'statechart'],
+        runtimeKind: 'statechart',
+        method: 'sd',
+        details: { kind: 'statechart', summary: {} },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('still rejects a method id that is not an id at all', () => {
+    const base = {
+      schema: 'logicpilot.execution-evidence/v1',
+      contractVersion: 1,
+      runId: 'run-bad-id',
+      digest: 'c'.repeat(64),
+    };
+    expect(validateContract('ExecutionEvidence', { ...base, runtimeKind: 'Process Family' }).ok).toBe(
+      false,
+    );
+    expect(validateContract('ExecutionEvidence', { ...base, methods: ['Process'] }).ok).toBe(false);
+  });
+
   it('rejects a command that uses an unknown action or loses its state guard', () => {
     expect(
       validateContract('ExecutionCommand', {

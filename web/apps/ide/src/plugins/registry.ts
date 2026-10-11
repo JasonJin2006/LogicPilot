@@ -2,8 +2,16 @@ import type {
   PluginContributionSet,
   PluginRegistry,
   PluginRegistryIntegrity,
+  PluginRunParameterContribution,
 } from '@logicpilot/contracts';
 import { validateContract } from '@logicpilot/contracts';
+
+/** A run parameter plus the pack that declared it, so a caller can name the
+ *  source instead of presenting the value as if the shell owned it. */
+export interface RunParameterDeclaration {
+  readonly pluginId: string;
+  readonly parameter: PluginRunParameterContribution;
+}
 
 export interface PluginRegistrySnapshot {
   /** Local render revision; never use this value as a remote replay cursor. */
@@ -232,6 +240,18 @@ export class PluginRegistryStore {
     );
   }
 
+  /** Run parameters contributed by the active packs. Optional in the contract,
+   *  so a pack that declares none simply adds nothing; the shell then shows no
+   *  extra knobs rather than inventing paradigm vocabulary of its own. */
+  runParameters(): readonly RunParameterDeclaration[] {
+    return this.value.contributions.flatMap((set) =>
+      (set.runParameters ?? []).map((parameter) => ({
+        pluginId: set.pluginId,
+        parameter,
+      })),
+    );
+  }
+
   private mergeSnapshot(
     value: PluginRegistry | PluginRegistrySnapshot,
     generation = value.generation,
@@ -366,6 +386,13 @@ export const PLUGIN_REGISTRY = new PluginRegistryStore();
 
 export function structuredPaletteItems(): readonly StructuredPaletteItem[] {
   return PLUGIN_REGISTRY.paletteItems();
+}
+
+/** Run parameters declared by the active packs, in registration order. This is
+ *  the seam that lets a paradigm contribute its run dialog fields, so the shell
+ *  holds no paradigm vocabulary of its own. */
+export function runParameterDeclarations(): readonly RunParameterDeclaration[] {
+  return PLUGIN_REGISTRY.runParameters();
 }
 
 export function subscribePluginRegistry(listener: () => void): () => void {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://logicpilot.dev/schemas/contracts/v1/plugin-contributions.schema.json",
   "title": "LogicPilot structured plugin contributions",
-  "description": "One strict envelope for plugin-provided knowledge, skills, instructions, diagnostics, views, palettes and tools. Domain definitions are reused from their existing contract schemas.",
+  "description": "One strict envelope for plugin-provided knowledge, skills, instructions, diagnostics, views, palettes, tools and run parameters. Domain definitions are reused from their existing contract schemas. runParameters is optional and additive: it declares the knobs a paradigm pack contributes to the run dialog, so the shell never has to hold paradigm vocabulary itself (ownership split in docs/specs/dsl-freeze.md section 3).",
   "$defs": {
     "PluginContributionKind": {
       "type": "string",
@@ -79,6 +79,38 @@
         }
       }
     },
+    "PluginRunParameterContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "kind", "owner"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "kind": { "$ref": "#/$defs/RunParameterKind" },
+        "owner": { "$ref": "#/$defs/RunParameterOwner" },
+        "hint": { "type": "string", "maxLength": 512 },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "choices": { "type": "array", "items": { "$ref": "#/$defs/RunParameterChoice" } }
+      }
+    },
+    "RunParameterKind": {
+      "type": "string",
+      "enum": ["integer", "number", "text", "boolean"]
+    },
+    "RunParameterOwner": {
+      "type": "string",
+      "enum": ["model", "run"]
+    },
+    "RunParameterChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "value": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "label": { "type": "string", "maxLength": 256 }
+      }
+    },
     "PluginContributionSet": {
       "type": "object",
       "additionalProperties": false,
@@ -128,7 +160,11 @@
           "items": { "$ref": "view-notation.schema.json#/$defs/CreateAction" }
         },
         "palettes": { "type": "array", "items": { "$ref": "#/$defs/PluginPaletteContribution" } },
-        "tools": { "type": "array", "items": { "$ref": "#/$defs/PluginToolContribution" } }
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/PluginToolContribution" } },
+        "runParameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PluginRunParameterContribution" }
+        }
       }
     }
   }

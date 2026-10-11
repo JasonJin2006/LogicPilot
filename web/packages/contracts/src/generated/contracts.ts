@@ -384,6 +384,9 @@ export interface ExecutionEvent {
   readonly payload: JsonValue;
 }
 
+// --- MethodId (execution-target.schema.json) ---
+export type MethodId = string;
+
 // --- ExecutionConformance (execution-target.schema.json) ---
 export interface ExecutionConformance {
   readonly passed: boolean;
@@ -392,7 +395,7 @@ export interface ExecutionConformance {
 
 // --- ExecutionEvidenceDetails (execution-target.schema.json) ---
 export interface ExecutionEvidenceDetails {
-  readonly kind: "process" | "devs" | "continuous" | "agent";
+  readonly kind: MethodId;
   readonly summary: JsonValue;
 }
 
@@ -462,10 +465,10 @@ export interface ExecutionEvidence {
   readonly contractVersion: 1;
   readonly runId: string;
   readonly digest: Sha256Hex;
-  readonly methods?: ReadonlyArray<"process" | "devs" | "continuous" | "agent">;
+  readonly methods?: ReadonlyArray<MethodId>;
   readonly irDigest?: Sha256Hex;
-  readonly runtimeKind?: "process" | "devs" | "continuous" | "agent";
-  readonly method?: "process" | "devs" | "sd" | "agent";
+  readonly runtimeKind?: MethodId;
+  readonly method?: MethodId;
   readonly conformance?: ExecutionConformance;
   readonly details?: ExecutionEvidenceDetails;
   readonly traceRef?: ArtifactRef;
@@ -692,6 +695,30 @@ export interface PluginToolContribution {
   readonly permissions: ReadonlyArray<PermissionId>;
 }
 
+// --- PluginRunParameterContribution (plugin-contributions.schema.json) ---
+export interface PluginRunParameterContribution {
+  readonly id: string;
+  readonly label: string;
+  readonly kind: RunParameterKind;
+  readonly owner: RunParameterOwner;
+  readonly hint?: string;
+  readonly minimum?: number;
+  readonly maximum?: number;
+  readonly choices?: ReadonlyArray<RunParameterChoice>;
+}
+
+// --- RunParameterKind (plugin-contributions.schema.json) ---
+export type RunParameterKind = "integer" | "number" | "text" | "boolean";
+
+// --- RunParameterOwner (plugin-contributions.schema.json) ---
+export type RunParameterOwner = "model" | "run";
+
+// --- RunParameterChoice (plugin-contributions.schema.json) ---
+export interface RunParameterChoice {
+  readonly value: string;
+  readonly label?: string;
+}
+
 // --- PluginContributionSet (plugin-contributions.schema.json) ---
 export interface PluginContributionSet {
   readonly schema: "logicpilot.plugin-contributions/v1";
@@ -707,6 +734,7 @@ export interface PluginContributionSet {
   readonly createActions: ReadonlyArray<CreateAction>;
   readonly palettes: ReadonlyArray<PluginPaletteContribution>;
   readonly tools: ReadonlyArray<PluginToolContribution>;
+  readonly runParameters?: ReadonlyArray<PluginRunParameterContribution>;
 }
 
 // --- PluginDraftStatus (plugin-draft.schema.json) ---

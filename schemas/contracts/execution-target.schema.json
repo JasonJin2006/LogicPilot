@@ -4,6 +4,13 @@
   "title": "LogicPilot execution target contracts",
   "description": "Execution targets bind a semantic model artifact to a runtime provided by a plugin. Runs are revision-bound and archive structured evidence; native crashes and ABI mismatches must surface as structured diagnostics, never corrupt project state.",
   "$defs": {
+    "MethodId": {
+      "type": "string",
+      "description": "Identifier of a semantic method reported by a provider: a paradigm family (process, devs, continuous, agent, ...) or a kernel method name (sd, ...). Open by design - adding a paradigm must not require a contract change, so the id is declared by the pack rather than enumerated here. See docs/adr/0139-open-evidence-method-ids.md.",
+      "pattern": "^[a-z][a-z0-9._-]*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
     "ExecutionConformance": {
       "type": "object",
       "additionalProperties": false,
@@ -18,7 +25,7 @@
       "additionalProperties": false,
       "required": ["kind", "summary"],
       "properties": {
-        "kind": { "type": "string", "enum": ["process", "devs", "continuous", "agent"] },
+        "kind": { "$ref": "#/$defs/MethodId" },
         "summary": { "$ref": "common.schema.json#/$defs/JsonValue" }
       }
     },
@@ -123,13 +130,13 @@
         "methods": {
           "type": "array",
           "description": "Semantic methods represented by this evidence; mixed runs list every method instead of inventing one runtime kind.",
-          "items": { "type": "string", "enum": ["process", "devs", "continuous", "agent"] },
+          "items": { "$ref": "#/$defs/MethodId" },
           "minItems": 1,
           "uniqueItems": true
         },
         "irDigest": { "$ref": "common.schema.json#/$defs/Sha256Hex" },
-        "runtimeKind": { "type": "string", "enum": ["process", "devs", "continuous", "agent"] },
-        "method": { "type": "string", "enum": ["process", "devs", "sd", "agent"] },
+        "runtimeKind": { "$ref": "#/$defs/MethodId" },
+        "method": { "$ref": "#/$defs/MethodId" },
         "conformance": { "$ref": "#/$defs/ExecutionConformance" },
         "details": { "$ref": "#/$defs/ExecutionEvidenceDetails" },
         "traceRef": { "$ref": "artifact-graph.schema.json#/$defs/ArtifactRef" },

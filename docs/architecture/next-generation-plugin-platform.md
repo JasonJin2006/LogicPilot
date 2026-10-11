@@ -622,7 +622,8 @@ AI 永远不直接覆盖正在使用的已安装插件。
 - canvas overlay/renderer；
 - inspector；
 - command；
-- dashboard widget。
+- dashboard widget；
+- run dialog parameter（label、kind、bounds、choices；让范式词汇留在包里，外壳不持有它）。
 
 第三方 CSS 默认限定作用域或 Shadow DOM。覆盖 Shell 全局样式需要更高权限。
 
